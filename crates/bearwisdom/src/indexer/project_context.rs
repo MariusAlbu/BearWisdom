@@ -127,15 +127,26 @@ pub struct ProjectContext {
 
     /// Ecosystems whose `activation()` returned true for this project.
     ///
-    /// Populated by `ProjectContext::initialize` (Phase 4). The full
-    /// indexer iterates this list to drive externals discovery; resolvers
-    /// filter by this set via `resolvable_ecosystems(lang)` at query time.
+    /// Populated by `ProjectContext::initialize`. For polyglot monorepos,
+    /// this is the union of `active_ecosystems_by_package` so legacy
+    /// workspace-wide consumers keep working unchanged.
     ///
     /// Empty for contexts built via the legacy `build_project_context*`
     /// helpers — they predate the ecosystem seam and preserve old behavior
     /// (every ecosystem implicitly on). Callers that require the ecosystem
     /// seam must construct via `ProjectContext::initialize`.
     pub active_ecosystems: Vec<EcosystemId>,
+
+    /// Per-package active ecosystems, evaluated against each package's
+    /// own manifest set and absolute path. Empty for single-project layouts
+    /// and for legacy contexts.
+    ///
+    /// Closes the workspace-flat activation gap: a frontend `tsconfig.json`
+    /// declaring `"DOM"` no longer activates `ts_lib_dom` for an unrelated
+    /// backend package in the same repo. Consumers with a `package_id` in
+    /// hand should consult this map; everything else falls back to
+    /// `active_ecosystems`.
+    pub active_ecosystems_by_package: HashMap<i64, Vec<EcosystemId>>,
 
     /// Language ids observed in the project's own files. Drives the
     /// `EcosystemActivation::LanguagePresent(lang)` predicate during
@@ -210,6 +221,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         workspace_pkg_paths: HashMap::new(),
         gradle_catalog_names,
         active_ecosystems: Vec::new(),
+        active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
         vue_global_registry: VueGlobalRegistry::default(),
         robot_library_map: RobotLibraryMap::default(),
@@ -309,6 +321,7 @@ pub fn build_project_context_with_packages(
         workspace_pkg_paths,
         gradle_catalog_names,
         active_ecosystems: Vec::new(),
+        active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
         vue_global_registry: VueGlobalRegistry::default(),
         robot_library_map: RobotLibraryMap::default(),
@@ -387,7 +400,16 @@ impl ProjectContext {
             build_project_context_with_packages(project_root, packages)
         };
         ctx.language_presence = language_ids.into_iter().collect();
-        ctx.active_ecosystems = evaluate_active_ecosystems(&ctx, ecosystems);
+        if packages.is_empty() {
+            ctx.active_ecosystems = evaluate_active_ecosystems(&ctx, ecosystems);
+        } else {
+            ctx.active_ecosystems_by_package =
+                evaluate_active_ecosystems_per_package(&ctx, ecosystems, packages);
+            ctx.active_ecosystems = union_per_package_actives(
+                &ctx.active_ecosystems_by_package,
+                ecosystems,
+            );
+        }
         if !ctx.active_ecosystems.is_empty() {
             info!(
                 "ProjectContext: {} active ecosystems ({})",
@@ -463,47 +485,145 @@ fn is_transitive_only(act: &EcosystemActivation) -> bool {
     matches!(act, EcosystemActivation::TransitiveOn(_))
 }
 
+/// Evaluate ecosystem activation once per workspace package.
+///
+/// Each package gets its own scope: package-local manifests via
+/// `ctx.manifests_for(Some(pkg_id))`, the package's absolute path as the
+/// `ManifestFieldContains` glob root, and (for now) workspace-wide
+/// language presence. The two-pass transitive resolution mirrors the
+/// workspace-wide evaluator so `TransitiveOn(other)` clauses see the
+/// non-transitive actives that fired for the same package.
+///
+/// Packages without a stable `pkg.id` are skipped silently — they have
+/// no row in `by_package` and fall back to the union via
+/// `active_ecosystems` automatically.
+pub(crate) fn evaluate_active_ecosystems_per_package(
+    ctx: &ProjectContext,
+    reg: &EcosystemRegistry,
+    packages: &[PackageInfo],
+) -> HashMap<i64, Vec<EcosystemId>> {
+    let mut out: HashMap<i64, Vec<EcosystemId>> = HashMap::new();
+    for pkg in packages {
+        let Some(pkg_id) = pkg.id else { continue };
+        let pkg_abs = ctx.project_root.join(&pkg.path);
+        let scope = ActivationScope {
+            manifests: ctx.manifests_for(Some(pkg_id)),
+            // Phase 5 will replace this with per-package language presence.
+            // Today's workspace-wide signal is conservative: a package
+            // typed only in Python won't get kotlin-stdlib's locator
+            // emitting roots because `kotlin-stdlib.languages()` filters
+            // the resolvable set per-language at query time.
+            language_presence: &ctx.language_presence,
+            glob_root: &pkg_abs,
+        };
+        let mut active: Vec<EcosystemId> = Vec::new();
+        for eco in reg.all() {
+            if is_transitive_only(&eco.activation()) {
+                continue;
+            }
+            if evaluate_activation_scoped(&eco.activation(), eco.id(), &scope, &active) {
+                active.push(eco.id());
+            }
+        }
+        for eco in reg.all() {
+            if !is_transitive_only(&eco.activation()) {
+                continue;
+            }
+            if active.contains(&eco.id()) {
+                continue;
+            }
+            if evaluate_activation_scoped(&eco.activation(), eco.id(), &scope, &active) {
+                active.push(eco.id());
+            }
+        }
+        out.insert(pkg_id, active);
+    }
+    out
+}
+
+/// Build the workspace-wide `active_ecosystems` set as the union of every
+/// package's per-package actives, preserving registry order so legacy
+/// consumers see a stable shape.
+fn union_per_package_actives(
+    per_package: &HashMap<i64, Vec<EcosystemId>>,
+    reg: &EcosystemRegistry,
+) -> Vec<EcosystemId> {
+    let mut seen: HashSet<EcosystemId> = HashSet::new();
+    for actives in per_package.values() {
+        for id in actives {
+            seen.insert(*id);
+        }
+    }
+    reg.all().iter().map(|e| e.id()).filter(|id| seen.contains(id)).collect()
+}
+
+/// Scoped view of the project (or one of its packages) that the
+/// activation evaluator consults. Workspace-wide activation passes the
+/// union manifests + workspace-wide language presence + project root;
+/// per-package activation passes the package's own manifests, the
+/// package's language presence, and the package's absolute path as the
+/// glob root for `ManifestFieldContains`.
+struct ActivationScope<'a> {
+    manifests: &'a HashMap<ManifestKind, ManifestData>,
+    language_presence: &'a HashSet<String>,
+    glob_root: &'a Path,
+}
+
 fn evaluate_activation(
     act: &EcosystemActivation,
     eco_id: EcosystemId,
     ctx: &ProjectContext,
     already_active: &[EcosystemId],
 ) -> bool {
+    let scope = ActivationScope {
+        manifests: &ctx.manifests,
+        language_presence: &ctx.language_presence,
+        glob_root: &ctx.project_root,
+    };
+    evaluate_activation_scoped(act, eco_id, &scope, already_active)
+}
+
+fn evaluate_activation_scoped(
+    act: &EcosystemActivation,
+    eco_id: EcosystemId,
+    scope: &ActivationScope<'_>,
+    already_active: &[EcosystemId],
+) -> bool {
     match act {
         EcosystemActivation::Always => true,
         EcosystemActivation::Never => false,
         EcosystemActivation::ManifestMatch => {
-            ecosystem_manifest_present(eco_id, ctx)
+            ecosystem_manifest_present_scoped(eco_id, scope)
         }
         EcosystemActivation::LanguagePresent(lang) => {
-            ctx.language_presence.contains(*lang)
+            scope.language_presence.contains(*lang)
         }
         EcosystemActivation::ManifestFieldContains {
             manifest_glob,
             field_path,
             value,
-        } => manifest_field_contains(&ctx.project_root, manifest_glob, field_path, value),
+        } => manifest_field_contains(scope.glob_root, manifest_glob, field_path, value),
         EcosystemActivation::AlwaysOnPlatform(plat) => matches_platform(*plat),
         EcosystemActivation::TransitiveOn(id) => already_active.contains(id),
         EcosystemActivation::All(clauses) => clauses
             .iter()
-            .all(|c| evaluate_activation(c, eco_id, ctx, already_active)),
+            .all(|c| evaluate_activation_scoped(c, eco_id, scope, already_active)),
         EcosystemActivation::Any(clauses) => clauses
             .iter()
-            .any(|c| evaluate_activation(c, eco_id, ctx, already_active)),
+            .any(|c| evaluate_activation_scoped(c, eco_id, scope, already_active)),
     }
 }
 
 /// `ManifestMatch` evaluation. Returns `true` iff at least one
-/// `ManifestKind` claimed by the ecosystem is present in
-/// `ctx.manifests`. Ecosystems with no claimed kinds (returned empty
-/// from `manifest_kinds_for_ecosystem`) always evaluate to `false`.
-fn ecosystem_manifest_present(eco_id: EcosystemId, ctx: &ProjectContext) -> bool {
+/// `ManifestKind` claimed by the ecosystem is present in the scope's
+/// manifest set. Ecosystems with no claimed kinds (returned empty from
+/// `manifest_kinds_for_ecosystem`) always evaluate to `false`.
+fn ecosystem_manifest_present_scoped(eco_id: EcosystemId, scope: &ActivationScope<'_>) -> bool {
     let kinds = manifest_kinds_for_ecosystem(eco_id);
     if kinds.is_empty() {
         return false;
     }
-    kinds.iter().any(|k| ctx.manifests.contains_key(k))
+    kinds.iter().any(|k| scope.manifests.contains_key(k))
 }
 
 /// `ManifestFieldContains` evaluation. Walks `project_root` for files

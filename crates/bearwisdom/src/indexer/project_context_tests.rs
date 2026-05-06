@@ -488,3 +488,156 @@ mod activation_eval_tests {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Per-package activation — Phase 1 (decision-2026-05-06-r87)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod per_package_activation_tests {
+    use super::*;
+    use crate::ecosystem::{self, EcosystemId};
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_file(root: &std::path::Path, rel: &str, content: &str) {
+        let p = root.join(rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, content).unwrap();
+    }
+
+    /// Polyglot monorepo: frontend declares `compilerOptions.lib: ["DOM"]`
+    /// in its own tsconfig; backend's tsconfig targets Node-only with no
+    /// DOM entry. Workspace-flat activation activated `ts-lib-dom` for both.
+    /// Per-package activation must isolate the activation to the frontend.
+    #[test]
+    fn per_package_activation_isolates_ts_lib_dom_to_dom_package() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        write_file(
+            root,
+            "apps/web/tsconfig.json",
+            r#"{"compilerOptions":{"target":"es2020","lib":["DOM","ES2020"]}}"#,
+        );
+        write_file(root, "apps/web/package.json", r#"{"name":"web"}"#);
+
+        write_file(
+            root,
+            "services/api/tsconfig.json",
+            r#"{"compilerOptions":{"target":"es2020","lib":["ES2020"]}}"#,
+        );
+        write_file(root, "services/api/package.json", r#"{"name":"api"}"#);
+
+        let packages = vec![
+            PackageInfo {
+                id: Some(1),
+                name: "web".into(),
+                path: "apps/web".into(),
+                kind: Some("npm".into()),
+                manifest: Some("apps/web/package.json".into()),
+                declared_name: None,
+            },
+            PackageInfo {
+                id: Some(2),
+                name: "api".into(),
+                path: "services/api".into(),
+                kind: Some("npm".into()),
+                manifest: Some("services/api/package.json".into()),
+                declared_name: None,
+            },
+        ];
+
+        let ctx = build_project_context_with_packages(root, &packages);
+        let registry = ecosystem::default_registry();
+        let per_pkg =
+            super::evaluate_active_ecosystems_per_package(&ctx, registry, &packages);
+
+        let ts_lib_dom = EcosystemId::new("ts-lib-dom");
+        let web_actives = per_pkg.get(&1).expect("web package must be evaluated");
+        let api_actives = per_pkg.get(&2).expect("api package must be evaluated");
+
+        assert!(
+            web_actives.contains(&ts_lib_dom),
+            "web (DOM in lib) must activate ts-lib-dom: got {web_actives:?}"
+        );
+        assert!(
+            !api_actives.contains(&ts_lib_dom),
+            "api (no DOM in lib) must NOT activate ts-lib-dom: got {api_actives:?}"
+        );
+    }
+
+    /// `ProjectContext::initialize` populates both the per-package map AND
+    /// derives `active_ecosystems` as the union, so workspace-wide consumers
+    /// keep observing every ecosystem at least one package activated.
+    #[test]
+    fn initialize_unions_per_package_actives_into_workspace_wide_set() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        write_file(
+            root,
+            "apps/web/tsconfig.json",
+            r#"{"compilerOptions":{"lib":["DOM"]}}"#,
+        );
+        write_file(root, "apps/web/package.json", r#"{"name":"web"}"#);
+        write_file(root, "services/api/package.json", r#"{"name":"api"}"#);
+
+        let packages = vec![
+            PackageInfo {
+                id: Some(1),
+                name: "web".into(),
+                path: "apps/web".into(),
+                kind: Some("npm".into()),
+                manifest: Some("apps/web/package.json".into()),
+                declared_name: None,
+            },
+            PackageInfo {
+                id: Some(2),
+                name: "api".into(),
+                path: "services/api".into(),
+                kind: Some("npm".into()),
+                manifest: Some("services/api/package.json".into()),
+                declared_name: None,
+            },
+        ];
+
+        let registry = ecosystem::default_registry();
+        let ctx =
+            ProjectContext::initialize(root, &packages, std::iter::empty::<String>(), registry);
+
+        let ts_lib_dom = EcosystemId::new("ts-lib-dom");
+        assert!(
+            ctx.active_ecosystems.contains(&ts_lib_dom),
+            "workspace-wide actives must union per-package actives"
+        );
+        assert!(ctx.active_ecosystems_by_package.contains_key(&1));
+        assert!(ctx.active_ecosystems_by_package.contains_key(&2));
+        assert!(ctx.active_ecosystems_by_package[&1].contains(&ts_lib_dom));
+        assert!(!ctx.active_ecosystems_by_package[&2].contains(&ts_lib_dom));
+    }
+
+    /// Single-project layouts (empty `packages` slice) skip the per-package
+    /// path entirely — `active_ecosystems_by_package` stays empty and the
+    /// workspace-wide evaluator drives `active_ecosystems` exactly as before.
+    #[test]
+    fn initialize_skips_per_package_when_packages_slice_empty() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write_file(
+            root,
+            "tsconfig.json",
+            r#"{"compilerOptions":{"lib":["DOM"]}}"#,
+        );
+
+        let registry = ecosystem::default_registry();
+        let ctx =
+            ProjectContext::initialize(root, &[], std::iter::empty::<String>(), registry);
+
+        assert!(ctx.active_ecosystems_by_package.is_empty());
+        let ts_lib_dom = EcosystemId::new("ts-lib-dom");
+        assert!(
+            ctx.active_ecosystems.contains(&ts_lib_dom),
+            "single-project workspace-wide path must still activate ts-lib-dom on root tsconfig"
+        );
+    }
+}
