@@ -89,9 +89,25 @@ impl LanguageResolver for DartResolver {
             return None;
         }
 
-        // Dart builtins are never in the index.
-        if predicates::is_dart_builtin(target) {
-            return None;
+        // Bare-name walker lookup. dart_sdk + flutter_sdk + pub emit real
+        // symbols for dart:core (String, List, Map, Future, Stream),
+        // dart:async, dart:io, Flutter widgets, and declared pub deps.
+        // ext:-only filter, gated on chain.is_none().
+        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "dart_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Chain-aware resolution: walk MemberChain following field/return types.
@@ -228,10 +244,6 @@ impl LanguageResolver for DartResolver {
             return None;
         }
 
-        // Dart builtins.
-        if predicates::is_dart_builtin(target) {
-            return Some("dart.core".to_string());
-        }
 
         // Walk imports: if target was imported from an external URI, classify it.
         let simple = target.split('.').next().unwrap_or(target);

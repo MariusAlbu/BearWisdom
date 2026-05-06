@@ -71,79 +71,19 @@ pub(super) fn is_relative_dart_import(uri: &str) -> bool {
     uri.starts_with('.') || (!uri.starts_with("dart:") && !uri.starts_with("package:"))
 }
 
-/// Dart builtin types and functions always in scope.
-pub(super) fn is_dart_builtin(name: &str) -> bool {
+
+/// Dart primitive type names + universal language tokens that the
+/// extractor emits as type_identifier nodes. Filtered at extract time.
+/// Stdlib types (String, List, Map, Future, Stream, ...) flow through
+/// and resolve via the dart_sdk walker.
+pub(super) fn is_dart_primitive_type(name: &str) -> bool {
     matches!(
         name,
-        // Core functions
-        "print"
-            | "debugPrint"
-            | "identical"
-            | "identityHashCode"
-            // setState is Widget-level but universally used
-            | "setState"
-            | "mounted"
-            // Core types (dart:core — always in scope)
-            | "String"
-            | "int"
-            | "double"
-            | "bool"
-            | "num"
-            | "List"
-            | "Map"
-            | "Set"
-            | "Iterable"
-            | "Iterator"
-            | "Object"
-            | "dynamic"
-            | "void"
-            | "Never"
-            | "Null"
-            | "Function"
-            | "Type"
-            | "Symbol"
-            | "Future"
-            | "Stream"
-            | "Completer"
-            | "Duration"
-            | "DateTime"
-            | "Uri"
-            | "RegExp"
-            | "Pattern"
-            | "Match"
-            | "Error"
-            | "Exception"
-            | "AssertionError"
-            | "RangeError"
-            | "StateError"
-            | "ArgumentError"
-            | "TypeError"
-            | "UnsupportedError"
-            | "UnimplementedError"
-            | "StackOverflowError"
-            | "OutOfMemoryError"
-            | "FormatException"
-            | "NullThrownError"
-            | "IntegerDivisionByZeroException"
-            | "Comparable"
-            | "Enum"
-            | "Record"
-            | "Sink"
-            | "StreamController"
-            | "StreamSubscription"
-            | "StringBuffer"
-            | "StringSink"
-            | "Stopwatch"
-            | "RuneIterator"
-            | "BigInt"
-            // Common annotations (dart:core)
-            | "override"
-            | "deprecated"
-            | "Deprecated"
-            | "required"
-            | "visibleForTesting"
-            | "immutable"
-            | "sealed"
-            | "pragma"
+        // Numeric / boolean primitives
+        "int" | "double" | "num" | "bool"
+        // Empty / dynamic / never types
+        | "void" | "dynamic" | "Never" | "Null"
+        // Universal literals
+        | "true" | "false" | "null"
     )
 }
