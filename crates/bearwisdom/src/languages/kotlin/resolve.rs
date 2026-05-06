@@ -98,9 +98,27 @@ impl LanguageResolver for KotlinResolver {
             return None;
         }
 
-        // Kotlin builtins are never in the project index.
-        if predicates::is_kotlin_builtin(target) {
-            return None;
+        // Bare-name walker lookup. kotlin_stdlib + jdk_src + android_sdk +
+        // maven (sources jars) emit real symbols for stdlib functions
+        // (apply, let, listOf, ...), JVM types, Android SDK types, and
+        // declared Maven/Gradle deps including the Compose test DSL.
+        // Bind to ext:-prefixed paths only — internal-name binding is
+        // handled by the chain walker and same-file paths below.
+        if !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "kotlin_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Chain-aware resolution: walk MemberChain step-by-step following
@@ -341,11 +359,6 @@ impl LanguageResolver for KotlinResolver {
                 return Some(import_path.to_string());
             }
             return None;
-        }
-
-        // Kotlin builtins (includes Compose test DSL).
-        if predicates::is_kotlin_builtin(target) {
-            return Some("kotlin.stdlib".to_string());
         }
 
         // Gradle version catalog accessors: `libs`, `versions`, `plugins`, and
