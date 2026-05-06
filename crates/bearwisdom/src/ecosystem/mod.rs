@@ -82,16 +82,13 @@ pub mod powershell_stdlib;
 pub mod psgallery;
 pub mod pub_pkg;
 pub mod puppet_forge;
-pub mod puppet_stdlib;
 pub mod pypi;
 pub mod ruby_stdlib;
 pub mod rubygems;
 pub mod rust_stdlib;
 pub mod scala_stdlib;
 pub mod spm;
-pub mod spring_stubs;
 pub mod swift_foundation;
-pub mod swift_pm_dsl_stubs;
 pub mod tf_registry;
 pub mod ts_lib_dom;
 pub mod vba_typelibs;
@@ -144,16 +141,13 @@ pub use powershell_stdlib::PowerShellStdlibEcosystem;
 pub use psgallery::PsGalleryEcosystem;
 pub use pub_pkg::PubEcosystem;
 pub use puppet_forge::PuppetForgeEcosystem;
-pub use puppet_stdlib::PuppetStdlibEcosystem;
 pub use pypi::PypiEcosystem;
 pub use ruby_stdlib::RubyStdlibEcosystem;
 pub use rubygems::RubygemsEcosystem;
 pub use rust_stdlib::RustStdlibEcosystem;
 pub use scala_stdlib::ScalaStdlibEcosystem;
 pub use spm::SpmEcosystem;
-pub use spring_stubs::SpringStubsEcosystem;
 pub use swift_foundation::SwiftFoundationEcosystem;
-pub use swift_pm_dsl_stubs::SwiftPmDslStubsEcosystem;
 pub use tf_registry::TfRegistryEcosystem;
 pub use ts_lib_dom::TsLibDomEcosystem;
 pub use vba_typelibs::VbaTypelibsEcosystem;
@@ -616,7 +610,6 @@ pub fn default_locator(
         "clojure-core" => Some(Arc::new(ClojureCoreEcosystem)),
         "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
-        "spring-stubs" => Some(Arc::new(SpringStubsEcosystem)),
         "jinja-ansible-runtime" => Some(jinja_ansible_runtime::shared_locator()),
         "bicep-runtime" => Some(bicep_runtime::shared_locator()),
         "prolog-runtime" => Some(prolog_runtime::shared_locator()),
@@ -624,10 +617,8 @@ pub fn default_locator(
         "cargo-build-scripts" => Some(cargo_build_scripts::shared_locator()),
         "cargo-expand-runtime" => Some(cargo_expand_runtime::shared_locator()),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
-        "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
         "puppet-forge" => Some(puppet_forge::shared_locator()),
-        "puppet-stdlib" => Some(puppet_stdlib::shared_locator()),
         "dart-sdk" => Some(Arc::new(DartSdkEcosystem)),
         "flutter-sdk" => Some(Arc::new(FlutterSdkEcosystem)),
         "psgallery" => Some(Arc::new(PsGalleryEcosystem)),
@@ -726,7 +717,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(ClojureCoreEcosystem);
         reg_eco!(ErlangOtpEcosystem);
         reg_eco!(ElixirStdlibEcosystem);
-        reg_eco!(SpringStubsEcosystem);
         reg_eco!(JinjaAnsibleRuntimeEcosystem);
         reg_eco!(BicepRuntimeEcosystem);
         reg_eco!(PrologRuntimeEcosystem);
@@ -734,10 +724,8 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(CargoBuildScriptsEcosystem);
         reg_eco!(CargoExpandRuntimeEcosystem);
         reg_eco!(SwiftFoundationEcosystem);
-        reg_eco!(SwiftPmDslStubsEcosystem);
         reg_eco!(VbaTypelibsEcosystem);
         reg_eco!(PuppetForgeEcosystem);
-        reg_eco!(PuppetStdlibEcosystem);
         reg_eco!(DartSdkEcosystem);
         reg_eco!(FlutterSdkEcosystem);
         reg_eco!(PowerShellStdlibEcosystem);
