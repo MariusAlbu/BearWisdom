@@ -58,10 +58,12 @@ impl Ecosystem for CargoEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("rust"),
-        ])
+        // Project deps via `Cargo.toml`. The Rust toolchain (prelude, core,
+        // std) belongs to `rust-stdlib`; cargo only resolves declared crate
+        // deps. A `.rs` file with no `Cargo.toml` has nothing for this
+        // ecosystem to point at, so dropping the LanguagePresent shotgun
+        // is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

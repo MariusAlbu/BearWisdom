@@ -82,16 +82,12 @@ impl Ecosystem for NpmEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("typescript"),
-            EcosystemActivation::LanguagePresent("tsx"),
-            EcosystemActivation::LanguagePresent("javascript"),
-            EcosystemActivation::LanguagePresent("vue"),
-            EcosystemActivation::LanguagePresent("svelte"),
-            EcosystemActivation::LanguagePresent("angular"),
-            EcosystemActivation::LanguagePresent("astro"),
-        ])
+        // Project deps via `package.json`. A bare directory of `.ts` /
+        // `.tsx` / `.js` / `.vue` / `.svelte` / `.astro` files with no
+        // manifest can't be resolved against external npm coordinates,
+        // so dropping the LanguagePresent shotgun is correct per the
+        // trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

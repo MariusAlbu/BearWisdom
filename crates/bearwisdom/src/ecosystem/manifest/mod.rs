@@ -63,6 +63,27 @@ pub enum ManifestKind {
     ZigZon,
     Clojure,
     Rockspec,
+    /// Puppet `metadata.json` + `Puppetfile`. Dependency names are stored
+    /// as bare module names (`"stdlib"`, `"apache"`) — the form that
+    /// appears as the prefix of qualified Puppet references.
+    Puppet,
+    /// Haskell `*.cabal` `build-depends:` (and the leftovers of
+    /// `stack.yaml` for stack-based builds).
+    Cabal,
+    /// Perl `cpanfile` `requires` directives.
+    Cpan,
+    /// Nim `*.nimble` `requires` declarations.
+    Nimble,
+    /// PowerShell `*.psd1` `RequiredModules =` arrays.
+    Psd1,
+    /// Bazel `MODULE.bazel` (bzlmod) and legacy `WORKSPACE` declarations.
+    ModuleBazel,
+    /// Terraform `*.tf` files. Dependency names are stored as the union
+    /// of `required_providers` source values (e.g. `"hashicorp/aws"`) and
+    /// `module "x" { source = "..." }` registry coordinates. The presence
+    /// of any `.tf` file under the project root is itself the manifest
+    /// signal — Terraform projects don't have a separate manifest file.
+    Terraform,
 }
 
 /// Normalized data extracted from a project manifest.
@@ -207,6 +228,13 @@ fn all_readers() -> Vec<Box<dyn ManifestReader>> {
         Box::new(clojure::ClojureManifest),
         Box::new(crate::ecosystem::luarocks::RockspecManifest),
         Box::new(crate::ecosystem::cran::DescriptionManifest),
+        Box::new(crate::ecosystem::puppet_forge::PuppetMetadataManifest),
+        Box::new(crate::ecosystem::cabal::CabalManifest),
+        Box::new(crate::ecosystem::cpan::CpanfileManifest),
+        Box::new(crate::ecosystem::nimble::NimbleManifest),
+        Box::new(crate::ecosystem::psgallery::Psd1Manifest),
+        Box::new(crate::ecosystem::bazel_central_registry::ModuleBazelManifest),
+        Box::new(crate::ecosystem::tf_registry::TerraformManifest),
     ]
 }
 

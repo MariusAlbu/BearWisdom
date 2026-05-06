@@ -43,10 +43,11 @@ impl Ecosystem for PsGalleryEcosystem {
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("powershell"),
-        ])
+        // Project deps via `*.psd1` `RequiredModules`. A bare directory
+        // of `.ps1` / `.psm1` files with no manifest can't be resolved
+        // against external PSGallery coordinates, so dropping the
+        // LanguagePresent shotgun is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
@@ -97,6 +98,28 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<PsGalleryEcosystem>> = OnceLock::new();
     LOCATOR.get_or_init(|| Arc::new(PsGalleryEcosystem)).clone()
+}
+
+// ===========================================================================
+// Manifest reader
+// ===========================================================================
+
+/// Surfaces `*.psd1` `RequiredModules = @(...)` entries in
+/// `ProjectContext.manifests[ManifestKind::Psd1]`.
+pub struct Psd1Manifest;
+
+impl crate::ecosystem::manifest::ManifestReader for Psd1Manifest {
+    fn kind(&self) -> crate::ecosystem::manifest::ManifestKind {
+        crate::ecosystem::manifest::ManifestKind::Psd1
+    }
+
+    fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
+        let deps = parse_psd1_required_modules(project_root);
+        if deps.is_empty() { return None }
+        let mut data = crate::ecosystem::manifest::ManifestData::default();
+        data.dependencies = deps.into_iter().collect();
+        Some(data)
+    }
 }
 
 // ===========================================================================

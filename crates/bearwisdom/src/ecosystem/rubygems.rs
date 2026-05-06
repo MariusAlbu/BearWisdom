@@ -53,10 +53,12 @@ impl Ecosystem for RubygemsEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("ruby"),
-        ])
+        // Project deps via `Gemfile` (preferring `Gemfile.lock` for
+        // exact pins). A bare directory of `.rb` files with no manifest
+        // can't be resolved against external RubyGems coordinates, so
+        // dropping the LanguagePresent shotgun is correct per the trait
+        // doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

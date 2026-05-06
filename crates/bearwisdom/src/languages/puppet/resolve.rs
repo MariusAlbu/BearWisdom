@@ -21,8 +21,10 @@
 // =============================================================================
 
 use super::predicates;
+use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -37,14 +39,31 @@ impl LanguageResolver for PuppetResolver {
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // Puppet uses autoloading based on the `::` namespace — no explicit
-        // import statements to collect.
+        // Puppet's autoloader resolves `<module>::<class>` against modules
+        // declared in `metadata.json` / `Puppetfile`. The `puppet-forge`
+        // manifest reader stores those as bare module names; injecting them
+        // as wildcard imports lets the resolver classify external refs
+        // without a hardcoded forge-module list.
+        let mut imports = Vec::new();
+        if let Some(ctx) = project_ctx {
+            if let Some(puppet) = ctx.manifest(ManifestKind::Puppet) {
+                for module in &puppet.dependencies {
+                    imports.push(ImportEntry {
+                        imported_name: module.clone(),
+                        module_path: Some(module.clone()),
+                        alias: None,
+                        is_wildcard: true,
+                    });
+                }
+            }
+        }
+
         FileContext {
             file_path: file.path.clone(),
             language: "puppet".to_string(),
-            imports: Vec::new(),
+            imports,
             file_namespace: None,
         }
     }
@@ -117,13 +136,18 @@ impl LanguageResolver for PuppetResolver {
             }
         }
 
-        // Forge module references (qualified `<module>::<class>`) are
-        // external — skip further index lookup. Plain bare names already
-        // had their chance via the synthetic lookup above.
+        // Qualified `<module>::<class>` references whose prefix is a
+        // declared forge module are external — skip further index lookup.
+        // Plain bare names already had their chance via the synthetic
+        // lookup above.
         if target.contains("::") {
             if let Some(prefix) = target.split("::").next() {
                 let bare = prefix.strip_prefix('$').unwrap_or(prefix);
-                if predicates::is_forge_module(bare) {
+                if file_ctx
+                    .imports
+                    .iter()
+                    .any(|i| i.module_path.as_deref() == Some(bare))
+                {
                     return None;
                 }
             }
@@ -178,7 +202,7 @@ impl LanguageResolver for PuppetResolver {
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
@@ -194,9 +218,10 @@ impl LanguageResolver for PuppetResolver {
         // (i.e. resolve already failed to find a project symbol for it) belongs
         // to a module Puppet would have auto-loaded from the module path. Classify
         // it as external under the prefix's namespace — the prefix is the module
-        // name in every real Puppet codebase. Forge prefixes get their own bucket;
-        // unknown prefixes share `puppet_forge::<prefix>` so cross-project
-        // dashboards can still group them.
+        // name in every real Puppet codebase. Declared forge modules get the
+        // `puppet_forge::<prefix>` bucket; everything else falls into
+        // `puppet_module::<prefix>` so cross-project dashboards can still group
+        // them.
         if let Some(prefix) = target.split("::").next() {
             // Strip a leading `$` for variable refs like `$mysql::server::opt` —
             // the prefix is `mysql`, the rest is a class-scoped variable.
@@ -205,7 +230,11 @@ impl LanguageResolver for PuppetResolver {
                 && bare_prefix.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                 && target.contains("::")
             {
-                if predicates::is_forge_module(bare_prefix) {
+                let is_declared_forge = file_ctx
+                    .imports
+                    .iter()
+                    .any(|i| i.module_path.as_deref() == Some(bare_prefix));
+                if is_declared_forge {
                     return Some(format!("puppet_forge::{bare_prefix}"));
                 }
                 return Some(format!("puppet_module::{bare_prefix}"));

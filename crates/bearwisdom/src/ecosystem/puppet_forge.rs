@@ -23,6 +23,7 @@ use super::{
     SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
+use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("puppet-forge");
@@ -44,10 +45,11 @@ impl Ecosystem for PuppetForgeEcosystem {
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("puppet"),
-        ])
+        // Project deps via `metadata.json` and/or `Puppetfile`. A bare
+        // directory of `.pp` files with no manifest can't be resolved
+        // against external Puppet Forge coordinates, so dropping the
+        // LanguagePresent shotgun is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
@@ -353,100 +355,56 @@ pub(crate) fn scan_puppet_header(source: &str) -> Vec<String> {
 }
 
 // =============================================================================
-// Tests
+// Manifest reader (metadata.json + Puppetfile)
+// =============================================================================
+
+/// Reads `metadata.json` and `Puppetfile` to surface declared forge modules
+/// in `ProjectContext.manifests[ManifestKind::Puppet]`. Dependency names are
+/// stored as bare module names (`"stdlib"`, `"apache"`, `"systemd"`) — the
+/// shape the Puppet resolver compares against the prefix of qualified refs
+/// like `apache::vhost`.
+pub struct PuppetMetadataManifest;
+
+impl ManifestReader for PuppetMetadataManifest {
+    fn kind(&self) -> ManifestKind { ManifestKind::Puppet }
+
+    fn read(&self, project_root: &Path) -> Option<ManifestData> {
+        let slugs = collect_declared_modules(project_root);
+        if slugs.is_empty() { return None }
+        let mut data = ManifestData::default();
+        for slug in slugs {
+            let bare = slug
+                .split(|c| c == '-' || c == '/')
+                .last()
+                .unwrap_or(slug.as_str())
+                .to_string();
+            if !bare.is_empty() {
+                data.dependencies.insert(bare);
+            }
+        }
+        Some(data)
+    }
+}
+
+// =============================================================================
+// Test wrappers
 // =============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ecosystem_identity() {
-        let e = PuppetForgeEcosystem;
-        assert_eq!(e.id(), ID);
-        assert_eq!(Ecosystem::kind(&e), EcosystemKind::Package);
-        assert_eq!(Ecosystem::languages(&e), &["puppet"]);
-    }
-
-    #[test]
-    fn metadata_json_deps_parsed() {
-        let json = r#"{
-  "name": "myorg-mymodule",
-  "version": "1.0.0",
-  "dependencies": [
-    {"name": "puppetlabs-stdlib", "version_requirement": ">= 4.13.1"},
-    {"name": "puppetlabs/apache", "version_requirement": ">= 5.0.0"}
-  ]
-}"#;
-        let mut deps = Vec::new();
-        parse_metadata_json_deps(json, &mut deps);
-        assert!(deps.contains(&"puppetlabs-stdlib".to_string()));
-        assert!(deps.contains(&"puppetlabs/apache".to_string()));
-    }
-
-    #[test]
-    fn puppetfile_deps_parsed() {
-        let pf = r#"
-# r10k Puppetfile
-forge "https://forgeapi.puppet.com"
-
-mod 'puppetlabs/stdlib', '>= 4.13.1'
-mod 'puppetlabs-apache', '5.0.0'
-mod "camptocamp/systemd"
-"#;
-        let mut deps = Vec::new();
-        parse_puppetfile_deps(pf, &mut deps);
-        assert!(deps.contains(&"puppetlabs/stdlib".to_string()));
-        assert!(deps.contains(&"puppetlabs-apache".to_string()));
-        assert!(deps.contains(&"camptocamp/systemd".to_string()));
-    }
-
-    #[test]
-    fn extract_quoted_string_handles_both_quote_styles() {
-        assert_eq!(extract_quoted_string(r#""puppetlabs/stdlib""#), "puppetlabs/stdlib");
-        assert_eq!(extract_quoted_string("'camptocamp/systemd'"), "camptocamp/systemd");
-    }
-
-    #[test]
-    fn scan_puppet_header_extracts_names() {
-        let src = r#"
-class apache (
-  $port = 80,
-) {
+pub(super) fn _test_parse_metadata_json_deps(content: &str, out: &mut Vec<String>) {
+    parse_metadata_json_deps(content, out);
 }
 
-define apache::vhost (
-  $docroot,
-) {
+#[cfg(test)]
+pub(super) fn _test_parse_puppetfile_deps(content: &str, out: &mut Vec<String>) {
+    parse_puppetfile_deps(content, out);
 }
 
-function apache::params() {
+#[cfg(test)]
+pub(super) fn _test_extract_quoted_string(s: &str) -> String {
+    extract_quoted_string(s)
 }
-"#;
-        let names = scan_puppet_header(src);
-        assert!(names.contains(&"apache".to_string()));
-        assert!(names.contains(&"vhost".to_string()));
-        assert!(names.contains(&"params".to_string()));
-    }
 
-    #[test]
-    fn scan_puppet_header_skips_comments() {
-        let src = "# class notaclass {\nclass realclass {\n";
-        let names = scan_puppet_header(src);
-        assert_eq!(names, vec!["realclass"]);
-    }
-
-    #[test]
-    fn collect_declared_modules_from_temp_dir() {
-        let tmp = std::env::temp_dir().join("bw-puppet-forge-test");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        std::fs::write(
-            tmp.join("metadata.json"),
-            "{\n  \"name\": \"myorg-mymod\",\n  \"version\": \"1.0.0\",\n  \"dependencies\": [\n    {\"name\": \"puppetlabs-stdlib\", \"version_requirement\": \">=4.13.1\"}\n  ]\n}",
-        ).unwrap();
-        let deps = collect_declared_modules(&tmp);
-        assert!(deps.contains(&"puppetlabs-stdlib".to_string()));
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-}
+#[cfg(test)]
+#[path = "puppet_forge_tests.rs"]
+mod tests;

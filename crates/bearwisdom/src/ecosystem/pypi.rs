@@ -54,10 +54,12 @@ impl Ecosystem for PypiEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("python"),
-        ])
+        // Project deps via `pyproject.toml` (or `requirements.txt`,
+        // `Pipfile`). The Python toolchain (stdlib) belongs to
+        // `cpython-stdlib`; pypi only resolves declared third-party deps.
+        // Dropping the LanguagePresent shotgun is correct per the trait
+        // doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

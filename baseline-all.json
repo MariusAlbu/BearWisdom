@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-05-05T00:00:00Z",
+  "captured_at": "2026-05-06T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -2412,14 +2412,14 @@
       "assertions": {
         "min_resolution_rate": 99
       },
-      "code_chunks": 3832,
-      "files": 183,
+      "code_chunks": 3881,
+      "files": 186,
       "flow_edge_types": {
         "service_dependency": 2
       },
       "flow_edges": 2,
-      "internal_edges": 3940,
-      "internal_unresolved": 8,
+      "internal_edges": 4166,
+      "internal_unresolved": 7,
       "languages": {
         "css": 1,
         "dockerfile": 2,
@@ -2431,23 +2431,23 @@
         "python": 45,
         "shell": 8,
         "toml": 2,
-        "typescript": 95,
+        "typescript": 98,
         "xml": 5,
         "yaml": 4
       },
       "path": "F:/Work/Projects/TestProjects/full-stack-fastapi-template",
       "perf": {
-        "end_ws_mb": 289,
-        "files_per_sec": 10,
-        "index_duration_ms": 17762
+        "end_ws_mb": 109,
+        "files_per_sec": 6,
+        "index_duration_ms": 30736
       },
       "project": "full-stack-fastapi-template",
-      "resolution_rate": 99.8,
+      "resolution_rate": 99.83,
       "routes": 18,
-      "symbols": 2395,
+      "symbols": 2427,
       "unresolved_by_lang_kind": {
         "dockerfile.calls": 1,
-        "typescript.calls": 6,
+        "typescript.calls": 5,
         "typescript.type_ref": 1
       }
     },
@@ -3285,14 +3285,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 36
       },
       "code_chunks": 2863,
       "files": 185,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1889,
-      "internal_unresolved": 1,
+      "internal_edges": 2576,
+      "internal_unresolved": 4564,
       "languages": {
         "dockerfile": 1,
         "haskell": 174,
@@ -3304,15 +3304,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/haskell-hadolint",
       "perf": {
-        "end_ws_mb": 1226,
-        "files_per_sec": 338,
-        "index_duration_ms": 548
+        "end_ws_mb": 42,
+        "files_per_sec": 245,
+        "index_duration_ms": 755
       },
       "project": "haskell-hadolint",
-      "resolution_rate": 99.95,
+      "resolution_rate": 36.08,
       "routes": 0,
       "symbols": 1887,
       "unresolved_by_lang_kind": {
+        "haskell.calls": 4539,
+        "haskell.implements": 19,
+        "nix.calls": 5,
         "shell.calls": 1
       }
     },
@@ -3418,29 +3421,31 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 100
+        "min_resolution_rate": 98
       },
       "code_chunks": 10214,
       "files": 101,
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 2260,
-      "internal_unresolved": 0,
+      "internal_unresolved": 23,
       "languages": {
         "hcl": 77,
         "markdown": 24
       },
       "path": "F:/Work/Projects/TestProjects/hcl-aws-vpc",
       "perf": {
-        "end_ws_mb": 258,
-        "files_per_sec": 284,
-        "index_duration_ms": 356
+        "end_ws_mb": 34,
+        "files_per_sec": 225,
+        "index_duration_ms": 448
       },
       "project": "hcl-aws-vpc",
-      "resolution_rate": 100.0,
+      "resolution_rate": 98.99,
       "routes": 0,
       "symbols": 7644,
-      "unresolved_by_lang_kind": {}
+      "unresolved_by_lang_kind": {
+        "hcl.calls": 23
+      }
     },
     {
       "assertions": {
@@ -4593,14 +4598,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 100
+        "min_resolution_rate": 13
       },
       "code_chunks": 4886,
       "files": 529,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 12,
-      "internal_unresolved": 0,
+      "internal_edges": 41,
+      "internal_unresolved": 259,
       "languages": {
         "json": 254,
         "markdown": 16,
@@ -4612,15 +4617,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/nim-nimble",
       "perf": {
-        "end_ws_mb": 292,
-        "files_per_sec": 5,
-        "index_duration_ms": 110985
+        "end_ws_mb": 98,
+        "files_per_sec": 53,
+        "index_duration_ms": 9895
       },
       "project": "nim-nimble",
-      "resolution_rate": 100.0,
+      "resolution_rate": 13.67,
       "routes": 0,
       "symbols": 1359,
-      "unresolved_by_lang_kind": {}
+      "unresolved_by_lang_kind": {
+        "nim.imports": 259
+      }
     },
     {
       "assertions": {
@@ -5362,14 +5369,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 100
+        "min_resolution_rate": 98
       },
       "code_chunks": 3228,
       "files": 163,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 0,
-      "internal_unresolved": 0,
+      "internal_edges": 192,
+      "internal_unresolved": 2,
       "languages": {
         "css": 4,
         "dockerfile": 1,
@@ -5382,15 +5389,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/perl-dancer2",
       "perf": {
-        "end_ws_mb": 263,
-        "files_per_sec": 361,
-        "index_duration_ms": 451
+        "end_ws_mb": 31,
+        "files_per_sec": 145,
+        "index_duration_ms": 1121
       },
       "project": "perl-dancer2",
-      "resolution_rate": 100.0,
+      "resolution_rate": 98.97,
       "routes": 0,
       "symbols": 881,
-      "unresolved_by_lang_kind": {}
+      "unresolved_by_lang_kind": {
+        "perl.imports": 2
+      }
     },
     {
       "assertions": {
@@ -6306,7 +6315,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 97
+        "min_resolution_rate": 98
       },
       "code_chunks": 25406,
       "files": 310,
@@ -6315,8 +6324,8 @@
         "django_view": 292
       },
       "flow_edges": 382,
-      "internal_edges": 11362,
-      "internal_unresolved": 260,
+      "internal_edges": 13900,
+      "internal_unresolved": 263,
       "languages": {
         "css": 6,
         "html": 53,
@@ -6329,19 +6338,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-drf",
       "perf": {
-        "end_ws_mb": 321,
-        "files_per_sec": 20,
-        "index_duration_ms": 15232
+        "end_ws_mb": 120,
+        "files_per_sec": 13,
+        "index_duration_ms": 23311
       },
       "project": "python-drf",
-      "resolution_rate": 97.76,
+      "resolution_rate": 98.14,
       "routes": 5,
       "symbols": 15943,
       "unresolved_by_lang_kind": {
         "javascript.calls": 18,
-        "python.calls": 72,
+        "python.calls": 74,
         "python.imports": 15,
-        "python.type_ref": 155
+        "python.type_ref": 156
       }
     },
     {
@@ -8053,14 +8062,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 98
       },
       "code_chunks": 12214,
       "files": 159,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1290,
-      "internal_unresolved": 10,
+      "internal_edges": 1291,
+      "internal_unresolved": 20,
       "languages": {
         "gotemplate": 8,
         "hcl": 90,
@@ -8072,16 +8081,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/terraform-aws-eks",
       "perf": {
-        "end_ws_mb": 307,
+        "end_ws_mb": 100,
         "files_per_sec": 24,
-        "index_duration_ms": 6765
+        "index_duration_ms": 6612
       },
       "project": "terraform-aws-eks",
-      "resolution_rate": 99.23,
+      "resolution_rate": 98.47,
       "routes": 0,
       "symbols": 8599,
       "unresolved_by_lang_kind": {
-        "hcl.calls": 1,
+        "hcl.calls": 11,
         "hcl.type_ref": 9
       }
     },
@@ -8403,28 +8412,28 @@
       "assertions": {
         "min_resolution_rate": 100
       },
-      "code_chunks": 828,
-      "files": 43,
+      "code_chunks": 962,
+      "files": 56,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 893,
+      "internal_edges": 1067,
       "internal_unresolved": 0,
       "languages": {
         "javascript": 1,
         "json": 6,
         "markdown": 1,
-        "typescript": 35
+        "typescript": 48
       },
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "perf": {
-        "end_ws_mb": 417,
-        "files_per_sec": 14,
-        "index_duration_ms": 3106
+        "end_ws_mb": 68,
+        "files_per_sec": 11,
+        "index_duration_ms": 4934
       },
       "project": "ts-nestjs-realworld",
       "resolution_rate": 100.0,
       "routes": 21,
-      "symbols": 361,
+      "symbols": 456,
       "unresolved_by_lang_kind": {}
     },
     {
@@ -8495,43 +8504,43 @@
       "assertions": {
         "min_resolution_rate": 98
       },
-      "code_chunks": 18219,
+      "code_chunks": 19365,
       "files": 1255,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 16743,
+      "internal_edges": 16700,
       "internal_unresolved": 250,
       "languages": {
         "css": 4,
         "dockerfile": 1,
         "javascript": 7,
-        "json": 230,
+        "json": 237,
         "markdown": 19,
         "mdx": 26,
         "prisma": 10,
         "shell": 2,
         "sql": 114,
         "toml": 1,
-        "typescript": 686,
+        "typescript": 766,
         "xml": 63,
         "yaml": 5
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 481,
-        "files_per_sec": 130,
-        "index_duration_ms": 8981
+        "end_ws_mb": 124,
+        "files_per_sec": 36,
+        "index_duration_ms": 34976
       },
       "project": "ts-rallly",
       "resolution_rate": 98.53,
       "routes": 18,
       "symbols": 8765,
       "unresolved_by_lang_kind": {
-        "mdx.calls": 129,
+        "mdx.calls": 121,
         "sql.type_ref": 24,
-        "typescript.calls": 40,
-        "typescript.instantiates": 11,
-        "typescript.type_ref": 41
+        "typescript.calls": 35,
+        "typescript.instantiates": 9,
+        "typescript.type_ref": 61
       }
     },
     {
@@ -9063,43 +9072,43 @@
       "assertions": {
         "min_resolution_rate": 99
       },
-      "code_chunks": 30763,
+      "code_chunks": 35058,
       "files": 1772,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 23864,
-      "internal_unresolved": 194,
+      "internal_edges": 23871,
+      "internal_unresolved": 198,
       "languages": {
         "css": 13,
         "dockerfile": 1,
         "html": 8,
-        "javascript": 8,
-        "json": 141,
+        "javascript": 10,
+        "json": 142,
         "markdown": 132,
         "nginx": 1,
         "scss": 4,
         "shell": 1,
-        "typescript": 659,
-        "vue": 628,
+        "typescript": 774,
+        "vue": 661,
         "xml": 21,
         "yaml": 4
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 308,
-        "files_per_sec": 33,
-        "index_duration_ms": 48513
+        "end_ws_mb": 115,
+        "files_per_sec": 26,
+        "index_duration_ms": 67006
       },
       "project": "vue-vben-admin",
-      "resolution_rate": 99.19,
+      "resolution_rate": 99.18,
       "routes": 0,
       "symbols": 17212,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 44,
-        "typescript.instantiates": 10,
-        "typescript.type_ref": 42,
-        "vue.calls": 59,
-        "vue.type_ref": 3
+        "typescript.calls": 47,
+        "typescript.instantiates": 16,
+        "typescript.type_ref": 65,
+        "vue.calls": 62,
+        "vue.type_ref": 8
       }
     },
     {

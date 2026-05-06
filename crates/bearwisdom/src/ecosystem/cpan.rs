@@ -31,10 +31,12 @@ impl Ecosystem for CpanEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("perl"),
-        ])
+        // Project deps via `cpanfile`. A bare directory of `.pl`/`.pm`
+        // files with no manifest can't be resolved against external
+        // CPAN distributions — `local::lib` install paths only become
+        // useful once cpanfile lists what to look for. Dropping the
+        // LanguagePresent shotgun is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
         discover_perl_externals(ctx.project_root)
@@ -70,6 +72,31 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<CpanEcosystem>> = OnceLock::new();
     LOCATOR.get_or_init(|| Arc::new(CpanEcosystem)).clone()
+}
+
+// ===========================================================================
+// Manifest reader
+// ===========================================================================
+
+/// Surfaces `cpanfile` `requires` directives in
+/// `ProjectContext.manifests[ManifestKind::Cpan]`.
+pub struct CpanfileManifest;
+
+impl crate::ecosystem::manifest::ManifestReader for CpanfileManifest {
+    fn kind(&self) -> crate::ecosystem::manifest::ManifestKind {
+        crate::ecosystem::manifest::ManifestKind::Cpan
+    }
+
+    fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
+        let cpanfile = project_root.join("cpanfile");
+        if !cpanfile.is_file() { return None }
+        let content = std::fs::read_to_string(&cpanfile).ok()?;
+        let deps = parse_cpanfile_requires(&content);
+        if deps.is_empty() { return None }
+        let mut data = crate::ecosystem::manifest::ManifestData::default();
+        data.dependencies = deps.into_iter().collect();
+        Some(data)
+    }
 }
 
 pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {

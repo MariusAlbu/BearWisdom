@@ -69,12 +69,12 @@ impl Ecosystem for NugetEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("csharp"),
-            EcosystemActivation::LanguagePresent("fsharp"),
-            EcosystemActivation::LanguagePresent("vbnet"),
-        ])
+        // Project deps via `*.csproj` / `*.fsproj` / `*.vbproj` (or
+        // `Directory.Packages.props`). The .NET runtime + BCL belong to
+        // `dotnet-stdlib`; nuget only resolves declared NuGet package
+        // refs. Dropping the LanguagePresent shotgun is correct per the
+        // trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     // NuGet is metadata-only: no source dep roots, no walking. Return empty

@@ -33,10 +33,11 @@ impl Ecosystem for LuarocksEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("lua"),
-        ])
+        // Project deps via a `*.rockspec`. A bare directory of `.lua`
+        // files with no rockspec can't be resolved against external
+        // LuaRocks coordinates, so dropping the LanguagePresent shotgun
+        // is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
         discover_lua_externals(ctx.project_root)

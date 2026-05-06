@@ -42,10 +42,11 @@ impl Ecosystem for NimbleEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("nim"),
-        ])
+        // Project deps via `*.nimble`. A bare directory of `.nim` files
+        // with no `<pkg>.nimble` can't be resolved against external
+        // Nimble coordinates, so dropping the LanguagePresent shotgun
+        // is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
@@ -88,6 +89,28 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<NimbleEcosystem>> = OnceLock::new();
     LOCATOR.get_or_init(|| Arc::new(NimbleEcosystem)).clone()
+}
+
+// ===========================================================================
+// Manifest reader
+// ===========================================================================
+
+/// Surfaces `*.nimble` `requires` declarations in
+/// `ProjectContext.manifests[ManifestKind::Nimble]`.
+pub struct NimbleManifest;
+
+impl crate::ecosystem::manifest::ManifestReader for NimbleManifest {
+    fn kind(&self) -> crate::ecosystem::manifest::ManifestKind {
+        crate::ecosystem::manifest::ManifestKind::Nimble
+    }
+
+    fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
+        let deps = parse_nimble_requires(project_root);
+        if deps.is_empty() { return None }
+        let mut data = crate::ecosystem::manifest::ManifestData::default();
+        data.dependencies = deps.into_iter().collect();
+        Some(data)
+    }
 }
 
 // ===========================================================================

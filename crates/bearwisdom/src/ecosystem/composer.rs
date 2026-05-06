@@ -46,10 +46,11 @@ impl Ecosystem for ComposerEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("php"),
-        ])
+        // Project deps via `composer.json`. A bare directory of `.php`
+        // files with no manifest can't be resolved against external
+        // Packagist coordinates, so dropping the LanguagePresent shotgun
+        // is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

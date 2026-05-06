@@ -350,6 +350,13 @@ pub(crate) fn manifest_kinds_for_ecosystem(id: EcosystemId) -> &'static [Manifes
         "opam" => &[ManifestKind::Opam],
         "luarocks" => &[ManifestKind::Rockspec],
         "zig-pkg" => &[ManifestKind::ZigZon],
+        "puppet-forge" => &[ManifestKind::Puppet],
+        "cabal" => &[ManifestKind::Cabal],
+        "cpan" => &[ManifestKind::Cpan],
+        "nimble" => &[ManifestKind::Nimble],
+        "psgallery" => &[ManifestKind::Psd1],
+        "bazel-central-registry" => &[ManifestKind::ModuleBazel],
+        "tf-registry" => &[ManifestKind::Terraform],
         _ => &[],
     }
 }

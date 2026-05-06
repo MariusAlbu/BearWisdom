@@ -50,10 +50,11 @@ impl Ecosystem for PubEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("dart"),
-        ])
+        // Project deps via `pubspec.yaml`. A bare directory of `.dart`
+        // files with no manifest can't be resolved against external
+        // pub.dev coordinates, so dropping the LanguagePresent shotgun
+        // is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

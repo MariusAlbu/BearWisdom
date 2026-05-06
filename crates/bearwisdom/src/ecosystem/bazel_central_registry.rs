@@ -14,7 +14,7 @@
 // `ext:bazel-builtins:env.bzl` so chain walkers produce real resolved edges
 // for env.expect.that_str / that_collection / that_int / that_bool patterns.
 //
-// Activation: Any([ManifestMatch, LanguagePresent("starlark")]).
+// Activation: ManifestMatch on MODULE.bazel / WORKSPACE.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -83,10 +83,12 @@ impl Ecosystem for BazelCentralRegistryEcosystem {
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("starlark"),
-        ])
+        // Project deps via `MODULE.bazel` (bzlmod) or legacy `WORKSPACE` /
+        // `WORKSPACE.bazel`. A directory of `.bzl` / `BUILD` files with
+        // neither manifest can't be resolved against external Bazel
+        // Central Registry modules, so dropping the LanguagePresent
+        // shotgun is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
@@ -121,6 +123,46 @@ impl ExternalSourceLocator for BazelCentralRegistryEcosystem {
 
     fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<ParsedFile>> {
         Some(vec![synth_builtin_rules(), synth_ctx_api(), synth_env_api()])
+    }
+}
+
+// ===========================================================================
+// Manifest reader
+// ===========================================================================
+
+/// Surfaces bzlmod (`MODULE.bazel`) and legacy (`WORKSPACE` / `WORKSPACE.bazel`)
+/// dep declarations in `ProjectContext.manifests[ManifestKind::ModuleBazel]`.
+pub struct ModuleBazelManifest;
+
+impl crate::ecosystem::manifest::ManifestReader for ModuleBazelManifest {
+    fn kind(&self) -> crate::ecosystem::manifest::ManifestKind {
+        crate::ecosystem::manifest::ManifestKind::ModuleBazel
+    }
+
+    fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
+        let mut data = crate::ecosystem::manifest::ManifestData::default();
+
+        let module_bazel = project_root.join("MODULE.bazel");
+        if module_bazel.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&module_bazel) {
+                for dep in extract_bzlmod_deps(&content) {
+                    data.dependencies.insert(dep);
+                }
+            }
+        }
+
+        for ws in ["WORKSPACE", "WORKSPACE.bazel"] {
+            let path = project_root.join(ws);
+            if path.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    for dep in extract_workspace_deps(&content) {
+                        data.dependencies.insert(dep);
+                    }
+                }
+            }
+        }
+
+        if data.dependencies.is_empty() { None } else { Some(data) }
     }
 }
 

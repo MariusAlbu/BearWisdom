@@ -123,7 +123,7 @@ fn resolve_qualified_library<'a>(
     // First try the bare module — covers single-segment library names.
     if let Some(m) = module {
         if !m.ends_with(".robot") && !m.ends_with(".resource") {
-            if is_library_import(file_ctx, m) || predicates::is_robot_builtin_library(m) {
+            if is_library_import(file_ctx, m) {
                 return Some((m.to_string(), target));
             }
         }
@@ -144,9 +144,7 @@ fn resolve_qualified_library<'a>(
                     composite.push('.');
                     composite.push_str(seg);
                     consumed = idx + 1;
-                    if is_library_import(file_ctx, &composite)
-                        || predicates::is_robot_builtin_library(&composite)
-                    {
+                    if is_library_import(file_ctx, &composite) {
                         return Some((composite, &target[consumed..]));
                     }
                 } else if ch == ' ' || ch == '{' {
@@ -160,7 +158,7 @@ fn resolve_qualified_library<'a>(
     // single-prefix form).
     if module.is_none() {
         if let Some(prefix) = qualified_library_prefix(target) {
-            if is_library_import(file_ctx, prefix) || predicates::is_robot_builtin_library(prefix) {
+            if is_library_import(file_ctx, prefix) {
                 let suffix = &target[prefix.len() + 1..];
                 return Some((prefix.to_string(), suffix));
             }
@@ -206,6 +204,20 @@ impl LanguageResolver for RobotResolver {
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         let mut imports = Vec::new();
+
+        // Robot Framework auto-imports `BuiltIn` for every test/resource
+        // file per spec — no explicit `Library  BuiltIn` is required.
+        // Seed the entry unconditionally so qualified calls like
+        // `BuiltIn.Should Be Equal` route through `is_library_import` even
+        // when the project doesn't vendor `BuiltIn.py`. The
+        // `robot_library_map` seam still binds the entry to a real `.py`
+        // file when one is present in the project tree (used by Step 4.5).
+        imports.push(ImportEntry {
+            imported_name: "BuiltIn".to_string(),
+            module_path: Some("BuiltIn".to_string()),
+            alias: None,
+            is_wildcard: false,
+        });
 
         for r in &file.refs {
             if r.kind != EdgeKind::Imports {

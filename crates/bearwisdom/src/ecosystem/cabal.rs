@@ -48,10 +48,11 @@ impl Ecosystem for CabalEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("haskell"),
-        ])
+        // Project deps via `*.cabal` `build-depends`. A bare directory of
+        // `.hs` files with no manifest can't be resolved against external
+        // Hackage coordinates — no constraints, no package set. Dropping
+        // the LanguagePresent shotgun is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
@@ -94,6 +95,30 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<CabalEcosystem>> = OnceLock::new();
     LOCATOR.get_or_init(|| Arc::new(CabalEcosystem)).clone()
+}
+
+// ===========================================================================
+// Manifest reader
+// ===========================================================================
+
+/// Surfaces `*.cabal` `build-depends` entries in
+/// `ProjectContext.manifests[ManifestKind::Cabal]`. The Stack flow
+/// (`stack.yaml`) defers to the same `.cabal` build-depends list — Stack
+/// just adds an alternative storage location, not a different dep source.
+pub struct CabalManifest;
+
+impl crate::ecosystem::manifest::ManifestReader for CabalManifest {
+    fn kind(&self) -> crate::ecosystem::manifest::ManifestKind {
+        crate::ecosystem::manifest::ManifestKind::Cabal
+    }
+
+    fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
+        let deps = parse_cabal_build_depends(project_root);
+        if deps.is_empty() { return None }
+        let mut data = crate::ecosystem::manifest::ManifestData::default();
+        data.dependencies = deps.into_iter().collect();
+        Some(data)
+    }
 }
 
 // ===========================================================================

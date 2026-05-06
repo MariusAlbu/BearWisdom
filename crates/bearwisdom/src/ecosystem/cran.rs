@@ -48,10 +48,12 @@ impl Ecosystem for CranEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("r"),
-        ])
+        // Project deps via `DESCRIPTION` (or renv.lock). A bare directory
+        // of `.R`/`.Rmd` files with no manifest can't be resolved against
+        // external CRAN coordinates — the R resolver also needs DESCRIPTION
+        // imports to classify `pkg::fn` refs as external. Dropping the
+        // LanguagePresent shotgun is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

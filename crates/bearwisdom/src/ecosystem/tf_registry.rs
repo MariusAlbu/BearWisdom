@@ -15,8 +15,10 @@
 //      can be resolved by walking `.terraform/modules/<key>/` after `terraform
 //      init` has already been run. We walk those directories for `.tf` files.
 //
-// Activation: Any([ManifestMatch, LanguagePresent("hcl")]) — fires for any
-// project with a `*.tf` file or a `terraform.tfvars`.
+// Activation: ManifestMatch on any `.tf` file under the project root.
+// `.tf` presence itself is the manifest signal — Terraform projects don't
+// have a separate manifest format. The reader unions `required_providers`
+// sources + non-local `module` sources into the dep set.
 //
 // We do NOT call `terraform init` at index time. If `.terraform/` is absent,
 // we fall back to the bundled synthetic symbols only.
@@ -85,10 +87,12 @@ impl Ecosystem for TfRegistryEcosystem {
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("hcl"),
-        ])
+        // ManifestMatch on `ManifestKind::Terraform` — fires whenever the
+        // project contains at least one `.tf` file. The `TerraformManifest`
+        // reader unions `required_providers` sources and non-local module
+        // sources into the dep set so downstream consumers can classify
+        // refs against declared providers.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
@@ -567,159 +571,98 @@ fn build_parsed_file(virtual_path: String, symbols: Vec<ExtractedSymbol>) -> Par
 }
 
 // =============================================================================
-// Tests
+// Manifest reader
+// =============================================================================
+
+/// Surfaces Terraform provider + module declarations in
+/// `ProjectContext.manifests[ManifestKind::Terraform]`.
+///
+/// Terraform doesn't have a single dedicated manifest file — `.tf` files
+/// themselves carry both the source code and the `required_providers` /
+/// `module` declarations the resolver needs. This reader walks the project
+/// root for `.tf` files (depth-bounded) and unions every `required_providers`
+/// source value plus every non-local `module { source = ... }` value into
+/// the returned `ManifestData.dependencies`.
+///
+/// The reader returns `Some` even when no providers/modules are declared,
+/// as long as at least one `.tf` file exists — `.tf` presence IS the
+/// activation signal, and the resolver still wants the bundled provider
+/// synthetics in that case. Returns `None` for projects with zero `.tf`
+/// files so the ecosystem stays inactive on non-Terraform repos.
+pub struct TerraformManifest;
+
+impl crate::ecosystem::manifest::ManifestReader for TerraformManifest {
+    fn kind(&self) -> crate::ecosystem::manifest::ManifestKind {
+        crate::ecosystem::manifest::ManifestKind::Terraform
+    }
+
+    fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
+        let mut deps: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let saw_tf = collect_tf_declarations(project_root, &mut deps, 0);
+        if !saw_tf { return None }
+        let mut data = crate::ecosystem::manifest::ManifestData::default();
+        data.dependencies = deps;
+        Some(data)
+    }
+}
+
+/// Walk the project tree (depth-bounded) for `.tf` files. For each file,
+/// extract `required_providers` source values and non-local `module`
+/// sources and insert them into `out`. Returns `true` iff at least one
+/// `.tf` file was visited.
+fn collect_tf_declarations(
+    dir: &Path,
+    out: &mut std::collections::HashSet<String>,
+    depth: u32,
+) -> bool {
+    if depth > 6 { return false }
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    let mut saw_tf = false;
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, ".terraform" | ".git" | "node_modules" | "vendor")
+                    || name.starts_with('.')
+                {
+                    continue;
+                }
+            }
+            if collect_tf_declarations(&path, out, depth + 1) {
+                saw_tf = true;
+            }
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".tf") { continue }
+            saw_tf = true;
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            for p in extract_required_providers(&content) { out.insert(p); }
+            for m in extract_module_sources(&content) { out.insert(m); }
+        }
+    }
+    saw_tf
+}
+
+// =============================================================================
+// Test wrappers (private helpers exposed for sibling test file)
 // =============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ecosystem_identity() {
-        let eco = TfRegistryEcosystem;
-        assert_eq!(eco.id(), ID);
-        assert_eq!(Ecosystem::kind(&eco), EcosystemKind::Package);
-        assert_eq!(Ecosystem::languages(&eco), &["hcl"]);
-    }
-
-    #[test]
-    fn legacy_locator_tag() {
-        assert_eq!(ExternalSourceLocator::ecosystem(&TfRegistryEcosystem), "tf-registry");
-    }
-
-    #[test]
-    fn extract_required_providers_from_versions_tf() {
-        let src = r#"
-terraform {
-  required_version = ">= 1.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 6.28"
-    }
-    random = {
-      source = "hashicorp/random"
-    }
-  }
-}
-"#;
-        let providers = extract_required_providers(src);
-        assert!(
-            providers.contains(&"hashicorp/aws".to_string()),
-            "expected hashicorp/aws in {providers:?}"
-        );
-        assert!(
-            providers.contains(&"hashicorp/random".to_string()),
-            "expected hashicorp/random in {providers:?}"
-        );
-        assert_eq!(providers.len(), 2);
-    }
-
-    #[test]
-    fn extract_module_sources_skips_local_paths() {
-        let src = r#"
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "5.8.1"
+pub(super) fn _test_synthesize_bundled_providers() -> Vec<ParsedFile> {
+    synthesize_bundled_providers()
 }
 
-module "local_util" {
-  source = "./modules/util"
-}
-"#;
-        let sources = extract_module_sources(src);
-        assert!(
-            sources.contains(&"terraform-aws-modules/vpc/aws".to_string()),
-            "expected registry module in {sources:?}"
-        );
-        // Local paths must be excluded
-        assert!(
-            !sources.iter().any(|s| s.starts_with('.')),
-            "local path leaked into module sources: {sources:?}"
-        );
-        assert_eq!(sources.len(), 1);
-    }
-
-    #[test]
-    fn scan_tf_top_level_resources_extracts_resource_and_data() {
-        let src = r#"
-resource "aws_vpc" "this" {
-  cidr_block = "10.0.0.0/16"
+#[cfg(test)]
+pub(super) fn _test_parse_two_labels(s: &str) -> Option<(&str, &str)> {
+    parse_two_labels(s)
 }
 
-data "aws_ami" "latest" {
-  filter { }
+#[cfg(test)]
+pub(super) fn _test_extract_source_value(line: &str) -> Option<&str> {
+    extract_source_value(line)
 }
 
-module "vpc" {
-  source = "terraform-aws-modules/vpc/aws"
-}
-
-output "vpc_id" {
-  value = aws_vpc.this.id
-}
-"#;
-        let syms = scan_tf_top_level_resources(src);
-        assert!(syms.contains(&"aws_vpc.this".to_string()), "{syms:?}");
-        assert!(syms.contains(&"data.aws_ami.latest".to_string()), "{syms:?}");
-        assert!(syms.contains(&"module.vpc".to_string()), "{syms:?}");
-        assert!(syms.contains(&"output.vpc_id".to_string()), "{syms:?}");
-    }
-
-    #[test]
-    fn synthesize_bundled_providers_covers_top3() {
-        let files = synthesize_bundled_providers();
-        // Must have one file per provider (aws, google, azurerm)
-        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
-        assert!(
-            paths.iter().any(|p| p.contains(":aws/")),
-            "aws provider missing: {paths:?}"
-        );
-        assert!(
-            paths.iter().any(|p| p.contains(":google/")),
-            "google provider missing: {paths:?}"
-        );
-        assert!(
-            paths.iter().any(|p| p.contains(":azurerm/")),
-            "azurerm provider missing: {paths:?}"
-        );
-        // Spot-check a few known resources exist as symbols
-        let all_symbols: Vec<&str> = files
-            .iter()
-            .flat_map(|f| f.symbols.iter().map(|s| s.name.as_str()))
-            .collect();
-        for expected in ["aws_vpc", "aws_s3_bucket", "google_compute_instance", "azurerm_resource_group"] {
-            assert!(
-                all_symbols.contains(&expected),
-                "symbol {expected} missing from bundled synthetics"
-            );
-        }
-    }
-
-    #[test]
-    fn bundled_providers_no_empty_symbols() {
-        for pf in synthesize_bundled_providers() {
-            assert!(!pf.symbols.is_empty(), "provider file {} has no symbols", pf.path);
-            for sym in &pf.symbols {
-                assert!(!sym.name.is_empty(), "empty symbol name in {}", pf.path);
-                assert_eq!(sym.kind, SymbolKind::Class, "expected Class kind for {}", sym.name);
-            }
-        }
-    }
-
-    #[test]
-    fn parse_two_labels_handles_aligned_quotes() {
-        assert_eq!(
-            parse_two_labels(r#""aws_vpc" "this" {"#),
-            Some(("aws_vpc", "this"))
-        );
-    }
-
-    #[test]
-    fn extract_source_value_handles_extra_spaces() {
-        assert_eq!(extract_source_value(r#"source  =  "hashicorp/aws""#), Some("hashicorp/aws"));
-        assert_eq!(extract_source_value(r#"source = """#), None);
-        assert_eq!(extract_source_value(r#"version = "1.0""#), None);
-    }
-}
+#[cfg(test)]
+#[path = "tf_registry_tests.rs"]
+mod tests;

@@ -46,10 +46,11 @@ impl Ecosystem for OpamEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("ocaml"),
-        ])
+        // Project deps via an `*.opam` file (or `dune-project`). A bare
+        // directory of `.ml` files with no manifest can't be resolved
+        // against external opam coordinates, so dropping the
+        // LanguagePresent shotgun is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
         discover_ocaml_externals(ctx.project_root)

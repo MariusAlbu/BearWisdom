@@ -138,10 +138,17 @@ impl LanguageResolver for RResolver {
             }
         }
 
-        // Namespace-qualified call to a known external package (e.g. dplyr::filter).
-        // Skip index lookup — the function is defined in the package, not the project.
+        // Namespace-qualified call to a declared external package (e.g.
+        // `dplyr::filter`). The R FileContext is built with wildcard
+        // ImportEntry rows for every DESCRIPTION dep + every `library()` /
+        // `require()` call, so checking `imports` is the same as asking
+        // "did the project declare this package".
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if predicates::is_r_package(module) {
+            if file_ctx
+                .imports
+                .iter()
+                .any(|i| i.module_path.as_deref() == Some(module.as_str()))
+            {
                 return None;
             }
         }
@@ -162,9 +169,16 @@ impl LanguageResolver for RResolver {
             return Some(target.clone());
         }
 
-        // Namespace-qualified ref to a known R package (pkg::fn).
+        // Namespace-qualified ref to a declared R package (`pkg::fn`).
+        // `file_ctx.imports` carries every DESCRIPTION dep + library() call,
+        // so the namespace bucket falls out of the same data the resolver
+        // used above.
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if predicates::is_r_package(module) {
+            if file_ctx
+                .imports
+                .iter()
+                .any(|i| i.module_path.as_deref() == Some(module.as_str()))
+            {
                 return Some(module.clone());
             }
         }

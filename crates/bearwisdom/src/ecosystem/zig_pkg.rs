@@ -50,10 +50,11 @@ impl Ecosystem for ZigPkgEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("zig"),
-        ])
+        // Project deps via `build.zig.zon`. The Zig toolchain (stdlib)
+        // belongs to `zig-std`; this ecosystem only resolves declared
+        // third-party deps. Dropping the LanguagePresent shotgun is
+        // correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
         discover_zig_externals(ctx.project_root)

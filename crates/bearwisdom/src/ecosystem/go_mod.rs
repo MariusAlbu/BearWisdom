@@ -46,10 +46,11 @@ impl Ecosystem for GoModEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("go"),
-        ])
+        // Project deps via `go.mod`. The Go module cache layout is
+        // version-pinned per dep; without a `go.mod` there's nothing to
+        // pin against. Dropping the LanguagePresent shotgun is correct
+        // per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
