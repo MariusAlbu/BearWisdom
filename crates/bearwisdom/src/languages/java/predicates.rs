@@ -94,136 +94,18 @@ pub(super) fn effective_target_is_external(
     is_external_java_namespace(target, project_ctx)
 }
 
-/// Java built-in methods and types always in scope without import (java.lang.*
-/// plus common Collection, Stream, and test framework method names).
-///
-/// The root check covers `System.out.println` → root = "System".
-/// The method name check catches instance-method calls like `list.add(x)` where
-/// the receiver type is a stdlib Collection — these will never be in the project index.
-pub(super) fn is_java_builtin(name: &str) -> bool {
-    // Extract the object prefix for dotted names like `System.out.println`.
-    let root = name.split('.').next().unwrap_or(name);
+
+/// Java primitive types and language-level keywords that the extractor
+/// emits as type_identifier nodes. Filtered at extract time to avoid
+/// turning every `int`/`var`/etc. into a TypeRef. Stdlib types
+/// (String, Integer, Object, exception classes, Stream, Collection)
+/// flow through and resolve via the jdk_src walker.
+pub(super) fn is_java_primitive_type(name: &str) -> bool {
     matches!(
-        root,
-        // Contextual keyword (Java 10+): `var x = ...` — the extractor emits
-        // this as a type_identifier when used as a local var type inference.
-        "var"
-            // java.lang types always visible
-            | "System"
-            | "String"
-            | "Integer"
-            | "Long"
-            | "Double"
-            | "Float"
-            | "Boolean"
-            | "Byte"
-            | "Short"
-            | "Character"
-            | "Object"
-            | "Class"
-            | "Enum"
-            | "Record"
-            | "Math"
-            | "StrictMath"
-            | "StringBuilder"
-            | "StringBuffer"
-            | "Thread"
-            | "Runnable"
-            | "Exception"
-            | "RuntimeException"
-            | "Error"
-            // java.lang exception hierarchy (always visible, never imported)
-            | "Throwable"
-            | "IllegalArgumentException"
-            | "IllegalStateException"
-            | "NullPointerException"
-            | "IndexOutOfBoundsException"
-            | "ArrayIndexOutOfBoundsException"
-            | "StringIndexOutOfBoundsException"
-            | "NumberFormatException"
-            | "ClassCastException"
-            | "ClassNotFoundException"
-            | "NoSuchMethodException"
-            | "NoSuchFieldException"
-            | "ArithmeticException"
-            | "UnsupportedOperationException"
-            | "InterruptedException"
-            | "SecurityException"
-            | "OutOfMemoryError"
-            | "StackOverflowError"
-            | "AssertionError"
-            | "NoClassDefFoundError"
-            | "Iterable"
-            | "Comparable"
-            | "Cloneable"
-            | "AutoCloseable"
-            | "Override"
-            | "Deprecated"
-            | "SuppressWarnings"
-            // Pseudo-builtin calls
-            | "super"
-            | "this"
-            // Object methods (always available without import)
-            | "toString"
-            | "equals"
-            | "hashCode"
-            | "getClass"
-            | "notify"
-            | "notifyAll"
-            | "wait"
-            | "clone"
-            // String instance methods
-            | "length"
-            | "charAt"
-            | "substring"
-            | "indexOf"
-            | "lastIndexOf"
-            | "contains"
-            | "startsWith"
-            | "endsWith"
-            | "replace"
-            | "replaceAll"
-            | "split"
-            | "trim"
-            | "toLowerCase"
-            | "toUpperCase"
-            | "isEmpty"
-            | "toCharArray"
-            | "valueOf"
-            // Collection / List / Map / Set methods (java.util, always imported)
-            | "add"
-            | "remove"
-            | "size"
-            | "clear"
-            | "iterator"
-            | "toArray"
-            | "stream"
-            | "forEach"
-            | "get"
-            | "set"
-            | "put"
-            | "containsKey"
-            | "containsValue"
-            | "keySet"
-            | "values"
-            | "entrySet"
-            // Stream methods (java.util.stream)
-            | "map"
-            | "filter"
-            | "reduce"
-            | "collect"
-            | "findFirst"
-            | "findAny"
-            | "anyMatch"
-            | "allMatch"
-            | "noneMatch"
-            | "count"
-            | "sorted"
-            | "distinct"
-            | "limit"
-            | "skip"
-            | "flatMap"
-            | "peek"
-            | "toList"
+        name,
+        "byte" | "short" | "int" | "long" | "float" | "double"
+        | "boolean" | "char" | "void"
+        // Contextual keyword (Java 10+) — local-variable type inference.
+        | "var"
     )
 }

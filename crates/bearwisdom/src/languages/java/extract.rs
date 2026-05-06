@@ -413,13 +413,13 @@ fn scan_all_type_identifiers(
     sym_idx: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    use super::predicates::is_java_builtin;
+    use super::predicates::is_java_primitive_type;
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "type_identifier" && child.is_named() {
             let name = helpers::node_text(child, src);
-            if !name.is_empty() && !is_java_builtin(&name) {
+            if !name.is_empty() && !is_java_primitive_type(&name) {
                 refs.push(ExtractedRef {
                     source_symbol_index: sym_idx,
                     target_name: name,

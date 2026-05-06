@@ -349,31 +349,6 @@ fn test_falls_back_for_unknown() {
 }
 
 #[test]
-fn test_infer_stdlib_external() {
-    use crate::indexer::resolve::engine::RefContext;
-
-    let file = make_file(
-        "src/Test.java",
-        "java",
-        vec![make_symbol("Test", "com.app.Test", SymbolKind::Class, Visibility::Public, Some("com.app"))],
-        vec![make_ref(0, "System", EdgeKind::TypeRef, 5)],
-    );
-
-    let resolver = JavaResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[0],
-        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
-    };
-
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-    assert!(ns.is_some(), "System should be inferred as external");
-    assert_eq!(ns.unwrap(), "java.lang");
-}
-
-#[test]
 fn test_build_file_context_extracts_package() {
     let file = make_file(
         "src/Foo.java",

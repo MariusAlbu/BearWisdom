@@ -113,6 +113,28 @@ impl LanguageResolver for JavaResolver {
             return None;
         }
 
+        // Bare-name walker lookup. jdk_src + maven (sources jars) emit real
+        // symbols for java.lang types (String, Integer, Object), exception
+        // hierarchy, Object methods, Stream / Collection / List APIs, etc.
+        // ext:-only filter so chain walker / scope / same-package paths
+        // still win for project symbols.
+        if !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "java_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         // Chain-aware resolution: dispatch to JavaChecker.
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = JavaChecker.resolve_chain(
@@ -381,10 +403,6 @@ fn infer_external_inner(
             }
         }
         return None;
-    }
-
-    if predicates::is_java_builtin(target) {
-        return Some("java.lang".to_string());
     }
 
     for import in &file_ctx.imports {
