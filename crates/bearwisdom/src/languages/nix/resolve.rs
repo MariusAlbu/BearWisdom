@@ -19,7 +19,6 @@
 //   4. Nix built-ins (builtins.*, lib.*): mark external.
 // =============================================================================
 
-use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -76,8 +75,16 @@ impl LanguageResolver for NixResolver {
             return None;
         }
 
-        // Skip Nix built-in attribute paths.
-        if predicates::is_nix_builtin(target) {
+        // Anything under the well-known top-level Nix namespaces is a
+        // platform attribute path that doesn't live in user source.
+        // (Specific names within these namespaces are also in keywords()
+        // so the engine classifies them; this prefix check catches the
+        // long tail.)
+        if target.starts_with("builtins.")
+            || target.starts_with("lib.")
+            || target.starts_with("pkgs.")
+            || target.starts_with("config.")
+        {
             return None;
         }
 
@@ -129,6 +136,10 @@ impl LanguageResolver for NixResolver {
             return None;
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_nix_builtin)
+        // Bare names are classified by the engine's keywords() set; the
+        // builtins./lib./pkgs./config. prefix check above already short-
+        // circuits the namespace cases.
+        let _ = (file_ctx, ref_ctx, project_ctx);
+        None
     }
 }

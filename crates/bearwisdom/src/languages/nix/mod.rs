@@ -3,7 +3,6 @@
 pub mod keywords;
 pub mod extract;
 pub mod resolve;
-pub(crate) mod predicates;
 pub(crate) mod type_checker;
 
 #[cfg(test)]
@@ -58,9 +57,7 @@ impl LanguagePlugin for NixPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] {
-        &[]
-    }
+    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
     /// In Nix, curried application (`f a b`) parses as two nested
     /// `apply_expression` nodes. The extractor emits one ref per call site
