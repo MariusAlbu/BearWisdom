@@ -15,7 +15,11 @@
 //      workspace layouts)
 //   4. @types/node under node_modules/@types/node/ for Node.js globals.
 //
-// Activation: LanguagePresent ts / tsx / js / vue / svelte / angular / astro.
+// Activation: ManifestFieldContains on `tsconfig.json.compilerOptions.lib`
+// containing "DOM". Pure-Node TS projects with `lib: ["es2020"]` and no DOM
+// entry skip this ecosystem; browser-targeting projects (React, Vue, Svelte,
+// Angular, Astro) routinely declare DOM and activate. The trait doc cites
+// this as the canonical case for `ManifestFieldContains`.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -41,15 +45,11 @@ impl Ecosystem for TsLibDomEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::LanguagePresent("typescript"),
-            EcosystemActivation::LanguagePresent("tsx"),
-            EcosystemActivation::LanguagePresent("javascript"),
-            EcosystemActivation::LanguagePresent("vue"),
-            EcosystemActivation::LanguagePresent("svelte"),
-            EcosystemActivation::LanguagePresent("angular"),
-            EcosystemActivation::LanguagePresent("astro"),
-        ])
+        EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/tsconfig.json",
+            field_path: "compilerOptions.lib",
+            value: "DOM",
+        }
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

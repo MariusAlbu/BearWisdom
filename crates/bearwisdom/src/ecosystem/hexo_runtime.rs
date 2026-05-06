@@ -52,9 +52,21 @@ impl Ecosystem for HexoRuntimeEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
-        // Activate any time `.ejs` is present — narrow on locate_roots
-        // to projects that actually look like Hexo (config + helpers).
-        EcosystemActivation::LanguagePresent("ejs")
+        // Hexo is a project dep, not an EJS substrate. Gate on the project's
+        // package.json declaring `hexo` in dependencies or devDependencies.
+        // EJS-only projects (Express templates, Adonis views, ...) skip this.
+        EcosystemActivation::Any(&[
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/package.json",
+                field_path: "dependencies",
+                value: "hexo",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/package.json",
+                field_path: "devDependencies",
+                value: "hexo",
+            },
+        ])
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

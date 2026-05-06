@@ -51,7 +51,30 @@ impl Ecosystem for JinjaAnsibleRuntimeEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::LanguagePresent("jinja")
+        // Two activation paths matching this ecosystem's two consumers:
+        //   * `LanguagePresent("jinja")` — Jinja2 is a substrate for every
+        //     `.j2`/`.jinja` template. Flask, Django, Pelican, Salt, Hexo's
+        //     Jinja-flavoured fork all benefit from the upstream filter set.
+        //   * `ansible.cfg` — Ansible projects' canonical marker. Playbooks
+        //     are `.yml` (typed `yaml`, not `jinja`), so the substrate path
+        //     doesn't fire on Ansible-only repos. The `.cfg` extension hits
+        //     the evaluator's plain-text substring branch; `[defaults]` is
+        //     the section every ansible.cfg installs ship as a template, and
+        //     a substring match on `ansible_managed` covers configs that
+        //     drop the section header in favour of inline keys.
+        EcosystemActivation::Any(&[
+            EcosystemActivation::LanguagePresent("jinja"),
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/ansible.cfg",
+                field_path: "",
+                value: "[defaults]",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/ansible.cfg",
+                field_path: "",
+                value: "ansible_managed",
+            },
+        ])
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

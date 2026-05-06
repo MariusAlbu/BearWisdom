@@ -33,11 +33,41 @@ impl Ecosystem for AndroidSdkEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
+        // Android is a project dep, not a JVM substrate. The wide
+        // `LanguagePresent(kotlin/java)` guard fired on every Maven project
+        // including pure-JVM backends. Three concrete signals fully cover
+        // real-world Android projects: an `AndroidManifest.xml` anywhere in
+        // the tree (universal app marker), the Gradle `com.android.*` plugin
+        // family (apply plugin / plugins {} block, both DSLs), and the
+        // `compileSdk` field that only AGP recognizes.
         EcosystemActivation::All(&[
             EcosystemActivation::TransitiveOn(super::maven::ID),
             EcosystemActivation::Any(&[
-                EcosystemActivation::LanguagePresent("kotlin"),
-                EcosystemActivation::LanguagePresent("java"),
+                EcosystemActivation::ManifestFieldContains {
+                    manifest_glob: "**/AndroidManifest.xml",
+                    field_path: "",
+                    value: "<manifest",
+                },
+                EcosystemActivation::ManifestFieldContains {
+                    manifest_glob: "**/build.gradle",
+                    field_path: "",
+                    value: "com.android.",
+                },
+                EcosystemActivation::ManifestFieldContains {
+                    manifest_glob: "**/build.gradle.kts",
+                    field_path: "",
+                    value: "com.android.",
+                },
+                EcosystemActivation::ManifestFieldContains {
+                    manifest_glob: "**/build.gradle",
+                    field_path: "",
+                    value: "compileSdk",
+                },
+                EcosystemActivation::ManifestFieldContains {
+                    manifest_glob: "**/build.gradle.kts",
+                    field_path: "",
+                    value: "compileSdk",
+                },
             ]),
         ])
     }
