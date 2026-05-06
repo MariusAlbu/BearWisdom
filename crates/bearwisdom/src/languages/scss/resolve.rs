@@ -95,11 +95,6 @@ impl LanguageResolver for ScssResolver {
             }
         }
 
-        // Legacy safety net: kept until extractor migration fully settled.
-        if predicates::is_scss_builtin(target) {
-            return None;
-        }
-
         // Skip references into Sass built-in modules (sass:math, sass:color …).
         // These are module-qualified accesses like `math.$pi` or `math.div(…)`.
         if let Some(module) = &ref_ctx.extracted_ref.module {
@@ -199,6 +194,10 @@ impl LanguageResolver for ScssResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_scss_builtin)
+        // CSS / Sass runtime functions are classified via the engine's
+        // keywords() set populated from scss/keywords.rs. Names that
+        // exhaust resolve() and aren't in keywords() stay unresolved.
+        let _ = (file_ctx, ref_ctx, project_ctx);
+        None
     }
 }
