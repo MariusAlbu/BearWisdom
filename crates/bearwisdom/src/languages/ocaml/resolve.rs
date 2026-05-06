@@ -80,20 +80,18 @@ impl LanguageResolver for OcamlResolver {
             return None;
         }
 
-        // OCaml Stdlib is always in scope and not in the project index.
-        if predicates::is_ocaml_builtin(target) {
-            return None;
-        }
-
         engine::resolve_common("ocaml", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_ocaml_builtin)
+        // OCaml Stdlib classifies via the engine's keywords() set
+        // populated from ocaml/mod.rs::keywords(); opam walker emits
+        // real symbols for declared deps.
+        None
     }
 }

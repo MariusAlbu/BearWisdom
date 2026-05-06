@@ -18,7 +18,6 @@
 //   3. Name-only fallback: global by_name lookup with lower confidence.
 // =============================================================================
 
-use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -148,11 +147,9 @@ impl LanguageResolver for GleamResolver {
             return Some("builtin".to_string());
         }
 
-        // Stdlib function names (unqualified) are external.
-        if predicates::is_gleam_stdlib_function(target) {
-            return Some("gleam".to_string());
-        }
-
+        // Stdlib function names classify via the engine's keywords() set
+        // populated from gleam/mod.rs::keywords(); gleam_stdlib + hex
+        // walkers emit real symbols for declared deps.
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, |_| false)
     }
 }

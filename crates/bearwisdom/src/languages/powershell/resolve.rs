@@ -134,11 +134,6 @@ impl LanguageResolver for PowerShellResolver {
             return None;
         }
 
-        // PowerShell built-in cmdlets are never in the index.
-        if predicates::is_powershell_builtin(&ref_ctx.extracted_ref.target_name) {
-            return None;
-        }
-
         // Part 2: if the ref's qualifier variable is .NET-bound, skip the
         // project-index lookup entirely — the member won't be there.
         // This prevents a false match against any same-named project symbol
@@ -277,7 +272,12 @@ impl LanguageResolver for PowerShellResolver {
             return Some("cli".to_string());
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_powershell_builtin)
+        // PowerShell built-in cmdlets and language keywords classify via
+        // the engine's keywords() set populated from powershell/keywords.rs;
+        // powershell_stdlib + powershell_cmdlet_types walkers emit real
+        // symbols for installed module cmdlets.
+        let _ = (file_ctx, ref_ctx, project_ctx);
+        None
     }
 }
 

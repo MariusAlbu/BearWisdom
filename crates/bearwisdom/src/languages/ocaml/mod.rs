@@ -63,10 +63,43 @@ impl LanguagePlugin for OcamlPlugin {
 
     fn keywords(&self) -> &'static [&'static str] {
         &[
+            // Primitive types
             "int", "float", "bool", "char", "string", "unit",
             "bytes", "exn", "format",
             "list", "array", "option", "result",
             "int32", "int64", "nativeint",
+            // Stdlib I/O
+            "print_string", "print_endline", "print_int", "print_float",
+            "print_char", "print_newline",
+            "prerr_string", "prerr_endline",
+            "read_line", "read_int", "read_float",
+            "input_line", "output_string",
+            // Conversion
+            "string_of_int", "int_of_string",
+            "string_of_float", "float_of_string",
+            "string_of_bool", "bool_of_string",
+            "char_of_int", "int_of_char",
+            "float_of_int", "int_of_float",
+            // Control / pair
+            "ignore", "failwith", "invalid_arg", "raise", "assert",
+            "fst", "snd",
+            // Numeric primitives
+            "min", "max", "abs", "succ", "pred", "mod_float",
+            "sqrt", "exp", "log", "log10",
+            "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+            "ceil", "floor", "truncate",
+            // References
+            "ref", "incr", "decr", "not", "compare",
+            // Stdlib modules (always-in-scope roots)
+            "List", "Array", "String", "Bytes", "Buffer",
+            "Hashtbl", "Map", "Set", "Stack", "Queue", "Stream",
+            "Scanf", "Printf", "Format",
+            "Sys", "Unix", "Filename", "Arg", "Printexc",
+            "Lazy", "Fun", "Seq", "Option", "Result", "Either",
+            // Constructors
+            "Some", "None", "Ok", "Error",
+            // Literals
+            "true", "false",
         ]
     }
 

@@ -14,7 +14,6 @@
 
 pub mod extract;
 pub mod resolve;
-mod predicates;
 pub(crate) mod type_checker;
 
 #[cfg(test)]

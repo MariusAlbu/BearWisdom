@@ -66,10 +66,6 @@ impl LanguageResolver for PascalResolver {
             return None;
         }
 
-        if predicates::is_pascal_builtin(&ref_ctx.extracted_ref.target_name) {
-            return None;
-        }
-
         // Pascal is case-insensitive: check same-file with lowercased comparison
         // before delegating to resolve_common (which is case-sensitive).
         let target_lower = ref_ctx.extracted_ref.target_name.to_lowercase();
@@ -91,10 +87,13 @@ impl LanguageResolver for PascalResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_pascal_builtin)
+        // Pascal built-ins classify via the engine's keywords() set
+        // populated from pascal/keywords.rs; freepascal_runtime walker
+        // emits real symbols for installed RTL units.
+        None
     }
 }

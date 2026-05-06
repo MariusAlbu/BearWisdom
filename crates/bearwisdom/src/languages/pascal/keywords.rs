@@ -39,8 +39,22 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "Ord", "Chr", "Pred", "Succ",
     "Abs", "Round", "Trunc", "Frac", "Int",
     "Sqr", "Sqrt", "Sin", "Cos", "Ln", "Exp",
-    "Random", "Randomize",
+    "Random", "Randomize", "Ceil", "Floor",
     "Assert", "Halt", "Exit", "Break", "Continue",
+    // String / case helpers
+    "TrimLeft", "TrimRight", "UpperCase", "LowerCase",
+    "CompareStr", "CompareText",
+    // Filesystem helpers (SysUtils)
+    "FileExists", "DirectoryExists",
+    "ExtractFileName", "ExtractFilePath", "ExpandFileName",
+    "IncludeTrailingPathDelimiter",
+    // DateTime helpers
+    "Now", "Date", "Time", "FormatDateTime",
+    "EncodeDate", "DecodeDate",
+    // VCL Dialogs
+    "ShowMessage", "MessageDlg", "InputBox",
+    // VCL globals
+    "Application", "Screen", "Sender",
     // keywords used as references
     "Result", "Self", "inherited", "nil", "True", "False",
     // From former builtin_type_names:

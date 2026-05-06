@@ -4,6 +4,7 @@
 //! Uses a line scanner that understands clause/fact/rule structure.
 
 pub mod extract;
+pub mod keywords;
 
 mod predicates;
 pub(crate) mod type_checker;
@@ -59,9 +60,7 @@ impl LanguagePlugin for PrologPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] {
-        &[]
-    }
+    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::PrologResolver))

@@ -167,11 +167,15 @@ impl LanguageResolver for PrologResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_prolog_builtin)
+        // SWI-Prolog built-ins / library predicates classify via the
+        // engine's keywords() set populated from prolog/keywords.rs;
+        // prolog_runtime walker emits real symbols for installed library
+        // predicates.
+        None
     }
 }
 
