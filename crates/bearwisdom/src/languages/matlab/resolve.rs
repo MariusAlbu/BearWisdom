@@ -70,20 +70,18 @@ impl LanguageResolver for MatlabResolver {
             return None;
         }
 
-        // MATLAB builtins are never in the index.
-        if predicates::is_matlab_builtin(&ref_ctx.extracted_ref.target_name) {
-            return None;
-        }
-
         engine::resolve_common("matlab", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_matlab_builtin)
+        // MATLAB built-ins / toolbox functions are classified by the
+        // engine's keywords() set populated from matlab/keywords.rs;
+        // matlab_runtime walker emits real symbols for installed toolboxes.
+        None
     }
 }

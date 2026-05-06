@@ -74,20 +74,18 @@ impl LanguageResolver for VbaResolver {
             return None;
         }
 
-        // VBA builtins are never in the index.
-        if predicates::is_vba_builtin(target) {
-            return None;
-        }
-
         engine::resolve_common("vba", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_vba_builtin)
+        // VBA primitives are classified by the engine's keywords() set;
+        // Office object model + Win32 declared APIs come from the
+        // vba_typelibs walker (Windows-only OLE typelib introspection).
+        None
     }
 }
