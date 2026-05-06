@@ -66,7 +66,6 @@ pub mod freepascal_runtime;
 pub mod kotlin_stdlib;
 pub mod luarocks;
 pub mod matlab_runtime;
-pub mod matlab_stdlib;
 pub mod maven;
 pub mod nimble;
 pub mod npm;
@@ -132,7 +131,6 @@ pub use freepascal_runtime::FreePascalRuntimeEcosystem;
 pub use kotlin_stdlib::KotlinStdlibEcosystem;
 pub use luarocks::LuarocksEcosystem;
 pub use matlab_runtime::MatlabRuntimeEcosystem;
-pub use matlab_stdlib::MatlabStdlibEcosystem;
 pub use maven::MavenEcosystem;
 pub use nimble::NimbleEcosystem;
 pub use npm::NpmEcosystem;
@@ -639,7 +637,6 @@ pub fn default_locator(
         "powershell-stdlib" => Some(Arc::new(PowerShellStdlibEcosystem)),
         "tf-registry" => Some(Arc::new(TfRegistryEcosystem)),
         "matlab-runtime" => Some(Arc::new(MatlabRuntimeEcosystem)),
-        "matlab-stdlib" => Some(Arc::new(MatlabStdlibEcosystem)),
         "nvim-runtime" => Some(Arc::new(NvimRuntimeEcosystem)),
         "gleam-stdlib" => Some(Arc::new(GleamStdlibEcosystem)),
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
@@ -749,7 +746,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(FlutterSdkEcosystem);
         reg_eco!(PowerShellStdlibEcosystem);
         reg_eco!(MatlabRuntimeEcosystem);
-        reg_eco!(MatlabStdlibEcosystem);
         reg_eco!(NvimRuntimeEcosystem);
         reg_eco!(GleamStdlibEcosystem);
         reg_eco!(ZigStdEcosystem);
