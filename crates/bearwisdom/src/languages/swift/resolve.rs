@@ -81,9 +81,26 @@ impl LanguageResolver for SwiftResolver {
             return None;
         }
 
-        // Swift builtins are never in the project index.
-        if predicates::is_swift_builtin(target) {
-            return None;
+        // Bare-name walker lookup. swift_foundation + swift_pm_dsl + spm
+        // (.build/checkouts/) emit real symbols for Swift stdlib (Array,
+        // Dictionary, Optional, Result), Foundation (URL, Data, Date),
+        // and Package.swift DSL types. ext:-only filter so chain walker /
+        // scope / import paths still win for project symbols.
+        if !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "swift_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Chain-aware resolution: walk MemberChain following field/return types.
@@ -268,10 +285,6 @@ fn infer_external_inner(
             return Some(root.to_string());
         }
         return None;
-    }
-
-    if predicates::is_swift_builtin(target) {
-        return Some("Swift".to_string());
     }
 
     for import in &file_ctx.imports {

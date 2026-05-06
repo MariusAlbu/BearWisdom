@@ -82,128 +82,21 @@ pub(super) fn is_external_swift_module(module: &str) -> bool {
     false
 }
 
-/// Swift stdlib builtins always in scope (no import needed).
-pub(super) fn is_swift_builtin(name: &str) -> bool {
-    let root = name.split('.').next().unwrap_or(name);
+
+/// Swift primitive type names + universal language tokens that the
+/// extractor emits as type_identifier nodes. Filtered at extract time.
+/// Stdlib types (Array, Dictionary, Optional, Result) flow through and
+/// resolve via the swift_foundation walker.
+pub(super) fn is_swift_primitive_type(name: &str) -> bool {
     matches!(
-        root,
-        // Global functions
-        "print"
-            | "debugPrint"
-            | "dump"
-            | "fatalError"
-            | "precondition"
-            | "preconditionFailure"
-            | "assert"
-            | "assertionFailure"
-            | "min"
-            | "max"
-            | "abs"
-            | "zip"
-            | "stride"
-            | "sequence"
-            | "repeatElement"
-            | "swap"
-            | "withUnsafePointer"
-            | "withUnsafeMutablePointer"
-            | "withUnsafeBytes"
-            | "withUnsafeMutableBytes"
-            | "withExtendedLifetime"
-            | "unsafeBitCast"
-            | "unsafeDowncast"
-            | "type"
-            | "MemoryLayout"
-            | "numericCast"
-            | "readLine"
-            // Swift stdlib types (always in scope)
-            | "String"
-            | "Substring"
-            | "Character"
-            | "Unicode"
-            | "Int"
-            | "Int8"
-            | "Int16"
-            | "Int32"
-            | "Int64"
-            | "UInt"
-            | "UInt8"
-            | "UInt16"
-            | "UInt32"
-            | "UInt64"
-            | "Float"
-            | "Double"
-            | "Float80"
-            | "Bool"
-            | "Array"
-            | "ContiguousArray"
-            | "ArraySlice"
-            | "Dictionary"
-            | "Set"
-            | "Optional"
-            | "Result"
-            | "Never"
-            | "Void"
-            | "AnyObject"
-            | "AnyClass"
-            | "Any"
-            // Protocols (Swift stdlib)
-            | "Error"
-            | "Codable"
-            | "Encodable"
-            | "Decodable"
-            | "Hashable"
-            | "Equatable"
-            | "Comparable"
-            | "CustomStringConvertible"
-            | "CustomDebugStringConvertible"
-            | "Identifiable"
-            | "Sendable"
-            | "CaseIterable"
-            | "RawRepresentable"
-            | "Sequence"
-            | "Collection"
-            | "BidirectionalCollection"
-            | "RandomAccessCollection"
-            | "MutableCollection"
-            | "IteratorProtocol"
-            | "StringProtocol"
-            | "Numeric"
-            | "SignedNumeric"
-            | "BinaryInteger"
-            | "FixedWidthInteger"
-            | "FloatingPoint"
-            // SwiftUI state / view protocols (extremely common)
-            | "ObservableObject"
-            | "Published"
-            | "State"
-            | "Binding"
-            | "StateObject"
-            | "ObservedObject"
-            | "EnvironmentObject"
-            | "Environment"
-            | "View"
-            | "some"
-            // CoreGraphics types (widely used even without explicit import)
-            | "CGFloat"
-            | "CGPoint"
-            | "CGSize"
-            | "CGRect"
-            | "CGVector"
-            | "CGAffineTransform"
-            // UIKit / AppKit base types (very common, treated as well-known builtins)
-            | "NSObject"
-            | "UIView"
-            | "UIViewController"
-            | "UINavigationController"
-            | "UITableView"
-            | "UITableViewCell"
-            | "UICollectionView"
-            | "UICollectionViewCell"
-            | "NSViewController"
-            | "NSView"
-            // pseudo-keywords used as refs
-            | "self"
-            | "Self"
-            | "super"
+        name,
+        // Numeric / boolean primitives
+        "Bool" | "Int" | "Int8" | "Int16" | "Int32" | "Int64"
+        | "UInt" | "UInt8" | "UInt16" | "UInt32" | "UInt64"
+        | "Float" | "Float32" | "Float64" | "Float80" | "Double"
+        // Empty / never types
+        | "Void" | "Never" | "Any" | "AnyObject"
+        // Universal literals
+        | "true" | "false" | "nil"
     )
 }
