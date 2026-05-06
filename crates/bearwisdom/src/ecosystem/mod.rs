@@ -33,7 +33,6 @@ pub mod symbol_index;
 pub use symbol_index::SymbolLocationIndex;
 
 pub mod android_sdk;
-pub mod blazor_runtime;
 pub mod jinja_ansible_runtime;
 pub mod bicep_runtime;
 pub mod prolog_runtime;
@@ -100,7 +99,6 @@ pub mod zig_pkg;
 pub mod zig_std;
 pub use android_sdk::AndroidSdkEcosystem;
 pub use bazel_central_registry::BazelCentralRegistryEcosystem;
-pub use blazor_runtime::BlazorRuntimeEcosystem;
 pub use jinja_ansible_runtime::JinjaAnsibleRuntimeEcosystem;
 pub use bicep_runtime::BicepRuntimeEcosystem;
 pub use prolog_runtime::PrologRuntimeEcosystem;
@@ -619,7 +617,6 @@ pub fn default_locator(
         "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
         "spring-stubs" => Some(Arc::new(SpringStubsEcosystem)),
-        "blazor-runtime" => Some(Arc::new(BlazorRuntimeEcosystem)),
         "jinja-ansible-runtime" => Some(jinja_ansible_runtime::shared_locator()),
         "bicep-runtime" => Some(bicep_runtime::shared_locator()),
         "prolog-runtime" => Some(prolog_runtime::shared_locator()),
@@ -730,7 +727,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(ErlangOtpEcosystem);
         reg_eco!(ElixirStdlibEcosystem);
         reg_eco!(SpringStubsEcosystem);
-        reg_eco!(BlazorRuntimeEcosystem);
         reg_eco!(JinjaAnsibleRuntimeEcosystem);
         reg_eco!(BicepRuntimeEcosystem);
         reg_eco!(PrologRuntimeEcosystem);
