@@ -114,10 +114,28 @@ impl LanguageResolver for RResolver {
         }
 
         let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
 
-        // R builtins (including formula operator `~`) are never in the index.
-        if predicates::is_r_builtin(target) {
-            return None;
+        // Bare-name walker lookup. r_stdlib walks <R-src>/src/library/<pkg>
+        // /R/*.R for base/stats/utils/graphics/methods/tools when
+        // BEARWISDOM_R_SRC is set. Interpreter primitives (c, list, is.na,
+        // is.null, ...) are handled by the engine's keywords() set. ext:-only
+        // filter so resolve_r's standard paths still win for project symbols.
+        if !target.contains("::") {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "r_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Namespace-qualified call to a known external package (e.g. dplyr::filter).
@@ -170,9 +188,12 @@ fn resolve_r(
 }
 
 fn infer_r_external(
-    file_ctx: &FileContext,
-    ref_ctx: &RefContext,
-    project_ctx: Option<&ProjectContext>,
+    _file_ctx: &FileContext,
+    _ref_ctx: &RefContext,
+    _project_ctx: Option<&ProjectContext>,
 ) -> Option<String> {
-    engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_r_builtin)
+    // r_stdlib walker emits real symbols; interpreter primitives are
+    // handled by the engine's keywords() set. Names that exhaust resolve()
+    // stay unresolved rather than blanket-classified as `builtin`.
+    None
 }
