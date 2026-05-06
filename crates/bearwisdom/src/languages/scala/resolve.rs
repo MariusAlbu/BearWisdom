@@ -98,9 +98,26 @@ impl LanguageResolver for ScalaResolver {
             return None;
         }
 
-        // Scala stdlib builtins are never in the index.
-        if predicates::is_scala_builtin(target) {
-            return None;
+        // Bare-name walker lookup. scala_stdlib + jdk_src + maven (sources
+        // jars) emit real symbols for the Scala stdlib (List, Option, Either,
+        // Try), JVM types, and declared deps. ext:-only filter so chain
+        // walker / scope / wildcard-import paths still win for project
+        // symbols.
+        if !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "scala_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Chain-aware resolution: walk MemberChain following field/return types.
@@ -274,11 +291,6 @@ impl LanguageResolver for ScalaResolver {
                 return Some(import_path.to_string());
             }
             return None;
-        }
-
-        // Scala stdlib builtins.
-        if predicates::is_scala_builtin(target) {
-            return Some("scala.stdlib".to_string());
         }
 
         // Walk imports for a match.

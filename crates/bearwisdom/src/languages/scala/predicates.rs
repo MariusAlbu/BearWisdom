@@ -109,119 +109,14 @@ pub(super) fn effective_target_is_external(
     is_external_scala_namespace(target, project_ctx)
 }
 
-/// Scala stdlib builtins always in scope via `scala.Predef` and `scala.*`.
-pub(super) fn is_scala_builtin(name: &str) -> bool {
-    let root = name.split('.').next().unwrap_or(name);
+/// Scala primitive type names + language-level keywords that the extractor
+/// emits as type_identifier nodes. Filtered at extract time. Stdlib types
+/// (Option, List, Either, ...) flow through and resolve via the
+/// scala_stdlib walker.
+pub(super) fn is_scala_primitive_type(name: &str) -> bool {
     matches!(
-        root,
-        // Predef functions / implicit conversions
-        "println"
-            | "print"
-            | "printf"
-            | "require"
-            | "assert"
-            | "assume"
-            | "identity"
-            | "implicitly"
-            | "locally"
-            | "summon"
-            // Scala 3
-            | "using"
-            // Placeholder for unimplemented
-            | "???"
-            // Core types (scala.*)
-            | "String"
-            | "Int"
-            | "Long"
-            | "Double"
-            | "Float"
-            | "Boolean"
-            | "Byte"
-            | "Short"
-            | "Char"
-            | "Unit"
-            | "Nothing"
-            | "Any"
-            | "AnyVal"
-            | "AnyRef"
-            | "Null"
-            | "Option"
-            | "Some"
-            | "None"
-            | "Either"
-            | "Left"
-            | "Right"
-            | "List"
-            | "Nil"
-            | "Map"
-            | "Set"
-            | "Vector"
-            | "Seq"
-            | "IndexedSeq"
-            | "Array"
-            | "Range"
-            | "Tuple2"
-            | "Tuple3"
-            | "Future"
-            | "Promise"
-            | "Try"
-            | "Success"
-            | "Failure"
-            | "Iterator"
-            | "Iterable"
-            | "Traversable"
-            // Companion object methods often used bare
-            | "apply"
-            | "unapply"
-            | "unapplySeq"
-            | "copy"
-            | "empty"
-            | "newBuilder"
-            // pseudo-keywords used as refs
-            | "this"
-            | "super"
-            // Object identity / equality (java.lang.Object methods always in scope)
-            | "toString"
-            | "hashCode"
-            | "equals"
-            | "canEqual"
-            // Universal FP method names (stdlib + Cats + any typeclass)
-            | "flatMap"
-            | "map"
-            | "fold"
-            | "foldLeft"
-            | "foldRight"
-            | "traverse"
-            | "sequence"
-            | "pure"
-            | "flatten"
-            | "filter"
-            | "collect"
-            | "exists"
-            | "forall"
-            | "foreach"
-            | "groupBy"
-            | "toList"
-            | "toVector"
-            | "toSet"
-            | "toMap"
-            | "toOption"
-            | "getOrElse"
-            | "orElse"
-            | "contains"
-            | "mkString"
-            | "zip"
-            | "zipWithIndex"
-            | "take"
-            | "drop"
-            | "head"
-            | "tail"
-            | "last"
-            | "headOption"
-            | "lastOption"
-            | "isEmpty"
-            | "nonEmpty"
-            | "size"
-            | "length"
+        name,
+        "Boolean" | "Byte" | "Short" | "Int" | "Long" | "Float" | "Double"
+        | "Char" | "Unit" | "Null" | "Nothing" | "Any" | "AnyRef" | "AnyVal"
     )
 }

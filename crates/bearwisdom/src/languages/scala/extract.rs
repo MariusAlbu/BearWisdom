@@ -659,7 +659,7 @@ fn scan_type_refs_inner(
 ) {
     if node.kind() == "type_identifier" {
         let name = helpers::node_text(node, src);
-        if !name.is_empty() && !super::predicates::is_scala_builtin(&name) {
+        if !name.is_empty() && !super::predicates::is_scala_primitive_type(&name) {
             refs.push(ExtractedRef {
                 source_symbol_index,
                 target_name: name,
