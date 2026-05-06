@@ -107,12 +107,36 @@ impl LanguageResolver for PhpResolver {
         }
 
         // Chain-aware resolution: if we have a structured MemberChain, walk it
-        // step-by-step following field types.
+        // step-by-step following field types. Chain context (receiver type +
+        // inheritance walk) is more accurate than bare-name lookup, so it
+        // runs before the walker fallback below.
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = PhpChecker.resolve_chain(
                 chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
             ) {
                 return Some(res);
+            }
+        }
+
+        // Bare-name walker lookup for refs with no chain context. php_stubs
+        // emits real symbols for the PHP core, SPL, and bundled extensions
+        // (str_*, array_*, json_*, DateTime, Exception hierarchy, ...).
+        // ext:-only filter so namespace / scope / same-file paths still win
+        // for project symbols.
+        if !target.contains('\\') && !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "php_synthetic_global",
+                    resolved_yield_type: None,
+                });
             }
         }
 
@@ -435,10 +459,6 @@ fn infer_external_inner(
             return Some(normalized);
         }
         return None;
-    }
-
-    if predicates::is_php_builtin(target) {
-        return Some("php_core".to_string());
     }
 
     let mut best: Option<String> = None;

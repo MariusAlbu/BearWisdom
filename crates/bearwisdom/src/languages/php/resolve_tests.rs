@@ -368,27 +368,6 @@ fn test_infer_framework_external() {
 }
 
 #[test]
-fn test_infer_builtin_external() {
-    let file = make_file(
-        "app/Foo.php",
-        vec![make_symbol("Foo", "App.Foo", SymbolKind::Class, Visibility::Public, Some("App"))],
-        vec![make_ref(0, "array_map", EdgeKind::Calls)],
-    );
-
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[0],
-        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
-    };
-
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-    assert_eq!(ns, Some("php_core".to_string()));
-}
-
-#[test]
 fn test_build_file_context_extracts_namespace() {
     let file = make_file(
         "app/Models/User.php",
