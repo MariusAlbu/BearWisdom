@@ -82,11 +82,6 @@ impl LanguageResolver for ClojureResolver {
             return None;
         }
 
-        // clojure.core and special forms are not in the project index.
-        if predicates::is_clojure_builtin(target) {
-            return None;
-        }
-
         engine::resolve_common("clojure", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
@@ -152,7 +147,11 @@ impl LanguageResolver for ClojureResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_clojure_builtin)
+        // clojure.core / special-forms classification flows through the
+        // engine's keywords() set populated from clojure/keywords.rs;
+        // jdk_src + clojure_core walkers emit real symbols for the rest.
+        let _ = (project_ctx,);
+        None
     }
 
     fn infer_external_namespace_with_lookup(
