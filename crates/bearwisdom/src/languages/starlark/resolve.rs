@@ -75,13 +75,10 @@ impl LanguageResolver for StarlarkResolver {
             return None;
         }
 
-        // Bazel native rules and Starlark built-ins are external.
-        // Exception: framework chains that the chain resolver can match against
-        // synthetic symbols are handled first below (before this guard), so the
-        // guard only fires for refs the chain walker couldn't resolve.
-        if predicates::is_starlark_builtin(target) && !predicates::is_bazel_framework_chain(target) {
-            return None;
-        }
+        // Bazel native rules / Starlark builtins / skylib helpers classify
+        // via the engine's keywords() set populated from
+        // starlark/keywords.rs — the upstream classification flow handles
+        // them so we don't need a fast-exit here.
 
         // Dotted call whose last segment is a Python/Starlark built-in
         // type method (str/list/dict/depset). `output.append`, `filename
@@ -133,12 +130,6 @@ impl LanguageResolver for StarlarkResolver {
         // Bazel framework parameter chains not resolved by the chain walker:
         // classify as external rather than leaving as unresolved.
         if predicates::is_bazel_framework_chain(target) {
-            return None;
-        }
-
-        // Remaining starlark builtins that weren't caught by the first guard
-        // (i.e. framework chains that the chain walker missed were handled above).
-        if predicates::is_starlark_builtin(target) {
             return None;
         }
 
@@ -245,10 +236,6 @@ impl LanguageResolver for StarlarkResolver {
         // Any dotted ref starting with one of these roots is external at any depth
         // (covers ctx.label.name, env.expect.that_str, directory.glob, etc.).
         if predicates::is_bazel_framework_chain(target) {
-            return Some("bazel".to_string());
-        }
-
-        if predicates::is_starlark_builtin(target) {
             return Some("bazel".to_string());
         }
 
