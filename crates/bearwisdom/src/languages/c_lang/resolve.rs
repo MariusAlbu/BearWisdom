@@ -100,9 +100,31 @@ impl LanguageResolver for CLangResolver {
             return None;
         }
 
-        // Template parameters and builtins are never in the index.
-        if predicates::is_template_param(target) || predicates::is_c_builtin(target) {
+        // Template parameters are never in the index.
+        if predicates::is_template_param(target) {
             return None;
+        }
+
+        // Bare-name walker lookup. posix_headers / msvc_sdk / qt_runtime /
+        // sdl_synthetics emit real symbols for stdlib types and functions
+        // (FILE, jmp_buf, malloc, fopen, std::string, QObject, SDL_Init).
+        // ext:-only filter so the chain walker / scope / namespace paths
+        // still win for project symbols.
+        if !target.contains("::") && !target.contains('.') && !target.contains("->") {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "c_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Chain-aware resolution: walk member chains like `obj.method()` or
@@ -309,11 +331,6 @@ impl LanguageResolver for CLangResolver {
         // Template parameters get their own namespace.
         if predicates::is_template_param(target) {
             return Some("template_param".to_string());
-        }
-
-        // C/C++ builtins (stdlib functions, types, macros).
-        if predicates::is_c_builtin(target) {
-            return Some("c.stdlib".to_string());
         }
 
         // `std::` prefixed names.

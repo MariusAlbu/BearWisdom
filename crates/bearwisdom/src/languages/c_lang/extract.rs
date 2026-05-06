@@ -514,7 +514,7 @@ fn extract_node<'a>(
                         }
                         "type_identifier" => {
                             let name = node_text(type_node, src);
-                            if !name.is_empty() && !predicates::is_c_builtin(&name) {
+                            if !name.is_empty() && !predicates::is_c_primitive_type(&name) {
                                 refs.push(ExtractedRef {
                                     source_symbol_index: type_source_idx,
                                     target_name: name,
@@ -637,7 +637,7 @@ fn sweep_typerefs<'a>(
             "type_identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty()
-                    && !predicates::is_c_builtin(&name)
+                    && !predicates::is_c_primitive_type(&name)
                     && !predicates::is_c_compiler_intrinsic(&name)
                     && !predicates::is_template_param(&name)
                 {
