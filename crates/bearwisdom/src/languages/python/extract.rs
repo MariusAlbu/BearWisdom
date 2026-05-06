@@ -412,11 +412,10 @@ fn emit_type_ref_from_type_node(
     sym_idx: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    use super::predicates::is_python_builtin;
     match node.kind() {
         "identifier" => {
             let name = node_text(node, source);
-            if !name.is_empty() && !is_python_builtin(&name)
+            if !name.is_empty()
                 && !matches!(name.as_str(), "int" | "float" | "str" | "bool" | "bytes"
                     | "None" | "list" | "dict" | "set" | "tuple" | "type" | "object" | "complex")
             {
@@ -449,10 +448,9 @@ fn collect_first_nonbuiltin_type_name(
     node: &tree_sitter::Node,
     source: &str,
 ) -> Option<String> {
-    use super::predicates::is_python_builtin;
     if node.kind() == "identifier" {
         let name = node_text(node, source);
-        if !name.is_empty() && !is_python_builtin(&name)
+        if !name.is_empty()
             && !matches!(name.as_str(), "int" | "float" | "str" | "bool" | "bytes"
                 | "None" | "list" | "dict" | "set" | "tuple" | "type" | "object" | "complex")
         {

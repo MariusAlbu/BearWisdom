@@ -103,9 +103,26 @@ impl LanguageResolver for PythonResolver {
             return None;
         }
 
-        // Python builtins are never in our index.
-        if predicates::is_python_builtin(target) {
-            return None;
+        // Bare-name walker lookup. cpython_stdlib emits real symbols for
+        // `print`, `len`, `dict`, exception types, str/list/dict methods,
+        // etc. under `ext:cpython-stdlib:`. Only bind to walker symbols
+        // here — internal-name binding is handled more precisely by the
+        // import-prefix and same-file paths below.
+        if !target.contains('.') && !target.contains("::") {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "python_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Chain-aware resolution: dispatch to PythonChecker.
@@ -532,9 +549,6 @@ fn module_is_external(
     module: &str,
 ) -> Option<String> {
     let root = module.split('.').next().unwrap_or(module);
-    if predicates::is_python_stdlib(root) {
-        return Some("stdlib".to_string());
-    }
     if let Some(ctx) = project_ctx {
         if let Some(manifest) = ctx
             .manifests_for(pkg_id)
@@ -579,10 +593,6 @@ fn infer_external_inner(
             return None;
         }
         return module_is_external(project_ctx, pkg_id, lookup, module);
-    }
-
-    if predicates::is_python_builtin(target) {
-        return Some("python_builtins".to_string());
     }
 
     let simple = target.split('.').next().unwrap_or(target);
