@@ -180,9 +180,19 @@ impl Ecosystem for BlazorRuntimeEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
+        // .razor files are Blazor-exclusive — language presence alone is
+        // a sound substrate signal there. Pure-C# Blazor projects (Hubs,
+        // libraries with no .razor view) need the .csproj signal: the
+        // Microsoft.AspNetCore.Components reference (direct or via the
+        // BlazorWebAssembly SDK) is unique to Blazor. Plain MVC + Razor
+        // Pages projects don't reference Components and stay out.
         EcosystemActivation::Any(&[
             EcosystemActivation::LanguagePresent("razor"),
-            EcosystemActivation::LanguagePresent("csharp"),
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/*.csproj",
+                field_path: "",
+                value: "Microsoft.AspNetCore.Components",
+            },
         ])
     }
 

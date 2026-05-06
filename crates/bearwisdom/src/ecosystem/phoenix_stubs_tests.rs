@@ -91,8 +91,16 @@ fn parallel_vecs_are_consistent() {
 }
 
 #[test]
-fn activation_is_elixir() {
+fn activation_gates_on_mix_exs_phoenix_dep() {
     let e = PhoenixStubsEcosystem;
     assert_eq!(e.languages(), &["elixir"]);
     assert_eq!(e.kind(), EcosystemKind::Stdlib);
+    match e.activation() {
+        EcosystemActivation::ManifestFieldContains { manifest_glob, field_path, value } => {
+            assert_eq!(manifest_glob, "**/mix.exs");
+            assert_eq!(field_path, "");
+            assert_eq!(value, ":phoenix");
+        }
+        other => panic!("expected ManifestFieldContains, got {:?}", other),
+    }
 }

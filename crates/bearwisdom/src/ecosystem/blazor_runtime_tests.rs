@@ -50,19 +50,25 @@ fn activation_language_set_covers_razor_and_csharp() {
     match eco.activation() {
         EcosystemActivation::Any(options) => {
             let mut saw_razor = false;
-            let mut saw_csharp = false;
+            let mut saw_components_csproj_match = false;
             for opt in options {
-                if let EcosystemActivation::LanguagePresent(lang) = opt {
-                    match *lang {
-                        "razor" => saw_razor = true,
-                        "csharp" => saw_csharp = true,
-                        _ => {}
+                match opt {
+                    EcosystemActivation::LanguagePresent("razor") => saw_razor = true,
+                    EcosystemActivation::ManifestFieldContains { manifest_glob, value, .. }
+                        if *manifest_glob == "**/*.csproj"
+                            && *value == "Microsoft.AspNetCore.Components" =>
+                    {
+                        saw_components_csproj_match = true;
                     }
+                    _ => {}
                 }
             }
-            assert!(saw_razor && saw_csharp,
-                "Blazor runtime must activate on both razor and csharp — Blazor Server projects \
-                 may ship .razor.js without any .razor file in the indexed slice");
+            assert!(
+                saw_razor && saw_components_csproj_match,
+                "Blazor runtime must activate either on razor presence OR on a .csproj \
+                 declaring Microsoft.AspNetCore.Components — pure C# Blazor projects \
+                 without .razor files still need to fire."
+            );
         }
         _ => panic!("expected Any(…) activation for blazor-runtime"),
     }

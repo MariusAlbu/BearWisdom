@@ -57,7 +57,17 @@ impl Ecosystem for NvimRuntimeEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::LanguagePresent("lua")
+        // Lua is used in many non-Neovim contexts (game scripting, OpenResty,
+        // LuaTeX, embedded scripting in Redis/nginx). The Neovim signal is
+        // an init.lua referencing the `vim.` namespace — both Neovim configs
+        // (`init.lua` at config root) and Neovim plugins (`lua/<plugin>/
+        // init.lua`) hit this. A plain Lua project with no `vim.` references
+        // does not.
+        EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/init.lua",
+            field_path: "",
+            value: "vim.",
+        }
     }
 
     fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

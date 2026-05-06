@@ -78,8 +78,23 @@ fn parallel_vecs_are_consistent() {
 }
 
 #[test]
-fn activation_covers_kotlin_and_java() {
+fn activation_gates_on_spring_in_jvm_manifest() {
     let e = SpringStubsEcosystem;
     assert_eq!(e.languages(), &["kotlin", "java"]);
     assert_eq!(e.kind(), EcosystemKind::Stdlib);
+    match e.activation() {
+        EcosystemActivation::Any(clauses) => {
+            let mut globs: Vec<&str> = Vec::new();
+            for c in clauses {
+                if let EcosystemActivation::ManifestFieldContains { manifest_glob, value, .. } = c {
+                    assert_eq!(*value, "org.springframework");
+                    globs.push(manifest_glob);
+                }
+            }
+            assert!(globs.contains(&"**/pom.xml"));
+            assert!(globs.contains(&"**/build.gradle"));
+            assert!(globs.contains(&"**/build.gradle.kts"));
+        }
+        other => panic!("expected Any(ManifestFieldContains, ...), got {:?}", other),
+    }
 }

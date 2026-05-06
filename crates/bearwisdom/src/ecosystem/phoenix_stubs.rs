@@ -284,7 +284,15 @@ impl Ecosystem for PhoenixStubsEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::LanguagePresent("elixir")
+        // Only Elixir projects that actually depend on Phoenix should pay
+        // the synthetic-stub cost. mix.exs is Elixir source, so the
+        // evaluator falls through to plain-text substring search; the
+        // canonical `{:phoenix, "~> 1.7"}` dep entry matches reliably.
+        EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/mix.exs",
+            field_path: "",
+            value: ":phoenix",
+        }
     }
 
     fn locate_roots(&self, _ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

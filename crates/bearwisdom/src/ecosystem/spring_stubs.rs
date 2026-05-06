@@ -251,9 +251,27 @@ impl Ecosystem for SpringStubsEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
+        // Spring is declared in the JVM project's build manifest. Plain
+        // Kotlin / Java projects without Spring deps shouldn't pay the
+        // synthetic-stub cost. The package-prefix string is unique enough
+        // that a substring match against pom.xml / build.gradle / build.
+        // gradle.kts is reliable.
         EcosystemActivation::Any(&[
-            EcosystemActivation::LanguagePresent("kotlin"),
-            EcosystemActivation::LanguagePresent("java"),
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/pom.xml",
+                field_path: "",
+                value: "org.springframework",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/build.gradle",
+                field_path: "",
+                value: "org.springframework",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/build.gradle.kts",
+                field_path: "",
+                value: "org.springframework",
+            },
         ])
     }
 
