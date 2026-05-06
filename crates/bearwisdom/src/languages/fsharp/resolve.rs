@@ -71,9 +71,26 @@ impl LanguageResolver for FSharpResolver {
             return None;
         }
 
-        // F# stdlib and language keywords are not in the project index.
-        if predicates::is_fsharp_builtin(target) {
-            return None;
+        // Bare-name walker lookup. dotnet_stdlib (DLL metadata via dotscope)
+        // emits real symbols for FSharp.Core (Seq, Map, List, Option, Async,
+        // printfn, sprintf), System.*, Microsoft.*. ext:-only filter so
+        // resolve_common's import / scope / same-module paths still win for
+        // project symbols. Skip when chain context is present.
+        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "fsharp_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         engine::resolve_common("fsharp", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
@@ -98,11 +115,6 @@ impl LanguageResolver for FSharpResolver {
                 return Some(root.to_string());
             }
             return None;
-        }
-
-        // F# core builtins (printfn, Seq.map, etc.).
-        if predicates::is_fsharp_builtin(target) {
-            return Some("FSharp.Core".to_string());
         }
 
         // Module-qualified ref: if the ref has module="X" and X is an
