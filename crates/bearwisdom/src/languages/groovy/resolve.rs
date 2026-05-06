@@ -27,12 +27,11 @@ use crate::types::{EdgeKind, ParsedFile};
 use crate::languages::java::resolve::JavaResolver;
 use super::predicates;
 
-pub const DGM_NAMESPACE: &str = "groovy.runtime.DefaultGroovyMethods";
-
 /// Groovy language resolver.
 ///
-/// Delegates all resolution logic to `JavaResolver` (same JVM scoping rules)
-/// and adds a Groovy-specific external-namespace check for DGM methods.
+/// Delegates all resolution logic to `JavaResolver` (same JVM scoping rules).
+/// DGM/GDK Object-mixin methods classify via the engine's keywords() set
+/// populated from groovy/keywords.rs.
 pub struct GroovyResolver;
 
 impl LanguageResolver for GroovyResolver {
@@ -63,18 +62,9 @@ impl LanguageResolver for GroovyResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // DGM / GDK / Groovy DSL methods are mixed onto every object at
-        // runtime — they have no declaration in user code, so classify them
-        // as external immediately to keep them out of unresolved_refs.
-        // Only fires for bare EdgeKind::Calls (the extractor emits no chain).
-        if ref_ctx.extracted_ref.kind == EdgeKind::Calls
-            && predicates::is_groovy_builtin(target)
-        {
-            return Some(DGM_NAMESPACE.to_string());
-        }
-
+        // DGM / GDK Object-mixin methods (each, collect, with, tap, ...) are
+        // classified by the engine's keywords() set populated from
+        // groovy/keywords.rs. Java/JVM types come via JavaResolver below.
         // Delegate remaining classification to the Java resolver (import
         // namespace checks, ALWAYS_EXTERNAL prefixes, manifest deps, etc.).
         JavaResolver.infer_external_namespace(file_ctx, ref_ctx, project_ctx)
@@ -127,102 +117,13 @@ mod tests {
     }
 
     #[test]
-    fn dgm_namespace_constant_is_stable() {
-        assert_eq!(DGM_NAMESPACE, "groovy.runtime.DefaultGroovyMethods");
-    }
-
-    #[test]
     fn groovy_resolver_declares_only_groovy_language() {
         let r = GroovyResolver;
         assert_eq!(r.language_ids(), &["groovy"]);
     }
 
-    #[test]
-    fn dgm_call_infers_external_namespace() {
-        let file_ctx = groovy_file_ctx();
-        let sym = dummy_sym();
-
-        for method in &[
-            "each", "find", "findAll", "collect", "any", "sort",
-            "push", "pop", "addAll", "join", "stripIndent", "stripMargin",
-            "with", "tap", "flatten", "inject", "groupBy",
-            "eachWithIndex", "collectEntries", "unique", "first", "last",
-        ] {
-            let r = ExtractedRef {
-                source_symbol_index: 0,
-                target_name: method.to_string(),
-                kind: EdgeKind::Calls,
-                line: 1,
-                module: None,
-                chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-};
-            let ref_ctx = RefContext {
-                extracted_ref: &r,
-                source_symbol: &sym,
-                scope_chain: vec!["org.example.Foo".to_string()],
-                file_package_id: None,
-            };
-
-            let ns = GroovyResolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-            assert_eq!(
-                ns.as_deref(),
-                Some(DGM_NAMESPACE),
-                "expected DGM namespace for `{method}`"
-            );
-        }
-    }
-
-    #[test]
-    fn non_dgm_call_does_not_infer_dgm_namespace() {
-        let file_ctx = groovy_file_ctx();
-        let sym = dummy_sym();
-
-        let r = ExtractedRef {
-            source_symbol_index: 0,
-            target_name: "processOrder".to_string(),
-            kind: EdgeKind::Calls,
-            line: 1,
-            module: None,
-            chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-};
-        let ref_ctx = RefContext {
-            extracted_ref: &r,
-            source_symbol: &sym,
-            scope_chain: vec!["org.example.Foo".to_string()],
-            file_package_id: None,
-        };
-
-        let ns = GroovyResolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-        assert!(ns.is_none(), "project method should not be classified as external");
-    }
-
-    #[test]
-    fn dgm_classification_requires_calls_edge() {
-        let file_ctx = groovy_file_ctx();
-        let sym = dummy_sym();
-
-        let r = ExtractedRef {
-            source_symbol_index: 0,
-            target_name: "each".to_string(),
-            kind: EdgeKind::Imports,
-            line: 1,
-            module: None,
-            chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-};
-        let ref_ctx = RefContext {
-            extracted_ref: &r,
-            source_symbol: &sym,
-            scope_chain: vec![],
-            file_package_id: None,
-        };
-
-        let ns = GroovyResolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-        assert!(ns.is_none(), "non-Calls edge for 'each' should not hit DGM path");
-    }
+    // DGM-classification tests removed when is_groovy_builtin was deleted.
+    // DGM/GDK names now classify via the engine's keywords() set populated
+    // from groovy/keywords.rs; the namespace string changed from
+    // "groovy.dgm" to "primitive".
 }
