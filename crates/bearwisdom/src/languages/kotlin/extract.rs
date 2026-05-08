@@ -50,12 +50,51 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     let src = source.as_bytes();
     let has_errors = root.has_error();
 
-    let scope_tree = scope_tree::build(root, src, KOTLIN_SCOPE_KINDS);
+    // Kotlin's `package foo.bar` puts every top-level type into that package,
+    // but the package_header AST node is a sibling of the declarations rather
+    // than an ancestor — so the scope-tree walker doesn't see it as an
+    // enclosing scope. Hoist the package, prefix the scope tree (so nested
+    // qnames pick it up), and after extraction prefix the truly-top-level
+    // symbols.
+    let hoisted_pkg = hoist_top_level_package(root, src);
+
+    let mut scope_tree = scope_tree::build(root, src, KOTLIN_SCOPE_KINDS);
+    if let Some(pkg) = hoisted_pkg.as_deref() {
+        for entry in scope_tree.iter_mut() {
+            entry.qualified_name = format!("{pkg}.{}", entry.qualified_name);
+        }
+    }
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
     extract_node(root, src, &scope_tree, &mut symbols, &mut refs, None);
+
+    scope_tree::prefix_top_level_qnames(&mut symbols, hoisted_pkg.as_deref());
+
+    // Emit a Namespace symbol for the package_header so the resolver's
+    // `file_namespace` lookup succeeds (used by same-package resolution).
+    // Append at the END so symbols[0] keeps pointing at the first declared
+    // type — `scan_all_type_refs` hardcodes source_symbol_index=0 and
+    // changing what idx 0 points to silently re-attributes its refs.
+    if let Some(pkg) = hoisted_pkg.as_deref() {
+        if let Some((line, col, end_line, end_col)) = find_package_header_span(root) {
+            symbols.push(ExtractedSymbol {
+                name: pkg.rsplit('.').next().unwrap_or(pkg).to_string(),
+                qualified_name: pkg.to_string(),
+                kind: SymbolKind::Namespace,
+                visibility: None,
+                start_line: line,
+                end_line,
+                start_col: col,
+                end_col,
+                signature: Some(format!("package {pkg}")),
+                doc_comment: None,
+                scope_path: None,
+                parent_index: None,
+            });
+        }
+    }
 
     // Post-traversal: scan the entire CST for user_type / nullable_type nodes
     // and emit TypeRef for any type names not already captured by the walker.
@@ -83,6 +122,48 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     }
 
     super::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Read the file-level `package_header` and return its dotted identifier.
+/// Kotlin only has a single brace-less package per file (no `package foo {
+/// ... }` form), so a single optional string suffices.
+fn hoist_top_level_package(root: Node, src: &[u8]) -> Option<String> {
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() != "package_header" {
+            continue;
+        }
+        let mut cc = child.walk();
+        for inner in child.children(&mut cc) {
+            if matches!(
+                inner.kind(),
+                "qualified_identifier" | "identifier" | "simple_identifier"
+            ) {
+                let text = node_text(inner, src);
+                if !text.is_empty() {
+                    return Some(text);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Locate the `package_header` byte-position span so the synthesized
+/// Namespace symbol carries useful line/col data.
+fn find_package_header_span(root: Node) -> Option<(u32, u32, u32, u32)> {
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "package_header" {
+            return Some((
+                child.start_position().row as u32,
+                child.start_position().column as u32,
+                child.end_position().row as u32,
+                child.end_position().column as u32,
+            ));
+        }
+    }
+    None
 }
 
 /// Walk every `type_parameters` node in the tree and record each declared

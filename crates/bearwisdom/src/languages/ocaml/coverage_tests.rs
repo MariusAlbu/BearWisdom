@@ -15,6 +15,52 @@ use super::extract::extract;
 use crate::types::{EdgeKind, SymbolKind};
 
 // ---------------------------------------------------------------------------
+// Module-qname propagation (regression: pre-fix every symbol got an
+// unprefixed qname, so `let bind` inside `module M = struct ... end` was
+// indexed as "bind" rather than "M.bind", and dotted refs like `M.bind`
+// couldn't resolve.)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn function_inside_module_qualified_with_module_name() {
+    let r = extract(
+        "module Async = struct\n  let bind f = f\nend",
+        "test.ml",
+    );
+    let bind = r.symbols.iter().find(|s| s.name == "bind").expect("bind");
+    assert_eq!(bind.qualified_name, "Async.bind");
+    assert_eq!(bind.scope_path.as_deref(), Some("Async"));
+}
+
+#[test]
+fn type_inside_module_qualified_with_module_name() {
+    let r = extract(
+        "module Foo = struct\n  type person = { name : string }\nend",
+        "test.ml",
+    );
+    let p = r.symbols.iter().find(|s| s.name == "person").expect("person");
+    assert_eq!(p.qualified_name, "Foo.person");
+}
+
+#[test]
+fn nested_module_qname_chain() {
+    let r = extract(
+        "module Outer = struct\n  module Inner = struct\n    let value = 42\n  end\nend",
+        "test.ml",
+    );
+    let v = r.symbols.iter().find(|s| s.name == "value").expect("value");
+    assert_eq!(v.qualified_name, "Outer.Inner.value");
+}
+
+#[test]
+fn top_level_let_unprefixed() {
+    let r = extract("let x = 1", "test.ml");
+    let x = r.symbols.iter().find(|s| s.name == "x").expect("x");
+    assert_eq!(x.qualified_name, "x");
+    assert_eq!(x.scope_path, None);
+}
+
+// ---------------------------------------------------------------------------
 // symbol_node_kinds
 // ---------------------------------------------------------------------------
 

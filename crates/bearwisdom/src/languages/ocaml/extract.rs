@@ -27,6 +27,22 @@ use crate::types::{
 };
 use tree_sitter::{Node, Parser};
 
+/// Build the qualified name for a child symbol by prefixing the parent's qname.
+/// OCaml's `module M = struct ... end` introduces a Namespace symbol whose
+/// qname is the module path; descendants must inherit that prefix.
+fn qualify_with_parent(name: &str, parent_idx: Option<usize>, symbols: &[ExtractedSymbol]) -> String {
+    match parent_idx.and_then(|i| symbols.get(i)) {
+        Some(parent) => format!("{}.{}", parent.qualified_name, name),
+        None => name.to_string(),
+    }
+}
+
+/// Build the scope_path string from the parent's qualified_name. None when the
+/// symbol is at file top level.
+fn scope_path_from_parent(parent_idx: Option<usize>, symbols: &[ExtractedSymbol]) -> Option<String> {
+    parent_idx.and_then(|i| symbols.get(i)).map(|p| p.qualified_name.clone())
+}
+
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     // Use interface grammar for .mli files
     let is_interface = file_path.ends_with(".mli");
@@ -234,9 +250,11 @@ fn extract_value_def(
                     SymbolKind::Variable
                 };
 
+                let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
+                let scope_path = scope_path_from_parent(parent_idx, symbols);
                 let idx = symbols.len();
                 symbols.push(ExtractedSymbol {
-                    qualified_name: name.clone(),
+                    qualified_name,
                     name,
                     kind,
                     visibility: Some(Visibility::Public),
@@ -246,7 +264,7 @@ fn extract_value_def(
                     end_col: 0,
                     signature: None,
                     doc_comment: None,
-                    scope_path: None,
+                    scope_path,
                     parent_index: parent_idx,
                 });
                 return Some(idx);
@@ -289,9 +307,11 @@ fn extract_type_def(
                 }
             };
 
+            let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
+            let scope_path = scope_path_from_parent(parent_idx, symbols);
             let idx = symbols.len();
             symbols.push(ExtractedSymbol {
-                qualified_name: name.clone(),
+                qualified_name,
                 name,
                 kind,
                 visibility: Some(Visibility::Public),
@@ -301,7 +321,7 @@ fn extract_type_def(
                 end_col: 0,
                 signature: None,
                 doc_comment: None,
-                scope_path: None,
+                scope_path,
                 parent_index: parent_idx,
             });
             return Some(idx);
@@ -326,9 +346,11 @@ fn extract_module_def(
                 if gc.kind() == "module_name" {
                     let name = text(gc, src);
                     if name.is_empty() { continue; }
+                    let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
+                    let scope_path = scope_path_from_parent(parent_idx, symbols);
                     let idx = symbols.len();
                     symbols.push(ExtractedSymbol {
-                        qualified_name: name.clone(),
+                        qualified_name,
                         name,
                         kind: SymbolKind::Namespace,
                         visibility: Some(Visibility::Public),
@@ -338,7 +360,7 @@ fn extract_module_def(
                         end_col: 0,
                         signature: None,
                         doc_comment: None,
-                        scope_path: None,
+                        scope_path,
                         parent_index: parent_idx,
                     });
                     return Some(idx);
@@ -364,9 +386,11 @@ fn extract_exception_def(
         if child.kind() == "constructor_declaration" {
             let name = extract_constructor_name(child, src);
             if name.is_empty() { continue; }
+            let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
+            let scope_path = scope_path_from_parent(parent_idx, symbols);
             let idx = symbols.len();
             symbols.push(ExtractedSymbol {
-                qualified_name: name.clone(),
+                qualified_name,
                 name,
                 kind: SymbolKind::Struct,
                 visibility: Some(Visibility::Public),
@@ -376,7 +400,7 @@ fn extract_exception_def(
                 end_col: 0,
                 signature: None,
                 doc_comment: None,
-                scope_path: None,
+                scope_path,
                 parent_index: parent_idx,
             });
             return Some(idx);
@@ -400,9 +424,11 @@ fn extract_module_type_def(
         if child.kind() == "module_type_name" {
             let name = text(child, src);
             if name.is_empty() { continue; }
+            let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
+            let scope_path = scope_path_from_parent(parent_idx, symbols);
             let idx = symbols.len();
             symbols.push(ExtractedSymbol {
-                qualified_name: name.clone(),
+                qualified_name,
                 name,
                 kind: SymbolKind::Interface,
                 visibility: Some(Visibility::Public),
@@ -412,7 +438,7 @@ fn extract_module_type_def(
                 end_col: 0,
                 signature: None,
                 doc_comment: None,
-                scope_path: None,
+                scope_path,
                 parent_index: parent_idx,
             });
             return Some(idx);
@@ -439,9 +465,11 @@ fn extract_class_def(
                 if gc.kind() == "class_name" {
                     let name = text(gc, src);
                     if name.is_empty() { continue; }
+                    let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
+                    let scope_path = scope_path_from_parent(parent_idx, symbols);
                     let idx = symbols.len();
                     symbols.push(ExtractedSymbol {
-                        qualified_name: name.clone(),
+                        qualified_name,
                         name,
                         kind: SymbolKind::Class,
                         visibility: Some(Visibility::Public),
@@ -451,7 +479,7 @@ fn extract_class_def(
                         end_col: 0,
                         signature: None,
                         doc_comment: None,
-                        scope_path: None,
+                        scope_path,
                         parent_index: parent_idx,
                     });
                     return Some(idx);
@@ -476,8 +504,10 @@ fn extract_external(
         if child.kind() == "value_name" {
             let name = text(child, src);
             if name.is_empty() { return; }
+            let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
+            let scope_path = scope_path_from_parent(parent_idx, symbols);
             symbols.push(ExtractedSymbol {
-                qualified_name: name.clone(),
+                qualified_name,
                 name,
                 kind: SymbolKind::Function,
                 visibility: Some(Visibility::Public),
@@ -487,7 +517,7 @@ fn extract_external(
                 end_col: 0,
                 signature: None,
                 doc_comment: None,
-                scope_path: None,
+                scope_path,
                 parent_index: parent_idx,
             });
             return;
@@ -510,8 +540,10 @@ fn extract_value_specification(
             if name.is_empty() { return; }
             // value_specifications are always function-typed (val f : a -> b)
             // but we use Function kind since that's what the spec says.
+            let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
+            let scope_path = scope_path_from_parent(parent_idx, symbols);
             symbols.push(ExtractedSymbol {
-                qualified_name: name.clone(),
+                qualified_name,
                 name,
                 kind: SymbolKind::Function,
                 visibility: Some(Visibility::Public),
@@ -521,7 +553,7 @@ fn extract_value_specification(
                 end_col: 0,
                 signature: None,
                 doc_comment: None,
-                scope_path: None,
+                scope_path,
                 parent_index: parent_idx,
             });
             return;

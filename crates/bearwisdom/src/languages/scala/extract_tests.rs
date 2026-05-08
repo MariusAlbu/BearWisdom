@@ -12,6 +12,66 @@
     }
 
     #[test]
+    fn brace_less_package_prefixes_top_level_class_qname() {
+        let src = "package cats.effect\n\nclass IO";
+        let r = extract::extract(src);
+        let io = r.symbols.iter().find(|s| s.name == "IO").expect("IO");
+        assert_eq!(
+            io.qualified_name, "cats.effect.IO",
+            "expected qname 'cats.effect.IO'; got {:?}",
+            io.qualified_name
+        );
+        assert_eq!(io.scope_path.as_deref(), Some("cats.effect"));
+    }
+
+    #[test]
+    fn brace_less_package_prefixes_nested_class_qname() {
+        let src = "package cats.effect\n\nclass IO {\n  class Attempt\n}";
+        let r = extract::extract(src);
+        let attempt = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "Attempt")
+            .expect("Attempt");
+        assert_eq!(attempt.qualified_name, "cats.effect.IO.Attempt");
+    }
+
+    #[test]
+    fn brace_less_package_prefixes_top_level_def() {
+        let src = "package cats.effect\n\ndef helper(): Int = 42";
+        let r = extract::extract(src);
+        let helper = r.symbols.iter().find(|s| s.name == "helper").expect("helper");
+        assert_eq!(helper.qualified_name, "cats.effect.helper");
+    }
+
+    #[test]
+    fn brace_less_package_prefixes_case_class_params() {
+        let src = "package p\n\ncase class Foo(x: Int, y: Int)";
+        let r = extract::extract(src);
+        let x = r.symbols.iter().find(|s| s.name == "x").expect("x");
+        assert_eq!(
+            x.qualified_name, "p.Foo.x",
+            "case-class param qname should pick up the package prefix"
+        );
+    }
+
+    #[test]
+    fn brace_form_package_prefixes_inner_class() {
+        let src = "package foo.bar {\n  class X\n}";
+        let r = extract::extract(src);
+        let x = r.symbols.iter().find(|s| s.name == "X").expect("X");
+        assert_eq!(x.qualified_name, "foo.bar.X");
+    }
+
+    #[test]
+    fn no_package_leaves_qname_unprefixed() {
+        let src = "class Standalone";
+        let r = extract::extract(src);
+        let s = r.symbols.iter().find(|s| s.name == "Standalone").expect("Standalone");
+        assert_eq!(s.qualified_name, "Standalone");
+    }
+
+    #[test]
     fn full_enum_case_emits_enum_member() {
         let r = extract::extract("enum Planet:\n  case Earth(mass: Double, radius: Double)");
         assert!(

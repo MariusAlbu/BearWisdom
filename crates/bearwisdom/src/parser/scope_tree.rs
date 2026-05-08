@@ -136,6 +136,98 @@ pub fn scope_path(containing_scope: Option<&ScopeEntry>) -> Option<String> {
     containing_scope.map(|s| s.qualified_name.clone())
 }
 
+/// Apply a file-level package prefix to top-level symbols.
+///
+/// Languages with file-scope package declarations (Scala `package foo.bar`,
+/// Kotlin `package foo.bar`) put every top-level symbol into that package,
+/// but tree-sitter exposes the package_clause / package_header AST node as a
+/// sibling of the type declarations, not an ancestor — so the scope-tree
+/// walker never sees the package as an enclosing scope. The recommended flow:
+///
+/// 1. Hoist the package name from the AST.
+/// 2. Prepend `<pkg>.` to every `ScopeEntry::qualified_name` in the scope
+///    tree. This fixes nested-class qnames automatically (their qname is
+///    derived from `qualify(name, scope_entry)`).
+/// 3. Run extraction.
+/// 4. Call this function with the hoisted package — it walks the symbol
+///    list, finds top-level entries (symbols where `scope_path` is None),
+///    and rewrites their `qualified_name` and `scope_path` to include the
+///    package. It also rewrites descendant qnames whose old prefix matches,
+///    catching case-class params and similar children whose qname was
+///    stamped during extraction by reading the parent's pre-fixup qname.
+///
+/// Skips package-clause-emitted Namespace symbols (detected via dotted qname
+/// or matching a hoisted-pkg path segment), and brace-form package symbols
+/// (qname already contains a dot).
+pub fn prefix_top_level_qnames(
+    symbols: &mut [crate::types::ExtractedSymbol],
+    hoisted_pkg: Option<&str>,
+) {
+    use crate::types::SymbolKind;
+
+    let n = symbols.len();
+    if n == 0 {
+        return;
+    }
+
+    let mut rewrites: Vec<(usize, String, String)> = Vec::new();
+
+    for i in 0..n {
+        if symbols[i].scope_path.is_some() {
+            continue;
+        }
+        if symbols[i].kind == SymbolKind::Namespace {
+            if symbols[i].qualified_name.contains('.') {
+                continue;
+            }
+            if let Some(pkg) = hoisted_pkg {
+                if pkg.split('.').any(|seg| seg == symbols[i].name) {
+                    continue;
+                }
+            }
+        }
+
+        let prefix: Option<String> = match symbols[i].parent_index {
+            Some(p_idx) if symbols[p_idx].kind == SymbolKind::Namespace => {
+                Some(symbols[p_idx].qualified_name.clone())
+            }
+            _ => hoisted_pkg.map(|s| s.to_string()),
+        };
+
+        let Some(pfx) = prefix else { continue };
+
+        let old = symbols[i].qualified_name.clone();
+        let new = format!("{pfx}.{old}");
+        rewrites.push((i, old, new));
+    }
+
+    for (i, old, new) in rewrites {
+        symbols[i].qualified_name = new.clone();
+        if symbols[i].scope_path.is_none() {
+            let new_scope = new.rsplit_once('.').map(|(p, _)| p.to_string());
+            symbols[i].scope_path = new_scope;
+        }
+        let old_dot = format!("{old}.");
+        for j in 0..n {
+            if j == i {
+                continue;
+            }
+            if symbols[j].qualified_name.starts_with(&old_dot) {
+                let suffix = &symbols[j].qualified_name[old.len()..];
+                symbols[j].qualified_name = format!("{new}{suffix}");
+            }
+            if let Some(sp) = symbols[j].scope_path.clone() {
+                if sp == old {
+                    symbols[j].scope_path = Some(new.clone());
+                } else if sp.starts_with(&old_dot) {
+                    let suffix = &sp[old.len()..];
+                    symbols[j].scope_path = Some(format!("{new}{suffix}"));
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Internal DFS walker
 // ---------------------------------------------------------------------------

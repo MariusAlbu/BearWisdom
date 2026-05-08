@@ -28,6 +28,21 @@
 use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
+/// Build the qualified name for a child symbol by prefixing the parent's qname.
+/// Top-level symbols (no parent) use the bare name.
+fn qualify_with_parent(name: &str, parent_index: Option<usize>, symbols: &[ExtractedSymbol]) -> String {
+    match parent_index.and_then(|i| symbols.get(i)) {
+        Some(parent) => format!("{}.{}", parent.qualified_name, name),
+        None => name.to_string(),
+    }
+}
+
+/// Build the scope_path string from the parent's qualified_name. None when the
+/// symbol is at file top level.
+fn scope_path_from_parent(parent_index: Option<usize>, symbols: &[ExtractedSymbol]) -> Option<String> {
+    parent_index.and_then(|i| symbols.get(i)).map(|p| p.qualified_name.clone())
+}
+
 pub fn extract(source: &str) -> ExtractionResult {
     let language: tree_sitter::Language = tree_sitter_fsharp::LANGUAGE_FSHARP.into();
     let mut parser = Parser::new();
@@ -129,11 +144,13 @@ fn extract_namespace(
     let line = node.start_position().row as u32;
     let kw = node.kind();
     let sig = format!("{} {}", kw, name);
+    let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+    let scope_path = scope_path_from_parent(parent_index, symbols);
     let idx = symbols.len();
 
     symbols.push(ExtractedSymbol {
         name: name.clone(),
-        qualified_name: name.clone(),
+        qualified_name,
         kind: SymbolKind::Namespace,
         visibility: Some(Visibility::Public),
         start_line: line,
@@ -142,7 +159,7 @@ fn extract_namespace(
         end_col: 0,
         signature: Some(sig),
         doc_comment: None,
-        scope_path: None,
+        scope_path,
         parent_index,
     });
 
@@ -170,11 +187,13 @@ fn extract_module_defn(
     let is_alias = is_module_alias(node, src);
     let kind = if is_alias { SymbolKind::TypeAlias } else { SymbolKind::Namespace };
     let line = node.start_position().row as u32;
+    let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+    let scope_path = scope_path_from_parent(parent_index, symbols);
     let idx = symbols.len();
 
     symbols.push(ExtractedSymbol {
         name: name.clone(),
-        qualified_name: name.clone(),
+        qualified_name,
         kind,
         visibility: Some(Visibility::Public),
         start_line: line,
@@ -183,7 +202,7 @@ fn extract_module_defn(
         end_col: 0,
         signature: Some(format!("module {}", name)),
         doc_comment: None,
-        scope_path: None,
+        scope_path,
         parent_index,
     });
 
@@ -277,11 +296,13 @@ fn extract_let(
     let has_params = has_function_params(node, src);
     let kind = if has_params { SymbolKind::Function } else { SymbolKind::Variable };
     let line = node.start_position().row as u32;
+    let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+    let scope_path = scope_path_from_parent(parent_index, symbols);
     let idx = symbols.len();
 
     symbols.push(ExtractedSymbol {
         name: name.clone(),
-        qualified_name: name.clone(),
+        qualified_name,
         kind,
         visibility: Some(Visibility::Public),
         start_line: line,
@@ -290,7 +311,7 @@ fn extract_let(
         end_col: 0,
         signature: Some(format!("let {}", name)),
         doc_comment: None,
-        scope_path: None,
+        scope_path,
         parent_index,
     });
 
@@ -403,11 +424,13 @@ fn extract_type_def(
         // Use the type_definition wrapper's start line so it matches the coverage
         // tool's node-counting (which records the type_definition node, not the body).
         let line = node.start_position().row as u32;
+        let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+        let scope_path = scope_path_from_parent(parent_index, symbols);
         let idx = symbols.len();
 
         symbols.push(ExtractedSymbol {
             name: name.clone(),
-            qualified_name: name.clone(),
+            qualified_name,
             kind,
             visibility: Some(Visibility::Public),
             start_line: line,
@@ -416,7 +439,7 @@ fn extract_type_def(
             end_col: 0,
             signature: Some(format!("type {}", name)),
             doc_comment: None,
-            scope_path: None,
+            scope_path,
             parent_index,
         });
 
@@ -461,9 +484,11 @@ fn extract_union_cases(
         // union_type_case: `| <identifier> [of <type>]`
         let name = first_identifier_text(child, src);
         if name.is_empty() { return; }
+        let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+        let scope_path = scope_path_from_parent(parent_index, symbols);
         symbols.push(ExtractedSymbol {
-            name: name.clone(),
-            qualified_name: name,
+            name,
+            qualified_name,
             kind: SymbolKind::EnumMember,
             visibility: Some(Visibility::Public),
             start_line: child.start_position().row as u32,
@@ -472,7 +497,7 @@ fn extract_union_cases(
             end_col: 0,
             signature: None,
             doc_comment: None,
-            scope_path: None,
+            scope_path,
             parent_index,
         });
     });
@@ -490,9 +515,11 @@ fn extract_enum_cases(
         // enum_type_case: `| <identifier> = <int>`
         let name = first_identifier_text(child, src);
         if name.is_empty() { return; }
+        let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+        let scope_path = scope_path_from_parent(parent_index, symbols);
         symbols.push(ExtractedSymbol {
-            name: name.clone(),
-            qualified_name: name,
+            name,
+            qualified_name,
             kind: SymbolKind::EnumMember,
             visibility: Some(Visibility::Public),
             start_line: child.start_position().row as u32,
@@ -501,7 +528,7 @@ fn extract_enum_cases(
             end_col: 0,
             signature: None,
             doc_comment: None,
-            scope_path: None,
+            scope_path,
             parent_index,
         });
     });
@@ -519,9 +546,11 @@ fn extract_record_fields(
         // record_field: `[mutable] <identifier> : <type>`
         let name = first_identifier_text(child, src);
         if name.is_empty() { return; }
+        let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+        let scope_path = scope_path_from_parent(parent_index, symbols);
         symbols.push(ExtractedSymbol {
-            name: name.clone(),
-            qualified_name: name,
+            name,
+            qualified_name,
             kind: SymbolKind::Field,
             visibility: Some(Visibility::Public),
             start_line: child.start_position().row as u32,
@@ -530,7 +559,7 @@ fn extract_record_fields(
             end_col: 0,
             signature: None,
             doc_comment: None,
-            scope_path: None,
+            scope_path,
             parent_index,
         });
     });
@@ -597,9 +626,11 @@ fn extract_module_abbrev(
     // First identifier child is the alias name.
     let name = first_identifier_text(node, src);
     if name.is_empty() { return; }
+    let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+    let scope_path = scope_path_from_parent(parent_index, symbols);
     symbols.push(ExtractedSymbol {
         name: name.clone(),
-        qualified_name: name.clone(),
+        qualified_name,
         kind: SymbolKind::TypeAlias,
         visibility: Some(Visibility::Public),
         start_line: node.start_position().row as u32,
@@ -608,7 +639,7 @@ fn extract_module_abbrev(
         end_col: 0,
         signature: Some(format!("module {}", name)),
         doc_comment: None,
-        scope_path: None,
+        scope_path,
         parent_index,
     });
 }
@@ -628,9 +659,11 @@ fn extract_exception_def(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| first_identifier_text(node, src));
     if name.is_empty() { return; }
+    let qualified_name = qualify_with_parent(&name, parent_index, symbols);
+    let scope_path = scope_path_from_parent(parent_index, symbols);
     symbols.push(ExtractedSymbol {
         name: name.clone(),
-        qualified_name: name.clone(),
+        qualified_name,
         kind: SymbolKind::Struct,
         visibility: Some(Visibility::Public),
         start_line: node.start_position().row as u32,
@@ -639,7 +672,7 @@ fn extract_exception_def(
         end_col: 0,
         signature: Some(format!("exception {}", name)),
         doc_comment: None,
-        scope_path: None,
+        scope_path,
         parent_index,
     });
 }

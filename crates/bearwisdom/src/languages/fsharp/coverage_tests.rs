@@ -26,6 +26,71 @@ use super::extract::extract;
 use crate::types::{EdgeKind, SymbolKind};
 
 // ---------------------------------------------------------------------------
+// Module-qname propagation (regression: pre-fix every symbol got an unprefixed
+// qname, so `let bind` inside `module Async = ...` was indexed as "bind"
+// rather than "Async.bind", and dotted refs like `Async.bind` couldn't resolve.)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn function_inside_module_qualified_with_module_name() {
+    let r = extract("module Async\nlet bind f = f\nlet other = 0");
+    let bind = r.symbols.iter().find(|s| s.name == "bind").expect("bind");
+    assert_eq!(bind.qualified_name, "Async.bind");
+    assert_eq!(bind.scope_path.as_deref(), Some("Async"));
+}
+
+#[test]
+fn type_inside_module_qualified_with_module_name() {
+    let r = extract("module Foo\nlet x = 0\ntype Person = { Name: string }");
+    let p = r.symbols.iter().find(|s| s.name == "Person").expect("Person");
+    assert_eq!(p.qualified_name, "Foo.Person");
+}
+
+#[test]
+fn nested_module_qname_chain() {
+    let r = extract("module Outer\n\nmodule Inner =\n    let value = 42\n    let other = 0\n");
+    let v = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "value")
+        .unwrap_or_else(|| {
+            panic!(
+                "expected `value` symbol; got {:?}",
+                r.symbols.iter().map(|s| (&s.name, s.kind, &s.qualified_name)).collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(v.qualified_name, "Outer.Inner.value");
+}
+
+#[test]
+fn record_field_qualified_with_record_qname() {
+    let r = extract("module Foo\nlet x = 0\ntype Person = { Name: string }");
+    let f = r.symbols.iter().find(|s| s.name == "Name" && s.kind == SymbolKind::Field).expect("Name");
+    assert_eq!(f.qualified_name, "Foo.Person.Name");
+}
+
+#[test]
+fn union_case_qualified_with_union_qname() {
+    let r = extract(
+        "module Foo\nlet x = 0\ntype Shape =\n    | Circle of float\n    | Square of float",
+    );
+    let c = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Circle" && s.kind == SymbolKind::EnumMember)
+        .expect("Circle");
+    assert_eq!(c.qualified_name, "Foo.Shape.Circle");
+}
+
+#[test]
+fn top_level_let_without_module_unprefixed() {
+    let r = extract("let x = 1\nlet y = 2");
+    let x = r.symbols.iter().find(|s| s.name == "x").expect("x");
+    assert_eq!(x.qualified_name, "x");
+    assert_eq!(x.scope_path, None);
+}
+
+// ---------------------------------------------------------------------------
 // Symbol node kinds
 // ---------------------------------------------------------------------------
 

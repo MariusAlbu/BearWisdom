@@ -50,12 +50,28 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     let src = source.as_bytes();
     let has_errors = root.has_error();
 
-    let scope_tree = scope_tree::build(root, src, SCALA_SCOPE_KINDS);
+    // A top-level brace-less `package foo.bar` puts every subsequent top-level
+    // declaration into that package, but tree-sitter exposes those siblings
+    // outside the package_clause AST node, so the scope-tree walker never sees
+    // the package as an enclosing scope. Hoist the package name once, prefix
+    // the scope tree (so nested-class qnames pick it up automatically), then
+    // fix up the truly-top-level symbols at the end (covers brace-form too,
+    // where parent_index is set but enclosing_scope is None).
+    let hoisted_pkg = hoist_top_level_package(root, src);
+
+    let mut scope_tree = scope_tree::build(root, src, SCALA_SCOPE_KINDS);
+    if let Some(pkg) = hoisted_pkg.as_deref() {
+        for entry in scope_tree.iter_mut() {
+            entry.qualified_name = format!("{pkg}.{}", entry.qualified_name);
+        }
+    }
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
     extract_node(root, src, &scope_tree, &mut symbols, &mut refs, None);
+
+    scope_tree::prefix_top_level_qnames(&mut symbols, hoisted_pkg.as_deref());
 
     // Post-traversal: scan the entire CST for type_identifier nodes and emit
     // TypeRef for any that the top-down walker didn't reach (e.g., inside
@@ -83,6 +99,43 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     }
 
     super::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Hoist top-level brace-less `package foo.bar` declarations into a single
+/// dotted prefix. Returns None if the file has no top-level package or only
+/// brace-form `package foo { ... }` (which the scope tree handles via byte
+/// ranges).
+///
+/// Chained brace-less packages — `package foo` followed by `package bar` at
+/// file top level — concatenate to `foo.bar`.
+fn hoist_top_level_package(root: tree_sitter::Node, src: &[u8]) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() != "package_clause" {
+            continue;
+        }
+        // brace-form has a `body` field; skip — scope tree covers it via the
+        // package_clause's byte range once the body is recursed into below.
+        if child.child_by_field_name("body").is_some() {
+            continue;
+        }
+        let mut cc = child.walk();
+        for inner in child.children(&mut cc) {
+            if matches!(
+                inner.kind(),
+                "stable_id" | "identifier" | "package_identifier"
+            ) {
+                parts.push(super::helpers::node_text(inner, src));
+                break;
+            }
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("."))
+    }
 }
 
 /// Walk every `type_parameters` node and record each declared type-parameter

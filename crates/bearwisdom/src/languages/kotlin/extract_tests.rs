@@ -2,6 +2,55 @@
     use crate::types::{EdgeKind, SymbolKind};
 
     #[test]
+    fn package_header_emits_namespace_with_dotted_qname() {
+        let r = extract::extract("package com.foo.bar\n\nclass X");
+        let ns = r
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Namespace)
+            .expect("namespace");
+        assert_eq!(ns.qualified_name, "com.foo.bar");
+        assert_eq!(ns.name, "bar");
+    }
+
+    #[test]
+    fn package_header_prefixes_top_level_class_qname() {
+        let r = extract::extract("package com.foo\n\nclass Bar");
+        let bar = r.symbols.iter().find(|s| s.name == "Bar").expect("Bar");
+        assert_eq!(bar.qualified_name, "com.foo.Bar");
+        assert_eq!(bar.scope_path.as_deref(), Some("com.foo"));
+    }
+
+    #[test]
+    fn package_header_prefixes_nested_class_qname() {
+        let src = "package com.foo\n\nclass Outer {\n  class Inner\n}";
+        let r = extract::extract(src);
+        let inner = r.symbols.iter().find(|s| s.name == "Inner").expect("Inner");
+        assert_eq!(inner.qualified_name, "com.foo.Outer.Inner");
+    }
+
+    #[test]
+    fn package_header_prefixes_top_level_function() {
+        let r = extract::extract("package com.foo\n\nfun greet(): String = \"hi\"");
+        let fn_sym = r.symbols.iter().find(|s| s.name == "greet").expect("greet");
+        assert_eq!(fn_sym.qualified_name, "com.foo.greet");
+    }
+
+    #[test]
+    fn package_header_prefixes_constructor_promoted_property() {
+        let r = extract::extract("package com.foo\n\nclass Box(val item: String)");
+        let item = r.symbols.iter().find(|s| s.name == "item").expect("item");
+        assert_eq!(item.qualified_name, "com.foo.Box.item");
+    }
+
+    #[test]
+    fn no_package_header_leaves_qname_unprefixed() {
+        let r = extract::extract("class Standalone");
+        let s = r.symbols.iter().find(|s| s.name == "Standalone").expect("Standalone");
+        assert_eq!(s.qualified_name, "Standalone");
+    }
+
+    #[test]
     fn extracts_class_with_method() {
         let src = r#"
 class Animal(val name: String) {
