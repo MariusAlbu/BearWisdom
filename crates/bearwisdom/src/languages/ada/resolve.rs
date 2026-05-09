@@ -130,6 +130,56 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
+        // Alias substitution: `package ASU renames Ada.Strings.Unbounded;`
+        // produces an Imports ref with target_name="ASU" and
+        // module=Some("Ada.Strings.Unbounded"). When a call writes
+        // `ASU.To_String(...)`, replace the leading "ASU" with the rename
+        // target and probe the canonical qname. This catches the very common
+        // pattern where files alias long stdlib paths (`ASU`, `ASB`, `Trace`).
+        if target.contains('.') {
+            let leading = target.split('.').next().unwrap_or("");
+            for import in &file_ctx.imports {
+                if import.imported_name != leading {
+                    continue;
+                }
+                let Some(module_path) = &import.module_path else {
+                    continue;
+                };
+                if module_path == leading {
+                    continue; // not an alias, just a qualified import
+                }
+                // Replace the leading segment.
+                let rewritten = format!(
+                    "{}{}",
+                    module_path,
+                    &target[leading.len()..] // includes the dot prefix
+                );
+                let parts: Vec<&str> = rewritten.split('.').collect();
+                for split in (1..parts.len()).rev() {
+                    let parent = parts[..split].join(".");
+                    let leaf = parts[split..].join(".");
+                    let leaf_lower = leaf.to_lowercase();
+                    for sym in lookup.members_of(&parent) {
+                        if sym.qualified_name
+                            .rsplit_once('.')
+                            .map(|(_, n)| n)
+                            .unwrap_or(&sym.qualified_name)
+                            .to_lowercase()
+                            == leaf_lower
+                            && predicates::kind_compatible(edge_kind, &sym.kind)
+                        {
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 0.92,
+                                strategy: "ada_alias_substitution",
+                                resolved_yield_type: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // Dotted target with leading segment matching a use'd package: try
         // the full qname, then walk back through dotted segments. Handles
         // `Ada.Text_IO.Put_Line` written explicitly even when `use Ada;` is

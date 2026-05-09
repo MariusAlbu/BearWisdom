@@ -49,6 +49,7 @@ impl LanguagePlugin for AdaPlugin {
         &[
             "subprogram_declaration",
             "subprogram_body",
+            "subprogram_renaming_declaration",
             "package_declaration",
             "package_body",
             "full_type_declaration",

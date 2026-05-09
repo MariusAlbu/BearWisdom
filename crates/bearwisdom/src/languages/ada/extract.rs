@@ -81,6 +81,24 @@ fn walk_node(
             let idx = extract_type_decl(node, src, symbols, parent_idx);
             walk_children(node, src, symbols, refs, idx.or(parent_idx));
         }
+        "subprogram_renaming_declaration" => {
+            // `procedure Put_Line (S : String) renames Trendy_Terminal.IO.Put_Line;`
+            // declares Put_Line as a local alias inside the enclosing package.
+            // Without recognizing this, calls like `Put_Line(...)` from a file
+            // that does `use SP.Terminal;` can't find the symbol — the bare-name
+            // resolver looks up `members_of("SP.Terminal")` and gets nothing
+            // because the rename never produced a symbol row.
+            //
+            // Emit a real symbol so it lands in the symbol table under the
+            // parent package's qname (e.g. `SP.Terminal.Put_Line`). Best-effort
+            // name extraction: tree-sitter-ada exposes the alias either via the
+            // `name` field on the inner specification, or as the first
+            // identifier-shaped child in the rename node.
+            let alias = subprogram_rename_alias(node, src);
+            if let Some(name) = alias.filter(|n| !n.is_empty()) {
+                push_sym(node, name, SymbolKind::Function, symbols, parent_idx);
+            }
+        }
         "package_renaming_declaration" => {
             // `package Trace renames Simple_Logging;` brings Simple_Logging
             // into scope as `Trace`. Without this, every `Trace.<x>` call
@@ -238,6 +256,27 @@ fn extract_subprogram(
             if !name.is_empty() {
                 let idx = push_sym(node, name, SymbolKind::Function, symbols, parent_idx);
                 return Some(idx);
+            }
+        }
+    }
+    None
+}
+
+/// Pull the alias name out of a `subprogram_renaming_declaration` node.
+/// Tree-sitter-ada wraps the alias in either a `procedure_specification`
+/// or `function_specification` (both expose a `name` field).
+fn subprogram_rename_alias(node: Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if matches!(
+            child.kind(),
+            "procedure_specification" | "function_specification"
+        ) {
+            if let Some(name_node) = child.child_by_field_name("name") {
+                let name = text(name_node, src);
+                if !name.is_empty() {
+                    return Some(name);
+                }
             }
         }
     }
