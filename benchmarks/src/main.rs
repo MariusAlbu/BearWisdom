@@ -10,15 +10,19 @@
 //       Sample tasks from an indexed project and write them to a JSON file.
 //
 //   bw-bench run --tasks <FILE> --model <MODEL> --output <DIR>
-//               [--conditions both|bw|native]
-//       Execute all tasks in a task file via the Claude API and write results.
-//       Requires ANTHROPIC_API_KEY in the environment.
+//                [--conditions all|both|bw|bw-cli|native] [--repeat N]
+//       Execute all tasks in a task file. Each (task × condition) is run
+//       N times; results written one JSON file per run.
 //
-//   bw-bench report --results <DIR> [--output report.md]
-//       Score persisted results and generate a Markdown + JSON report.
+//   bw-bench report --results <DIR> [--output benchmark.md]
+//       Aggregate persisted results (recursively across project subdirs)
+//       and emit benchmark.md.
 //
-//   bw-bench full --project <PATH> --model <MODEL> --output <DIR> [--count 3]
-//       generate → run (both conditions) → report in one command.
+//   bw-bench full --projects <PATH1,PATH2,...> --model <MODEL>
+//                 --output <DIR> [--count 3] [--repeat 3]
+//       generate → run → report across one or many projects in one shot.
+//       Per-project results land in <output>/<project_basename>/; the
+//       aggregate report is written to <output>/benchmark.md.
 // =============================================================================
 
 extern crate sqlite_vec;
@@ -91,6 +95,15 @@ enum Commands {
         /// Backend to use: "api" (requires ANTHROPIC_API_KEY) or "cli" (uses `claude` CLI from subscription).
         #[arg(long, default_value = "cli")]
         backend: String,
+
+        /// Number of repetitions per (task × condition) for variance analysis.
+        #[arg(long, default_value_t = 1)]
+        repeat: u32,
+
+        /// Optional override for the project tag stored in each result.
+        /// Defaults to the basename of the project_path in the tasks file.
+        #[arg(long)]
+        project_name: Option<String>,
     },
 
     /// Score persisted results and generate a Markdown + JSON report.
@@ -112,23 +125,32 @@ enum Commands {
         project: PathBuf,
     },
 
-    /// Run generate → run (both conditions) → report in one shot.
+    /// Run generate → run → report across one or many projects in one shot.
     Full {
-        /// Path to the project root to index and sample tasks from.
-        #[arg(long)]
-        project: PathBuf,
+        /// Single project root (mutually exclusive with --projects).
+        #[arg(long, conflicts_with = "projects")]
+        project: Option<PathBuf>,
+
+        /// Comma-separated project roots for multi-project campaigns.
+        /// Per-project artifacts land in <output>/<project_basename>/.
+        #[arg(long, value_delimiter = ',')]
+        projects: Vec<PathBuf>,
 
         /// Claude model ID.
         #[arg(long, default_value = "sonnet")]
         model: String,
 
-        /// Output directory (tasks.json + results + report will be written here).
+        /// Output directory (per-project subdirs + aggregate benchmark.md).
         #[arg(long)]
         output: PathBuf,
 
-        /// Number of tasks to generate per category.
+        /// Number of tasks to generate per category, per project.
         #[arg(long, default_value_t = 3)]
         count: usize,
+
+        /// Number of repetitions per (task × condition) for variance analysis.
+        #[arg(long, default_value_t = 1)]
+        repeat: u32,
 
         /// Backend: "cli" (Claude Code subscription) or "api" (ANTHROPIC_API_KEY).
         #[arg(long, default_value = "cli")]
@@ -155,56 +177,85 @@ async fn main() -> Result<()> {
         Commands::Generate { project, output, count } => {
             cmd_generate(&project, &output, count)?;
         }
-        Commands::Run { tasks, model, output, conditions, backend } => {
+        Commands::Run { tasks, model, output, conditions, backend, repeat, project_name } => {
             let conditions = parse_conditions(&conditions)?;
             let task_set = TaskSet::load(&tasks)?;
             let project_root = PathBuf::from(&task_set.project_path);
+            let project_tag = project_name
+                .or_else(|| project_basename(&project_root))
+                .unwrap_or_else(|| "unknown".to_owned());
 
             match backend.as_str() {
                 "cli" => {
                     let cli_runner = runner::CliRunner::new(model, project_root)?;
-                    cli_runner.run_all(&task_set, &conditions, &output).await?;
+                    cli_runner
+                        .run_all(&task_set, &conditions, &output, repeat, &project_tag)
+                        .await?;
                 }
                 "api" => {
                     let api_key = api_key()?;
                     let runner = Runner::new(api_key, model, project_root)?;
-                    runner.run_all(&task_set, &conditions, &output).await?;
+                    runner
+                        .run_all(&task_set, &conditions, &output, repeat, &project_tag)
+                        .await?;
                 }
                 other => bail!("Unknown backend '{other}': expected cli | api"),
             }
         }
         Commands::Report { results, output } => {
-            let output_path = output.unwrap_or_else(|| results.join("report.md"));
+            let output_path = output.unwrap_or_else(|| results.join("benchmark.md"));
             cmd_report(&results, &output_path)?;
         }
         Commands::Diagnose { project } => {
             cmd_diagnose(&project)?;
         }
-        Commands::Full { project, model, output, count, backend } => {
+        Commands::Full { project, projects, model, output, count, repeat, backend } => {
             std::fs::create_dir_all(&output)
                 .with_context(|| format!("Failed to create output dir {}", output.display()))?;
 
-            let tasks_path = output.join("tasks.json");
-            cmd_generate(&project, &tasks_path, count)?;
+            // Collapse the two flag shapes into one project list.
+            let project_roots: Vec<PathBuf> = if !projects.is_empty() {
+                projects
+            } else if let Some(p) = project {
+                vec![p]
+            } else {
+                bail!("Either --project or --projects must be provided");
+            };
 
-            let task_set = TaskSet::load(&tasks_path)?;
-            let project_root = PathBuf::from(&task_set.project_path);
-            let conditions = Condition::all().to_vec();
+            for project_root in &project_roots {
+                let tag = project_basename(project_root)
+                    .unwrap_or_else(|| "unknown".to_owned());
+                info!("=== Project: {tag} ({}) ===", project_root.display());
 
-            match backend.as_str() {
-                "cli" => {
-                    let cli_runner = runner::CliRunner::new(model, project_root)?;
-                    cli_runner.run_all(&task_set, &conditions, &output).await?;
+                let project_out = output.join(&tag);
+                std::fs::create_dir_all(&project_out)?;
+
+                let tasks_path = project_out.join("tasks.json");
+                cmd_generate(project_root, &tasks_path, count)?;
+
+                let task_set = TaskSet::load(&tasks_path)?;
+                let project_root_typed = PathBuf::from(&task_set.project_path);
+                let conditions = Condition::all().to_vec();
+
+                match backend.as_str() {
+                    "cli" => {
+                        let cli_runner = runner::CliRunner::new(model.clone(), project_root_typed)?;
+                        cli_runner
+                            .run_all(&task_set, &conditions, &project_out, repeat, &tag)
+                            .await?;
+                    }
+                    "api" => {
+                        let api_key = api_key()?;
+                        let runner = Runner::new(api_key, model.clone(), project_root_typed)?;
+                        runner
+                            .run_all(&task_set, &conditions, &project_out, repeat, &tag)
+                            .await?;
+                    }
+                    other => bail!("Unknown backend '{other}': expected cli | api"),
                 }
-                "api" => {
-                    let api_key = api_key()?;
-                    let runner = Runner::new(api_key, model, project_root)?;
-                    runner.run_all(&task_set, &conditions, &output).await?;
-                }
-                other => bail!("Unknown backend '{other}': expected cli | api"),
             }
 
-            let report_path = output.join("report.md");
+            let report_path = output.join("benchmark.md");
             cmd_report(&output, &report_path)?;
 
             info!("Report written to {}", report_path.display());
@@ -481,29 +532,24 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
 fn cmd_report(results_dir: &std::path::Path, output_path: &std::path::Path) -> Result<()> {
     info!("Loading results from {}", results_dir.display());
 
-    let results = runner::load_results(results_dir)?;
+    // Recursively walk for both *.json result files and per-project tasks.json files.
+    // Layout produced by `Full --projects`:
+    //   <output>/<project_a>/{tasks.json, *-condition[-rN].json}
+    //   <output>/<project_b>/...
+    // Layout produced by single-project `Full`:
+    //   <output>/{tasks.json, *-condition[-rN].json}
+    let (results, tasks) = runner::load_results_recursive(results_dir)?;
     if results.is_empty() {
         bail!(
-            "No result files found in {}. Run `bw-bench run` first.",
+            "No result files found in {}. Run `bw-bench run` or `bw-bench full` first.",
             results_dir.display()
         );
     }
-    info!("Loaded {} run results", results.len());
-
-    // Load the task set from the same directory (tasks.json placed there by `full`).
-    let tasks_path = results_dir.join("tasks.json");
-    let tasks: Vec<task::BenchmarkTask> = if tasks_path.exists() {
-        TaskSet::load(&tasks_path)?.tasks
-    } else {
-        // No tasks.json: reconstruct minimal tasks from result task_ids so scoring still works.
-        // The missing ground truth will yield zero recall — acceptable for reporting runs
-        // where the tasks file has been separated from the results.
-        tracing::warn!(
-            "tasks.json not found in {}; ground truth will be empty for all tasks.",
-            results_dir.display()
-        );
-        vec![]
-    };
+    info!(
+        "Loaded {} run results across {} task definitions",
+        results.len(),
+        tasks.len()
+    );
 
     report::generate_report(&tasks, &results, output_path)?;
     info!("Report written to {}", output_path.display());
@@ -517,6 +563,10 @@ fn cmd_report(results_dir: &std::path::Path, output_path: &std::path::Path) -> R
 fn api_key() -> Result<String> {
     std::env::var("ANTHROPIC_API_KEY")
         .context("ANTHROPIC_API_KEY environment variable is not set")
+}
+
+fn project_basename(path: &std::path::Path) -> Option<String> {
+    path.file_name().and_then(|s| s.to_str()).map(|s| s.to_owned())
 }
 
 fn parse_conditions(s: &str) -> Result<Vec<Condition>> {

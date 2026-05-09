@@ -62,9 +62,34 @@ pub struct ToolCall {
     pub output_len: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Outcome {
+    Completed,
+    MaxIterations,
+    ApiError,
+}
+
+impl std::fmt::Display for Outcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Completed => write!(f, "completed"),
+            Self::MaxIterations => write!(f, "max_iterations"),
+            Self::ApiError => write!(f, "api_error"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunResult {
     pub task_id: String,
+    /// Project tag — basename of the project root, used to bucket results when
+    /// the campaign runs across multiple projects in one shot.
+    #[serde(default)]
+    pub project: String,
+    /// Run index within a `--repeat N` group; 0 for single runs.
+    #[serde(default)]
+    pub run_idx: u32,
     pub condition: Condition,
     pub model: String,
     pub answer: String,
@@ -72,7 +97,20 @@ pub struct RunResult {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub wall_time_ms: u64,
+    /// Number of LLM round trips (request/response cycles) used by this run.
+    /// For the API runner this is the loop iteration count; for the CLI runner
+    /// it's the count of `assistant` events in the conversation transcript.
+    #[serde(default)]
+    pub iterations: u32,
+    /// Why the run stopped: `Completed` = end_turn, `MaxIterations` = ran out
+    /// of tool-call iterations, `ApiError` = transport or upstream failure.
+    #[serde(default = "default_outcome")]
+    pub outcome: Outcome,
     pub completed_at: chrono::DateTime<chrono::Utc>,
+}
+
+fn default_outcome() -> Outcome {
+    Outcome::Completed
 }
 
 // ---------------------------------------------------------------------------
@@ -101,31 +139,50 @@ impl Runner {
         })
     }
 
-    /// Run all tasks in `task_set` for the requested conditions.
+    /// Run all tasks in `task_set` for the requested conditions, repeated
+    /// `repeat` times per (task × condition). Each run is persisted as a
+    /// separate JSON file so the report can compute median + IQR across runs.
     pub async fn run_all(
         &self,
         task_set: &TaskSet,
         conditions: &[Condition],
         output_dir: &Path,
+        repeat: u32,
+        project_tag: &str,
     ) -> Result<Vec<RunResult>> {
         std::fs::create_dir_all(output_dir)?;
         let mut results = Vec::new();
+        let repeat = repeat.max(1);
 
         for condition in conditions {
             info!("Running condition: {condition}");
             for task in &task_set.tasks {
-                info!("  Task {} [{}]", task.id, task.category.as_str());
-                match self.run_task(task, condition).await {
-                    Ok(result) => {
-                        // Persist individual result immediately.
-                        let filename = format!("{}-{}.json", task.id, condition);
-                        let path = output_dir.join(&filename);
-                        let json = serde_json::to_string_pretty(&result)?;
-                        std::fs::write(&path, json)?;
-                        results.push(result);
-                    }
-                    Err(e) => {
-                        warn!("Task {} failed: {e:#}", task.id);
+                for run_idx in 0..repeat {
+                    info!(
+                        "  Task {} [{}] run {}/{}",
+                        task.id,
+                        task.category.as_str(),
+                        run_idx + 1,
+                        repeat
+                    );
+                    match self.run_task(task, condition).await {
+                        Ok(mut result) => {
+                            result.run_idx = run_idx;
+                            result.project = project_tag.to_owned();
+                            // Persist individual result immediately.
+                            let filename = if repeat > 1 {
+                                format!("{}-{}-r{}.json", task.id, condition, run_idx)
+                            } else {
+                                format!("{}-{}.json", task.id, condition)
+                            };
+                            let path = output_dir.join(&filename);
+                            let json = serde_json::to_string_pretty(&result)?;
+                            std::fs::write(&path, json)?;
+                            results.push(result);
+                        }
+                        Err(e) => {
+                            warn!("Task {} run {} failed: {e:#}", task.id, run_idx);
+                        }
                     }
                 }
             }
@@ -147,12 +204,15 @@ impl Runner {
         let mut input_tokens: u64 = 0;
         let mut output_tokens: u64 = 0;
         let mut final_answer = String::new();
-        let mut iterations = 0;
-        const MAX_ITERATIONS: usize = 30;
+        let mut iterations: u32 = 0;
+        let mut outcome = Outcome::Completed;
+        const MAX_ITERATIONS: u32 = 30;
 
         loop {
             if iterations >= MAX_ITERATIONS {
-                bail!("Exceeded {MAX_ITERATIONS} tool call iterations for task {}", task.id);
+                warn!("Task {} hit MAX_ITERATIONS={MAX_ITERATIONS}", task.id);
+                outcome = Outcome::MaxIterations;
+                break;
             }
             iterations += 1;
 
@@ -164,7 +224,7 @@ impl Runner {
                 "tools": tools,
             });
 
-            let response = self
+            let response = match self
                 .client
                 .post("https://api.anthropic.com/v1/messages")
                 .header("x-api-key", &self.api_key)
@@ -173,22 +233,37 @@ impl Runner {
                 .json(&body)
                 .send()
                 .await
-                .context("HTTP request to Anthropic API failed")?;
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("Task {} HTTP failure: {e:#}", task.id);
+                    outcome = Outcome::ApiError;
+                    break;
+                }
+            };
 
             let status = response.status();
-            let resp_json: Value = response
-                .json()
-                .await
-                .context("Failed to parse Anthropic response")?;
+            let resp_json: Value = match response.json().await {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("Task {} response parse failure: {e:#}", task.id);
+                    outcome = Outcome::ApiError;
+                    break;
+                }
+            };
 
             if !status.is_success() {
-                bail!(
-                    "Anthropic API error {status}: {}",
-                    resp_json.get("error")
+                warn!(
+                    "Task {} API error {status}: {}",
+                    task.id,
+                    resp_json
+                        .get("error")
                         .and_then(|e| e.get("message"))
                         .and_then(|m| m.as_str())
                         .unwrap_or("unknown error")
                 );
+                outcome = Outcome::ApiError;
+                break;
             }
 
             // Accumulate token usage.
@@ -278,6 +353,8 @@ impl Runner {
 
         Ok(RunResult {
             task_id: task.id.clone(),
+            project: String::new(),
+            run_idx: 0,
             condition: condition.clone(),
             model: self.model.clone(),
             answer: final_answer,
@@ -285,6 +362,8 @@ impl Runner {
             input_tokens,
             output_tokens,
             wall_time_ms,
+            iterations,
+            outcome,
             completed_at: Utc::now(),
         })
     }
@@ -942,24 +1021,41 @@ impl CliRunner {
         task_set: &TaskSet,
         conditions: &[Condition],
         output_dir: &Path,
+        repeat: u32,
+        project_tag: &str,
     ) -> Result<Vec<RunResult>> {
         std::fs::create_dir_all(output_dir)?;
         let mut results = Vec::new();
+        let repeat = repeat.max(1);
 
         for condition in conditions {
             info!("Running condition: {condition}");
             for task in &task_set.tasks {
-                info!("  Task {} [{}]", task.id, task.category.as_str());
-                match self.run_task(task, condition).await {
-                    Ok(result) => {
-                        let filename = format!("{}-{}.json", task.id, condition);
-                        let path = output_dir.join(&filename);
-                        let json_str = serde_json::to_string_pretty(&result)?;
-                        std::fs::write(&path, json_str)?;
-                        results.push(result);
-                    }
-                    Err(e) => {
-                        warn!("Task {} failed: {e:#}", task.id);
+                for run_idx in 0..repeat {
+                    info!(
+                        "  Task {} [{}] run {}/{}",
+                        task.id,
+                        task.category.as_str(),
+                        run_idx + 1,
+                        repeat
+                    );
+                    match self.run_task(task, condition).await {
+                        Ok(mut result) => {
+                            result.run_idx = run_idx;
+                            result.project = project_tag.to_owned();
+                            let filename = if repeat > 1 {
+                                format!("{}-{}-r{}.json", task.id, condition, run_idx)
+                            } else {
+                                format!("{}-{}.json", task.id, condition)
+                            };
+                            let path = output_dir.join(&filename);
+                            let json_str = serde_json::to_string_pretty(&result)?;
+                            std::fs::write(&path, json_str)?;
+                            results.push(result);
+                        }
+                        Err(e) => {
+                            warn!("Task {} run {} failed: {e:#}", task.id, run_idx);
+                        }
                     }
                 }
             }
@@ -1047,28 +1143,48 @@ impl CliRunner {
 
         let wall_time_ms = start.elapsed().as_millis() as u64;
 
-        if !output.status.success() {
+        // Subprocess failure → ApiError outcome with whatever partial output we got.
+        let mut outcome = if output.status.success() {
+            Outcome::Completed
+        } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("claude CLI failed (exit {}): {}", output.status, stderr.chars().take(500).collect::<String>());
-        }
+            warn!(
+                "claude CLI exited {}: {}",
+                output.status,
+                stderr.chars().take(500).collect::<String>()
+            );
+            Outcome::ApiError
+        };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
         // With --verbose, output is a JSON array of conversation events.
         // Parse each event to extract assistant text, tool calls, and usage.
-        let events: Vec<Value> = serde_json::from_str(&stdout)
-            .with_context(|| format!("Failed to parse claude CLI output ({}b)", stdout.len()))?;
+        let events: Vec<Value> = match serde_json::from_str(&stdout) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(
+                    "Failed to parse claude CLI output ({}b): {e:#}",
+                    stdout.len()
+                );
+                outcome = Outcome::ApiError;
+                Vec::new()
+            }
+        };
 
         let mut answer = String::new();
         let mut tool_calls: Vec<ToolCall> = Vec::new();
         let mut input_tokens: u64 = 0;
         let mut output_tokens: u64 = 0;
+        let mut iterations: u32 = 0;
+        let mut hit_max_turns = false;
 
         for event in &events {
             let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
             match event_type {
                 "assistant" => {
+                    iterations += 1;
                     if let Some(content) = event.get("message")
                         .and_then(|m| m.get("content"))
                         .and_then(|c| c.as_array())
@@ -1114,6 +1230,12 @@ impl CliRunner {
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
                     }
+                    // Distinguish the CLI's "ran out of turns" stop reason from a clean finish.
+                    if let Some(reason) = event.get("subtype").and_then(|r| r.as_str()) {
+                        if reason == "error_max_turns" {
+                            hit_max_turns = true;
+                        }
+                    }
                     // Also check result text as fallback.
                     if answer.is_empty() {
                         if let Some(text) = event.get("result").and_then(|r| r.as_str()) {
@@ -1125,8 +1247,14 @@ impl CliRunner {
             }
         }
 
+        if hit_max_turns && outcome == Outcome::Completed {
+            outcome = Outcome::MaxIterations;
+        }
+
         Ok(RunResult {
             task_id: task.id.clone(),
+            project: String::new(),
+            run_idx: 0,
             condition: condition.clone(),
             model: self.model.clone(),
             answer,
@@ -1134,6 +1262,8 @@ impl CliRunner {
             input_tokens,
             output_tokens,
             wall_time_ms,
+            iterations,
+            outcome,
             completed_at: Utc::now(),
         })
     }
@@ -1247,31 +1377,54 @@ fn glob_to_regex(pattern: &str) -> Regex {
 // Load persisted RunResults from a directory
 // ---------------------------------------------------------------------------
 
-pub fn load_results(dir: &Path) -> Result<Vec<RunResult>> {
+/// Recursively walk `dir` (single-project layout: results in `dir`; multi-project
+/// layout: results in `dir/<project>/`) and collect both RunResults and the
+/// task definitions referenced by them. The tasks vector aggregates every
+/// `tasks.json` discovered at any depth.
+pub fn load_results_recursive(dir: &Path) -> Result<(Vec<RunResult>, Vec<crate::task::BenchmarkTask>)> {
     let mut results = Vec::new();
+    let mut tasks = Vec::new();
+    walk(dir, &mut results, &mut tasks)?;
+    return Ok((results, tasks));
 
-    let entries = std::fs::read_dir(dir)
-        .with_context(|| format!("Failed to read results directory {}", dir.display()))?;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
+    fn walk(
+        dir: &Path,
+        results: &mut Vec<RunResult>,
+        tasks: &mut Vec<crate::task::BenchmarkTask>,
+    ) -> Result<()> {
+        let entries = std::fs::read_dir(dir)
+            .with_context(|| format!("Failed to read directory {}", dir.display()))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_type = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if file_type.is_dir() {
+                walk(&path, results, tasks)?;
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if matches!(name, "report" | "results" | "benchmark") {
+                continue;
+            }
+            let data = match std::fs::read_to_string(&path) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            if name == "tasks" {
+                if let Ok(set) = serde_json::from_str::<crate::task::TaskSet>(&data) {
+                    tasks.extend(set.tasks);
+                }
+                continue;
+            }
+            if let Ok(result) = serde_json::from_str::<RunResult>(&data) {
+                results.push(result);
+            }
         }
-        // Skip the aggregate report files.
-        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        if name == "report" || name == "results" {
-            continue;
-        }
-
-        let data = std::fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read {}", path.display()))?;
-
-        // Try to parse as RunResult; skip files that are not RunResults.
-        if let Ok(result) = serde_json::from_str::<RunResult>(&data) {
-            results.push(result);
-        }
+        Ok(())
     }
-
-    Ok(results)
 }

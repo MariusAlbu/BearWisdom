@@ -16,6 +16,13 @@ pub struct TaskScore {
     pub task_id: String,
     pub category: String,
     pub condition: String,
+    /// Project tag forwarded from the result (basename of project root, or
+    /// override from --project-name).
+    #[serde(default)]
+    pub project: String,
+    /// Run index within the (task × condition) group; 0-based.
+    #[serde(default)]
+    pub run_idx: u32,
     pub precision: f64,
     pub recall: f64,
     pub f1: f64,
@@ -26,6 +33,12 @@ pub struct TaskScore {
     /// Composite = 0.25*precision + 0.25*recall + 0.15*f1 + 0.20*efficiency + 0.15*latency
     pub composite: f64,
     pub tool_call_count: usize,
+    /// LLM round-trip count (request/response cycles or assistant events).
+    #[serde(default)]
+    pub iterations: u32,
+    /// Run outcome: "completed", "max_iterations", or "api_error".
+    #[serde(default = "default_outcome_str")]
+    pub outcome: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub wall_time_ms: u64,
@@ -33,6 +46,10 @@ pub struct TaskScore {
     pub found_items: Vec<String>,
     /// Ground truth items that do NOT appear in the answer.
     pub missed_items: Vec<String>,
+}
+
+fn default_outcome_str() -> String {
+    "completed".to_owned()
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +120,8 @@ pub fn score_run(task: &BenchmarkTask, result: &RunResult) -> TaskScore {
         task_id: task.id.clone(),
         category: task.category.as_str().to_owned(),
         condition: result.condition.to_string(),
+        project: result.project.clone(),
+        run_idx: result.run_idx,
         precision,
         recall,
         f1,
@@ -110,6 +129,8 @@ pub fn score_run(task: &BenchmarkTask, result: &RunResult) -> TaskScore {
         latency_score,
         composite,
         tool_call_count: tool_calls,
+        iterations: result.iterations,
+        outcome: result.outcome.to_string(),
         input_tokens: result.input_tokens,
         output_tokens: result.output_tokens,
         wall_time_ms: result.wall_time_ms,
