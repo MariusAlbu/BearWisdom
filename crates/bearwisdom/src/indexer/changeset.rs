@@ -16,6 +16,10 @@ use crate::db::Database;
 use crate::walker::{self, WalkedFile};
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
+
+#[cfg(test)]
+#[path = "changeset_tests.rs"]
+mod tests;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tracing::{debug, info, warn};
@@ -92,6 +96,76 @@ pub fn full_scan(
         );
         files.extend(extra);
         files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    }
+
+    // TU allowlist filter: when the project has a `compile_commands.json`,
+    // CMake or Bear has already enumerated exactly which translation
+    // units the build compiles. Drop any walked C/C++ source file that
+    // isn't in the TU set — those are platform-conditional or missing-
+    // dep files (echo-servers/poco_echo.cpp without Poco installed,
+    // ssl/gnutls.c on Windows, event/io_uring.c off Linux) the build
+    // already chose to skip. Headers and non-C/C++ files always pass
+    // through; they aren't TUs and aren't listed in compile_commands.
+    //
+    // Sanity cap: if the filter would drop more than ~20% of the
+    // project's C/C++ source files, the manifest is too incomplete to
+    // trust as ground truth. Common cause: example/demo subprojects
+    // that each need a different optional dep (clay's renderers/
+    // examples — Cairo, raylib, SDL2, sokol, termbox2 — only the
+    // renderers whose deps are installed end up in the build).
+    // Dropping that many files removes the project's core
+    // demonstration code along with the genuinely-conditional
+    // outliers. Keep them all in that case; the resolver still
+    // handles unresolved refs gracefully, and the user sees all of
+    // their project rather than a build-config-determined slice.
+    if let Some(tu_set) = crate::ecosystem::compile_commands::tu_file_set(project_root) {
+        let total_sources = files.iter().filter(|w| is_c_or_cpp_source(&w.relative_path)).count();
+        let proposed_drops: Vec<usize> = files
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| {
+                if !is_c_or_cpp_source(&w.relative_path) { return false }
+                let canonical = w
+                    .absolute_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| w.absolute_path.clone());
+                !tu_set.contains(&canonical)
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+        let drop_ratio = if total_sources == 0 {
+            0.0
+        } else {
+            proposed_drops.len() as f64 / total_sources as f64
+        };
+        // 50% threshold: drop ratios above this signal a build manifest
+        // that excludes major portions of the project (clay: 66% drop,
+        // because its example renderers each need a different optional
+        // dep and only one set is configured at a time). Below 50%,
+        // dropped files are typically genuinely-conditional outliers
+        // (libhv at 39% drops echo-servers comparison TUs that need
+        // Poco/asio/grpc; keepassxc at 29% drops platform-conditional
+        // macOS Carbon and libusb code).
+        const MAX_DROP_RATIO: f64 = 0.50;
+        if drop_ratio > MAX_DROP_RATIO {
+            warn!(
+                "FullScan: TU allowlist would drop {}/{} ({:.0}%) C/C++ source files — manifest looks incomplete; keeping all walked sources",
+                proposed_drops.len(), total_sources, drop_ratio * 100.0
+            );
+        } else if !proposed_drops.is_empty() {
+            // Apply drops. Convert indices to a HashSet for O(1) retain.
+            let drop_set: HashSet<usize> = proposed_drops.iter().copied().collect();
+            let dropped = drop_set.len();
+            files = files
+                .into_iter()
+                .enumerate()
+                .filter_map(|(idx, w)| if drop_set.contains(&idx) { None } else { Some(w) })
+                .collect();
+            info!(
+                "FullScan: TU allowlist dropped {} C/C++ source file(s) absent from compile_commands.json",
+                dropped
+            );
+        }
     }
 
     info!("FullScan: {} files", files.len());
@@ -338,112 +412,226 @@ pub fn git_diff(db: &Database, project_root: &Path) -> Result<ChangeSet> {
         }
     };
 
-    if indexed_commit == head {
-        info!("GitDiff: HEAD unchanged ({}), no changes", &head[..8]);
-        return Ok(ChangeSet {
-            commit: Some(head),
-            ..Default::default()
-        });
-    }
-
-    // Verify the indexed commit is reachable (handles force push / rebase).
-    let reachable = std::process::Command::new("git")
-        .args(["cat-file", "-t", &indexed_commit])
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-
-    if !reachable {
-        warn!(
-            "GitDiff: indexed commit {} is unreachable, falling back to HashDiff",
-            &indexed_commit[..8]
-        );
-        return hash_diff(db, project_root);
-    }
-
-    // Run git diff --name-status.
-    let output = std::process::Command::new("git")
-        .args([
-            "diff",
-            "--name-status",
-            "--no-renames",  // treat renames as delete + add for simplicity
-            &indexed_commit,
-            &head,
-        ])
-        .current_dir(project_root)
-        .output()
-        .context("Failed to run git diff")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        warn!("GitDiff: git diff failed ({}), falling back to HashDiff", stderr.trim());
-        return hash_diff(db, project_root);
-    }
-
-    let diff_output = String::from_utf8_lossy(&output.stdout);
     let mut changeset = ChangeSet {
-        commit: Some(head),
+        commit: Some(head.clone()),
         ..Default::default()
     };
 
-    for line in diff_output.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+    // Commit-range diff: catches files that changed between the indexed
+    // commit and HEAD. Skipped when commits match — there are no committed
+    // changes to find. The working-tree pass below still runs.
+    if indexed_commit != head {
+        let reachable = std::process::Command::new("git")
+            .args(["cat-file", "-t", &indexed_commit])
+            .current_dir(project_root)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if !reachable {
+            warn!(
+                "GitDiff: indexed commit {} is unreachable, falling back to HashDiff",
+                &indexed_commit[..8]
+            );
+            return hash_diff(db, project_root);
         }
 
-        // Format: "A\tpath" or "M\tpath" or "D\tpath"
-        let (status, path) = match line.split_once('\t') {
-            Some((s, p)) => (s, p),
-            None => continue,
-        };
+        let output = std::process::Command::new("git")
+            .args([
+                "diff",
+                "--name-status",
+                "--no-renames",
+                &indexed_commit,
+                &head,
+            ])
+            .current_dir(project_root)
+            .output()
+            .context("Failed to run git diff")?;
 
-        // Normalise path separators to forward slashes.
-        let rel_path = path.replace('\\', "/");
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!(
+                "GitDiff: commit-range diff failed ({}), falling back to HashDiff",
+                stderr.trim()
+            );
+            return hash_diff(db, project_root);
+        }
 
-        match status {
-            "D" => {
-                changeset.deleted.push(rel_path);
-            }
-            "A" | "M" | "T" => {
-                let abs_path = project_root.join(&rel_path);
-                if !abs_path.exists() {
-                    continue;
-                }
-                let language = match walker::detect_language(&abs_path) {
-                    Some(l) => l,
-                    None => continue,
-                };
-                let walked = WalkedFile {
-                    relative_path: rel_path,
-                    absolute_path: abs_path,
-                    language,
-                };
-                if status == "A" {
-                    changeset.added.push(walked);
-                } else {
-                    changeset.modified.push(walked);
-                }
-            }
-            _ => {
-                debug!("GitDiff: ignoring unknown status '{}' for {}", status, rel_path);
-            }
+        let diff_output = String::from_utf8_lossy(&output.stdout);
+        for line in diff_output.lines() {
+            apply_diff_line(line, project_root, &mut changeset);
         }
     }
 
+    // Working-tree pass: catches uncommitted modifications, staged changes,
+    // and untracked files. Without this pass an `indexed_commit == HEAD`
+    // situation with mid-flight working changes would produce an empty
+    // ChangeSet and modified files would never get re-extracted.
+    apply_working_tree_changes(project_root, &mut changeset)?;
+
+    deduplicate_changeset(&mut changeset);
+
     info!(
-        "GitDiff: {} added, {} modified, {} deleted ({}..{})",
+        "GitDiff: {} added, {} modified, {} deleted ({}..{}) + working tree",
         changeset.added.len(),
         changeset.modified.len(),
         changeset.deleted.len(),
-        &indexed_commit[..8],
-        changeset.commit.as_deref().map(|c| &c[..8]).unwrap_or("?"),
+        &indexed_commit[..8.min(indexed_commit.len())],
+        changeset
+            .commit
+            .as_deref()
+            .map(|c| &c[..8.min(c.len())])
+            .unwrap_or("?"),
     );
 
     Ok(changeset)
+}
+
+/// Parse one `git diff --name-status` output line ("M\tpath", "A\tpath", …)
+/// and apply it to the changeset. Used by both the commit-range diff and
+/// the working-tree diff (`git diff HEAD`).
+fn apply_diff_line(line: &str, project_root: &Path, changeset: &mut ChangeSet) {
+    let line = line.trim();
+    if line.is_empty() {
+        return;
+    }
+    let (status, path) = match line.split_once('\t') {
+        Some((s, p)) => (s, p),
+        None => return,
+    };
+    let rel_path = path.replace('\\', "/");
+
+    match status {
+        "D" => changeset.deleted.push(rel_path),
+        "A" | "M" | "T" => {
+            let abs_path = project_root.join(&rel_path);
+            if !abs_path.exists() {
+                return;
+            }
+            let language = match walker::detect_language(&abs_path) {
+                Some(l) => l,
+                None => return,
+            };
+            let walked = WalkedFile {
+                relative_path: rel_path,
+                absolute_path: abs_path,
+                language,
+            };
+            if status == "A" {
+                changeset.added.push(walked);
+            } else {
+                changeset.modified.push(walked);
+            }
+        }
+        _ => {
+            debug!(
+                "GitDiff: ignoring unknown status '{}' for {}",
+                status, rel_path
+            );
+        }
+    }
+}
+
+/// Add working-tree changes to the changeset:
+///   1. Tracked files modified or deleted vs HEAD (`git diff --name-status HEAD`).
+///   2. Untracked files honoring .gitignore (`git ls-files --others --exclude-standard`).
+fn apply_working_tree_changes(
+    project_root: &Path,
+    changeset: &mut ChangeSet,
+) -> Result<()> {
+    // Tracked working-tree changes.
+    let diff_output = std::process::Command::new("git")
+        .args(["diff", "--name-status", "--no-renames", "HEAD"])
+        .current_dir(project_root)
+        .output()
+        .context("Failed to run git diff HEAD")?;
+
+    if diff_output.status.success() {
+        let text = String::from_utf8_lossy(&diff_output.stdout);
+        for line in text.lines() {
+            apply_diff_line(line, project_root, changeset);
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&diff_output.stderr);
+        debug!(
+            "GitDiff: working-tree diff failed ({}); skipping uncommitted edits",
+            stderr.trim()
+        );
+    }
+
+    // Untracked files. `--exclude-standard` honors .gitignore, .git/info/exclude,
+    // and the user's global excludesFile so generated/derived files don't get
+    // pulled in.
+    let untracked_output = std::process::Command::new("git")
+        .args(["ls-files", "--others", "--exclude-standard"])
+        .current_dir(project_root)
+        .output()
+        .context("Failed to run git ls-files --others")?;
+
+    if untracked_output.status.success() {
+        let text = String::from_utf8_lossy(&untracked_output.stdout);
+        for raw in text.lines() {
+            let rel_path = raw.trim().replace('\\', "/");
+            if rel_path.is_empty() {
+                continue;
+            }
+            let abs_path = project_root.join(&rel_path);
+            if !abs_path.exists() {
+                continue;
+            }
+            let language = match walker::detect_language(&abs_path) {
+                Some(l) => l,
+                None => continue,
+            };
+            changeset.added.push(WalkedFile {
+                relative_path: rel_path,
+                absolute_path: abs_path,
+                language,
+            });
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&untracked_output.stderr);
+        debug!(
+            "GitDiff: untracked listing failed ({}); skipping new files",
+            stderr.trim()
+        );
+    }
+
+    Ok(())
+}
+
+/// Collapse duplicate entries that can arise from union-merging the
+/// commit-range and working-tree passes. Working-tree state wins:
+///   * present in `added` and `modified`         → keep `modified`
+///   * present in `deleted` and (added|modified) → keep the live entry
+///   * duplicate within a single bucket          → keep the first
+fn deduplicate_changeset(cs: &mut ChangeSet) {
+    use std::collections::HashSet;
+
+    // Pass 1: dedupe within each bucket.
+    let mut seen: HashSet<String> = HashSet::new();
+    cs.added.retain(|w| seen.insert(w.relative_path.clone()));
+    seen.clear();
+    cs.modified.retain(|w| seen.insert(w.relative_path.clone()));
+    seen.clear();
+    cs.deleted.retain(|p| seen.insert(p.clone()));
+
+    // Pass 2: when a path appears in both `added` and `modified`, prefer
+    // `modified` (working-tree edit on top of a committed add).
+    let modified_paths: HashSet<String> =
+        cs.modified.iter().map(|w| w.relative_path.clone()).collect();
+    cs.added.retain(|w| !modified_paths.contains(&w.relative_path));
+
+    // Pass 3: a live add/mod always supersedes a stale delete.
+    let live_paths: HashSet<String> = cs
+        .added
+        .iter()
+        .chain(cs.modified.iter())
+        .map(|w| w.relative_path.clone())
+        .collect();
+    cs.deleted.retain(|p| !live_paths.contains(p));
 }
 
 // ---------------------------------------------------------------------------
@@ -498,6 +686,20 @@ pub fn set_meta(db: &Database, key: &str, value: &str) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Get the current HEAD commit SHA, or None if not a git repo.
+fn is_c_or_cpp_source(relative_path: &str) -> bool {
+    // Match TU file extensions only — headers (.h/.hpp/.hxx) are not
+    // listed in compile_commands.json and must pass through the
+    // allowlist filter unchanged.
+    let lower = relative_path.to_ascii_lowercase();
+    lower.ends_with(".c")
+        || lower.ends_with(".cc")
+        || lower.ends_with(".cpp")
+        || lower.ends_with(".cxx")
+        || lower.ends_with(".c++")
+        || lower.ends_with(".m")
+        || lower.ends_with(".mm")
+}
+
 fn current_git_head(project_root: &Path) -> Option<String> {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
