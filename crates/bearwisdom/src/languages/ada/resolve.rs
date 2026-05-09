@@ -8,6 +8,10 @@
 //   3. Import-based resolution:
 //        `with Package_Name;` → makes Package_Name visible (dot-qualified)
 //        `use Package_Name;`  → brings all exported names into direct scope
+//   4. Spec-to-body context inheritance: a `.adb` body inherits all context
+//        clauses declared in its sibling `.ads` spec. The resolver driver
+//        merges the spec's imports into the body's FileContext before any
+//        reference is resolved.
 //
 // The extractor emits EdgeKind::Imports with:
 //   target_name = package name (both `with` and `use` clauses)
@@ -22,12 +26,25 @@ use crate::indexer::resolve::engine::{
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;
+
 /// Ada language resolver.
 pub struct AdaResolver;
 
 impl LanguageResolver for AdaResolver {
     fn language_ids(&self) -> &[&str] {
         &["ada"]
+    }
+
+    /// For an Ada body file (`.adb`), return the sibling spec file (`.ads`)
+    /// so the resolve driver can merge the spec's context clauses — `with` /
+    /// `use` clauses and package renames — into the body's FileContext before
+    /// any reference is resolved. Ada's visibility rule requires this: a body
+    /// inherits every context clause declared in its specification.
+    fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
+        spec_for_body(file_path)
     }
 
     fn build_file_context(
@@ -400,6 +417,22 @@ fn chase_instantiation(target: &str, lookup: &dyn SymbolLookup) -> Option<String
         }
     }
     None
+}
+
+/// Given an Ada body path (`foo/bar.adb`), return the sibling spec path
+/// (`foo/bar.ads`). Returns `None` for any file that isn't a `.adb` body.
+///
+/// The caller is responsible for checking whether the returned path exists in
+/// the index; if it isn't present (e.g. spec is external-only or not yet
+/// indexed), the driver silently skips the merge.
+pub(crate) fn spec_for_body(file_path: &str) -> Option<String> {
+    let normalized = file_path.replace('\\', "/");
+    if normalized.ends_with(".adb") {
+        let stem = &normalized[..normalized.len() - 4];
+        Some(format!("{stem}.ads"))
+    } else {
+        None
+    }
 }
 
 /// Walk a dotted target back through its parents, probing
