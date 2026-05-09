@@ -128,8 +128,12 @@ fn walk_node(
                 }
             }
         }
-        "with_clause" => {
+        "with_clause" | "use_clause" | "use_type_clause" => {
             let sym_idx = parent_idx.unwrap_or(0);
+            // `with X;` makes X visible dot-qualified. `use X;` brings X's
+            // exports into bare scope; `use type X;` only brings primitive
+            // operators of type X into scope. All three produce Imports edges
+            // so the resolver's FileContext sees them as wildcard candidates.
             // Children include `identifier` (simple) and `selected_component`
             // (dotted: Ada.Text_IO) nodes for each package name.
             let mut cursor = node.walk();

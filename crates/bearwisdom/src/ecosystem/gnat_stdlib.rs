@@ -70,14 +70,31 @@ impl Ecosystem for GnatStdlibEcosystem {
         discover_gnat_adainclude()
     }
 
-    // Demand-driven: no eager walk. The 910-file runtime is wasteful to
-    // parse for projects that only `with` a handful of units.
-    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        Vec::new()
+    // Eager walk. Bare-name resolution under Ada `use` clauses needs every
+    // procedure / function from the use'd package to live in the symbol
+    // table — `Put_Line` written without qualifier must reach
+    // `Ada.Text_IO.Put_Line`. Demand-driven parsing keyed by package qname
+    // doesn't expose the inner subprograms by short name. The 910-file
+    // runtime parses in <2s on rayon and the overhead is bounded
+    // (substrate ecosystem; same shape as rust-stdlib once it goes eager).
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        let mut out = Vec::new();
+        let _ = walk_adainclude(&dep.root, &mut |path| {
+            let rel = match path.strip_prefix(&dep.root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => return true,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:gnat-stdlib:{rel}"),
+                absolute_path: path.to_path_buf(),
+                language: "ada",
+            });
+            true
+        });
+        out
     }
 
     fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
     fn is_workspace_global(&self) -> bool { true }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
@@ -128,8 +145,8 @@ impl ExternalSourceLocator for GnatStdlibEcosystem {
         // Workspace-global: same roots regardless of which package asks.
         discover_gnat_adainclude()
     }
-    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        Vec::new()
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Ecosystem::walk_root(self, dep)
     }
 }
 

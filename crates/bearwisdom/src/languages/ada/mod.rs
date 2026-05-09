@@ -58,6 +58,8 @@ impl LanguagePlugin for AdaPlugin {
     fn ref_node_kinds(&self) -> &[&str] {
         &[
             "with_clause",
+            "use_clause",
+            "use_type_clause",
             "procedure_call_statement",
             "function_call",
         ]

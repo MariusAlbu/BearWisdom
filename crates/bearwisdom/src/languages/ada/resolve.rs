@@ -80,11 +80,14 @@ impl LanguageResolver for AdaResolver {
             return None;
         }
 
+        let target_lower = target.to_lowercase();
+        let simple = target.split('.').last().unwrap_or(target);
+        let simple_lower = simple.to_lowercase();
+
         // Ada identifiers are case-insensitive; check same-file with case folding
         // before delegating to the common resolver (which uses exact matching).
-        let simple = target.split('.').last().unwrap_or(target);
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name.to_lowercase() == simple.to_lowercase()
+            if sym.name.to_lowercase() == simple_lower
                 && predicates::kind_compatible(edge_kind, &sym.kind)
             {
                 return Some(Resolution {
@@ -96,6 +99,70 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
+        // Use-clause lookup: `use Ada.Text_IO;` (encoded as a wildcard import
+        // by `build_file_context`) brings every public symbol of `Ada.Text_IO`
+        // into scope. Resolving a bare `Put_Line(...)` call means searching
+        // each use'd package's direct members for a case-insensitive name
+        // match. The engine's wildcard path uses file_stem matching, which
+        // breaks for GNAT's krunched filenames (`a-textio.ads` vs module
+        // last-segment `text_io`); the qname-via-members_of path here works
+        // independent of the file naming convention.
+        if !target.contains('.') {
+            for import in &file_ctx.imports {
+                if !import.is_wildcard {
+                    continue;
+                }
+                let Some(module_path) = &import.module_path else {
+                    continue;
+                };
+                for sym in lookup.members_of(module_path) {
+                    if sym.name.to_lowercase() == simple_lower
+                        && predicates::kind_compatible(edge_kind, &sym.kind)
+                    {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.95,
+                            strategy: "ada_use_clause",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Dotted target with leading segment matching a use'd package: try
+        // the full qname, then walk back through dotted segments. Handles
+        // `Ada.Text_IO.Put_Line` written explicitly even when `use Ada;` is
+        // active.
+        if target.contains('.') {
+            // Try direct qname lookup case-insensitively by walking
+            // members_of for each successively-shorter parent prefix.
+            let parts: Vec<&str> = target.split('.').collect();
+            for split in (1..parts.len()).rev() {
+                let parent = parts[..split].join(".");
+                let leaf = parts[split..].join(".");
+                let leaf_lower = leaf.to_lowercase();
+                for sym in lookup.members_of(&parent) {
+                    if sym.qualified_name
+                        .rsplit_once('.')
+                        .map(|(_, n)| n)
+                        .unwrap_or(&sym.qualified_name)
+                        .to_lowercase()
+                        == leaf_lower
+                        && predicates::kind_compatible(edge_kind, &sym.kind)
+                    {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.95,
+                            strategy: "ada_qualified_ci",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        let _ = target_lower;
         engine::resolve_common("ada", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 

@@ -17,11 +17,50 @@ fn ecosystem_identity() {
 }
 
 #[test]
-fn demand_driven_and_substrate() {
+fn eager_walk_and_substrate() {
     let e = GnatStdlibEcosystem;
-    assert!(e.uses_demand_driven_parse());
+    // Bare-name resolution under Ada `use` clauses needs every package's
+    // public subprograms in the symbol table — eager walk pays off here.
+    assert!(!e.uses_demand_driven_parse());
     assert!(e.supports_reachability());
     assert!(e.is_workspace_global());
+}
+
+#[test]
+fn walk_root_yields_ads_files() {
+    let tmp = std::env::temp_dir().join("bw-test-gnat-stdlib-walk");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let adainclude = tmp.join("adainclude");
+    std::fs::create_dir_all(&adainclude).unwrap();
+    write_ads(
+        &adainclude,
+        "a-textio.ads",
+        "package Ada.Text_IO is\n   procedure Put_Line (S : String);\nend Ada.Text_IO;\n",
+    );
+    write_ads(
+        &adainclude,
+        "system.ads",
+        "package System is\n   pragma Pure;\nend System;\n",
+    );
+
+    let dep = ExternalDepRoot {
+        module_path: "gnat-stdlib".to_string(),
+        version: String::new(),
+        root: adainclude.clone(),
+        ecosystem: LEGACY_ECOSYSTEM_TAG,
+        package_id: None,
+        requested_imports: Vec::new(),
+    };
+    let files = Ecosystem::walk_root(&GnatStdlibEcosystem, &dep);
+
+    assert_eq!(files.len(), 2, "expected 2 .ads files, got {files:?}");
+    for f in &files {
+        assert_eq!(f.language, "ada");
+        assert!(f.relative_path.starts_with("ext:gnat-stdlib:"));
+        assert!(f.relative_path.ends_with(".ads"));
+    }
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }
 
 #[test]
