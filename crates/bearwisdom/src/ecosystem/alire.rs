@@ -69,7 +69,12 @@ impl Ecosystem for AlireEcosystem {
     }
 
     fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    // Eager walk: like gnat-stdlib, the Ada bare-name + use-clause shape
+    // requires every public subprogram from a use'd package to live in
+    // the symbol table. members_of() only sees indexed symbols, so
+    // demand-driven loading would need engine wildcard-demand support
+    // we don't have for Ada. The Alire dep cache is bounded (~1700 Ada
+    // files in a typical workspace setup) so the eager cost is fine.
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_alire_symbol_index(dep_roots)
@@ -147,7 +152,12 @@ impl crate::ecosystem::manifest::ManifestReader for AlireManifest {
 // ---------------------------------------------------------------------------
 
 pub fn discover_alire_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
-    let declared = parse_alire_dependencies(project_root);
+    // Walk every `alire.toml` in the project tree, not just the root.
+    // Multi-package Alire workspaces (root + nested `tests/`, `examples/`,
+    // `support/`, …) declare deps independently — Septum's tests/alire.toml
+    // pulls in `trendy_test` while the main alire.toml doesn't, so a
+    // root-only scan misses the entire test framework.
+    let declared = collect_alire_dependencies_recursive(project_root);
     if declared.is_empty() { return Vec::new() }
 
     let cache_roots = alire_cache_roots();
@@ -259,14 +269,54 @@ fn alire_cache_roots() -> Vec<PathBuf> {
 // Manifest parsing — line-based TOML scan
 // ---------------------------------------------------------------------------
 
-/// Parse `alire.toml` and return the set of dependency names declared via
-/// `[[depends-on]]` array-of-tables OR `[depends-on]` flat table. Tolerant
-/// of unknown top-level keys — the alr-2.2-dev manifest has a `[test]`
-/// section that older `alr` rejects, but we just need the dep names.
+/// Parse `alire.toml` at the project root and return its `[[depends-on]]` /
+/// `[depends-on]` declarations. Used by the manifest reader where we want
+/// only the workspace-root manifest's deps. For ecosystem discovery use
+/// `collect_alire_dependencies_recursive` instead — it walks nested
+/// alire.toml files (tests/, examples/, support/, …) so deps declared in
+/// sub-package manifests are picked up too.
 pub fn parse_alire_dependencies(project_root: &Path) -> Vec<String> {
     let manifest = project_root.join("alire.toml");
     let Ok(content) = std::fs::read_to_string(&manifest) else { return Vec::new() };
     parse_alire_dependencies_text(&content)
+}
+
+/// Walk the project tree (bounded depth + standard prunes) collecting
+/// dependency names from every `alire.toml` found. Multi-package
+/// workspaces declare deps in nested manifests (the canonical Septum
+/// shape), so a root-only scan loses test-framework / example-only deps.
+pub fn collect_alire_dependencies_recursive(project_root: &Path) -> Vec<String> {
+    let mut deps: HashSet<String> = HashSet::new();
+    walk_alire_manifests(project_root, &mut deps, 0);
+    let mut v: Vec<String> = deps.into_iter().collect();
+    v.sort();
+    v
+}
+
+fn walk_alire_manifests(dir: &Path, deps: &mut HashSet<String>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return }
+    let manifest = dir.join("alire.toml");
+    if manifest.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&manifest) {
+            for d in parse_alire_dependencies_text(&content) {
+                deps.insert(d);
+            }
+        }
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if !ft.is_dir() { continue }
+        let path = entry.path();
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if matches!(name, "obj" | "lib" | "alire" | ".git" | "node_modules" | "target" | ".bearwisdom")
+                || name.starts_with('.')
+            {
+                continue;
+            }
+        }
+        walk_alire_manifests(&path, deps, depth + 1);
+    }
 }
 
 /// Same as `parse_alire_dependencies`, but operating on already-loaded

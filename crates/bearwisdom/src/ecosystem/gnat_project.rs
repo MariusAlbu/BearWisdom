@@ -67,7 +67,12 @@ impl Ecosystem for GnatProjectEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::ManifestMatch
+        // GPR isn't a TOML manifest in `ManifestKind`, so ManifestMatch
+        // can't fire. The walker's `discover_gnat_project_externals`
+        // returns empty when no `.gpr` is present, so activating on Ada
+        // projects unconditionally is safe — no false positives, no work
+        // done when no GPR exists.
+        EcosystemActivation::LanguagePresent("ada")
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

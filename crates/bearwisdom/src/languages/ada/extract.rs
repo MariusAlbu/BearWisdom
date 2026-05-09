@@ -53,6 +53,35 @@ fn walk_node(
             let idx = extract_subprogram(node, src, symbols, parent_idx);
             walk_children(node, src, symbols, refs, idx.or(parent_idx));
         }
+        "generic_subprogram_declaration" => {
+            // `generic ... function Foo (...) return T;` — extract the
+            // inner subprogram spec same as a regular subprogram_declaration.
+            // Without this, gnat-stdlib's generic functions (`Ada.Unchecked_Conversion`,
+            // `Ada.Unchecked_Deallocation`, every `Ada.Containers.*.Generic_*`)
+            // never enter the symbol table and the ~140 instantiation calls
+            // per Ada-driver project go unresolved.
+            let idx = extract_subprogram(node, src, symbols, parent_idx);
+            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+        }
+        "generic_package_declaration" => {
+            // `generic ... package Foo is ... end Foo;` — extract the inner
+            // package_declaration's name and walk its body.
+            let mut cursor = node.walk();
+            let mut idx: Option<usize> = None;
+            for child in node.children(&mut cursor) {
+                if child.kind() == "package_declaration" {
+                    let inner_name = child
+                        .child_by_field_name("name")
+                        .map(|n| text(n, src))
+                        .unwrap_or_default();
+                    if !inner_name.is_empty() {
+                        idx = Some(push_sym(node, inner_name, SymbolKind::Namespace, symbols, parent_idx));
+                    }
+                    break;
+                }
+            }
+            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+        }
         "package_declaration" => {
             let name = node
                 .child_by_field_name("name")
@@ -192,40 +221,30 @@ fn walk_node(
                 }
             }
         }
-        "procedure_call_statement" => {
+        "procedure_call_statement" | "function_call" => {
             let sym_idx = parent_idx.unwrap_or(0);
-            if let Some(name_node) = node.child_by_field_name("name") {
-                let name = text(name_node, src);
-                if !name.is_empty() {
-                    refs.push(ExtractedRef {
-                        source_symbol_index: sym_idx,
-                        target_name: name,
-                        kind: EdgeKind::Calls,
-                        line: node.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
-                }
-            }
-            walk_children(node, src, symbols, refs, parent_idx);
-        }
-        "function_call" => {
-            let sym_idx = parent_idx.unwrap_or(0);
-            if let Some(name_node) = node.child_by_field_name("name") {
-                let name = text(name_node, src);
-                if !name.is_empty() {
-                    refs.push(ExtractedRef {
-                        source_symbol_index: sym_idx,
-                        target_name: name,
-                        kind: EdgeKind::Calls,
-                        line: node.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+            // Skip Ada attribute references — `System'To_Address(X)`,
+            // `Vector'Length(V)`, `Type'First(T)` etc. parse as
+            // procedure/function calls because they have an
+            // actual_parameter_part, but they're attribute applications
+            // on a type/object, not calls to a named subprogram. Without
+            // this filter, ada-drivers' SVD register code produces ~1k
+            // bogus `System` calls that pollute the unresolved bank.
+            if !is_attribute_reference(node) {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = text(name_node, src);
+                    if !name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: sym_idx,
+                            target_name: name,
+                            kind: EdgeKind::Calls,
+                            line: node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                            byte_offset: 0,
+                            namespace_segments: Vec::new(),
+                        });
+                    }
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -365,4 +384,19 @@ fn walk_children(
 
 fn text(node: Node, src: &[u8]) -> String {
     node.utf8_text(src).unwrap_or("").trim().to_string()
+}
+
+/// True if the call node is actually an Ada attribute reference such as
+/// `System'To_Address(X)` or `Vec'Length(X)`. tree-sitter-ada parses these
+/// as `procedure_call_statement` / `function_call` because they have an
+/// `actual_parameter_part`, but they're attribute applications — not calls
+/// to a named subprogram. Detect by the presence of a `tick` child.
+fn is_attribute_reference(node: Node) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "tick" {
+            return true;
+        }
+    }
+    false
 }

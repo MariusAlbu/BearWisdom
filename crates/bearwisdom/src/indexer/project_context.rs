@@ -383,6 +383,7 @@ pub(crate) fn manifest_kinds_for_ecosystem(id: EcosystemId) -> &'static [Manifes
         "cabal" => &[ManifestKind::Cabal],
         "cpan" => &[ManifestKind::Cpan],
         "nimble" => &[ManifestKind::Nimble],
+        "alire" => &[ManifestKind::Alire],
         "psgallery" => &[ManifestKind::Psd1],
         "bazel-central-registry" => &[ManifestKind::ModuleBazel],
         "tf-registry" => &[ManifestKind::Terraform],
