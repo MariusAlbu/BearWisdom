@@ -24,7 +24,7 @@ use crate::indexer::resolve::engine::{
     SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::{EdgeKind, ParsedFile, SymbolKind};
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
@@ -54,6 +54,15 @@ impl LanguageResolver for AdaResolver {
     ) -> FileContext {
         let mut imports = Vec::new();
 
+        // Capture the outermost package/namespace qname (e.g. `Alr.Commands.Run`).
+        // Ada body/spec files declare exactly one top-level package; its qualified
+        // name is the compilation unit's identifier in dot notation.
+        let file_namespace = file
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Namespace && s.parent_index.is_none())
+            .map(|s| s.qualified_name.clone());
+
         for r in &file.refs {
             if r.kind != EdgeKind::Imports {
                 continue;
@@ -80,7 +89,7 @@ impl LanguageResolver for AdaResolver {
             file_path: file.path.clone(),
             language: "ada".to_string(),
             imports,
-            file_namespace: None,
+            file_namespace,
         }
     }
 
@@ -173,6 +182,55 @@ impl LanguageResolver for AdaResolver {
                             strategy,
                             resolved_yield_type: None,
                         });
+                    }
+                }
+            }
+        }
+
+        // Parent-package implicit visibility. A child package body (`Alr.Commands.Run`)
+        // implicitly sees all declarations from every ancestor package (`Alr.Commands`,
+        // `Alr`). Walk the ancestor prefixes of the file's own package qname and
+        // check `members_of(ancestor)` for a bare-name match, applying any rename
+        // substitution encoded in a member's signature (`renames <target>`).
+        if !target.contains('.') {
+            if let Some(own_pkg) = &file_ctx.file_namespace {
+                let parts: Vec<&str> = own_pkg.split('.').collect();
+                // Walk from immediate parent up to the root (skip the full qname
+                // itself — that's same-file scope already handled above).
+                for depth in (1..parts.len()).rev() {
+                    let ancestor = parts[..depth].join(".");
+                    for member in lookup.members_of(&ancestor) {
+                        if member.name.to_lowercase() == simple_lower
+                            && predicates::kind_compatible(edge_kind, &member.kind)
+                        {
+                            return Some(Resolution {
+                                target_symbol_id: member.id,
+                                confidence: 0.9,
+                                strategy: "ada_parent_pkg_visibility",
+                                resolved_yield_type: None,
+                            });
+                        }
+                        // Apply rename: `package Trace renames Simple_Logging;`
+                        // emitted as member `Trace` with signature `renames Simple_Logging`.
+                        // If the bare target matches the renamed alias, rewrite and probe.
+                        if let Some(sig) = &member.signature {
+                            if let Some(rename_target) = sig.strip_prefix("renames ") {
+                                if member.name.to_lowercase() == simple_lower {
+                                    for sym in lookup.members_of(rename_target) {
+                                        if sym.name.to_lowercase() == simple_lower
+                                            && predicates::kind_compatible(edge_kind, &sym.kind)
+                                        {
+                                            return Some(Resolution {
+                                                target_symbol_id: sym.id,
+                                                confidence: 0.88,
+                                                strategy: "ada_parent_pkg_rename",
+                                                resolved_yield_type: None,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
