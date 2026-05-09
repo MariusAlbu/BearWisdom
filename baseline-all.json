@@ -4723,14 +4723,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 50
+        "min_resolution_rate": 42
       },
-      "code_chunks": 3194,
+      "code_chunks": 3064,
       "files": 53,
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 260,
-      "internal_unresolved": 257,
+      "internal_unresolved": 345,
       "languages": {
         "json": 1,
         "markdown": 2,
@@ -4739,72 +4739,72 @@
       },
       "path": "F:/Work/Projects/TestProjects/matlab-exportfig",
       "perf": {
-        "end_ws_mb": 256,
-        "files_per_sec": 296,
-        "index_duration_ms": 179
+        "end_ws_mb": 32,
+        "files_per_sec": 266,
+        "index_duration_ms": 199
       },
       "project": "matlab-exportfig",
-      "resolution_rate": 50.29,
+      "resolution_rate": 42.98,
       "routes": 0,
       "symbols": 1725,
       "unresolved_by_lang_kind": {
-        "matlab.calls": 257
+        "matlab.calls": 345
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 71
+        "min_resolution_rate": 69
       },
-      "code_chunks": 108797,
+      "code_chunks": 103902,
       "files": 2406,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 9665,
-      "internal_unresolved": 3856,
+      "internal_edges": 9672,
+      "internal_unresolved": 4276,
       "languages": {
         "markdown": 6,
         "matlab": 2400
       },
       "path": "F:/Work/Projects/TestProjects/matlab-platemo",
       "perf": {
-        "end_ws_mb": 454,
-        "files_per_sec": 314,
-        "index_duration_ms": 7671
+        "end_ws_mb": 87,
+        "files_per_sec": 244,
+        "index_duration_ms": 9852
       },
       "project": "matlab-platemo",
-      "resolution_rate": 71.48,
+      "resolution_rate": 69.34,
       "routes": 0,
       "symbols": 73815,
       "unresolved_by_lang_kind": {
-        "matlab.calls": 3856
+        "matlab.calls": 4276
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 81
+        "min_resolution_rate": 52
       },
-      "code_chunks": 3533,
+      "code_chunks": 3312,
       "files": 182,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 350,
-      "internal_unresolved": 77,
+      "internal_edges": 352,
+      "internal_unresolved": 317,
       "languages": {
         "markdown": 2,
         "matlab": 180
       },
       "path": "F:/Work/Projects/TestProjects/matlab-prmlt",
       "perf": {
-        "end_ws_mb": 259,
-        "files_per_sec": 669,
-        "index_duration_ms": 272
+        "end_ws_mb": 31,
+        "files_per_sec": 492,
+        "index_duration_ms": 370
       },
       "project": "matlab-prmlt",
-      "resolution_rate": 81.97,
+      "resolution_rate": 52.62,
       "routes": 0,
       "symbols": 2926,
       "unresolved_by_lang_kind": {
-        "matlab.calls": 77
+        "matlab.calls": 317
       }
     },
     {

@@ -136,6 +136,10 @@ fn walk_node(
         "assignment" => {
             // Capture assignments at any scope as Variable symbols.
             // field "left" holds the LHS.
+            let lhs_is_field_expr = node
+                .child_by_field_name("left")
+                .map_or(false, |n| n.kind() == "field_expression");
+
             if let Some(lhs) = node.child_by_field_name("left") {
                 match lhs.kind() {
                     "identifier" => {
@@ -154,7 +158,10 @@ fn walk_node(
                         }
                     }
                     "field_expression" => {
-                        // Field assignment: `obj.field = val` — use the field name
+                        // Field assignment: `obj.field = val` — use the field name.
+                        // The LHS field_expression is structurally an assignment target,
+                        // not a call site — skip walking it so no phantom Calls ref is
+                        // emitted for the field's name.
                         if let Some(field_node) = lhs.child_by_field_name("field") {
                             let name = text(field_node, src);
                             if !name.is_empty() {
@@ -183,8 +190,17 @@ fn walk_node(
                     }
                 }
             }
-            // Always recurse into children so function_call nodes on the RHS are visited.
-            walk_children(node, src, symbols, refs, parent_idx);
+            // Recurse into children so function_call nodes on the RHS are visited.
+            // When the LHS is a field_expression (struct-field assignment like
+            // `obj.foo(idx) = rhs`), skip recursing into the LHS to avoid emitting
+            // phantom Calls refs for the field name on the left.
+            if lhs_is_field_expr {
+                if let Some(rhs) = node.child_by_field_name("right") {
+                    walk_node(rhs, src, symbols, refs, parent_idx);
+                }
+            } else {
+                walk_children(node, src, symbols, refs, parent_idx);
+            }
         }
         "field_expression" => {
             // obj.method(args) — the grammar represents this as:
@@ -201,26 +217,27 @@ fn walk_node(
             match (object_node, field_node) {
                 (Some(obj), Some(field)) if field.kind() == "function_call" => {
                     let module_text = text(obj, src);
-                    let method_text = field
-                        .child_by_field_name("name")
-                        .map(|n| text(n, src))
-                        .unwrap_or_default();
-                    // Cell-array indexing like `obj.lu{mm}` parses with a `{`-bearing
-                    // name — these are not callable targets.
-                    if !method_text.is_empty()
-                        && !method_text.contains('{')
-                        && !method_text.contains('}')
-                    {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: sym_idx,
-                            target_name: method_text,
-                            kind: EdgeKind::Calls,
-                            line: node.start_position().row as u32,
-                            module: if module_text.is_empty() { None } else { Some(module_text) },
-                            chain: None,
-                            byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                        });
+                    if let Some(name_node) = field.child_by_field_name("name") {
+                        let method_text = text(name_node, src);
+                        // Cell-array indexing `obj.lu{mm}` parses identically to a
+                        // method call, but the `{` follows the name node directly in
+                        // the source bytes. Detect it via the byte after name's end.
+                        let is_cell_index = src
+                            .get(name_node.end_byte())
+                            .copied()
+                            == Some(b'{');
+                        if !method_text.is_empty() && !is_cell_index {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: sym_idx,
+                                target_name: method_text,
+                                kind: EdgeKind::Calls,
+                                line: node.start_position().row as u32,
+                                module: if module_text.is_empty() { None } else { Some(module_text) },
+                                chain: None,
+                                byte_offset: 0,
+                                namespace_segments: Vec::new(),
+                            });
+                        }
                     }
                     // Recurse into the function_call's arguments but not into the
                     // call node itself (to avoid duplicate emission).
@@ -340,9 +357,6 @@ fn is_simple_ident(s: &str) -> bool {
 ///   Scoped to the for-statement's own line range.
 /// * **Lambda params**: `lambda` → `arguments` field → `identifier` children.
 ///   Scoped to the lambda node's line range.
-/// * **Indexed struct-field assignment LHS**: `obj.foo.bar(idx) = ...` — the
-///   trailing field name (the last non-call segment) is bound to suppress the
-///   phantom call ref the extractor would otherwise emit for `bar`.
 pub(crate) fn collect_local_bindings(
     node: Node,
     src: &[u8],
@@ -436,18 +450,6 @@ pub(crate) fn collect_local_bindings(
                             }
                         }
                     }
-                    "field_expression" => {
-                        // Indexed struct-field assignment: `obj.app.dropD(1) = val`.
-                        // The grammar nests this as a chain of field_expression nodes
-                        // where the innermost field is either an identifier (plain
-                        // field) or a function_call (indexed field). Bind the trailing
-                        // segment name so the phantom call ref is suppressed.
-                        if let Some(name) = trailing_field_name(lhs, src) {
-                            if !name.is_empty() && is_simple_ident(&name) {
-                                out.push((name, fn_start, fn_end));
-                            }
-                        }
-                    }
                     _ => {}
                 }
             }
@@ -490,24 +492,6 @@ pub(crate) fn collect_local_bindings(
                 collect_local_bindings(child, src, fn_start, fn_end, out);
             }
         }
-    }
-}
-
-/// Walk a `field_expression` chain and return the trailing segment name.
-///
-/// For `obj.app.dropD(1)` the tree is:
-///   field_expression(object=field_expression(object=obj, field=app), field=function_call(name=dropD))
-/// Returns `"dropD"` — the name of the innermost `field` child, unwrapping one
-/// level of `function_call` if the field is an indexed access.
-fn trailing_field_name(fe_node: Node, src: &[u8]) -> Option<String> {
-    let field = fe_node.child_by_field_name("field")?;
-    match field.kind() {
-        "identifier" => Some(text(field, src)),
-        "function_call" => field
-            .child_by_field_name("name")
-            .map(|n| text(n, src)),
-        "field_expression" => trailing_field_name(field, src),
-        _ => None,
     }
 }
 

@@ -429,6 +429,102 @@ fn lambda_params_not_emitted_as_refs() {
 }
 
 // -------------------------------------------------------------------------
+// Regression check: refs from a typical prmlt file
+// -------------------------------------------------------------------------
+
+#[test]
+fn is_truncated_not_firing_on_normal_prmlt_calls() {
+    // Regression: verify is_truncated guard does not drop refs for calls that
+    // appear after operators, brackets, or commas.
+    let src = concat!(
+        "function z = condEntropy(x, y)\n",
+        "assert(numel(x) == numel(y));\n",
+        "n = numel(x);\n",
+        "x = reshape(x,1,n);\n",
+        "y = reshape(y,1,n);\n",
+        "l = min(min(x),min(y));\n",
+        "k = max(max(x),max(y));\n",
+        "idx = 1:n;\n",
+        "Mx = sparse(idx,x,1,n,k,n);\n",
+        "My = sparse(idx,y,1,n,k,n);\n",
+        "Pxy = nonzeros(Mx'*My/n);\n",
+        "Hxy = -dot(Pxy,log2(Pxy));\n",
+        "Py = nonzeros(mean(My,1));\n",
+        "Hy = -dot(Py,log2(Py));\n",
+        "z = Hxy-Hy;\n",
+        "z = max(0,z);\n",
+        "end\n",
+    );
+    let result = extract(src);
+    for expected in &["assert", "numel", "reshape", "min", "max", "sparse", "nonzeros", "dot", "log2", "mean"] {
+        assert!(
+            result.refs.iter().any(|r| r.target_name == *expected),
+            "expected ref for {expected}; got refs: {:?}",
+            result.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn prmlt_kmeans_all_expected_refs_present() {
+    // Regression: ensure that the full set of cross-function calls in the
+    // kmeans.m fixture are emitted after local-scope filtering.
+    let src = concat!(
+        "function [label, mu, energy] = kmeans(X, m)\n",
+        "label = init(X, m);\n",
+        "n = numel(label);\n",
+        "idx = 1:n;\n",
+        "last = zeros(1,n);\n",
+        "while any(label ~= last)\n",
+        "    [~,~,last(:)] = unique(label);\n",
+        "    mu = X*normalize(sparse(idx,last,1),1);\n",
+        "    [val,label] = min(dot(mu,mu,1)'/2-mu'*X,[],1);\n",
+        "end\n",
+        "energy = dot(X(:),X(:),1)+2*sum(val);\n",
+        "function label = init(X, m)\n",
+        "[d,n] = size(X);\n",
+        "if numel(m) == 1\n",
+        "    mu = X(:,randperm(n,m));\n",
+        "    [~,label] = min(dot(mu,mu,1)'/2-mu'*X,[],1);\n",
+        "elseif all(size(m) == [1,n])\n",
+        "    label = m;\n",
+        "elseif size(m,1) == d\n",
+        "    [~,label] = min(dot(m,m,1)'/2-m'*X,[],1);\n",
+        "end\n",
+    );
+    let result = extract(src);
+    for expected in &["init", "numel", "zeros", "any", "unique", "normalize", "sparse", "min", "dot", "sum", "size", "randperm", "all"] {
+        assert!(
+            result.refs.iter().any(|r| r.target_name == *expected),
+            "expected ref for {expected}; got refs: {:?}",
+            result.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn prmlt_entropy_refs_not_over_filtered() {
+    // Typical prmlt-style file: numel, unique, accumarray, dot, log2, max
+    // should all be emitted as Calls refs.
+    let src = concat!(
+        "function z = entropy(x)\n",
+        "n = numel(x);\n",
+        "[~,~,x] = unique(x);\n",
+        "Px = accumarray(x, 1)/n;\n",
+        "Hx = -dot(Px,log2(Px));\n",
+        "z = max(0,Hx);\n",
+    );
+    let result = extract(src);
+    let names: Vec<_> = result.refs.iter().map(|r| r.target_name.as_str()).collect();
+    for expected in &["numel", "unique", "accumarray", "dot", "log2", "max"] {
+        assert!(
+            result.refs.iter().any(|r| r.target_name == *expected),
+            "expected ref for {expected}; got {names:?}"
+        );
+    }
+}
+
+// -------------------------------------------------------------------------
 // Fix 1: cell-indexing brace guard
 // -------------------------------------------------------------------------
 
@@ -466,19 +562,14 @@ fn field_cell_indexing_not_emitted_as_ref() {
 }
 
 // -------------------------------------------------------------------------
-// Fix 2: indexed struct-field assignment LHS binding
+// Fix 2: indexed struct-field assignment LHS — no phantom call emission
 // -------------------------------------------------------------------------
 
 #[test]
-fn indexed_field_assignment_lhs_bound() {
-    // `obj.app.dropD(1) = GUI.APP(...)` — `dropD` should be bound so no phantom
-    // Calls ref is emitted for it.
+fn indexed_field_assignment_lhs_no_phantom_ref() {
+    // `obj.app.dropD(1) = GUI.APP(...)` — `dropD` is a field on the LHS; no
+    // Calls ref should be emitted for it.
     let src = "function foo(obj, GUI)\nobj.app.dropD(1) = GUI.APP(1);\nend\n";
-    let b = bindings(src);
-    assert!(
-        b.iter().any(|(n, _, _)| n == "dropD"),
-        "expected dropD bound from indexed field assignment; got {b:?}"
-    );
     let result = extract(src);
     let dropd_refs: Vec<_> = result
         .refs
@@ -487,18 +578,48 @@ fn indexed_field_assignment_lhs_bound() {
         .collect();
     assert!(
         dropd_refs.is_empty(),
-        "expected no Calls ref for dropD (indexed field assignment LHS); got {dropd_refs:?}"
+        "expected no Calls ref for dropD (field assignment LHS); got {dropd_refs:?}"
     );
 }
 
 #[test]
-fn plain_field_assignment_lhs_does_not_suppress_real_calls() {
-    // The field-binding fix must not suppress legitimate call refs on the RHS.
+fn field_assignment_rhs_calls_still_emitted() {
+    // The LHS-skip must not suppress call refs on the RHS.
     let src = "function foo(obj)\nobj.x = zeros(3);\nend\n";
     let result = extract(src);
     assert!(
         result.refs.iter().any(|r| r.target_name == "zeros"),
         "expected Calls ref for zeros to survive; got {:?}",
         result.refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn indexed_field_assignment_common_name_not_suppressed_globally() {
+    // `result.min(1) = computeMin(data)` — `min` appears as both LHS field and
+    // a real function call elsewhere; the LHS skip must not affect the `min(...)` call
+    // in a different statement.
+    let src = concat!(
+        "function foo(result, data)\n",
+        "result.min(1) = computeMin(data);\n",
+        "y = min(data);\n",
+        "end\n",
+    );
+    let result_val = extract(src);
+    // `min` in `y = min(data)` must survive — it's not an LHS field expression.
+    let min_refs: Vec<_> = result_val
+        .refs
+        .iter()
+        .filter(|r| r.target_name == "min")
+        .collect();
+    assert!(
+        !min_refs.is_empty(),
+        "expected Calls ref for min(data); got refs: {:?}",
+        result_val.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+    );
+    // `computeMin` on the RHS of the field assignment must also survive.
+    assert!(
+        result_val.refs.iter().any(|r| r.target_name == "computeMin"),
+        "expected Calls ref for computeMin (RHS of field assignment)"
     );
 }
