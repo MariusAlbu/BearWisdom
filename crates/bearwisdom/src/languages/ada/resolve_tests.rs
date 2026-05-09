@@ -1,6 +1,8 @@
-use super::{spec_for_body, _test_probe_package_of_type, _test_walk_field_chain};
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
-use crate::types::EdgeKind;
+use super::{spec_for_body, AdaResolver, _test_probe_package_of_type, _test_walk_field_chain};
+use crate::indexer::resolve::engine::{
+    FileContext, ImportEntry, LanguageResolver, RefContext, SymbolInfo, SymbolLookup,
+};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -53,6 +55,13 @@ impl AdaFixture {
 
     fn with_field_type(mut self, qname: &str, ty: &str) -> Self {
         self.field_types.insert(qname.to_string(), ty.to_string());
+        self
+    }
+
+    fn with_member_sig(mut self, parent: &str, name: &str, qname: &str, kind: &str, sig: &str) -> Self {
+        let mut sym = self.sym(name, qname, kind);
+        sym.signature = Some(sig.to_string());
+        self.members.entry(parent.to_string()).or_default().push(sym);
         self
     }
 }
@@ -119,6 +128,110 @@ fn spec_for_body_returns_none_for_other_extension() {
 #[test]
 fn spec_for_body_bare_filename() {
     assert_eq!(spec_for_body("bmp280.adb"), Some("bmp280.ads".to_string()));
+}
+
+// ---------------------------------------------------------------------------
+// Ancestor-package rename for dotted targets (Path 3)
+// ---------------------------------------------------------------------------
+
+fn make_extracted_sym(name: &str, qname: &str) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: qname.to_string(),
+        kind: SymbolKind::Function,
+        visibility: None,
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    }
+}
+
+fn make_extracted_ref(target: &str) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index: 0,
+        target_name: target.to_string(),
+        kind: EdgeKind::Calls,
+        line: 1,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+    }
+}
+
+/// `Alr.Commands.Run.Execute` calls `Trace.Detail`. `Alr` has member
+/// `Trace` with `signature = "renames Simple_Logging"`. The resolver must
+/// chain through to `Simple_Logging.Detail`.
+#[test]
+fn ancestor_pkg_rename_resolves_dotted_target() {
+    let fix = AdaFixture::new()
+        // Ancestor `Alr` exposes `Trace renames Simple_Logging`.
+        .with_member_sig("Alr", "Trace", "Alr.Trace", "namespace", "renames Simple_Logging")
+        // Simple_Logging has `Detail` as a member.
+        .with_member("Simple_Logging", "Detail", "Simple_Logging.Detail", "function");
+
+    let file_ctx = FileContext {
+        file_path: "src/alr-commands-run.adb".to_string(),
+        language: "ada".to_string(),
+        imports: Vec::new(),
+        file_namespace: Some("Alr.Commands.Run".to_string()),
+    };
+
+    let source_sym = make_extracted_sym("Execute", "Alr.Commands.Run.Execute");
+    let extracted = make_extracted_ref("Trace.Detail");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: vec!["Alr.Commands.Run.Execute".to_string()],
+        file_package_id: None,
+    };
+
+    let resolver = AdaResolver;
+    let res = resolver.resolve(&file_ctx, &ref_ctx, &fix);
+    assert!(
+        res.is_some(),
+        "expected ancestor-pkg rename to resolve Trace.Detail via Simple_Logging.Detail"
+    );
+    assert_eq!(res.unwrap().strategy, "ada_ancestor_pkg_rename");
+}
+
+/// Same pattern but the ancestor is two levels up (`Alr` for a file in
+/// `Alr.Commands.Run`). Verifies the depth loop walks past `Alr.Commands`.
+#[test]
+fn ancestor_pkg_rename_walks_multiple_levels() {
+    let fix = AdaFixture::new()
+        // Only `Alr` (two levels up) has the rename, not `Alr.Commands`.
+        .with_member_sig("Alr", "TTY", "Alr.TTY", "namespace", "renames CLIC.TTY")
+        .with_member("CLIC.TTY", "Warn", "CLIC.TTY.Warn", "function");
+
+    let file_ctx = FileContext {
+        file_path: "src/alr-commands-run.adb".to_string(),
+        language: "ada".to_string(),
+        imports: Vec::new(),
+        file_namespace: Some("Alr.Commands.Run".to_string()),
+    };
+
+    let source_sym = make_extracted_sym("Execute", "Alr.Commands.Run.Execute");
+    let extracted = make_extracted_ref("TTY.Warn");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+
+    let resolver = AdaResolver;
+    let res = resolver.resolve(&file_ctx, &ref_ctx, &fix);
+    assert!(
+        res.is_some(),
+        "expected multi-level ancestor walk to resolve TTY.Warn"
+    );
+    assert_eq!(res.unwrap().strategy, "ada_ancestor_pkg_rename");
 }
 
 // ---------------------------------------------------------------------------

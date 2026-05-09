@@ -312,6 +312,34 @@ impl LanguageResolver for AdaResolver {
                     }
                 }
             }
+
+            // Path 3: ancestor-package rename. A child package `Alr.Commands.Run`
+            // inherits all declarations from ancestor specs (`Alr`, `Alr.Commands`).
+            // When an ancestor spec contains `package Trace renames Simple_Logging;`,
+            // any child package can call `Trace.Detail` without an explicit `with` or
+            // `use` — the name is visible purely through Ada's parent-package visibility.
+            // The bare-name probe above handles single-segment targets; this path
+            // handles dotted calls where the leading segment is such an ancestor rename.
+            if let Some(own_pkg) = &file_ctx.file_namespace {
+                let parts: Vec<&str> = own_pkg.split('.').collect();
+                for depth in (1..parts.len()).rev() {
+                    let ancestor = parts[..depth].join(".");
+                    for member in lookup.members_of(&ancestor) {
+                        if member.name.to_lowercase() != leading_lower {
+                            continue;
+                        }
+                        let Some(sig) = &member.signature else { continue };
+                        let Some(rename_target) = sig.strip_prefix("renames ") else { continue };
+                        let rewritten = format!("{rename_target}{suffix}");
+                        if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
+                            return Some(Resolution {
+                                strategy: "ada_ancestor_pkg_rename",
+                                ..res
+                            });
+                        }
+                    }
+                }
+            }
         }
 
         // Variable-type dispatch: `Result.Append(...)` where `Result` is a
