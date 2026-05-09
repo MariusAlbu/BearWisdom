@@ -30,6 +30,15 @@ use crate::types::{EdgeKind, ParsedFile, SymbolKind};
 #[path = "resolve_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+pub(super) fn _test_probe_package_of_type(
+    target: &str,
+    edge_kind: EdgeKind,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    probe_package_of_type(target, edge_kind, lookup)
+}
+
 /// Ada language resolver.
 pub struct AdaResolver;
 
@@ -302,16 +311,13 @@ impl LanguageResolver for AdaResolver {
         // in the file's variables (case-insensitively), parse the encoded
         // type, and retry the lookup with the type's qualified name.
         //
-        // Three retry paths in order of specificity:
-        //   1. The type as written (`Timer.CCER`) — works for project-local
-        //      types whose record members were extracted with the bare-name
-        //      parent.
-        //   2. The type resolved to its full qname (`STM32.Timers.Timer.CCER`)
-        //      via `types_by_name` — needed when record members live under
-        //      a fully-qualified parent (typical of stdlib types and most
-        //      multi-package projects).
-        //   3. Chase through one level of generic instantiation
-        //      (`String_Vectors` → `Ada.Containers.Vectors`).
+        // Probe order per resolved type qname (`T`):
+        //   a. `members_of(T)` — direct type-level lookup (Ada record member).
+        //   b. `members_of(package_of(T))` — package-level lookup; Ada methods
+        //      live at package scope, not nested under the type qname
+        //      (e.g., `Ada.Containers.Vectors.Append`, not `.Vector.Append`).
+        //   c. Chase through one level of generic instantiation, then repeat
+        //      probes (a) and (b) on the generic's qname.
         if target.contains('.') {
             let leading = target.split('.').next().unwrap_or("");
             let leading_lower = leading.to_lowercase();
@@ -326,9 +332,12 @@ impl LanguageResolver for AdaResolver {
                 let Some(sig) = &sym.signature else { continue };
                 let Some(ty) = sig.strip_prefix("type: ") else { continue };
 
-                // 1. Bare-type retry.
+                // 1. Bare-type retry — type-level and package-level.
                 let rewritten = format!("{ty}{suffix}");
                 if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
+                    return Some(res);
+                }
+                if let Some(res) = probe_package_of_type(&rewritten, edge_kind, lookup) {
                     return Some(res);
                 }
 
@@ -339,22 +348,28 @@ impl LanguageResolver for AdaResolver {
                     if let Some(res) = probe_dotted_qname(&qualified, edge_kind, lookup) {
                         return Some(res);
                     }
-                    // Also chase through instantiations on the qualified
-                    // form — e.g., `Vector` resolves to a synthetic
-                    // namespace whose signature is `instantiates
-                    // Ada.Containers.Vectors`.
+                    if let Some(res) = probe_package_of_type(&qualified, edge_kind, lookup) {
+                        return Some(res);
+                    }
+                    // Chase through instantiations on the qualified form and
+                    // probe both type-level and package-level on the result.
                     if let Some(chained) = chase_instantiation(&qualified, lookup) {
                         if let Some(res) = probe_dotted_qname(&chained, edge_kind, lookup) {
+                            return Some(res);
+                        }
+                        if let Some(res) = probe_package_of_type(&chained, edge_kind, lookup) {
                             return Some(res);
                         }
                     }
                 }
 
-                // 3. Chase one level of generic instantiation on the bare
-                // form: `String_Vectors.Vector.Append` → walk up to find
-                // String_Vectors as an instantiation, rewrite the prefix.
+                // 3. Chase one level of generic instantiation on the bare form,
+                // then probe type-level and package-level on the rewritten qname.
                 if let Some(chained) = chase_instantiation(&rewritten, lookup) {
                     if let Some(res) = probe_dotted_qname(&chained, edge_kind, lookup) {
+                        return Some(res);
+                    }
+                    if let Some(res) = probe_package_of_type(&chained, edge_kind, lookup) {
                         return Some(res);
                     }
                 }
@@ -491,6 +506,51 @@ pub(crate) fn spec_for_body(file_path: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Probe the *package* that owns a type when a member call couldn't be found
+/// under the type's own qname.
+///
+/// Ada subprograms for a type live at package scope, not nested under the
+/// type's qname in the index. Given `Pkg.A.B.Type.Method`, the symbol is
+/// most likely `Pkg.A.B.Method` — i.e., stripping the penultimate segment
+/// (the type name) and probing `members_of("Pkg.A.B")`.
+///
+/// Returns `None` when the target has fewer than three segments (no package
+/// component above the type) or when no match is found.
+fn probe_package_of_type(
+    target: &str,
+    edge_kind: EdgeKind,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    let parts: Vec<&str> = target.split('.').collect();
+    // Need at least: package + type + method (3 segments).
+    if parts.len() < 3 {
+        return None;
+    }
+    let method = *parts.last().unwrap();
+    let method_lower = method.to_lowercase();
+    // Drop the type segment (second-to-last); everything before it is the package.
+    let pkg = parts[..parts.len() - 2].join(".");
+    for sym in lookup.members_of(&pkg) {
+        if sym
+            .qualified_name
+            .rsplit_once('.')
+            .map(|(_, n)| n)
+            .unwrap_or(&sym.qualified_name)
+            .to_lowercase()
+            == method_lower
+            && predicates::kind_compatible(edge_kind, &sym.kind)
+        {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.88,
+                strategy: "ada_pkg_of_type",
+                resolved_yield_type: None,
+            });
+        }
+    }
+    None
 }
 
 /// Walk a dotted target back through its parents, probing
