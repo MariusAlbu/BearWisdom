@@ -39,6 +39,16 @@ pub(super) fn _test_probe_package_of_type(
     probe_package_of_type(target, edge_kind, lookup)
 }
 
+#[cfg(test)]
+pub(super) fn _test_walk_field_chain(
+    base_type: &str,
+    segs: &[&str],
+    edge_kind: EdgeKind,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    walk_field_chain(base_type, segs, edge_kind, lookup)
+}
+
 /// Ada language resolver.
 pub struct AdaResolver;
 
@@ -318,6 +328,12 @@ impl LanguageResolver for AdaResolver {
         //      (e.g., `Ada.Containers.Vectors.Append`, not `.Vector.Append`).
         //   c. Chase through one level of generic instantiation, then repeat
         //      probes (a) and (b) on the generic's qname.
+        //
+        // Multi-segment chains (`This.Port.Mem_Read`): after resolving the
+        // head variable's type, walk each intermediate segment as a record
+        // field — look up `field_type_name(current_type.Segment)` and advance
+        // the current type — until only the trailing method segment remains.
+        // Depth is capped at 6 to avoid infinite cycles on malformed indexes.
         if target.contains('.') {
             let leading = target.split('.').next().unwrap_or("");
             let leading_lower = leading.to_lowercase();
@@ -332,28 +348,39 @@ impl LanguageResolver for AdaResolver {
                 let Some(sig) = &sym.signature else { continue };
                 let Some(ty) = sig.strip_prefix("type: ") else { continue };
 
-                // 1. Bare-type retry — type-level and package-level.
-                let rewritten = format!("{ty}{suffix}");
-                if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
-                    return Some(res);
-                }
-                if let Some(res) = probe_package_of_type(&rewritten, edge_kind, lookup) {
-                    return Some(res);
-                }
-
-                // 2. Resolve bare type to its fully-qualified form.
+                // Resolve initial variable type to a set of candidate qnames.
+                let mut type_candidates: Vec<String> = Vec::new();
+                type_candidates.push(ty.to_string());
                 let ty_leaf = ty.split('.').next_back().unwrap_or(ty);
                 for ty_sym in lookup.types_by_name(ty_leaf) {
-                    let qualified = format!("{}{suffix}", ty_sym.qualified_name);
-                    if let Some(res) = probe_dotted_qname(&qualified, edge_kind, lookup) {
+                    type_candidates.push(ty_sym.qualified_name.clone());
+                }
+
+                for base_type in &type_candidates {
+                    let segs: Vec<&str> = suffix.trim_start_matches('.').split('.').collect();
+                    if segs.is_empty() {
+                        continue;
+                    }
+
+                    // Multi-hop field walk for chains with intermediate segments.
+                    if segs.len() > 1 {
+                        if let Some(res) = walk_field_chain(base_type, &segs, edge_kind, lookup) {
+                            return Some(res);
+                        }
+                    }
+
+                    // Single-hop: probe type directly and at package level.
+                    let method_suffix = format!(".{}", segs.join("."));
+                    let rewritten = format!("{base_type}{method_suffix}");
+                    if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
                         return Some(res);
                     }
-                    if let Some(res) = probe_package_of_type(&qualified, edge_kind, lookup) {
+                    if let Some(res) = probe_package_of_type(&rewritten, edge_kind, lookup) {
                         return Some(res);
                     }
-                    // Chase through instantiations on the qualified form and
-                    // probe both type-level and package-level on the result.
-                    if let Some(chained) = chase_instantiation(&qualified, lookup) {
+
+                    // Chase one level of generic instantiation and re-probe.
+                    if let Some(chained) = chase_instantiation(&rewritten, lookup) {
                         if let Some(res) = probe_dotted_qname(&chained, edge_kind, lookup) {
                             return Some(res);
                         }
@@ -363,9 +390,9 @@ impl LanguageResolver for AdaResolver {
                     }
                 }
 
-                // 3. Chase one level of generic instantiation on the bare form,
-                // then probe type-level and package-level on the rewritten qname.
-                if let Some(chained) = chase_instantiation(&rewritten, lookup) {
+                // Chase instantiation on the bare-form suffix as a fallback.
+                let bare_rewritten = format!("{ty}{suffix}");
+                if let Some(chained) = chase_instantiation(&bare_rewritten, lookup) {
                     if let Some(res) = probe_dotted_qname(&chained, edge_kind, lookup) {
                         return Some(res);
                     }
@@ -548,6 +575,101 @@ fn probe_package_of_type(
                 strategy: "ada_pkg_of_type",
                 resolved_yield_type: None,
             });
+        }
+    }
+    None
+}
+
+/// Walk a multi-segment field chain starting from a resolved type qname.
+///
+/// Given `base_type = "Drivers.Device"` and `segs = ["Port", "Mem_Read"]`,
+/// resolves `Port` as a field of `Device`, obtains its type (e.g.,
+/// `Drivers.Port_Type`), then probes `members_of` and the package-of-type
+/// for `Mem_Read` against that type. Returns the first resolution found.
+///
+/// Depth is capped at 6 hops to guard against malformed or cyclic indexes.
+/// Gives up (returns `None`) if any intermediate field's type is unknown.
+fn walk_field_chain(
+    base_type: &str,
+    segs: &[&str],
+    edge_kind: EdgeKind,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    const MAX_DEPTH: usize = 6;
+    if segs.len() > MAX_DEPTH {
+        return None;
+    }
+    // segs = [intermediate..., method]. Walk all but the last to resolve types.
+    let intermediates = &segs[..segs.len() - 1];
+    let method = segs[segs.len() - 1];
+    let method_lower = method.to_lowercase();
+
+    let mut current_type = base_type.to_string();
+    for field_seg in intermediates {
+        let field_lower = field_seg.to_lowercase();
+        let field_qname = format!("{current_type}.{field_seg}");
+        // Look up the field type by exact qname; fall back to a
+        // case-insensitive scan of the current type's members.
+        let next_type = lookup
+            .field_type_name(&field_qname)
+            .map(|s| s.to_string())
+            .or_else(|| {
+                lookup.members_of(&current_type).iter().find_map(|m| {
+                    let leaf = m
+                        .qualified_name
+                        .rsplit_once('.')
+                        .map(|(_, n)| n)
+                        .unwrap_or(&m.qualified_name);
+                    if leaf.to_lowercase() == field_lower {
+                        lookup
+                            .field_type_name(&m.qualified_name)
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+            });
+        let Some(next_raw) = next_type else {
+            return None; // Chain broken — give up.
+        };
+        // Expand bare field type to fully-qualified form when possible.
+        let next_leaf = next_raw.split('.').next_back().unwrap_or(&next_raw);
+        let expanded = lookup
+            .types_by_name(next_leaf)
+            .iter()
+            .map(|s| s.qualified_name.clone())
+            .next()
+            .unwrap_or_else(|| next_raw.clone());
+        current_type = expanded;
+    }
+
+    // current_type is the type reached after all intermediate hops.
+    // Probe for the trailing method at type level, then at package level.
+    let type_candidate = format!("{current_type}.{method}");
+    if let Some(res) = probe_dotted_qname(&type_candidate, edge_kind, lookup) {
+        return Some(res);
+    }
+    let parts: Vec<&str> = current_type.split('.').collect();
+    if let Some(pkg_parts) = parts.split_last().map(|(_, rest)| rest) {
+        if !pkg_parts.is_empty() {
+            let pkg = pkg_parts.join(".");
+            for sym in lookup.members_of(&pkg) {
+                let sym_leaf = sym
+                    .qualified_name
+                    .rsplit_once('.')
+                    .map(|(_, n)| n)
+                    .unwrap_or(&sym.qualified_name);
+                if sym_leaf.to_lowercase() == method_lower
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.85,
+                        strategy: "ada_field_chain",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
         }
     }
     None

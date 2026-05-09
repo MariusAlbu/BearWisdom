@@ -1,4 +1,4 @@
-use super::{spec_for_body, _test_probe_package_of_type};
+use super::{spec_for_body, _test_probe_package_of_type, _test_walk_field_chain};
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 use crate::types::EdgeKind;
 use std::collections::HashMap;
@@ -48,6 +48,11 @@ impl AdaFixture {
     fn with_member(mut self, parent: &str, name: &str, qname: &str, kind: &str) -> Self {
         let sym = self.sym(name, qname, kind);
         self.members.entry(parent.to_string()).or_default().push(sym);
+        self
+    }
+
+    fn with_field_type(mut self, qname: &str, ty: &str) -> Self {
+        self.field_types.insert(qname.to_string(), ty.to_string());
         self
     }
 }
@@ -156,5 +161,44 @@ fn probe_package_of_type_returns_none_when_no_match() {
             &fix,
         )
         .is_none()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// walk_field_chain (Fix #4)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn walk_field_chain_single_hop_finds_method() {
+    // `This.Port.Mem_Read`: Device.Port field has type Port_Type;
+    // Mem_Read lives as a member of Port_Type.
+    let fix = AdaFixture::new()
+        .with_field_type("Drivers.Device.Port", "Drivers.Port_Type")
+        .with_member("Drivers.Port_Type", "Mem_Read", "Drivers.Port_Type.Mem_Read", "function");
+    let res = _test_walk_field_chain(
+        "Drivers.Device",
+        &["Port", "Mem_Read"],
+        EdgeKind::Calls,
+        &fix,
+    );
+    assert!(res.is_some(), "expected field-chain hit");
+}
+
+#[test]
+fn walk_field_chain_returns_none_when_field_type_unknown() {
+    // No field_type registered — chain must give up at the first hop.
+    let fix = AdaFixture::new();
+    assert!(
+        _test_walk_field_chain("Device", &["Port", "Mem_Read"], EdgeKind::Calls, &fix).is_none()
+    );
+}
+
+#[test]
+fn walk_field_chain_respects_depth_cap() {
+    // 7 segments exceeds the cap of 6 — must return None immediately.
+    let fix = AdaFixture::new();
+    let segs = ["A", "B", "C", "D", "E", "F", "G"];
+    assert!(
+        _test_walk_field_chain("Root", &segs, EdgeKind::Calls, &fix).is_none()
     );
 }
