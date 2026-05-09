@@ -1,9 +1,11 @@
 // =============================================================================
 // ecosystem/elixir_stdlib.rs — Elixir stdlib (stdlib ecosystem)
 //
-// Probes the Elixir install's `lib/elixir/lib/` dir (containing Kernel.ex,
-// Enum.ex, ...) via $ELIXIR_HOME or the binary's `code:lib_dir(:elixir)`
-// path. Walks .ex files.
+// Probes the Elixir install's `lib/<app>/lib/` dirs via $ELIXIR_HOME or the
+// binary's `code:lib_dir(:elixir)` path. Walks .ex files for every shipped
+// application: `elixir` (Kernel/Enum/...), `ex_unit` (assert/refute/...),
+// `mix`, `iex`, `eex`, `logger`. Without ex_unit/mix on the walked surface
+// most Elixir test suites (Plausible's 5k `assert` calls) stay unresolved.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -53,50 +55,86 @@ impl ExternalSourceLocator for ElixirStdlibEcosystem {
 }
 
 fn discover() -> Vec<ExternalDepRoot> {
-    let Some(src_dir) = probe_elixir_src() else {
-        debug!("elixir-stdlib: no source tree probed");
+    let Some(install_lib) = probe_elixir_install_lib() else {
+        debug!("elixir-stdlib: no install lib/ tree probed");
         return Vec::new();
     };
-    vec![ExternalDepRoot {
-        module_path: "elixir".to_string(),
-        version: String::new(),
-        root: src_dir,
-        ecosystem: LEGACY_ECOSYSTEM_TAG,
-        package_id: None,
-        requested_imports: Vec::new(),
-    }]
+    // Each shipped application sits at lib/<app>/lib/. Emit one root per
+    // app so the resolver sees ExUnit's `assert`/`refute`, Mix's tasks, IEx
+    // helpers, Logger, EEx etc. — not just Kernel/Enum.
+    let mut roots = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&install_lib) else { return roots };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if !ft.is_dir() { continue }
+        let app_root = entry.path().join("lib");
+        if !app_root.is_dir() { continue }
+        let app_name = entry
+            .path()
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("elixir-app")
+            .to_string();
+        roots.push(ExternalDepRoot {
+            module_path: app_name,
+            version: String::new(),
+            root: app_root,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        });
+    }
+    if roots.is_empty() {
+        // Fallback: at least walk the install_lib root directly for
+        // installs with a flat layout we don't recognise.
+        roots.push(ExternalDepRoot {
+            module_path: "elixir".to_string(),
+            version: String::new(),
+            root: install_lib,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        });
+    }
+    roots
 }
 
-fn probe_elixir_src() -> Option<PathBuf> {
+fn probe_elixir_install_lib() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_ELIXIR_STDLIB") {
         let p = PathBuf::from(explicit);
         if p.is_dir() { return Some(p); }
     }
     if let Some(home) = std::env::var_os("ELIXIR_HOME") {
         let base = PathBuf::from(home);
-        for candidate in [
-            base.join("lib").join("elixir").join("lib"),
-            base.join("lib"),
-        ] {
-            if candidate.is_dir() { return Some(candidate); }
-        }
+        let lib = base.join("lib");
+        if lib.is_dir() { return Some(lib); }
     }
-    // Walk from elixir binary's install root.
-    if let Ok(output) = Command::new("elixir")
-        .args(["-e", "IO.puts(:code.lib_dir(:elixir))"])
-        .output()
+    // Walk from elixir binary's install root via `:code.lib_dir(:elixir)`.
+    // Returns `<install>/lib/elixir`; the parent of that is `<install>/lib`,
+    // the install-wide lib/ that contains every shipped app dir.
+    //
+    // On Windows the canonical entrypoint is `elixir.bat` — Rust's
+    // `Command::new("elixir")` won't auto-append `.bat` (PATHEXT lookup is
+    // not done by std::process::Command). Try both names; on Windows fall
+    // back to `cmd /C elixir ...` so the shell can resolve the shim.
+    let probe_via = |program: &str, prefix_args: &[&str]| -> Option<PathBuf> {
+        let mut cmd = Command::new(program);
+        for a in prefix_args { cmd.arg(a); }
+        cmd.args(["-e", "IO.puts(:code.lib_dir(:elixir))"]);
+        let out = cmd.output().ok()?;
+        if !out.status.success() { return None; }
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if s.is_empty() { return None; }
+        let elixir_app = PathBuf::from(s);
+        let install_lib = elixir_app.parent()?;
+        if install_lib.is_dir() { Some(install_lib.to_path_buf()) } else { None }
+    };
+
+    if let Some(p) = probe_via("elixir", &[]) { return Some(p); }
+    #[cfg(windows)]
     {
-        if output.status.success() {
-            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !s.is_empty() {
-                let ebin = PathBuf::from(s);
-                // ebin sits next to lib/ in the Elixir install; we want lib/.
-                if let Some(parent) = ebin.parent() {
-                    let lib = parent.join("lib");
-                    if lib.is_dir() { return Some(lib); }
-                }
-            }
-        }
+        if let Some(p) = probe_via("elixir.bat", &[]) { return Some(p); }
+        if let Some(p) = probe_via("cmd", &["/C", "elixir"]) { return Some(p); }
     }
     None
 }

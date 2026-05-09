@@ -41,6 +41,92 @@ fn is_cpp_keyword(name: &str) -> bool {
     CPP_KEYWORD_BLOCKLIST.contains(&name)
 }
 
+/// Detect names shaped like `SCREAMING_SNAKE_CASE` or `_LEADING_SCREAMING`,
+/// which are conventionally macros in C/C++ (Qt's `Q_WIDGETS_EXPORT`,
+/// MSVC's `__declspec`, project-defined visibility shims, etc.). When
+/// tree-sitter-cpp can't expand a macro before a class/struct name it
+/// binds the macro identifier to the `name` field; a structural rule
+/// detects this without needing to know any specific macro names.
+///
+/// The rule:
+///   * non-empty
+///   * all chars are uppercase ASCII letters, digits, or `_`
+///   * contains at least one `_` (so single-letter identifiers like `T`/`U`
+///     and acronym-only names like `URL` aren't misclassified — those go
+///     through the normal name path)
+fn looks_like_attribute_macro(name: &str) -> bool {
+    if name.is_empty() { return false }
+    let mut has_underscore = false;
+    for ch in name.chars() {
+        if ch == '_' {
+            has_underscore = true;
+            continue;
+        }
+        if !(ch.is_ascii_uppercase() || ch.is_ascii_digit()) {
+            return false;
+        }
+    }
+    has_underscore
+}
+
+/// When `push_specifier`'s `name` field returned a macro shape, search for
+/// the real class/struct/enum/union identifier. Two parse shapes apply:
+///
+///   * **Self-contained** — tree-sitter kept the real name as a child of
+///     the same `class_specifier` (rare; only happens for very short
+///     standalone snippets).
+///   * **Sibling-scattered** — when surrounding context (Q_PROPERTY
+///     macros, Q_OBJECT, attribute clauses) confuses the parser, the real
+///     identifier becomes a NEXT-SIBLING of the class_specifier under the
+///     enclosing declaration_list / translation_unit. This is the shape
+///     produced by every Qt class header in the wild.
+///
+/// We probe children first; then fall back to scanning forward across
+/// siblings until we hit a body / brace / semicolon. The skip targets
+/// (`field_declaration_list`, `compound_statement`, `;`) bound the
+/// search so we never wander into another top-level declaration.
+fn find_real_specifier_name(node: &Node, src: &[u8]) -> Option<String> {
+    // 1) Children of this class_specifier (self-contained shape).
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if matches!(
+            child.kind(),
+            "field_declaration_list"
+                | "compound_statement"
+                | "enumerator_list"
+                | "base_class_clause"
+        ) {
+            break;
+        }
+        if matches!(child.kind(), "type_identifier" | "qualified_identifier") {
+            let text = node_text(child, src);
+            if !text.is_empty() && !looks_like_attribute_macro(&text) {
+                return Some(text);
+            }
+        }
+    }
+
+    // 2) Next siblings (Qt's real-world shape).
+    let mut sib = node.next_sibling();
+    while let Some(s) = sib {
+        match s.kind() {
+            // Stop at the brace that opens the body, the semicolon that
+            // ends the declaration, or any nested compound/declaration
+            // structure — we're past the header by then.
+            "{" | ";" | "compound_statement" | "field_declaration_list" => break,
+            "identifier" | "type_identifier" | "qualified_identifier" => {
+                let text = node_text(s, src);
+                if !text.is_empty() && !looks_like_attribute_macro(&text) {
+                    return Some(text);
+                }
+            }
+            _ => {}
+        }
+        sib = s.next_sibling();
+    }
+    None
+}
+
 /// Emit a single TypeRef edge from `source_idx` to the type named by `name_node`.
 fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let name = node_text(name_node, src);
@@ -152,7 +238,20 @@ pub(super) fn push_specifier(
     parent_index: Option<usize>,
 ) -> Option<usize> {
     let name = if let Some(name_node) = node.child_by_field_name("name") {
-        node_text(name_node, src)
+        let raw = node_text(name_node, src);
+        // Tree-sitter-cpp doesn't expand macros, so a header pattern like
+        // `class Q_WIDGETS_EXPORT QMessageBox : public QDialog` parses
+        // with `Q_WIDGETS_EXPORT` bound to the `name` field and the real
+        // class name as a sibling type_identifier. The same holds for
+        // every Qt module export macro, every dllexport-style attribute
+        // macro, and any project-defined visibility macro. Detect the
+        // SCREAMING_SNAKE_CASE shape and look one level deeper for the
+        // real identifier — purely structural, no macro name list.
+        if looks_like_attribute_macro(&raw) {
+            find_real_specifier_name(node, src).unwrap_or(raw)
+        } else {
+            raw
+        }
     } else {
         // Anonymous struct/union/enum — emit with a synthetic name so the
         // coverage engine can match this node.
@@ -224,6 +323,93 @@ pub(super) fn push_namespace(
         parent_index,
     });
     Some(idx)
+}
+
+/// C++ `namespace alias = target;`. Tree-sitter exposes the alias under
+/// the `name` field and the target as a sibling subtree containing one or
+/// more `namespace_identifier` nodes (single-segment for `namespace Dc =
+/// DeriveColors;`, multiple for nested forms like `namespace fs =
+/// std::filesystem;`).
+///
+/// Emit a Namespace symbol for the alias so resolvers find it under
+/// `same-file` lookup; emit TypeRef refs for each target identifier so
+/// the alias→target relationship is preserved in the graph. Resolution of
+/// `alias::member` to `target::member` is a follow-up — for now the
+/// alias's own ref load (the largest single bucket on KeePassXC's
+/// Phantom-style code) goes from `unresolved` to `resolved-same-file`,
+/// and the target identifiers themselves get tracked refs.
+pub(super) fn push_namespace_alias(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let Some(name_node) = node.child_by_field_name("name") else { return };
+    let name = node_text(name_node, src);
+    if name.is_empty() { return }
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Namespace,
+        visibility: None,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("namespace {name} = ...")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+
+    // Emit TypeRef for each `namespace_identifier` after the `=`. The first
+    // child past the `=` token is the target; nested namespace targets
+    // surface multiple identifiers we want to track.
+    let mut cursor = node.walk();
+    let mut past_equals = false;
+    for child in node.children(&mut cursor) {
+        if !past_equals {
+            if child.kind() == "=" { past_equals = true; }
+            continue;
+        }
+        emit_namespace_target_refs(&child, src, idx, refs);
+    }
+}
+
+fn emit_namespace_target_refs(
+    node: &Node,
+    src: &[u8],
+    source_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if matches!(node.kind(), "namespace_identifier" | "type_identifier") {
+        let name = node_text(*node, src);
+        if !name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: source_idx,
+                target_name: name,
+                kind: EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+                byte_offset: 0,
+                namespace_segments: Vec::new(),
+            });
+        }
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        emit_namespace_target_refs(&child, src, source_idx, refs);
+    }
 }
 
 pub(super) fn push_typedef(

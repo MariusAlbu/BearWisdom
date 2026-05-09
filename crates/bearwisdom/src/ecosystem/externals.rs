@@ -193,6 +193,72 @@ pub fn builtin_locators() -> Vec<Arc<dyn ExternalSourceLocator>> {
 /// Locate `$MAVEN_LOCAL_REPO` in the order BEARWISDOM_JAVA_MAVEN_REPO →
 /// `$HOME/.m2/repository` → `$USERPROFILE/.m2/repository`. Returns `None`
 /// when no directory is found — Java externals silently drop.
+/// Pick the highest-precedence version from a list of version strings —
+/// semver-aware, so `3.12.0` is correctly chosen over `3.9.1` (lexicographic
+/// sort gives the wrong answer because "9" > "1" string-wise).
+///
+/// Comparison rule: split each version into (numeric_components, qualifier).
+/// Numeric components are compared numerically left-to-right. Qualifiers
+/// (e.g., `-RC1`, `-M43`, `-SNAPSHOT`) sort lexicographically AFTER the
+/// numeric prefix and AFTER no-qualifier — so `1.0.0` > `1.0.0-RC1`, which
+/// matches Maven / sbt convention. When a version doesn't parse as semver
+/// at all (e.g., a date-stamp), it falls to lexicographic ordering.
+pub(crate) fn pick_newest_version(versions: &[String]) -> Option<String> {
+    versions
+        .iter()
+        .max_by(|a, b| version_compare(a, b))
+        .cloned()
+}
+
+fn version_compare(a: &str, b: &str) -> std::cmp::Ordering {
+    let (a_nums, a_qual) = split_version(a);
+    let (b_nums, b_qual) = split_version(b);
+    for i in 0..a_nums.len().max(b_nums.len()) {
+        let av = a_nums.get(i).copied().unwrap_or(0);
+        let bv = b_nums.get(i).copied().unwrap_or(0);
+        match av.cmp(&bv) {
+            std::cmp::Ordering::Equal => continue,
+            other => return other,
+        }
+    }
+    // Equal numeric parts: no-qualifier > has-qualifier (release beats pre-release).
+    match (a_qual.is_empty(), b_qual.is_empty()) {
+        (true, true) => std::cmp::Ordering::Equal,
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        (false, false) => a_qual.cmp(&b_qual),
+    }
+}
+
+fn split_version(v: &str) -> (Vec<u64>, String) {
+    let bytes = v.as_bytes();
+    let mut nums = Vec::new();
+    let mut i = 0;
+    let len = bytes.len();
+    while i < len {
+        let mut end = i;
+        while end < len && bytes[end].is_ascii_digit() {
+            end += 1;
+        }
+        if end == i {
+            break;
+        }
+        if let Ok(n) = v[i..end].parse::<u64>() {
+            nums.push(n);
+        }
+        i = end;
+        // Step over the dot separator between numeric components; anything
+        // else (`-`, letter) marks the qualifier boundary.
+        if i < len && bytes[i] == b'.' {
+            i += 1;
+            continue;
+        }
+        break;
+    }
+    let qualifier = v[i..].to_string();
+    (nums, qualifier)
+}
+
 pub fn maven_local_repo() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_JAVA_MAVEN_REPO") {
         let p = PathBuf::from(explicit);
@@ -230,10 +296,8 @@ pub(crate) fn resolve_maven_artifact_dir(
     let version = if let Some(v) = &coord.version {
         v.clone()
     } else {
-        // Pick the lexicographically largest subdirectory — not perfect
-        // semver ordering but good enough to find any cached version.
         let entries = std::fs::read_dir(&group_path).ok()?;
-        let mut versions: Vec<String> = entries
+        let versions: Vec<String> = entries
             .flatten()
             .filter_map(|e| {
                 if e.file_type().ok()?.is_dir() {
@@ -243,8 +307,7 @@ pub(crate) fn resolve_maven_artifact_dir(
                 }
             })
             .collect();
-        versions.sort();
-        versions.into_iter().next_back()?
+        pick_newest_version(&versions)?
     };
 
     let artifact_dir = group_path.join(&version);
@@ -301,7 +364,7 @@ pub(crate) fn resolve_gradle_sources_jar(
     let version = if let Some(v) = &coord.version {
         v.clone()
     } else {
-        let mut versions: Vec<String> = std::fs::read_dir(&artifact_dir)
+        let versions: Vec<String> = std::fs::read_dir(&artifact_dir)
             .ok()?
             .flatten()
             .filter_map(|e| {
@@ -312,8 +375,7 @@ pub(crate) fn resolve_gradle_sources_jar(
                 }
             })
             .collect();
-        versions.sort();
-        versions.into_iter().next_back()?
+        pick_newest_version(&versions)?
     };
 
     let version_dir = artifact_dir.join(&version);
@@ -447,7 +509,7 @@ pub(crate) fn resolve_coursier_sources_jar(
                 let version = if let Some(v) = &coord.version {
                     v.clone()
                 } else {
-                    let mut versions: Vec<String> = std::fs::read_dir(&group_path)
+                    let versions: Vec<String> = std::fs::read_dir(&group_path)
                         .ok()?
                         .flatten()
                         .filter_map(|e| {
@@ -458,8 +520,7 @@ pub(crate) fn resolve_coursier_sources_jar(
                             }
                         })
                         .collect();
-                    versions.sort();
-                    versions.into_iter().next_back()?
+                    pick_newest_version(&versions)?
                 };
                 let jar = group_path.join(&version).join(format!(
                     "{}-{}-sources.jar",

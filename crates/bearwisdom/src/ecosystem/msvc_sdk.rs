@@ -61,21 +61,14 @@ impl Ecosystem for MsvcSdkEcosystem {
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
-        // Precedence: when compile_commands.json is present its -I paths
-        // are ground truth — no heuristic SDK probe.
-        if super::compile_commands::project_has_compile_commands_json(ctx.project_root) {
-            return Vec::new();
-        }
-
-        // Project gate: scan for *.vcxproj. When none are found, the
-        // project is not building with MSBuild and the Windows SDK is
-        // not the right include source — return empty.
+        // The activation rule (Windows + C/C++) already gates this; on a
+        // Windows host MSVC SDK is the universal C runtime for every
+        // C/C++ project (Unix-style code reaches `<stdio.h>` /
+        // `<immintrin.h>` / `<intrin.h>` through MSVC ucrt + intrinsic
+        // headers). Pin the SDK version from `*.vcxproj`'s
+        // `<WindowsTargetPlatformVersion>` when present; otherwise pick
+        // the newest installed SDK.
         let vcxprojs = find_vcxproj_files(ctx.project_root);
-        if vcxprojs.is_empty() {
-            debug!("msvc-sdk: no *.vcxproj in project; skipping SDK probe");
-            return Vec::new();
-        }
-
         let pinned_version = pinned_target_platform_version(&vcxprojs);
         discover_msvc_include(pinned_version.as_deref())
     }
@@ -86,6 +79,10 @@ impl Ecosystem for MsvcSdkEcosystem {
 
     fn supports_reachability(&self) -> bool { true }
     fn uses_demand_driven_parse(&self) -> bool { true }
+
+    // Windows SDK is workspace-level: the host's installed Windows SDK
+    // serves every C/C++ translation unit in the build.
+    fn is_workspace_global(&self) -> bool { true }
 
     fn build_symbol_index(
         &self,
@@ -112,9 +109,16 @@ impl ExternalSourceLocator for MsvcSdkEcosystem {
     fn ecosystem(&self) -> &'static str { TAG }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         let vcxprojs = find_vcxproj_files(project_root);
-        if vcxprojs.is_empty() {
-            return Vec::new();
-        }
+        let pinned_version = pinned_target_platform_version(&vcxprojs);
+        discover_msvc_include(pinned_version.as_deref())
+    }
+    fn locate_roots_for_package(
+        &self,
+        workspace_root: &Path,
+        _package_abs_path: &Path,
+        _package_id: i64,
+    ) -> Vec<ExternalDepRoot> {
+        let vcxprojs = find_vcxproj_files(workspace_root);
         let pinned_version = pinned_target_platform_version(&vcxprojs);
         discover_msvc_include(pinned_version.as_deref())
     }
@@ -132,6 +136,22 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 // ---------------------------------------------------------------------------
 // vcxproj scanning + version pin
 // ---------------------------------------------------------------------------
+//
+// A `*.vcxproj` file declares the SDK version pin via
+// `<WindowsTargetPlatformVersion>`. When present, the highest declared
+// version is used to pick a sub-directory under `WindowsSdkDir/Include/`.
+// Absence of vcxproj does not skip MSVC SDK probing — every C/C++ project
+// on a Windows host resolves stdlib through MSVC ucrt. C stdlib functions
+// (`memset`, `printf`), Intel intrinsics (`__m256i`), and Win32 SDK types
+// (`HWND`,
+//     `WCHAR`) stay unresolved on every CMake-on-MSVC project.
+//
+// Note: this overlaps with `compile-commands` for the same project,
+// which is fine — both ecosystems contribute distinct dep roots and the
+// symbol-index merge handles dedup. The non-MSVC `compile-commands`
+// path does not suppress msvc-sdk, because compile_commands.json
+// doesn't list SDK paths on MSVC.
+//
 
 /// Find every `*.vcxproj` under `project_root`, capped at depth 6 to avoid
 /// pathological monorepos. Returns absolute paths.
@@ -230,20 +250,46 @@ fn discover_msvc_include(pinned_version: Option<&str>) -> Vec<ExternalDepRoot> {
             include_roots.push(p);
         }
     }
-    if let Some(wdk) = std::env::var_os("WindowsSdkDir") {
-        let include_root = PathBuf::from(wdk).join("Include");
-        if include_root.is_dir() {
-            if let Some(pinned) = pinned_version {
-                let pinned_dir = include_root.join(pinned);
-                if pinned_dir.is_dir() {
-                    include_roots.push(pinned_dir);
-                } else {
-                    debug!("msvc-sdk: pinned version {pinned} not installed; falling back to newest");
-                    include_roots.extend(super::posix_headers::newest_sdk_versions(&include_root));
-                }
+    // Fallback when VCINSTALLDIR isn't set in the parent shell — the
+    // typical case when `bw` runs outside a vcvarsall-sourced
+    // environment (the configure-msvc.bat scripts source vcvars in a
+    // child cmd, so VCINSTALLDIR doesn't propagate to bw). Probe the
+    // conventional Visual Studio install layout for VC Tools headers
+    // so C++ stdlib types (`<vector>`, `<memory>`, `<string>`) resolve
+    // on CMake-on-MSVC projects. Only reached when the project gate
+    // already established this is an MSVC-flavoured build, so the
+    // probe stays bounded to projects that need it.
+    if include_roots.is_empty() {
+        if let Some(p) = discover_vc_tools_include(&default_vs_install_bases()) {
+            include_roots.push(p);
+        }
+    }
+    let wdk_include_root: Option<PathBuf> = std::env::var_os("WindowsSdkDir")
+        .map(|wdk| PathBuf::from(wdk).join("Include"))
+        .filter(|p| p.is_dir())
+        .or_else(|| {
+            // Conventional Windows 10/11 SDK install path. Read
+            // `ProgramFiles(x86)` from the environment so the path
+            // works on any Windows host (drive letter, locale, custom
+            // Program Files location).
+            let pf86 = std::env::var_os("ProgramFiles(x86)")?;
+            let p = PathBuf::from(pf86)
+                .join("Windows Kits")
+                .join("10")
+                .join("Include");
+            if p.is_dir() { Some(p) } else { None }
+        });
+    if let Some(include_root) = wdk_include_root {
+        if let Some(pinned) = pinned_version {
+            let pinned_dir = include_root.join(pinned);
+            if pinned_dir.is_dir() {
+                include_roots.push(pinned_dir);
             } else {
+                debug!("msvc-sdk: pinned version {pinned} not installed; falling back to newest");
                 include_roots.extend(super::posix_headers::newest_sdk_versions(&include_root));
             }
+        } else {
+            include_roots.extend(super::posix_headers::newest_sdk_versions(&include_root));
         }
     }
 
@@ -272,6 +318,160 @@ fn discover_msvc_include(pinned_version: Option<&str>) -> Vec<ExternalDepRoot> {
         out.push(super::posix_headers::make_root(include, TAG));
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// VC Tools include discovery
+// ---------------------------------------------------------------------------
+//
+// Visual Studio installs lay out the C++ toolchain headers at:
+//   <base>/<year>/<sku>/VC/Tools/MSVC/<version>/include/
+// where:
+//   <base>  = "C:/Program Files (x86)/Microsoft Visual Studio"
+//             (or the 64-bit "C:/Program Files/..." variant)
+//   <year>  = "2022", "2019", "2017"
+//   <sku>   = "BuildTools" | "Enterprise" | "Professional" | "Community"
+//   <ver>   = "14.44.35207.1" — the toolchain version, dotted
+//
+// `vcvarsall.bat amd64` resolves and exports this as `VCINSTALLDIR`.
+// When the user runs `bw` outside that environment (most
+// `configure-msvc.bat` scripts only source vcvars inside a child
+// cmd), VCINSTALLDIR is empty and the C++ stdlib disappears from the
+// resolution graph. Probing the conventional layout recovers it.
+
+fn default_vs_install_bases() -> Vec<PathBuf> {
+    vec![
+        PathBuf::from("C:/Program Files (x86)/Microsoft Visual Studio"),
+        PathBuf::from("C:/Program Files/Microsoft Visual Studio"),
+    ]
+}
+
+/// Locate the newest VC Tools include directory.
+///
+/// Discovery order:
+///   1. **`vswhere.exe`** — Microsoft's official VS install discovery
+///      tool (ships with every VS Installer 2017+ at a fixed path).
+///      Returns the install path of the latest VS instance with the
+///      VC compilers component, regardless of edition (BuildTools /
+///      Community / Professional / Enterprise) or release year.
+///   2. **Conventional `Microsoft Visual Studio` directory layout** —
+///      fallback for unusual installs (older VS, custom relocation,
+///      vswhere absent). Walks `<base>/<year>/<edition>/VC/Tools/MSVC`
+///      generically — the year and edition directories are read from
+///      disk, not hardcoded, so any future VS release is picked up.
+///
+/// Within a `VC/Tools/MSVC` directory the highest version subdirectory
+/// wins. Versions follow `14.X.YYYYY` since VS2017; `numeric_sort`
+/// handles the two-digit X bumps correctly.
+fn discover_vc_tools_include(bases: &[PathBuf]) -> Option<PathBuf> {
+    if let Some(p) = vswhere_vc_tools_include() {
+        return Some(p);
+    }
+    discover_vc_tools_include_layout(bases)
+}
+
+/// Run `vswhere.exe -latest -products * -requires
+/// Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`
+/// to find the newest VS instance with the C/C++ build tools.
+///
+/// vswhere is the official Microsoft tool for VS install discovery.
+/// It ships at a fixed path inside the VS Installer and works for every
+/// VS edition + year combination — replacing the year/SKU enumeration
+/// that would otherwise need updating with each new VS release.
+fn vswhere_vc_tools_include() -> Option<PathBuf> {
+    let vswhere = locate_vswhere()?;
+    let output = std::process::Command::new(&vswhere)
+        .args([
+            "-latest",
+            "-products", "*",
+            "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property", "installationPath",
+            "-format", "value",
+            "-utf8",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() { return None }
+    let install_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if install_path.is_empty() { return None }
+    let msvc_dir = PathBuf::from(install_path).join("VC").join("Tools").join("MSVC");
+    let version_dir = newest_subdir(&msvc_dir)?;
+    let include = version_dir.join("include");
+    if include.is_dir() { Some(include) } else { None }
+}
+
+/// vswhere is installed at `<ProgramFiles(x86)>\Microsoft Visual Studio\
+/// Installer\vswhere.exe` on every machine that has the VS Installer
+/// (released alongside VS 2017). Probe the standard locations and
+/// `VSINSTALLDIR` env var for completeness.
+fn locate_vswhere() -> Option<PathBuf> {
+    if let Some(env) = std::env::var_os("VSINSTALLDIR") {
+        // VSINSTALLDIR points at a VS instance, not the installer; walk
+        // up to the installer directory.
+        if let Some(parent) = PathBuf::from(env).parent().and_then(|p| p.parent()) {
+            let candidate = parent.join("Installer").join("vswhere.exe");
+            if candidate.is_file() { return Some(candidate) }
+        }
+    }
+    for base in [
+        std::env::var_os("ProgramFiles(x86)"),
+        std::env::var_os("ProgramFiles"),
+    ].into_iter().flatten() {
+        let p = PathBuf::from(base)
+            .join("Microsoft Visual Studio")
+            .join("Installer")
+            .join("vswhere.exe");
+        if p.is_file() { return Some(p) }
+    }
+    None
+}
+
+/// Generic walk of `<base>/<year-dir>/<edition-dir>/VC/Tools/MSVC` for
+/// any subdirectory shape — no hardcoded year or edition lists. Picks
+/// the lexicographically-greatest year, then the
+/// lexicographically-greatest edition with a populated MSVC dir.
+fn discover_vc_tools_include_layout(bases: &[PathBuf]) -> Option<PathBuf> {
+    for base in bases {
+        // Iterate every immediate subdir as a candidate year. Preferring
+        // the lexicographically-greatest one mirrors "newest year".
+        let mut years = list_subdirs(base);
+        years.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        for year_dir in years.into_iter().rev() {
+            let mut editions = list_subdirs(&year_dir);
+            editions.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+            for edition_dir in editions.into_iter().rev() {
+                let msvc_dir = edition_dir.join("VC").join("Tools").join("MSVC");
+                let Some(version_dir) = newest_subdir(&msvc_dir) else { continue };
+                let include = version_dir.join("include");
+                if include.is_dir() { return Some(include); }
+            }
+        }
+    }
+    None
+}
+
+fn list_subdirs(parent: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(parent)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+        .map(|e| e.path())
+        .collect()
+}
+
+/// Return the lexicographically-newest immediate subdirectory of
+/// `parent`, or `None` if `parent` doesn't exist or has no subdirs.
+fn newest_subdir(parent: &Path) -> Option<PathBuf> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(parent)
+        .ok()?
+        .flatten()
+        .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+        .map(|e| e.path())
+        .collect();
+    entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    entries.into_iter().next_back()
 }
 
 // ---------------------------------------------------------------------------

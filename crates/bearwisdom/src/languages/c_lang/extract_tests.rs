@@ -121,6 +121,74 @@ class Container {
     }
 
     // =========================================================================
+    // namespace_alias_definition
+    // =========================================================================
+
+    #[test]
+    fn cpp_namespace_alias_emits_namespace_symbol_and_target_ref() {
+        // `namespace Dc = DeriveColors;` is the shape that Qt-style themed
+        // codebases use heavily. Without this extraction, every `Dc::*`
+        // qualified reference leaks `Dc` itself as an unresolved TypeRef.
+        let src = r#"
+namespace DeriveColors {
+    int x = 1;
+}
+namespace Dc = DeriveColors;
+"#;
+        let r = extract::extract(src, "cpp");
+        let alias = r.symbols.iter().find(|s| s.name == "Dc")
+            .expect("namespace alias `Dc` must be emitted");
+        assert_eq!(alias.kind, SymbolKind::Namespace);
+        // The target identifier `DeriveColors` becomes a TypeRef hanging
+        // off the alias symbol so the alias→target relationship is visible
+        // in the graph.
+        let has_target_ref = r.refs.iter().any(|rf|
+            rf.kind == EdgeKind::TypeRef && rf.target_name == "DeriveColors"
+        );
+        assert!(has_target_ref, "alias must emit TypeRef to its target namespace: {:?}", r.refs);
+    }
+
+    // =========================================================================
+    // Macro-misparsed class salvage (Qt's `class Q_*_EXPORT Foo : Base` shape)
+    // =========================================================================
+
+    #[test]
+    fn cpp_macro_prefixed_class_emits_real_class_symbol_when_isolated() {
+        // tree-sitter-cpp parses `class Q_WIDGETS_EXPORT QMessageBox : public QDialog`
+        // as a function_definition (return type = class_specifier{Q_WIDGETS_EXPORT},
+        // name = QMessageBox). The salvage emits a Class symbol for the
+        // recovered identifier instead of letting the macro shadow the real name.
+        let src = "class Q_WIDGETS_EXPORT QMessageBox : public QDialog { public: int x; };\n";
+        let r = extract::extract(src, "cpp");
+        let qmsg = r.symbols.iter().find(|s| s.name == "QMessageBox")
+            .expect("salvaged Class symbol for QMessageBox must exist");
+        assert_eq!(qmsg.kind, SymbolKind::Class);
+        // Macro-shaped Q_WIDGETS_EXPORT must NOT appear as a class.
+        let bogus = r.symbols.iter().find(|s|
+            s.name == "Q_WIDGETS_EXPORT" && s.kind == SymbolKind::Class
+        );
+        assert!(bogus.is_none(), "Q_WIDGETS_EXPORT must not be emitted as a class symbol: {:?}", r.symbols);
+        // Inheritance ref to QDialog should be captured from the ERROR node.
+        let inherits = r.refs.iter().any(|rf|
+            rf.kind == EdgeKind::Inherits && rf.target_name == "QDialog"
+        );
+        assert!(inherits, "salvage must emit Inherits TypeRef for base class: {:?}", r.refs);
+    }
+
+    #[test]
+    fn cpp_macro_prefixed_class_no_underscore_falls_through() {
+        // The macro-detection rule requires an underscore so single-letter
+        // template parameters like `T` and acronym names like `URL` aren't
+        // misclassified as macros. A class header `class URL X` is an
+        // unusual shape that probably doesn't exist in real code, but
+        // assert the heuristic stays narrow.
+        let src = "class URL { int x; };\n";
+        let r = extract::extract(src, "cpp");
+        let url = r.symbols.iter().find(|s| s.name == "URL").expect("URL");
+        assert_eq!(url.kind, SymbolKind::Class);
+    }
+
+    // =========================================================================
     // alias_declaration
     // =========================================================================
 
@@ -1043,6 +1111,203 @@ extern int (*foo)(int x);
         let r = extract::extract(src, "c");
         let count = r.symbols.iter().filter(|s| s.name == "foo").count();
         assert_eq!(count, 1, "salvage must not duplicate; got {count} symbols for foo");
+    }
+
+    // -------------------------------------------------------------------------
+    // MSVC SAL / calling-convention salvage
+    //
+    // CRT headers (`stdio.h`, `string.h`) declare functions like:
+    //   _Check_return_
+    //   size_t __cdecl strlen(_In_z_ char const* _Str);
+    // Tree-sitter-cpp doesn't preprocess `_Check_return_` / `_In_z_`, so the
+    // declaration enters error recovery and the real name is buried inside a
+    // misparsed parameter list. The text-based salvage scans for
+    // `<convention> NAME(` and emits a Function symbol.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn msvc_cdecl_function_decl_recovers_real_name() {
+        let src = "_Check_return_\nsize_t __cdecl strlen(_In_z_ char const* _Str);\n";
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"strlen"),
+            "MSVC __cdecl-annotated decl must recover the real name; got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn msvc_cdecl_salvage_handles_multiple_conventions() {
+        let src = r#"
+void* __cdecl memset(void*, int, size_t);
+int __CRTDECL printf(char const*, ...);
+WINAPI BOOL CreateFileA(LPCSTR, DWORD);
+"#;
+        // The WINAPI decl above has the convention BEFORE the return type — a
+        // Win32 SDK-shaped declaration. The scan finds `WINAPI BOOL` and would
+        // pick up `BOOL` as the candidate name; gate to require the convention
+        // appears immediately before the function name. Skipping the WINAPI
+        // case is acceptable; salvage focuses on the `<ret> __cdecl name(`
+        // shape that's >95% of CRT headers.
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"memset"), "missing memset; got: {names:?}");
+        assert!(names.contains(&"printf"), "missing printf; got: {names:?}");
+    }
+
+    #[test]
+    fn msvc_cdecl_salvage_skips_function_pointer_typedef() {
+        // `typedef int (__cdecl *FN)(int);` is a function-pointer typedef,
+        // not a function declaration. The convention sits before `*`, not
+        // before an identifier — must NOT emit FN as a Function.
+        let src = "typedef int (__cdecl *MY_FN_PTR)(int x);\n";
+        let r = extract::extract(src, "c");
+        let count = r
+            .symbols
+            .iter()
+            .filter(|s| s.name == "MY_FN_PTR" && matches!(s.kind, SymbolKind::Function))
+            .count();
+        assert_eq!(
+            count, 0,
+            "function-pointer typedef must not produce a Function symbol via the calling-convention salvage"
+        );
+    }
+
+    #[test]
+    fn msvc_cdecl_salvage_does_not_duplicate_when_parser_succeeds() {
+        // A clean decl with no SAL annotations: tree-sitter parses it fine.
+        // The salvage pass must dedup against the existing symbol.
+        let src = "int __cdecl plain_fn(int x);\n";
+        let r = extract::extract(src, "c");
+        let count = r.symbols.iter().filter(|s| s.name == "plain_fn").count();
+        assert_eq!(count, 1, "expected one plain_fn symbol; got {count}");
+    }
+
+    #[test]
+    fn msvc_multiline_winapi_decl_recovers_real_name() {
+        // The Win32 SDK shape from synchapi.h:
+        //   WINBASEAPI
+        //   VOID
+        //   WINAPI
+        //   EnterCriticalSection(
+        //       _Inout_ LPCRITICAL_SECTION lpCriticalSection
+        //       );
+        let src = "WINBASEAPI\nVOID\nWINAPI\nEnterCriticalSection(\n    _Inout_ LPCRITICAL_SECTION lpCriticalSection\n    );\n";
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"EnterCriticalSection"),
+            "Win32-shaped multi-line decl must recover the name; got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn msvc_multiline_salvage_skips_non_convention_prefix() {
+        // Bare `IDENT(` with a non-convention preceding line must NOT
+        // emit a function — that's a function call, not a declaration.
+        let src = "int x = 5;\nfoo(x);\n";
+        let r = extract::extract(src, "c");
+        let count = r
+            .symbols
+            .iter()
+            .filter(|s| s.name == "foo" && matches!(s.kind, SymbolKind::Function))
+            .count();
+        assert_eq!(
+            count, 0,
+            "function call must not produce a Function symbol via the multi-line salvage"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Template-class forward decl salvage
+    //
+    // MSVC `<memory>` and similar headers prepend a C++20-modules export
+    // macro (`_EXPORT_STD`) before `template <class _Ty> class shared_ptr;`.
+    // Tree-sitter-cpp doesn't preprocess macros, so the unknown identifier
+    // breaks the parser and the class name is dropped. The salvage scans for
+    // the structural shape regardless of any pre-template prefix.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn msvc_template_class_decl_recovers_name_with_export_macro_prefix() {
+        let src = "_EXPORT_STD template <class _Ty>\nclass shared_ptr;\n";
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"shared_ptr"),
+            "_EXPORT_STD-prefixed template class fwd decl must be recovered; got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn template_class_decl_salvage_handles_struct_keyword() {
+        let src = "_EXPORT_STD template <class _Ty>\nstruct default_delete;\n";
+        let r = extract::extract(src, "c");
+        let kinds: Vec<_> = r
+            .symbols
+            .iter()
+            .filter(|s| s.name == "default_delete")
+            .map(|s| s.kind)
+            .collect();
+        assert!(
+            kinds.iter().any(|k| matches!(k, SymbolKind::Struct)),
+            "struct keyword must produce a Struct symbol; got: {kinds:?}"
+        );
+    }
+
+    #[test]
+    fn template_class_decl_salvage_inline_shape() {
+        // Single-line template with class on same line — common in
+        // smaller libraries, less common in MSVC stdlib.
+        let src = "template <class T> class MyContainer;\n";
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"MyContainer"), "got: {names:?}");
+    }
+
+    #[test]
+    fn template_class_decl_salvage_handles_nested_template_args() {
+        // The template parameter list may contain nested angle brackets:
+        //   template <class T = std::pair<int, int>>
+        // The balanced-bracket walker must consume the inner `<...>`
+        // before looking for `class`.
+        let src = "template <class T = std::pair<int, int>>\nclass NestedDefault;\n";
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"NestedDefault"), "got: {names:?}");
+    }
+
+    #[test]
+    fn template_class_decl_salvage_skips_unrelated_lines() {
+        // `template_factory(...)` is a call expression, not a template
+        // declaration. Must not emit a Class symbol named
+        // `template_factory`.
+        let src = "int x = template_factory(42);\n";
+        let r = extract::extract(src, "c");
+        let count = r
+            .symbols
+            .iter()
+            .filter(|s| s.name == "template_factory" && matches!(s.kind, SymbolKind::Class))
+            .count();
+        assert_eq!(count, 0, "template-prefixed call must not be salvaged as a class");
+    }
+
+    #[test]
+    fn template_class_decl_salvage_does_not_duplicate() {
+        let src = "template <class T> class CleanlyParsed { };\n";
+        let r = extract::extract(src, "c");
+        let count = r.symbols.iter().filter(|s| s.name == "CleanlyParsed").count();
+        assert_eq!(count, 1, "expected one CleanlyParsed; got {count}");
+    }
+
+    #[test]
+    fn declaration_macro_salvage_skips_function_pointer_declarator() {
+        let src = "typedef int (__cdecl *Callback)(int);\n";
+        let r = extract::extract(src, "c");
+        assert!(
+            !r.symbols.iter().any(|s| s.name == "Callback" && matches!(s.kind, SymbolKind::Function)),
+            "function-pointer typedef must not be salvaged as a Function"
+        );
     }
 
     // -------------------------------------------------------------------------

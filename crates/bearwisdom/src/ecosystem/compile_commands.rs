@@ -73,6 +73,12 @@ impl Ecosystem for CompileCommandsEcosystem {
     fn supports_reachability(&self) -> bool { true }
     fn uses_demand_driven_parse(&self) -> bool { true }
 
+    // compile_commands.json describes the entire workspace's build.
+    // Workspace-global semantics: discovered from the workspace root, not
+    // per-package; activated workspace-wide regardless of which package's
+    // language-presence is being narrowed.
+    fn is_workspace_global(&self) -> bool { true }
+
     fn build_symbol_index(
         &self,
         dep_roots: &[ExternalDepRoot],
@@ -98,6 +104,20 @@ impl ExternalSourceLocator for CompileCommandsEcosystem {
     fn ecosystem(&self) -> &'static str { TAG }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_from_compile_commands(project_root)
+    }
+    /// Workspace-global override: probe the workspace root, not the
+    /// individual package directory. compile_commands.json sits at the
+    /// workspace level by construction, and per-package narrowing here
+    /// would silently drop it for any project where the C/C++ source
+    /// isn't covered by a detected workspace package.
+    fn locate_roots_for_package(
+        &self,
+        workspace_root: &Path,
+        _package_abs_path: &Path,
+        _package_id: i64,
+    ) -> Vec<ExternalDepRoot> {
+        // Don't stamp package_id — these roots aren't owned by any one package.
+        discover_from_compile_commands(workspace_root)
     }
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         Vec::new()
@@ -130,6 +150,14 @@ struct Entry {
     /// compile_commands.json if absent.
     #[serde(default)]
     directory: String,
+    /// The translation unit being compiled. Used by the indexer's TU
+    /// allowlist filter to skip walked source files that the project
+    /// doesn't actually compile (echo-servers/poco_echo.cpp depending
+    /// on uninstalled Poco, ssl/gnutls.c on Windows, event/io_uring.c
+    /// off Linux). Headers, manifests, and project metadata pass
+    /// through the filter unchanged.
+    #[serde(default)]
+    file: String,
 }
 
 fn discover_from_compile_commands(project_root: &Path) -> Vec<ExternalDepRoot> {
@@ -206,6 +234,42 @@ pub(super) fn project_has_compile_commands_json(project_root: &Path) -> bool {
     locate_compile_commands(project_root).is_some()
 }
 
+/// Read every TU `file` field from the project's compile_commands.json
+/// and return them as canonicalized absolute paths. Returns `None`
+/// when no compile_commands.json is present (the indexer's TU
+/// allowlist filter then becomes a no-op).
+///
+/// Use case: the indexer's `changeset::full_scan` filters walked C/C++
+/// source files against this set, so platform-conditional and
+/// missing-third-party-dep TUs that CMake didn't include in the build
+/// (e.g. `echo-servers/poco_echo.cpp` when Poco isn't installed,
+/// `event/io_uring.c` on non-Linux hosts) are skipped at index time
+/// rather than counted as unresolved-ref noise.
+pub fn tu_file_set(project_root: &Path) -> Option<HashSet<PathBuf>> {
+    let cc_path = locate_compile_commands(project_root)?;
+    let raw = std::fs::read_to_string(&cc_path).ok()?;
+    let entries: Vec<Entry> = serde_json::from_str(&raw).ok()?;
+    if entries.is_empty() { return None }
+    let cc_dir = cc_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let mut tus: HashSet<PathBuf> = HashSet::with_capacity(entries.len());
+    for entry in entries {
+        if entry.file.is_empty() { continue }
+        let dir = if entry.directory.is_empty() {
+            cc_dir.clone()
+        } else {
+            PathBuf::from(&entry.directory)
+        };
+        let abs: PathBuf = if Path::new(&entry.file).is_absolute() {
+            PathBuf::from(&entry.file)
+        } else {
+            dir.join(&entry.file)
+        };
+        let canonical = abs.canonicalize().unwrap_or(abs);
+        tus.insert(canonical);
+    }
+    if tus.is_empty() { None } else { Some(tus) }
+}
+
 /// Find compile_commands.json under the project root. Returns the first
 /// hit from a list of conventional locations.
 fn locate_compile_commands(project_root: &Path) -> Option<PathBuf> {
@@ -234,33 +298,70 @@ fn locate_compile_commands(project_root: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Walk an argv vector and extract every `-I<path>` / `-isystem <path>`
-/// directory, resolving relative paths against `dir`. Inserts canonicalized
-/// PathBufs into `out`.
+/// Walk an argv vector and extract every `-I<path>` / `-isystem <path>` /
+/// `-external:I<path>` directory, resolving relative paths against `dir`.
+/// Inserts canonicalized PathBufs into `out`.
+///
+/// Branch ordering matters: longer prefixes (`-isystem`, `-external:I`) are
+/// matched first so `-I`'s prefix-strip doesn't eat their initial bytes
+/// (`-isystem` would otherwise tokenize as `-I` + `system`).
 fn extract_include_paths(argv: &[String], dir: &Path, out: &mut HashSet<PathBuf>) {
     let mut i = 0;
     while i < argv.len() {
         let arg = &argv[i];
-        // -I<path> (no space)
-        if let Some(rest) = arg.strip_prefix("-I") {
-            if !rest.is_empty() {
-                push_path(rest, dir, out);
-                i += 1; continue;
-            }
-            // -I <path>
-            if i + 1 < argv.len() {
-                push_path(&argv[i + 1], dir, out);
-                i += 2; continue;
-            }
-        }
-        // -isystem <path>
+
+        // -isystem <path> (always separated)
         if arg == "-isystem" {
             if i + 1 < argv.len() {
                 push_path(&argv[i + 1], dir, out);
                 i += 2; continue;
             }
+            i += 1; continue;
         }
-        // /I<path>  (MSVC-style, sometimes seen on Windows builds)
+
+        // -external:I<path> / -external:I <path> — MSVC `cl.exe` system-
+        // include flag (third-party headers, suppresses /Wn warnings).
+        // Path is conventionally combined; support separated for safety.
+        // Sibling flags that are NOT paths and must not be consumed:
+        // -external:W*, -external:env:*, -external:templates-, -external:anglebrackets.
+        if let Some(rest) = arg.strip_prefix("-external:I") {
+            if !rest.is_empty() {
+                push_path(rest, dir, out);
+                i += 1; continue;
+            }
+            if i + 1 < argv.len() {
+                push_path(&argv[i + 1], dir, out);
+                i += 2; continue;
+            }
+            i += 1; continue;
+        }
+        // /external:I<path> — slash-prefixed MSVC variant.
+        if let Some(rest) = arg.strip_prefix("/external:I") {
+            if !rest.is_empty() {
+                push_path(rest, dir, out);
+                i += 1; continue;
+            }
+            if i + 1 < argv.len() {
+                push_path(&argv[i + 1], dir, out);
+                i += 2; continue;
+            }
+            i += 1; continue;
+        }
+
+        // -I<path> (combined) or -I <path> (separated).
+        if let Some(rest) = arg.strip_prefix("-I") {
+            if !rest.is_empty() {
+                push_path(rest, dir, out);
+                i += 1; continue;
+            }
+            if i + 1 < argv.len() {
+                push_path(&argv[i + 1], dir, out);
+                i += 2; continue;
+            }
+            i += 1; continue;
+        }
+
+        // /I<path> — MSVC slash form.
         if let Some(rest) = arg.strip_prefix("/I") {
             if !rest.is_empty() {
                 push_path(rest, dir, out);
@@ -280,6 +381,21 @@ fn push_path(raw: &str, base: &Path, out: &mut HashSet<PathBuf>) {
 /// honoring single and double quotes. Doesn't expand shell variables —
 /// CMake doesn't emit them in compile_commands.json, and Bear/intercept
 /// produce already-resolved invocations.
+///
+/// Backslash handling: `\"` always becomes a literal `"` and `\\` always
+/// becomes a literal `\` — the quote state of the surrounding context is
+/// not consulted, which matches how `cl.exe` (and POSIX shells in their
+/// permissive mode) treat those sequences. Any other `\X` passes the
+/// backslash through literally so Windows paths like
+/// `-IF:\Work\Projects\Foo` survive intact.
+///
+/// The crucial case this handles: CMake on MSBuild emits defines as
+/// `-DQT_TESTCASE_BUILDDIR=\"<path>\"` (literal backslash-escaped quotes
+/// in the actual command string, after JSON decoding). Naive treatment
+/// of the inner `\` as literal followed by `"` toggling quote-state would
+/// glue every subsequent `-external:I` flag into one mega-token until
+/// the matching plain `"` arrived — which never does on a single-line
+/// command. The `\"` rule below prevents the toggle.
 fn tokenize_command(cmd: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
@@ -289,9 +405,15 @@ fn tokenize_command(cmd: &str) -> Vec<String> {
     while let Some(c) = chars.next() {
         match c {
             '\\' if !in_single => {
-                if let Some(&next) = chars.peek() {
-                    current.push(next);
-                    chars.next();
+                match chars.peek() {
+                    Some('"') | Some('\\') => {
+                        current.push(*chars.peek().unwrap());
+                        chars.next();
+                    }
+                    // Other `\X` outside single quotes — push the
+                    // backslash through literally so Windows path
+                    // separators survive.
+                    _ => current.push('\\'),
                 }
             }
             '\'' if !in_double => { in_single = !in_single; }

@@ -768,4 +768,114 @@ mod per_package_activation_tests {
         assert!(ctx.active_ecosystems_by_package[&1].contains(&kotlin_stdlib));
         assert!(ctx.active_ecosystems_by_package[&2].contains(&kotlin_stdlib));
     }
+
+    /// Workspace-global ecosystems (compile_commands.json, posix-headers,
+    /// msvc-sdk, vcpkg-headers, qt-runtime) bypass per-package narrowing.
+    /// Mirrors the KeePassXC shape: a workspace whose only detected
+    /// package is a small Go utility, but whose actual codebase is C/C++
+    /// at the workspace root with a top-level compile_commands.json.
+    /// Without the workspace-global injection, compile-commands would
+    /// never activate (no package with C/C++ language presence) and the
+    /// build's include paths would be silently dropped.
+    #[test]
+    fn workspace_global_ecosystems_inject_into_per_package_actives() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        // Workspace-root compile_commands.json — empty array is enough to
+        // trigger detection; activation doesn't read the contents.
+        write_file(root, "compile_commands.json", "[]");
+        // C++ source at the workspace root (NOT inside any detected pkg).
+        write_file(root, "src/main.cpp", "int main() { return 0; }\n");
+        // The only detected workspace package is a Go utility — has no
+        // C/C++ files of its own, so per-package activation alone would
+        // never activate compile-commands.
+        write_file(root, "utils/tool/main.go", "package main\nfunc main() {}\n");
+
+        let packages = vec![PackageInfo {
+            id: Some(42),
+            name: "tool".into(),
+            path: "utils/tool".into(),
+            kind: Some("go".into()),
+            manifest: None,
+            declared_name: None,
+        }];
+
+        // Per-package language presence: tool only sees Go files.
+        let mut per_pkg: HashMap<i64, HashSet<String>> = HashMap::new();
+        per_pkg.insert(42, HashSet::from(["go".to_string()]));
+
+        // Workspace-wide presence covers everything actually on disk.
+        let workspace_langs = vec![
+            "go".to_string(),
+            "cpp".to_string(),
+            "c".to_string(),
+        ];
+
+        let registry = ecosystem::default_registry();
+        let ctx = ProjectContext::initialize_with_per_package_languages(
+            root,
+            &packages,
+            workspace_langs,
+            per_pkg,
+            registry,
+        );
+
+        let compile_commands = EcosystemId::new("compile-commands");
+        assert!(
+            ctx.active_ecosystems_by_package[&42].contains(&compile_commands),
+            "compile-commands must be injected into the Go package's actives \
+             via workspace-global pass — it covers the workspace's C/C++ \
+             build regardless of per-package language presence: got {:?}",
+            ctx.active_ecosystems_by_package[&42]
+        );
+        assert!(
+            ctx.active_ecosystems.contains(&compile_commands),
+            "workspace-wide active set must include workspace-global \
+             ecosystems: got {:?}",
+            ctx.active_ecosystems
+        );
+    }
+
+    /// Workspace-global ecosystems whose activation does NOT match the
+    /// workspace-wide scope must NOT be injected. Negative case: a
+    /// workspace with only Go source has no C/C++, so compile-commands
+    /// (gated on `LanguagePresent("c"|"cpp")`) stays inactive.
+    #[test]
+    fn workspace_global_ecosystem_not_injected_when_workspace_activation_fails() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        // No compile_commands.json. No C/C++ files. Just Go.
+        write_file(root, "utils/tool/main.go", "package main\nfunc main() {}\n");
+
+        let packages = vec![PackageInfo {
+            id: Some(7),
+            name: "tool".into(),
+            path: "utils/tool".into(),
+            kind: Some("go".into()),
+            manifest: None,
+            declared_name: None,
+        }];
+
+        let mut per_pkg: HashMap<i64, HashSet<String>> = HashMap::new();
+        per_pkg.insert(7, HashSet::from(["go".to_string()]));
+
+        let registry = ecosystem::default_registry();
+        let ctx = ProjectContext::initialize_with_per_package_languages(
+            root,
+            &packages,
+            vec!["go".to_string()],
+            per_pkg,
+            registry,
+        );
+
+        let compile_commands = EcosystemId::new("compile-commands");
+        assert!(
+            !ctx.active_ecosystems_by_package[&7].contains(&compile_commands),
+            "compile-commands must NOT activate when workspace has no C/C++"
+        );
+        assert!(
+            !ctx.active_ecosystems.contains(&compile_commands),
+            "compile-commands must NOT be in workspace-wide actives without C/C++"
+        );
+    }
 }

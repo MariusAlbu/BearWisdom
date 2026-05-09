@@ -167,3 +167,64 @@ fn empty_content_produces_no_chunks() {
     assert!(chunks.is_empty() || chunks.iter().all(|c| c.content.trim().is_empty()),
         "Empty content should produce no meaningful chunks");
 }
+
+#[test]
+fn chunker_dedupes_identical_symbol_boundaries() {
+    // Reproducer for the koreader hang: a single-line file with thousands
+    // of symbols all sharing the same (start_line, end_line) caused
+    // chunk_file to do O(symbols × file_size) work, blowing up the WAL
+    // past 76 GB before being killed.
+    //
+    // Fix: dedupe by (start_line, end_line) before iterating. One chunk
+    // per unique line range still indexes every byte for FTS + embedding;
+    // navigation back to a symbol uses the first symbol_id for that range.
+    let conn = make_db();
+    let file_id = insert_file(&conn, "src/giant_table.lua");
+
+    // Synthesize 5,000 symbols all anchored to line 0 — the shape that
+    // wrecked the chunker on koreader's `zh_pinyin_data.lua`.
+    for i in 0..5_000 {
+        insert_symbol(&conn, file_id, &format!("k{}", i), 0, 0);
+    }
+
+    // The "file content" is one fat 200KB line.
+    let content = "x".repeat(200_000);
+
+    let t0 = std::time::Instant::now();
+    let chunks = chunk_file(&conn, file_id, &content, 512).unwrap();
+    let dur = t0.elapsed();
+
+    // Pre-fix: this loop ran 5,000 times, each extracting and re-chunking
+    // 200KB. Tens of seconds of CPU. Post-fix: collapses to 1 unique
+    // range, sub-second.
+    assert!(
+        dur < std::time::Duration::from_secs(3),
+        "chunker took {:?} on 5k symbols sharing line 0 — boundary dedup likely regressed",
+        dur
+    );
+    // Chunk count is independent of symbol count; bounded by content size /
+    // max_tokens. 200KB ÷ ~2KB-per-chunk-of-512-tokens ≈ ~100 chunks.
+    assert!(
+        chunks.len() < 200,
+        "expected one chunk-set per unique range, not per symbol; got {}",
+        chunks.len()
+    );
+}
+
+#[test]
+fn chunker_preserves_distinct_symbol_boundaries() {
+    // Sanity: the dedup key is (start_line, end_line). Symbols with
+    // distinct ranges must each get their own chunks attached.
+    let conn = make_db();
+    let file_id = insert_file(&conn, "src/three_funcs.rs");
+    insert_symbol(&conn, file_id, "f1", 0, 2);
+    insert_symbol(&conn, file_id, "f2", 4, 6);
+    insert_symbol(&conn, file_id, "f3", 8, 10);
+    let content = (0..15).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+    let chunks = chunk_file(&conn, file_id, &content, 512).unwrap();
+    let symbol_ids: std::collections::HashSet<_> = chunks
+        .iter()
+        .filter_map(|c| c.symbol_id)
+        .collect();
+    assert_eq!(symbol_ids.len(), 3, "each distinct range must get its own symbol_id-attached chunk");
+}

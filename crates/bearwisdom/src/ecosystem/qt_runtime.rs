@@ -110,6 +110,11 @@ impl Ecosystem for QtRuntimeEcosystem {
     fn supports_reachability(&self) -> bool { true }
     fn uses_demand_driven_parse(&self) -> bool { true }
 
+    // Qt is workspace-level: a single Qt install serves every C/C++
+    // translation unit declaring a Qt dep, regardless of how packages
+    // were detected.
+    fn is_workspace_global(&self) -> bool { true }
+
     fn build_symbol_index(
         &self,
         dep_roots: &[ExternalDepRoot],
@@ -134,6 +139,15 @@ impl Ecosystem for QtRuntimeEcosystem {
 impl ExternalSourceLocator for QtRuntimeEcosystem {
     fn ecosystem(&self) -> &'static str { TAG }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_qt_include()
+    }
+    fn locate_roots_for_package(
+        &self,
+        _workspace_root: &Path,
+        _package_abs_path: &Path,
+        _package_id: i64,
+    ) -> Vec<ExternalDepRoot> {
+        // Workspace-global: same Qt install regardless of caller.
         discover_qt_include()
     }
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {

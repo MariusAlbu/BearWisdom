@@ -18,6 +18,10 @@ use crate::types::ExtractionResult;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+#[cfg(test)]
+#[path = "probe_test.rs"]
+mod probe_test;
+
 pub struct HaskellPlugin;
 
 impl LanguagePlugin for HaskellPlugin {

@@ -66,6 +66,9 @@ pub fn incremental_index(
     let start = Instant::now();
     info!("Starting incremental index (HashDiff) of {}", project_root.display());
 
+    crate::languages::c_lang::macro_catalog::begin_index_session(project_root);
+    let _macro_session_guard = MacroSessionGuard;
+
     let cs = changeset::hash_diff(db, project_root)?;
     run_incremental_pipeline(db, project_root, cs, start, ref_cache)
 }
@@ -83,8 +86,18 @@ pub fn git_reindex(
     let start = Instant::now();
     info!("Starting incremental index (GitDiff) of {}", project_root.display());
 
+    crate::languages::c_lang::macro_catalog::begin_index_session(project_root);
+    let _macro_session_guard = MacroSessionGuard;
+
     let cs = changeset::git_diff(db, project_root)?;
     run_incremental_pipeline(db, project_root, cs, start, ref_cache)
+}
+
+struct MacroSessionGuard;
+impl Drop for MacroSessionGuard {
+    fn drop(&mut self) {
+        crate::languages::c_lang::macro_catalog::end_index_session();
+    }
 }
 
 /// Re-index specific files from IDE/watcher events.

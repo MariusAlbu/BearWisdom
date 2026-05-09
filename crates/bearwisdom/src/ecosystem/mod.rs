@@ -39,6 +39,7 @@ pub mod prolog_runtime;
 pub mod hexo_runtime;
 pub mod cargo_build_scripts;
 pub mod cargo_expand_runtime;
+pub mod alire;
 pub mod cabal;
 pub mod bazel_central_registry;
 pub mod sdl_synthetics;
@@ -54,6 +55,8 @@ pub mod elixir_stdlib;
 pub mod erlang_otp;
 pub mod flutter_sdk;
 pub mod gleam_stdlib;
+pub mod gnat_project;
+pub mod gnat_stdlib;
 pub mod go_mod;
 pub mod go_platform;
 pub mod go_stdlib;
@@ -107,6 +110,7 @@ pub use hexo_runtime::HexoRuntimeEcosystem;
 pub use cargo_build_scripts::CargoBuildScriptsEcosystem;
 pub use cargo_expand_runtime::CargoExpandRuntimeEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
+pub use alire::AlireEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
 pub use clojure_core::ClojureCoreEcosystem;
@@ -120,6 +124,8 @@ pub use elixir_stdlib::ElixirStdlibEcosystem;
 pub use erlang_otp::ErlangOtpEcosystem;
 pub use flutter_sdk::FlutterSdkEcosystem;
 pub use gleam_stdlib::GleamStdlibEcosystem;
+pub use gnat_project::GnatProjectEcosystem;
+pub use gnat_stdlib::GnatStdlibEcosystem;
 pub use go_mod::GoModEcosystem;
 pub use go_stdlib::GoStdlibEcosystem;
 pub use godot_api::GodotApiEcosystem;
@@ -529,6 +535,27 @@ pub trait Ecosystem: Send + Sync {
     fn post_process_parsed(&self, dep: &ExternalDepRoot, parsed: &mut ParsedFile) {
         let _ = (dep, parsed);
     }
+
+    /// True if this ecosystem describes a workspace-level artefact that
+    /// covers the entire build regardless of how workspace packages were
+    /// detected. Such ecosystems bypass per-package activation narrowing —
+    /// their activation is evaluated against the workspace-wide scope, and
+    /// their `locate_roots_for_package` should delegate to
+    /// `locate_roots(workspace_root)` rather than probing each package's
+    /// directory.
+    ///
+    /// `compile_commands.json` is the canonical example: one file lists
+    /// every translation unit's flags, so it is workspace-wide by
+    /// construction. The C/C++ implicit toolchains (posix-headers,
+    /// msvc-sdk, vcpkg-headers, qt-runtime) likewise describe
+    /// workspace-level facts ("the OS / SDK provides these headers")
+    /// rather than per-package dependencies.
+    ///
+    /// Default: `false` — package ecosystems (npm, cargo, maven, ...)
+    /// stay narrow because per-package activation is genuinely correct
+    /// for them (a frontend package's npm deps shouldn't activate for an
+    /// unrelated backend package in the same monorepo).
+    fn is_workspace_global(&self) -> bool { false }
 }
 
 // ---------------------------------------------------------------------------
@@ -591,6 +618,7 @@ pub fn default_locator(
         "cran" => Some(Arc::new(CranEcosystem)),
         "pub" => Some(Arc::new(PubEcosystem)),
         "cabal" => Some(Arc::new(CabalEcosystem)),
+        "alire" => Some(Arc::new(AlireEcosystem)),
         "nimble" => Some(Arc::new(NimbleEcosystem)),
         "cpan" => Some(Arc::new(CpanEcosystem)),
         "opam" => Some(Arc::new(OpamEcosystem)),
@@ -635,6 +663,8 @@ pub fn default_locator(
         "matlab-runtime" => Some(Arc::new(MatlabRuntimeEcosystem)),
         "nvim-runtime" => Some(Arc::new(NvimRuntimeEcosystem)),
         "gleam-stdlib" => Some(Arc::new(GleamStdlibEcosystem)),
+        "gnat-stdlib" => Some(Arc::new(GnatStdlibEcosystem)),
+        "gnat-project" => Some(Arc::new(GnatProjectEcosystem)),
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
         "zig-std" => Some(Arc::new(ZigStdEcosystem)),
         "sdl-synthetics" => Some(Arc::new(SdlSyntheticsEcosystem)),
@@ -693,6 +723,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(CranEcosystem);
         reg_eco!(ComposerEcosystem);
         reg_eco!(CabalEcosystem);
+        reg_eco!(AlireEcosystem);
         reg_eco!(NimbleEcosystem);
         reg_eco!(CpanEcosystem);
         reg_eco!(OpamEcosystem);
@@ -744,6 +775,8 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(MatlabRuntimeEcosystem);
         reg_eco!(NvimRuntimeEcosystem);
         reg_eco!(GleamStdlibEcosystem);
+        reg_eco!(GnatStdlibEcosystem);
+        reg_eco!(GnatProjectEcosystem);
         reg_eco!(ZigStdEcosystem);
         reg_eco!(SdlSyntheticsEcosystem);
         reg

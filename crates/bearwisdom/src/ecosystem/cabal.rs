@@ -3,8 +3,9 @@
 //
 // Phase 2 + 3: consolidates `indexer/externals/haskell.rs`. There's no
 // separate `manifest/cabal.rs` — the .cabal file parsing lives here.
-// Probes both Stack (`.stack-work/install/`) and Cabal
-// (`~/.cabal/store/ghc-<ver>/`) package stores.
+// Probes Stack (`.stack-work/install/`) and Cabal package stores.
+// Cabal store paths searched: `$HOME/.cabal/store`, `$HOME/.local/state/cabal/store`
+// (Linux/macOS XDG), `%LOCALAPPDATA%\cabal\store` (Windows default for cabal 3.x).
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -133,18 +134,94 @@ pub fn discover_haskell_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         .into_iter()
         .collect();
 
+    // Boot libraries that every Haskell project transitively depends on
+    // (`base` re-exports identifiers actually defined in `ghc-internal` /
+    // `ghc-prim` / `ghc-bignum`) rarely appear in user `build-depends`.
+    // Read GHC's own package database to discover them — the `.conf` files
+    // under `<ghc-libdir>/package.conf.d/` enumerate every package the
+    // toolchain has registered. No hand-maintained list, no probe-and-pray:
+    // we ask the compiler what it ships with.
+    let toolchain_pkgs = discover_ghc_registered_packages();
+    let mut implicit: Vec<String> = declared.clone();
+    for pkg in &toolchain_pkgs {
+        if !implicit.iter().any(|d| d == pkg) {
+            implicit.push(pkg.clone());
+        }
+    }
+
     let stack_root = project_root.join(".stack-work");
     if stack_root.is_dir() {
-        let roots = find_haskell_stack_deps(&stack_root, &declared, &user_imports);
+        let roots = find_haskell_stack_deps(&stack_root, &implicit, &user_imports);
         if !roots.is_empty() {
             debug!("Haskell: {} roots via Stack", roots.len());
             return roots;
         }
     }
 
-    let roots = find_haskell_cabal_deps(&declared, &user_imports);
-    debug!("Haskell: {} roots via Cabal", roots.len());
+    let roots = find_haskell_cabal_deps(&implicit, &user_imports);
+    debug!(
+        "Haskell: {} roots via Cabal ({} declared, {} GHC-registered)",
+        roots.len(),
+        declared.len(),
+        toolchain_pkgs.len(),
+    );
     roots
+}
+
+/// Read every package GHC has registered. The `.conf` files under
+/// `<ghc-libdir>/package.conf.d/` are the canonical source — each one
+/// declares a `name:` field. Parsing the files (rather than the filename
+/// `<pkg>-<version>-<hash>.conf`) is robust to dashes in package names.
+fn discover_ghc_registered_packages() -> Vec<String> {
+    let Some(libdir) = ghc_libdir() else { return Vec::new() };
+    let conf_d = libdir.join("package.conf.d");
+    let Ok(entries) = std::fs::read_dir(&conf_d) else { return Vec::new() };
+    let mut names = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("conf") { continue }
+        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        for line in content.lines() {
+            let trimmed = line.trim_start();
+            // Cabal-style `.conf` files start with `name: <pkg>` (lowercase
+            // key, optional whitespace before colon).
+            let name = trimmed
+                .strip_prefix("name:")
+                .or_else(|| trimmed.strip_prefix("name :"));
+            if let Some(name) = name {
+                let name = name.trim();
+                if !name.is_empty() {
+                    names.push(name.to_string());
+                }
+                break;
+            }
+        }
+    }
+    names
+}
+
+fn ghc_libdir() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("BEARWISDOM_GHC_LIBDIR") {
+        let p = PathBuf::from(explicit);
+        if p.is_dir() { return Some(p); }
+    }
+    use std::process::Command;
+    let probe = |program: &str| -> Option<PathBuf> {
+        let out = Command::new(program).arg("--print-libdir").output().ok()?;
+        if !out.status.success() { return None; }
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if s.is_empty() { return None; }
+        let p = PathBuf::from(s);
+        if p.is_dir() { Some(p) } else { None }
+    };
+    if let Some(p) = probe("ghc") { return Some(p); }
+    // GHC's Windows shim is `.bat`; std::process::Command doesn't apply
+    // PATHEXT so try the explicit name.
+    #[cfg(windows)]
+    {
+        if let Some(p) = probe("ghc.bat") { return Some(p); }
+    }
+    None
 }
 
 pub fn parse_cabal_build_depends(project_root: &Path) -> Vec<String> {
@@ -215,15 +292,23 @@ fn find_haskell_cabal_deps(
     user_imports: &[String],
 ) -> Vec<ExternalDepRoot> {
     let mut candidates = Vec::new();
+    let mut stores: Vec<PathBuf> = Vec::new();
     if let Some(home) = dirs::home_dir() {
-        let store1 = home.join(".cabal").join("store");
-        let store2 = home.join(".local").join("state").join("cabal").join("store");
-        for store in [store1, store2] {
-            if store.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&store) {
-                    for e in entries.flatten() {
-                        if e.path().is_dir() { candidates.push(e.path()) }
-                    }
+        stores.push(home.join(".cabal").join("store"));
+        stores.push(home.join(".local").join("state").join("cabal").join("store"));
+    }
+    // Cabal 3.x on Windows defaults to %LOCALAPPDATA%\cabal\store.
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        stores.push(PathBuf::from(local).join("cabal").join("store"));
+    }
+    if let Some(data) = dirs::data_local_dir() {
+        stores.push(data.join("cabal").join("store"));
+    }
+    for store in stores {
+        if store.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&store) {
+                for e in entries.flatten() {
+                    if e.path().is_dir() { candidates.push(e.path()) }
                 }
             }
         }

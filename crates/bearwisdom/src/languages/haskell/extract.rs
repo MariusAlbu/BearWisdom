@@ -183,6 +183,22 @@ fn visit(
             "foreign_import" | "foreign_export" => {
                 extract_foreign(&child, src, scope_tree, symbols, parent_index);
             }
+            "signature" => {
+                // Type signatures declare callable identifiers. Inside a
+                // class body (`class Semigroup a where (<>) :: ...`) they
+                // ARE the surface of the typeclass, so emit Method symbols
+                // for resolver lookup. At the top level (`foo :: Int`)
+                // they declare the type of a binding that may or may not
+                // appear elsewhere in the same module — emitting them
+                // ensures Prelude operators and forall-style declarations
+                // are reachable.
+                let kind = if inside_class_or_instance {
+                    SymbolKind::Method
+                } else {
+                    SymbolKind::Function
+                };
+                extract_signature_symbols(&child, src, scope_tree, symbols, kind, parent_index);
+            }
             _ => {
                 visit(child, src, scope_tree, symbols, refs, parent_index, inside_class_or_instance);
             }
@@ -498,21 +514,31 @@ fn collect_constructors(
     }
 }
 
-/// Depth-limited search for a `constructor` or `name` node inside a data/gadt
-/// constructor node. Returns the text of the first match found.
+/// Depth-limited search for a constructor name inside a data/gadt
+/// constructor node. Returns the first match for any of:
+///   * `constructor` — prefix form (`Just a`, `Nothing`)
+///   * `constructor_operator` — operator form inside an `infix` child
+///     (`a : List a` → `:`)
+///   * `empty_list` / `unit_constructor` — special syntactic
+///     constructors built into the grammar (`[]`, `()`)
 fn find_constructor_name(node: &Node, src: &[u8], depth: usize) -> Option<String> {
     if depth == 0 {
         return None;
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "constructor" {
-            let name = node_text(child, src);
-            if !name.is_empty() {
-                return Some(name);
+        match child.kind() {
+            "constructor" | "constructor_operator" => {
+                let name = node_text(child, src);
+                if !name.is_empty() {
+                    return Some(name);
+                }
             }
+            "empty_list" => return Some("[]".to_string()),
+            "unit_constructor" => return Some("()".to_string()),
+            _ => {}
         }
-        // Recurse into wrapper nodes like `prefix`, `infix_constructor`
+        // Recurse into wrapper nodes like `prefix`, `infix`, `special`.
         if let Some(name) = find_constructor_name(&child, src, depth - 1) {
             return Some(name);
         }
@@ -758,6 +784,100 @@ fn extract_foreign(
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// signature  →  Method (inside class) or Function (top-level)
+// ---------------------------------------------------------------------------
+//
+// Tree-sitter Haskell models `(<>) :: a -> a -> a` as a `signature` node
+// whose name field holds the bound identifier(s). Multiple identifiers can
+// share a signature: `foo, bar :: Int` declares both. The resolver needs
+// every identifier surfaced as its own symbol so chain lookups land.
+
+fn extract_signature_symbols(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    kind: SymbolKind,
+    parent_index: Option<usize>,
+) {
+    let mut cursor = node.walk();
+    let mut names: Vec<String> = Vec::new();
+
+    // tree-sitter-haskell uses the `names` field (plural) when a single
+    // signature declares more than one identifier — `(+), (-), (*) :: ...`
+    // — and `name` (singular) for single-identifier signatures. Try both.
+    let name_field = node
+        .child_by_field_name("names")
+        .or_else(|| node.child_by_field_name("name"));
+
+    if let Some(named) = name_field {
+        if matches!(
+            named.kind(),
+            "binding_list" | "names" | "name_list" | "infix_id" | "tuple"
+        ) {
+            let mut nc = named.walk();
+            for grandchild in named.children(&mut nc) {
+                if matches!(
+                    grandchild.kind(),
+                    "variable" | "operator" | "operator_name" | "prefix_id" | "name"
+                ) {
+                    let t = node_text(grandchild, src);
+                    let trimmed = t.trim_matches(|c: char| c == '(' || c == ')').to_string();
+                    if !trimmed.is_empty() {
+                        names.push(trimmed);
+                    }
+                }
+            }
+        } else {
+            let t = node_text(named, src);
+            let trimmed = t.trim_matches(|c: char| c == '(' || c == ')').to_string();
+            if !trimmed.is_empty() {
+                names.push(trimmed);
+            }
+        }
+    }
+
+    if names.is_empty() {
+        // Fallback: walk children directly for variable / operator tokens
+        // before the `::`. tree-sitter sometimes flattens names without a
+        // `name` field on simple signatures.
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "variable" | "prefix_id" | "operator" | "operator_name" => {
+                    let t = node_text(child, src);
+                    let trimmed = t.trim_matches(|c: char| c == '(' || c == ')').to_string();
+                    if !trimmed.is_empty() {
+                        names.push(trimmed);
+                    }
+                }
+                "::" | "type" | "context" | "fun" | "function_type" => break,
+                _ => {}
+            }
+        }
+    }
+
+    if names.is_empty() {
+        return;
+    }
+
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
+
+    for name in names {
+        let qname = if let Some(p) = &scope {
+            format!("{}.{}", p, name)
+        } else {
+            name.clone()
+        };
+        let idx = symbols.len();
+        symbols.push(make_symbol(name, qname, kind, node, None, parent_index));
+        if let Some(ref s) = scope {
+            symbols[idx].scope_path = Some(s.clone());
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -726,7 +726,21 @@ pub(crate) fn make_walked_file(
     // Route via the shared registry so every language's `extensions()` +
     // `language_id_for_extension()` declaration is the single source of
     // truth. No caller needs to maintain a parallel extension table.
-    let language = crate::languages::default_registry().language_by_extension(file_name)?;
+    //
+    // Fallback for C++ stdlib extensionless headers (`<vector>`,
+    // `<memory>`, `<string>`, `<unordered_map>`): these have no
+    // extension to drive detection, but they're real C++ headers
+    // pulled through the demand loop after the posix_headers walker
+    // recognized them. Treat as "cpp" so the parser actually runs.
+    let language = crate::languages::default_registry()
+        .language_by_extension(file_name)
+        .or_else(|| {
+            if crate::ecosystem::posix_headers::is_extensionless_cpp_stdlib_header(file_name) {
+                Some("cpp")
+            } else {
+                None
+            }
+        })?;
 
     let virtual_path = virtual_path_for_pulled(abs, language)
         .unwrap_or_else(|| format!("ext:idx:{}", abs.to_string_lossy().replace('\\', "/")));

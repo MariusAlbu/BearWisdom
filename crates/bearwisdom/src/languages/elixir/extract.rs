@@ -74,6 +74,30 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         super::phoenix_routes::synthesize_route_helpers(source, &mut symbols);
     }
 
+    // Dedup identical refs — `scan_all_type_refs` overlaps with per-arm
+    // walks in `extract_node`. Key includes `module` so refs with
+    // different module hints survive (a bare `foo` and a `MyMod.foo`
+    // both at line 7 are semantically distinct). Same shape as
+    // Kotlin / Scala.
+    {
+        let mut seen: std::collections::HashSet<(
+            usize,
+            String,
+            crate::types::EdgeKind,
+            u32,
+            Option<String>,
+        )> = std::collections::HashSet::with_capacity(refs.len());
+        refs.retain(|r| {
+            seen.insert((
+                r.source_symbol_index,
+                r.target_name.clone(),
+                r.kind,
+                r.line,
+                r.module.clone(),
+            ))
+        });
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 

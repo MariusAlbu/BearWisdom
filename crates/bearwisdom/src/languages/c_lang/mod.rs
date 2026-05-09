@@ -7,6 +7,7 @@ mod helpers;
 mod symbols;
 pub mod extract;
 pub mod keywords;
+pub mod macro_catalog;
 
 mod predicates;
 pub mod resolve;
@@ -60,7 +61,7 @@ impl LanguagePlugin for CLangPlugin {
     fn scope_kinds(&self) -> &[ScopeKind] { extract::C_SCOPE_KINDS }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
-        extract::extract(source, lang_id)
+        extract::extract_with_file(source, file_path, lang_id)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

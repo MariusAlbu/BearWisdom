@@ -80,32 +80,54 @@ fn discover() -> Vec<ExternalDepRoot> {
         let Ok(versions) = std::fs::read_dir(&group_path) else { continue };
         let mut vs: Vec<PathBuf> = versions
             .flatten().filter(|e| e.path().is_dir()).map(|e| e.path()).collect();
-        vs.sort();
-        let Some(latest) = vs.into_iter().next_back() else { continue };
-        let Ok(files) = std::fs::read_dir(&latest) else { continue };
-        for f in files.flatten() {
-            let p = f.path();
-            let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with("-sources.jar") { continue }
-            let cache_dir = cache_base.join(name.trim_end_matches(".jar"));
-            if !cache_dir.exists() || is_cache_stale(&p, &cache_dir) {
-                if let Err(e) = extract_java_sources_jar(&p, &cache_dir) {
-                    debug!("Failed to extract {}: {e}", p.display());
-                    continue;
+        // Semver-aware sort: 2.13.17 > 2.13.8 > 2.13.10 (lex would invert).
+        // Skip versions whose dir lacks a -sources.jar — `cabal build`
+        // sometimes downloads the .pom only.
+        vs.sort_by(|a, b| {
+            let an = a.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let bn = b.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            semver_compare(an, bn)
+        });
+        // Walk versions newest→oldest, stop at the first that has a sources jar.
+        let mut placed = false;
+        for ver_dir in vs.into_iter().rev() {
+            let Ok(files) = std::fs::read_dir(&ver_dir) else { continue };
+            for f in files.flatten() {
+                let p = f.path();
+                let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
+                if !name.ends_with("-sources.jar") { continue }
+                let cache_dir = cache_base.join(name.trim_end_matches(".jar"));
+                if !cache_dir.exists() || is_cache_stale(&p, &cache_dir) {
+                    if let Err(e) = extract_java_sources_jar(&p, &cache_dir) {
+                        debug!("Failed to extract {}: {e}", p.display());
+                        continue;
+                    }
                 }
+                out.push(ExternalDepRoot {
+                    module_path: format!("{group}:{artifact}"),
+                    version: ver_dir.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
+                    root: cache_dir,
+                    ecosystem: LEGACY_ECOSYSTEM_TAG,
+                    package_id: None,
+                    requested_imports: Vec::new(),
+                });
+                placed = true;
+                break;
             }
-            out.push(ExternalDepRoot {
-                module_path: format!("{group}:{artifact}"),
-                version: latest.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
-                root: cache_dir,
-                ecosystem: LEGACY_ECOSYSTEM_TAG,
-                package_id: None,
-                requested_imports: Vec::new(),
-            });
-            break;
+            if placed { break; }
         }
     }
     out
+}
+
+fn semver_compare(a: &str, b: &str) -> std::cmp::Ordering {
+    let parts = |s: &str| -> Vec<u32> {
+        s.split('.').filter_map(|seg| {
+            let digits: String = seg.chars().take_while(|c| c.is_ascii_digit()).collect();
+            digits.parse::<u32>().ok()
+        }).collect()
+    };
+    parts(a).cmp(&parts(b)).then_with(|| a.cmp(b))
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {

@@ -121,6 +121,39 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         }
     }
 
+    // Dedup identical refs. `scan_all_type_refs` walks the entire CST and
+    // emits a TypeRef for every `user_type` / `nullable_type` / `annotation`
+    // node, while `extract_node`'s per-declaration arms ALSO emit refs for
+    // the same nodes when they appear inside class bodies, property types,
+    // or function signatures. The result is exact-duplicate `ExtractedRef`s
+    // that pass through to `unresolved_refs` and double the per-line bucket
+    // counts.
+    //
+    // Key on (source, target, kind, line, module) — `module` carries
+    // semantic info the resolver uses (e.g., one push-site sets it from a
+    // qualified name, another leaves it None for bare references). Refs
+    // that differ only in module are NOT duplicates and must survive.
+    // byte_offset is excluded because the AST nodes that share a line
+    // legitimately have different offsets and the resolver doesn't read it.
+    {
+        let mut seen: std::collections::HashSet<(
+            usize,
+            String,
+            crate::types::EdgeKind,
+            u32,
+            Option<String>,
+        )> = std::collections::HashSet::with_capacity(refs.len());
+        refs.retain(|r| {
+            seen.insert((
+                r.source_symbol_index,
+                r.target_name.clone(),
+                r.kind,
+                r.line,
+                r.module.clone(),
+            ))
+        });
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 

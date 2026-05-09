@@ -208,6 +208,17 @@ const DEPENDENCY_KEYWORDS: &[&str] = &[
     "kapt",
     "ksp",
     "classpath",
+    // Test fixtures plugin — Spock matchers, JUnit base classes, custom
+    // test helpers. Without these, every Spec subclass that extends
+    // `Specification` and every `Mock`/`Spy` call resolves to nothing.
+    "testFixturesApi",
+    "testFixturesImplementation",
+    "testFixturesCompileOnly",
+    "testFixturesRuntimeOnly",
+    // Functional / integration test source sets — common in Gradle
+    // multi-source-set projects.
+    "functionalTestImplementation",
+    "integrationTestImplementation",
 ];
 
 /// Parse `<keyword> 'group:artifact:version'` and `<keyword>("g:a:v")` lines

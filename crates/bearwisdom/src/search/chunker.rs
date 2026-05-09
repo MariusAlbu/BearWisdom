@@ -62,7 +62,24 @@ pub fn chunk_file(
     let total_lines = lines.len() as u32;
 
     // Query symbol boundaries for this file, ordered by start line.
-    let boundaries = query_symbol_boundaries(conn, file_id)?;
+    // Dedupe by (start_line, end_line) — many symbols can share an
+    // identical line range, particularly in single-line data files
+    // (e.g. koreader's `zh_pinyin_data.lua` packs 64k+ symbols onto
+    // one 660KB line). Without dedup the loop below re-extracts and
+    // re-chunks the same content N times, blowing up at O(N × file
+    // size). One chunk per unique line range still indexes every
+    // byte of the file for FTS + embedding; we keep the first
+    // symbol_id seen for each range so navigation back to a symbol
+    // still works.
+    let raw_boundaries = query_symbol_boundaries(conn, file_id)?;
+    let mut seen_ranges: rustc_hash::FxHashSet<(u32, u32)> = rustc_hash::FxHashSet::default();
+    let mut boundaries: Vec<SymbolBoundary> = Vec::with_capacity(raw_boundaries.len());
+    for b in raw_boundaries {
+        let end_clamped = b.end_line.min(total_lines.saturating_sub(1));
+        if seen_ranges.insert((b.start_line, end_clamped)) {
+            boundaries.push(b);
+        }
+    }
 
     let mut chunks: Vec<CodeChunk> = Vec::new();
     let mut covered_up_to: u32 = 0; // exclusive upper bound (0-based line index)

@@ -2,8 +2,51 @@ use std::fs;
 
 use tempfile::TempDir;
 
-use super::{resolve_coursier_sources_jar, resolve_gradle_sources_jar};
+use super::{pick_newest_version, resolve_coursier_sources_jar, resolve_gradle_sources_jar};
 use crate::ecosystem::manifest::maven::MavenCoord;
+
+#[test]
+fn pick_newest_version_handles_double_digit_components() {
+    // Lexicographic sort would give "3.9.1" because '9' > '1'; semver
+    // ordering must give "3.12.0".
+    let versions = vec![
+        "3.3.0".to_string(),
+        "3.5.0".to_string(),
+        "3.9.1".to_string(),
+        "3.10.2".to_string(),
+        "3.11.0".to_string(),
+        "3.12.0".to_string(),
+    ];
+    assert_eq!(pick_newest_version(&versions).as_deref(), Some("3.12.0"));
+}
+
+#[test]
+fn pick_newest_version_release_beats_pre_release() {
+    let versions = vec!["1.0.0-RC1".to_string(), "1.0.0".to_string()];
+    assert_eq!(pick_newest_version(&versions).as_deref(), Some("1.0.0"));
+}
+
+#[test]
+fn pick_newest_version_orders_milestones_lex() {
+    let versions = vec![
+        "1.0.0-M9".to_string(),
+        "1.0.0-M43".to_string(),
+        "1.0.0-M38".to_string(),
+    ];
+    // Same numeric prefix, qualifier comparison falls back to lex —
+    // "M9" > "M43" lex-wise. Documenting the actual behavior so the
+    // semver-snobs callers know to pin explicit versions for milestones.
+    assert_eq!(
+        pick_newest_version(&versions).as_deref(),
+        Some("1.0.0-M9")
+    );
+}
+
+#[test]
+fn pick_newest_version_empty_returns_none() {
+    let versions: Vec<String> = Vec::new();
+    assert!(pick_newest_version(&versions).is_none());
+}
 
 /// Build a fake `~/.gradle/caches/modules-2/files-2.1` layout under `root`:
 ///

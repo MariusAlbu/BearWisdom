@@ -42,11 +42,16 @@ impl Ecosystem for NimbleEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        // Project deps via `*.nimble`. A bare directory of `.nim` files
-        // with no `<pkg>.nimble` can't be resolved against external
-        // Nimble coordinates, so dropping the LanguagePresent shotgun
-        // is correct per the trait doc.
-        EcosystemActivation::ManifestMatch
+        // Project deps via `*.nimble` OR raw `.nim` files. The Nim stdlib
+        // is part of every Nim toolchain (probed from the compiler's lib/
+        // directory in `find_nim_stdlib`), so any project with `.nim` files
+        // benefits from walking it. ManifestMatch alone misses bare .nim
+        // directories AND fails when the .nimble file isn't picked up by
+        // the manifest scanner.
+        EcosystemActivation::Any(&[
+            EcosystemActivation::ManifestMatch,
+            EcosystemActivation::LanguagePresent("nim"),
+        ])
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
@@ -119,46 +124,134 @@ impl crate::ecosystem::manifest::ManifestReader for NimbleManifest {
 
 pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let declared = parse_nimble_requires(project_root);
-    if declared.is_empty() { return Vec::new() }
-    let Some(pkgs_dir) = find_nimble_pkgs_dir() else { return Vec::new() };
-
     let user_imports: Vec<String> = collect_nim_user_imports(project_root)
         .into_iter()
         .collect();
 
     let mut roots = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&pkgs_dir) else { return Vec::new() };
-    let all_entries: Vec<_> = entries.flatten().collect();
 
-    for dep_name in &declared {
-        let prefix = format!("{dep_name}-");
-        let mut matches: Vec<PathBuf> = all_entries
-            .iter()
-            .filter(|e| {
-                let n = e.file_name();
-                let s = n.to_string_lossy();
-                s.starts_with(&prefix) && e.path().is_dir()
-            })
-            .map(|e| e.path())
-            .collect();
-        matches.sort();
-        if let Some(best) = matches.pop() {
-            let version = best
-                .file_name().and_then(|n| n.to_str())
-                .and_then(|n| n.strip_prefix(&prefix))
-                .unwrap_or("").to_string();
-            roots.push(ExternalDepRoot {
-                module_path: dep_name.clone(),
-                version,
-                root: best,
-                ecosystem: LEGACY_ECOSYSTEM_TAG,
-                package_id: None,
-                requested_imports: user_imports.clone(),
-            });
+    // Nimble package roots — `~/.nimble/pkgs2/<dep>-<version>-<hash>/`.
+    if let Some(pkgs_dir) = find_nimble_pkgs_dir() {
+        if let Ok(entries) = std::fs::read_dir(&pkgs_dir) {
+            let all_entries: Vec<_> = entries.flatten().collect();
+            for dep_name in &declared {
+                let prefix = format!("{dep_name}-");
+                let mut matches: Vec<PathBuf> = all_entries
+                    .iter()
+                    .filter(|e| {
+                        let n = e.file_name();
+                        let s = n.to_string_lossy();
+                        s.starts_with(&prefix) && e.path().is_dir()
+                    })
+                    .map(|e| e.path())
+                    .collect();
+                matches.sort();
+                if let Some(best) = matches.pop() {
+                    let version = best
+                        .file_name().and_then(|n| n.to_str())
+                        .and_then(|n| n.strip_prefix(&prefix))
+                        .unwrap_or("").to_string();
+                    roots.push(ExternalDepRoot {
+                        module_path: dep_name.clone(),
+                        version,
+                        root: best,
+                        ecosystem: LEGACY_ECOSYSTEM_TAG,
+                        package_id: None,
+                        requested_imports: user_imports.clone(),
+                    });
+                }
+            }
         }
     }
-    debug!("Nim: {} external package roots", roots.len());
+
+    // Nim stdlib root — `<nim-install>/lib/`. Imports of `std/sequtils`,
+    // `strutils`, `tables`, etc. resolve here. The compiler's lib dir is the
+    // canonical source for stdlib modules and ships with every Nim install,
+    // so adding it as an implicit root covers every Nim project unconditionally.
+    if let Some(stdlib_root) = find_nim_stdlib() {
+        roots.push(ExternalDepRoot {
+            module_path: "nim-stdlib".to_string(),
+            version: String::new(),
+            root: stdlib_root,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: user_imports.clone(),
+        });
+    }
+
+    debug!("Nim: {} external roots (Nimble + stdlib)", roots.len());
     roots
+}
+
+/// Locate the Nim compiler's lib/ directory. Probes:
+///   1. `BEARWISDOM_NIM_STDLIB` — explicit override
+///   2. `NIM_HOME` / `NIMHOME` env hints (`<home>/lib`)
+///   3. `nim dump` — asks the compiler for its lib path
+fn find_nim_stdlib() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("BEARWISDOM_NIM_STDLIB") {
+        let p = PathBuf::from(explicit);
+        if p.is_dir() { return Some(p); }
+    }
+    for env_key in ["NIM_HOME", "NIMHOME"] {
+        if let Some(home) = std::env::var_os(env_key) {
+            let lib = PathBuf::from(home).join("lib");
+            if lib.is_dir() { return Some(lib); }
+        }
+    }
+
+    // Ask the compiler for its install paths. `nim dump dummy.nim` prints
+    // every search path on its own line — `<install>/lib/pure`,
+    // `<install>/lib/core`, `<install>/lib/posix`, etc. The first match
+    // whose final segment is a known stdlib subdir gives us the install's
+    // `lib/` parent in one walk-up.
+    use std::process::Command;
+    let probe = |program: &str| -> Option<PathBuf> {
+        let out = Command::new(program)
+            .args(["dump", "dummy.nim"])
+            .output()
+            .ok()?;
+        // `nim dump` writes config to stderr on most versions; merge both
+        // streams to be robust.
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        for line in combined.lines() {
+            let raw = line.trim();
+            if raw.is_empty() { continue }
+            // Skip log/config noise — only consider lines that look like
+            // absolute paths (Windows drive letter or POSIX root).
+            let looks_absolute = raw
+                .chars()
+                .nth(1)
+                .map(|c| c == ':')
+                .unwrap_or(false)
+                || raw.starts_with('/');
+            if !looks_absolute { continue }
+            let candidate = PathBuf::from(raw);
+            // Walk up from `<install>/lib/<subdir>` to `<install>/lib`.
+            // Only accept a parent named `lib` so deeper paths
+            // (`lib/wrappers/linenoise`) get pulled in too.
+            let mut walk = Some(candidate.as_path());
+            while let Some(p) = walk {
+                if p.file_name().and_then(|n| n.to_str()) == Some("lib") && p.is_dir() {
+                    return Some(p.to_path_buf());
+                }
+                walk = p.parent();
+            }
+        }
+        None
+    };
+    if let Some(p) = probe("nim") { return Some(p); }
+    // Windows shims are `.bat` files; std::process::Command doesn't apply
+    // PATHEXT so try the explicit name.
+    #[cfg(windows)]
+    {
+        if let Some(p) = probe("nim.bat") { return Some(p); }
+    }
+
+    None
 }
 
 // R3 — `import strutils` / `import std/strutils` / `import foo/[bar, baz]`
@@ -238,12 +331,37 @@ fn nim_module_to_path_tail(module: &str) -> Option<String> {
     Some(format!("{}.nim", cleaned.replace('.', "/")))
 }
 
+/// Return every plausible file tail for a Nim import. The `std/X` prefix is
+/// import-syntax only; on disk the stdlib lives flat under `pure/<X>.nim`,
+/// `core/<X>.nim`, `pure/collections/<X>.nim`, etc. Always also offer the
+/// leaf basename so the narrowed walker matches regardless of the directory
+/// the compiler organises stdlib modules into.
+fn nim_module_path_tails(module: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let cleaned = module.trim();
+    if cleaned.is_empty() { return out; }
+    let primary = cleaned.replace('.', "/");
+    out.push(format!("{primary}.nim"));
+    // `std/strutils` → leaf "strutils.nim"
+    if let Some(leaf) = primary.rsplit('/').next() {
+        if leaf != primary {
+            out.push(format!("{leaf}.nim"));
+        }
+    }
+    // `std/X` is the qualified-stdlib syntax; the file is at `pure/X.nim`
+    // and friends — emit the prefix-stripped form too.
+    if let Some(rest) = primary.strip_prefix("std/") {
+        out.push(format!("{rest}.nim"));
+    }
+    out
+}
+
 fn walk_nim_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     if dep.requested_imports.is_empty() { return walk_nim_root(dep); }
     let tails: std::collections::HashSet<String> = dep
         .requested_imports
         .iter()
-        .filter_map(|m| nim_module_to_path_tail(m))
+        .flat_map(|m| nim_module_path_tails(m))
         .collect();
     if tails.is_empty() { return walk_nim_root(dep); }
 
@@ -309,22 +427,45 @@ pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
     let Ok(content) = std::fs::read_to_string(entry.path()) else { return Vec::new() };
 
     let mut deps = Vec::new();
+    let mut record_dep = |raw: &str, deps: &mut Vec<String>| {
+        let dep = raw.trim();
+        if dep.is_empty() { return }
+        let name = dep
+            .split(|c: char| c == '>' || c == '<' || c == '=' || c == '#' || c == '@' || c.is_whitespace())
+            .next().unwrap_or("").trim();
+        if !name.is_empty() && name != "nim"
+            && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && !deps.iter().any(|d| d == name)
+        {
+            deps.push(name.to_string());
+        }
+    };
+
+    let mut in_block = false;
     for line in content.lines() {
         let trimmed = line.trim();
+
+        // Single-line `requires "name"` and multi-line `requires(` opener.
         if trimmed.starts_with("requires") {
+            // Switch into block mode for the `requires(` form (block extends
+            // across lines until the matching `)`).
+            if trimmed.contains('(') && !trimmed.contains(')') {
+                in_block = true;
+            }
+            // Strip the keyword + opening paren before scanning quoted args
+            // so the inline `requires "name"` form keeps working.
+            let after_kw = trimmed.trim_start_matches("requires").trim_start_matches('(');
+            for part in after_kw.split('"') {
+                record_dep(part, &mut deps);
+            }
+            continue;
+        }
+
+        // Inside a `requires( ... )` block — every quoted token is a dep.
+        if in_block {
+            if trimmed.contains(')') { in_block = false; }
             for part in trimmed.split('"') {
-                let dep = part.trim();
-                if dep.is_empty() || dep.starts_with("requires") || dep == "," { continue }
-                let name = dep
-                    .split(|c: char| c == '>' || c == '<' || c == '=' || c == '#' || c == '@' || c.is_whitespace())
-                    .next().unwrap_or("").trim();
-                if !name.is_empty() && name != "nim"
-                    && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-                {
-                    if !deps.contains(&name.to_string()) {
-                        deps.push(name.to_string());
-                    }
-                }
+                record_dep(part, &mut deps);
             }
         }
     }

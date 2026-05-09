@@ -81,11 +81,28 @@ impl LanguageResolver for NimResolver {
     fn infer_external_namespace(
         &self,
         _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
+        ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        // Nim built-ins / stdlib procs classify via the engine's keywords()
-        // set populated from nim/keywords.rs.
+        // `import std/X` is the Nim stdlib namespace. The compiler's lib/
+        // tree publishes those modules but each one is a *file*, not a
+        // symbol — so the heuristic can't bind the import edge. Treat
+        // `std/<anything>` as external so the import counts as handled.
+        let target = &ref_ctx.extracted_ref.target_name;
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            if let Some(rest) = target.strip_prefix("std/") {
+                return Some(format!("ext:nim-stdlib:{rest}"));
+            }
+            // Bracketed form `std/[strutils, os]` and `from std/X import Y`
+            // also reach this resolver — recognise both.
+            if target.starts_with("std/") {
+                return Some("ext:nim-stdlib".to_string());
+            }
+            // `pkg/<X>` is the Nimble-package namespace shorthand.
+            if let Some(rest) = target.strip_prefix("pkg/") {
+                return Some(format!("ext:nim-pkg:{rest}"));
+            }
+        }
         None
     }
 }

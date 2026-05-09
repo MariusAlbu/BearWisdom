@@ -54,6 +54,28 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // nodes in type positions, emitting TypeRef for any missed by the walker.
     scan_all_type_refs(root, src, &mut refs);
 
+    // Dedup identical refs — `scan_all_type_refs` overlaps with per-arm
+    // walks. Key includes `module` so refs with different qualifier paths
+    // survive. Same shape as Kotlin / Scala / Elixir.
+    {
+        let mut seen: std::collections::HashSet<(
+            usize,
+            String,
+            crate::types::EdgeKind,
+            u32,
+            Option<String>,
+        )> = std::collections::HashSet::with_capacity(refs.len());
+        refs.retain(|r| {
+            seen.insert((
+                r.source_symbol_index,
+                r.target_name.clone(),
+                r.kind,
+                r.line,
+                r.module.clone(),
+            ))
+        });
+    }
+
     super::ExtractionResult::new(syms, refs, has_errors)
 }
 

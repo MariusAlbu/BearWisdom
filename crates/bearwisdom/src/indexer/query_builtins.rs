@@ -1437,11 +1437,6 @@ pub fn query_builtins_for_language(lang: &str) -> &'static [&'static str] {
             "var",
             "with",
         ],
-        "scss" => &[
-            "from",
-            "in",
-            "through",
-        ],
         "solidity" => &[
             "abstract",
             "assembly",

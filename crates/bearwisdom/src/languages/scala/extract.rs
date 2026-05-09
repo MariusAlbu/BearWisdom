@@ -98,6 +98,32 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         }
     }
 
+    // Dedup identical refs. `scan_all_type_refs` walks the entire CST and
+    // emits TypeRefs for every type-bearing node, while the per-arm walks
+    // in `extract_node` (extends_with, type_definition, function signatures,
+    // val/var type ascriptions) emit refs for the same nodes. Without
+    // dedup, the same tuple lands in unresolved_refs twice. Key includes
+    // `module` so refs with different module hints survive — same shape
+    // as the Kotlin fix.
+    {
+        let mut seen: std::collections::HashSet<(
+            usize,
+            String,
+            crate::types::EdgeKind,
+            u32,
+            Option<String>,
+        )> = std::collections::HashSet::with_capacity(refs.len());
+        refs.retain(|r| {
+            seen.insert((
+                r.source_symbol_index,
+                r.target_name.clone(),
+                r.kind,
+                r.line,
+                r.module.clone(),
+            ))
+        });
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 

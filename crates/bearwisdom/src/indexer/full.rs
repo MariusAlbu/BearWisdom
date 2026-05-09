@@ -21,6 +21,18 @@ use crate::indexer::write;
 use crate::languages::{self, LanguageRegistry};
 use crate::types::{IndexStats, ParsedFile};
 use crate::walker::WalkedFile;
+
+/// Closes the C/C++ macro-catalog indexing session when the index pass
+/// exits, including via early return / `?`. The session is opened at the
+/// top of `full_index` so per-file extractors can compose project-root
+/// + relative-path. Without the guard, an early failure would leave the
+/// catalog pinned to a stale project for the next run.
+struct MacroSessionGuard;
+impl Drop for MacroSessionGuard {
+    fn drop(&mut self) {
+        crate::languages::c_lang::macro_catalog::end_index_session();
+    }
+}
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
@@ -69,6 +81,14 @@ pub fn full_index(
     let start = Instant::now();
     info!("Starting full index of {}", project_root.display());
     mem_probe::probe("00_start");
+
+    // C/C++ macro discovery needs to resolve relative file paths to
+    // on-disk header files. Open a session with the project root so
+    // language plugins can compose `<root>/<relative>` without each one
+    // re-discovering the root or the trait having to grow a parameter
+    // every plugin would ignore.
+    crate::languages::c_lang::macro_catalog::begin_index_session(project_root);
+    let _macro_session_guard = MacroSessionGuard;
 
     // --- Step 1: Change detection (FullScan) ---
     emit("scanning", 0.0, None);

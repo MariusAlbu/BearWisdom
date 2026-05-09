@@ -99,6 +99,14 @@ pub(super) fn is_template_param(name: &str) -> bool {
     if name == "<template_args>" {
         return true;
     }
+    // C++ expression keywords that can leak into type_identifier-shaped CST
+    // positions through error recovery or unusual grammar paths. None of
+    // these is ever a type; emitting them as TypeRef pollutes
+    // unresolved_refs (e.g. `connect(this, SIGNAL(...))` was leaking
+    // `this` as a type_ref via the chain segment for `this_expression`).
+    if matches!(name, "this" | "nullptr" | "true" | "false") {
+        return true;
+    }
     // Single uppercase letter: T, U, V, K, N, E, etc.
     if name.len() == 1 && name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
         return true;
@@ -600,3 +608,4 @@ pub fn is_r_c_api_symbol(name: &str) -> bool {
             | "STRING_PTR"
     )
 }
+

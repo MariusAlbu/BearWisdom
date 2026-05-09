@@ -1,31 +1,40 @@
+use crate::types::SymbolKind;
+
 #[test]
-fn probe_haskell_node_structure() {
-    let lang: tree_sitter::Language = tree_sitter_haskell::LANGUAGE.into();
-    let mut parser = tree_sitter::Parser::new();
-    parser.set_language(&lang).unwrap();
-    
-    let src = "module Test where\n\nfoo :: Int -> Int\nfoo x = x + 1\n\nbar = 42\n\nmain = do\n  putStrLn \"hello\"\n";
-    let tree = parser.parse(src, None).unwrap();
-    
-    fn print_tree(node: tree_sitter::Node, src: &[u8], depth: usize) {
-        if depth > 4 { return; }
-        let indent = "  ".repeat(depth);
-        let text = if node.child_count() == 0 {
-            let t = std::str::from_utf8(&src[node.start_byte()..node.end_byte()]).unwrap_or("?");
-            format!(" = {:?}", &t[..t.len().min(30)])
-        } else { String::new() };
-        println!("{}{} [{}] ({},{})-({}{}){}", 
-            indent, node.kind(), 
-            if node.is_named() { "N" } else { "A" },
-            node.start_position().row, node.start_position().column,
-            node.end_position().row, node.end_position().column,
-            text);
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            print_tree(child, src, depth + 1);
-        }
+fn class_with_multi_name_operator_signature_emits_methods() {
+    let src = r#"
+class Eq a where
+    (==), (/=) :: a -> a -> Bool
+
+class Num a where
+    (+), (-), (*) :: a -> a -> a
+"#;
+    let r = crate::languages::haskell::extract::extract(src);
+    let names: Vec<(&str, SymbolKind)> =
+        r.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
+    for op in ["==", "/=", "+", "-", "*"] {
+        assert!(
+            names.iter().any(|(n, k)| *n == op && matches!(k, SymbolKind::Method)),
+            "expected {op} as Method symbol from class declaration; got: {names:?}"
+        );
     }
-    
-    print_tree(tree.root_node(), src.as_bytes(), 0);
-    panic!("probe done - check output above");
 }
+
+#[test]
+fn data_with_operator_constructor_emits_cons() {
+    // `a : List a` — Haskell's list cons constructor is an operator
+    // data-constructor. The Haskell extractor must surface `:` as an
+    // EnumMember symbol so refs to `(x : xs)` patterns can resolve.
+    let src = "data List a = [] | a : List a\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.iter().any(|n| *n == ":"),
+        "expected `:` constructor from `data List a = ... | a : List a`; got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| *n == "[]"),
+        "expected `[]` nullary constructor; got {names:?}"
+    );
+}
+

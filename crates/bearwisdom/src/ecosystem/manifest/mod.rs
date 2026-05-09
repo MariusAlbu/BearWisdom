@@ -74,6 +74,8 @@ pub enum ManifestKind {
     Cpan,
     /// Nim `*.nimble` `requires` declarations.
     Nimble,
+    /// Ada `alire.toml` `[[depends-on]]` / `[depends-on]` declarations.
+    Alire,
     /// PowerShell `*.psd1` `RequiredModules =` arrays.
     Psd1,
     /// Bazel `MODULE.bazel` (bzlmod) and legacy `WORKSPACE` declarations.
@@ -232,6 +234,7 @@ fn all_readers() -> Vec<Box<dyn ManifestReader>> {
         Box::new(crate::ecosystem::cabal::CabalManifest),
         Box::new(crate::ecosystem::cpan::CpanfileManifest),
         Box::new(crate::ecosystem::nimble::NimbleManifest),
+        Box::new(crate::ecosystem::alire::AlireManifest),
         Box::new(crate::ecosystem::psgallery::Psd1Manifest),
         Box::new(crate::ecosystem::bazel_central_registry::ModuleBazelManifest),
         Box::new(crate::ecosystem::tf_registry::TerraformManifest),

@@ -564,6 +564,9 @@ pub(crate) fn evaluate_active_ecosystems_per_package(
         };
         let mut active: Vec<EcosystemId> = Vec::new();
         for eco in reg.all() {
+            // Workspace-global ecosystems bypass the per-package scope —
+            // they are evaluated below against the workspace-wide view.
+            if eco.is_workspace_global() { continue; }
             if is_transitive_only(&eco.activation()) {
                 continue;
             }
@@ -572,6 +575,7 @@ pub(crate) fn evaluate_active_ecosystems_per_package(
             }
         }
         for eco in reg.all() {
+            if eco.is_workspace_global() { continue; }
             if !is_transitive_only(&eco.activation()) {
                 continue;
             }
@@ -583,6 +587,46 @@ pub(crate) fn evaluate_active_ecosystems_per_package(
             }
         }
         out.insert(pkg_id, active);
+    }
+
+    // Workspace-global pass: ecosystems whose `is_workspace_global()` is
+    // true describe workspace-level artefacts (compile_commands.json, OS
+    // SDK headers, Qt install) that cover the entire build regardless of
+    // how packages were detected. They activate against the workspace-wide
+    // scope (union manifests + workspace-wide language presence + project
+    // root) and are injected into every package's active list so the
+    // discovery loop in `stage_link.rs` invokes their locator.
+    //
+    // Without this pass, projects whose actual codebase isn't covered by
+    // a detected workspace package (e.g. a CMake C++ project where the
+    // only detected package is a small Go utility under `utils/`) would
+    // silently fail to discover the build's compile-DB, SDK headers, etc.
+    let workspace_scope = ActivationScope {
+        manifests: &ctx.manifests,
+        language_presence: &ctx.language_presence,
+        glob_root: &ctx.project_root,
+    };
+    let mut workspace_global_active: Vec<EcosystemId> = Vec::new();
+    for eco in reg.all() {
+        if !eco.is_workspace_global() { continue; }
+        if is_transitive_only(&eco.activation()) { continue; }
+        if evaluate_activation_scoped(
+            &eco.activation(),
+            eco.id(),
+            &workspace_scope,
+            &workspace_global_active,
+        ) {
+            workspace_global_active.push(eco.id());
+        }
+    }
+    if !workspace_global_active.is_empty() {
+        for actives in out.values_mut() {
+            for id in &workspace_global_active {
+                if !actives.contains(id) {
+                    actives.push(*id);
+                }
+            }
+        }
     }
     out
 }

@@ -223,48 +223,111 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
 
 /// Parse `import` and `from ... import` lines.
 /// Returns a list of `ExtractedRef` with `EdgeKind::Imports`.
+///
+/// Handled forms:
+///   `import os, strformat`
+///   `import std/sequtils`
+///   `import std/[sequtils, strutils, options]`     ← bracketed group
+///   `import pkg/foo/[bar, baz]`                    ← prefixed bracketed group
+///   `from std/strformat import fmt`
+///   `import other as O`
 fn parse_import_line(line: &str, line_num: u32) -> Option<Vec<ExtractedRef>> {
     if let Some(rest) = line.strip_prefix("import ") {
-        let modules: Vec<ExtractedRef> = rest
-            .split(',')
-            .map(|m| m.trim())
-            .filter(|m| !m.is_empty())
-            .map(|m| {
-                // Strip `as alias` suffix
-                let name = m.split_whitespace().next().unwrap_or(m);
-                ExtractedRef {
-                    source_symbol_index: 0,
-                    target_name: name.to_string(),
-                    kind: EdgeKind::Imports,
-                    line: line_num,
-                    module: None,
-                    chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-}
+        let names = expand_nim_imports(rest);
+        if names.is_empty() { return None; }
+        let modules: Vec<ExtractedRef> = names
+            .into_iter()
+            .map(|n| ExtractedRef {
+                source_symbol_index: 0,
+                target_name: n,
+                kind: EdgeKind::Imports,
+                line: line_num,
+                module: None,
+                chain: None,
+                byte_offset: 0,
+                namespace_segments: Vec::new(),
             })
             .collect();
-        if modules.is_empty() { return None; }
         return Some(modules);
     }
 
     if let Some(rest) = line.strip_prefix("from ") {
-        // `from module import symbol, symbol2`
-        let module = rest.split_whitespace().next().unwrap_or("").to_string();
-        if module.is_empty() { return None; }
-        return Some(vec![ExtractedRef {
-            source_symbol_index: 0,
-            target_name: module,
-            kind: EdgeKind::Imports,
-            line: line_num,
-            module: None,
-            chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-}]);
+        // `from module import symbol, symbol2` — `module` is typically a single
+        // module path (`std/strformat`) but the bracketed group form is also
+        // legal as the source. Reuse the same expander.
+        let module_part = match rest.find("import") {
+            Some(idx) => rest[..idx].trim(),
+            None => rest.split_whitespace().next().unwrap_or(""),
+        };
+        if module_part.is_empty() { return None; }
+        let names = expand_nim_imports(module_part);
+        if names.is_empty() { return None; }
+        let modules: Vec<ExtractedRef> = names
+            .into_iter()
+            .map(|n| ExtractedRef {
+                source_symbol_index: 0,
+                target_name: n,
+                kind: EdgeKind::Imports,
+                line: line_num,
+                module: None,
+                chain: None,
+                byte_offset: 0,
+                namespace_segments: Vec::new(),
+            })
+            .collect();
+        return Some(modules);
     }
 
     None
+}
+
+/// Expand a Nim import RHS into individual module paths. Splits on commas at
+/// the top level, and expands `prefix/[a, b, c]` into `prefix/a`, `prefix/b`,
+/// `prefix/c`. Strips trailing `as alias` clauses.
+fn expand_nim_imports(rest: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut depth = 0i32;
+    let mut buf = String::new();
+    for ch in rest.chars() {
+        match ch {
+            '[' => { depth += 1; buf.push(ch); }
+            ']' => { depth -= 1; buf.push(ch); }
+            ',' if depth == 0 => {
+                expand_one_import(buf.trim(), &mut out);
+                buf.clear();
+            }
+            _ => buf.push(ch),
+        }
+    }
+    expand_one_import(buf.trim(), &mut out);
+    out
+}
+
+fn expand_one_import(item: &str, out: &mut Vec<String>) {
+    let item = item.trim();
+    if item.is_empty() { return; }
+    // Strip `as alias` suffix.
+    let item = item.split(" as ").next().unwrap_or(item).trim();
+    // Bracket-group form: `prefix/[a, b]`.
+    if let (Some(open), Some(close)) = (item.find('['), item.rfind(']')) {
+        if open < close {
+            let prefix = item[..open].trim().trim_end_matches('/');
+            let inside = &item[open + 1..close];
+            for sub in inside.split(',') {
+                let sub = sub.trim();
+                if sub.is_empty() { continue; }
+                let sub = sub.split(" as ").next().unwrap_or(sub).trim();
+                if prefix.is_empty() {
+                    out.push(sub.to_string());
+                } else {
+                    out.push(format!("{prefix}/{sub}"));
+                }
+            }
+            return;
+        }
+    }
+    // Plain `name` or `prefix/name`.
+    out.push(item.to_string());
 }
 
 // ---------------------------------------------------------------------------

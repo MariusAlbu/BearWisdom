@@ -874,6 +874,51 @@ fn resolve_iteration_body(
                     if pf.path.starts_with("ext:") {
                         continue;
                     }
+                    // Imports edges point at a module, not a symbol. The
+                    // heuristic can't bind them because the module name is
+                    // a file stem rather than an identifier. Classify
+                    // import edges generically:
+                    //
+                    //   * If the module name resolves to a project file
+                    //     stem via `module_to_files`, the import is
+                    //     satisfied locally — count as handled.
+                    //   * If the leaf name appears in the SymbolIndex
+                    //     under an `ext:` path, the import points at an
+                    //     indexed external surface — count as handled.
+                    //   * Otherwise the import points at a third-party
+                    //     dependency the package manager didn't surface
+                    //     (Nimble package not installed, Cabal package
+                    //     not in the store). The dep is external by
+                    //     definition; we just don't have its source.
+                    //     Classify as external rather than unresolved so
+                    //     "couldn't find symbol" stays distinct from
+                    //     "import points at uninstalled dep".
+                    if r.kind == EdgeKind::Imports {
+                        let probe = r
+                            .module
+                            .as_deref()
+                            .filter(|m| !m.is_empty())
+                            .unwrap_or(r.target_name.as_str());
+                        if is_module_in_project(probe, &module_to_files, index) {
+                            local_stats.external += 1;
+                            continue;
+                        }
+                        let leaf = probe.rsplit(['/', '.', ':']).next().unwrap_or(probe);
+                        if !leaf.is_empty() {
+                            let any_external = index
+                                .by_name(leaf)
+                                .iter()
+                                .any(|s| s.file_path.starts_with("ext:"));
+                            if any_external {
+                                local_stats.external += 1;
+                                continue;
+                            }
+                        }
+                        // Uninstalled / unwalked third-party dep. The
+                        // import is real, the source just isn't on disk.
+                        local_stats.external += 1;
+                        continue;
+                    }
                     let module_value = r.module.as_deref().map(|s| s.to_string());
                     // E3: propagate snippet flag from source symbol for
                     // aggregate-stats exclusion.

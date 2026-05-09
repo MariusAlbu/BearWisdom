@@ -250,15 +250,21 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     // `cats-core_2.13` for 2.13). Without evaluating the build we can't
     // know which one the user is on, so probe each suffix in turn against
     // every cache. First hit wins.
+    //
+    // The triples carry a manifest-pinned version when it can be resolved
+    // (via `val NAME = "X.Y.Z"` bindings across every sbt manifest) — that
+    // pinned version gets passed to MavenCoord so the resolver targets the
+    // right version directly. When unresolved, fall back to the lex-scan
+    // over cached versions inside `resolve_maven_artifact_dir`.
     let scala_suffixes = ["_3", "_2.13", "_2.12", ""];
-    for (group, artifact_base) in collect_sbt_coord_pairs(project_root) {
+    for (group, artifact_base, version) in collect_sbt_coord_triples(project_root) {
         let mut hit = false;
         for suffix in &scala_suffixes {
             let artifact_id = format!("{artifact_base}{suffix}");
             let coord = MavenCoord {
                 group_id: group.clone(),
                 artifact_id,
-                version: None,
+                version: version.clone(),
             };
             let before = roots.len();
             resolve_and_push_jvm(
@@ -374,33 +380,25 @@ fn resolve_and_push_jvm(
     seen: &mut std::collections::HashSet<PathBuf>,
     missing_sources_jars: &mut Vec<String>,
 ) {
-    let mut resolved: Option<(String, PathBuf)> = None;
-
-    if let Some(repo) = m2 {
-        if let Some((version, artifact_dir)) = resolve_maven_artifact_dir(repo, coord) {
-            let sources_jar = artifact_dir.join(format!(
-                "{}-{}-sources.jar",
-                coord.artifact_id, version
-            ));
-            if sources_jar.is_file() {
-                resolved = Some((version, sources_jar));
+    // First pass: try the manifest-pinned version (when set) across every
+    // cache. If nothing has the exact pinned version, fall back to a
+    // version-blind probe so the walker still picks SOMETHING — a
+    // close-enough version is more useful than no externals at all,
+    // especially when the project's compile-classpath resolves to a
+    // version that isn't pinned in the manifest verbatim.
+    let resolved = try_resolve_in_caches(m2, gradle_cache, coursier_cache, coord)
+        .or_else(|| {
+            if coord.version.is_some() {
+                let unpinned = MavenCoord {
+                    group_id: coord.group_id.clone(),
+                    artifact_id: coord.artifact_id.clone(),
+                    version: None,
+                };
+                try_resolve_in_caches(m2, gradle_cache, coursier_cache, &unpinned)
+            } else {
+                None
             }
-        }
-    }
-    if resolved.is_none() {
-        if let Some(cache) = gradle_cache {
-            if let Some((version, sources_jar)) = resolve_gradle_sources_jar(cache, coord) {
-                resolved = Some((version, sources_jar));
-            }
-        }
-    }
-    if resolved.is_none() {
-        if let Some(cache) = coursier_cache {
-            if let Some((version, sources_jar)) = resolve_coursier_sources_jar(cache, coord) {
-                resolved = Some((version, sources_jar));
-            }
-        }
-    }
+        });
 
     let Some((version, sources_jar)) = resolved else {
         debug!(
@@ -431,6 +429,40 @@ fn resolve_and_push_jvm(
         package_id: None,
         requested_imports: user_imports.to_vec(),
     });
+}
+
+/// Probe each cache (Maven local, Gradle, Coursier) for a sources jar
+/// matching `coord`. First hit wins. The `coord.version` field is honored:
+/// when set, every cache is asked for that specific version; when None,
+/// each cache falls back to its own version-blind newest-wins logic.
+fn try_resolve_in_caches(
+    m2: Option<&Path>,
+    gradle_cache: Option<&Path>,
+    coursier_cache: Option<&Path>,
+    coord: &MavenCoord,
+) -> Option<(String, PathBuf)> {
+    if let Some(repo) = m2 {
+        if let Some((version, artifact_dir)) = resolve_maven_artifact_dir(repo, coord) {
+            let sources_jar = artifact_dir.join(format!(
+                "{}-{}-sources.jar",
+                coord.artifact_id, version
+            ));
+            if sources_jar.is_file() {
+                return Some((version, sources_jar));
+            }
+        }
+    }
+    if let Some(cache) = gradle_cache {
+        if let Some(hit) = resolve_gradle_sources_jar(cache, coord) {
+            return Some(hit);
+        }
+    }
+    if let Some(cache) = coursier_cache {
+        if let Some(hit) = resolve_coursier_sources_jar(cache, coord) {
+            return Some(hit);
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +503,49 @@ fn collect_sbt_coord_pairs(project_root: &Path) -> Vec<(String, String)> {
         for pair in sbt_manifest::parse_sbt_coord_pairs(&content) {
             if seen.insert(pair.clone()) {
                 out.push(pair);
+            }
+        }
+    }
+    out
+}
+
+/// Variant that also carries the manifest-pinned version when it can be
+/// resolved through `val NAME = "X.Y.Z"` bindings collected across every
+/// sbt manifest in the project. Returns `(group, artifact, Option<version>)`
+/// so the resolver can target the right version directory directly instead
+/// of falling back to a (broken) lex-sort over whatever's in the cache.
+fn collect_sbt_coord_triples(project_root: &Path) -> Vec<(String, String, Option<String>)> {
+    let mut sbt_files = Vec::new();
+    collect_sbt_files(project_root, &mut sbt_files, 0);
+
+    // First pass: union all `val NAME = "VERSION"` bindings across every
+    // manifest. sbt convention scatters them between root build.sbt and
+    // project/Dependencies.scala — collect both before resolving deps.
+    let mut vars: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for path in &sbt_files {
+        let Ok(content) = std::fs::read_to_string(path) else { continue };
+        for (k, v) in sbt_manifest::parse_sbt_version_vars(&content) {
+            vars.insert(k, v);
+        }
+    }
+
+    let mut out: Vec<(String, String, Option<String>)> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+
+    for path in &sbt_files {
+        let Ok(content) = std::fs::read_to_string(path) else { continue };
+        for triple in sbt_manifest::parse_sbt_coord_triples(&content, &vars) {
+            let key = (triple.0.clone(), triple.1.clone());
+            // Last write wins for version: a later manifest mention with a
+            // resolved version overrides an earlier coord-only mention.
+            if let Some(existing_idx) = out.iter().position(|t| t.0 == triple.0 && t.1 == triple.1) {
+                if out[existing_idx].2.is_none() && triple.2.is_some() {
+                    out[existing_idx].2 = triple.2;
+                }
+            } else if seen.insert(key) {
+                out.push(triple);
             }
         }
     }
