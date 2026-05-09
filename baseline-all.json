@@ -3,14 +3,14 @@
   "projects": [
     {
       "assertions": {
-        "min_resolution_rate": 76
+        "min_resolution_rate": 80
       },
-      "code_chunks": 27195,
+      "code_chunks": 36754,
       "files": 1555,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 10871,
-      "internal_unresolved": 3297,
+      "internal_edges": 11598,
+      "internal_unresolved": 2784,
       "languages": {
         "ada": 467,
         "c": 2,
@@ -26,16 +26,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-alire",
       "perf": {
-        "end_ws_mb": 111,
-        "files_per_sec": 53,
-        "index_duration_ms": 29120
+        "end_ws_mb": 115,
+        "files_per_sec": 27,
+        "index_duration_ms": 58124
       },
       "project": "ada-alire",
-      "resolution_rate": 76.73,
+      "resolution_rate": 80.64,
       "routes": 0,
-      "symbols": 7143,
+      "symbols": 15530,
       "unresolved_by_lang_kind": {
-        "ada.calls": 3270,
+        "ada.calls": 2757,
         "c.calls": 1,
         "javascript.calls": 2,
         "javascript.type_ref": 4,
@@ -46,14 +46,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 76
+        "min_resolution_rate": 86
       },
-      "code_chunks": 67322,
+      "code_chunks": 150800,
       "files": 1123,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 10718,
-      "internal_unresolved": 3315,
+      "internal_edges": 12175,
+      "internal_unresolved": 1827,
       "languages": {
         "ada": 1015,
         "make": 1,
@@ -63,30 +63,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-drivers",
       "perf": {
-        "end_ws_mb": 211,
-        "files_per_sec": 120,
-        "index_duration_ms": 9388
+        "end_ws_mb": 413,
+        "files_per_sec": 91,
+        "index_duration_ms": 12408
       },
       "project": "ada-drivers",
-      "resolution_rate": 76.38,
+      "resolution_rate": 86.95,
       "routes": 0,
-      "symbols": 16384,
+      "symbols": 70107,
       "unresolved_by_lang_kind": {
-        "ada.calls": 3300,
+        "ada.calls": 1812,
         "python.calls": 14,
         "shell.calls": 1
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 74
+        "min_resolution_rate": 79
       },
-      "code_chunks": 1225,
+      "code_chunks": 1817,
       "files": 42,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 764,
-      "internal_unresolved": 265,
+      "internal_edges": 827,
+      "internal_unresolved": 214,
       "languages": {
         "ada": 37,
         "markdown": 3,
@@ -94,16 +94,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-septum",
       "perf": {
-        "end_ws_mb": 124,
-        "files_per_sec": 51,
-        "index_duration_ms": 831
+        "end_ws_mb": 105,
+        "files_per_sec": 30,
+        "index_duration_ms": 1404
       },
       "project": "ada-septum",
-      "resolution_rate": 74.25,
+      "resolution_rate": 79.44,
       "routes": 0,
-      "symbols": 425,
+      "symbols": 1112,
       "unresolved_by_lang_kind": {
-        "ada.calls": 265
+        "ada.calls": 214
       }
     },
     {

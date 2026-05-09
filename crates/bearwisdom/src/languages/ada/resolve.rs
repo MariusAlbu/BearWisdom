@@ -99,19 +99,45 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
-        // Use-clause lookup: `use Ada.Text_IO;` (encoded as a wildcard import
-        // by `build_file_context`) brings every public symbol of `Ada.Text_IO`
-        // into scope. Resolving a bare `Put_Line(...)` call means searching
-        // each use'd package's direct members for a case-insensitive name
-        // match. The engine's wildcard path uses file_stem matching, which
+        // Ada language-defined primitives on modular types (`Shift_Right`,
+        // `Shift_Left`, `Rotate_Left`, `Rotate_Right`,
+        // `Shift_Right_Arithmetic`) are implicitly visible wherever a
+        // modular type is in scope — strict resolution would require
+        // tracking what types are reachable through imports. We approximate
+        // by taking any `Interfaces.<name>` match when the bare target is
+        // one of these well-known operators. The list is fixed by Ada RM
+        // 13.7, not a library API surface.
+        if !target.contains('.') && is_ada_modular_primitive(simple) {
+            for sym in lookup.by_name(simple) {
+                if sym.qualified_name.starts_with("Interfaces.")
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.85,
+                        strategy: "ada_modular_primitive",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
+        }
+
+        // Bare-name lookup against EVERY imported package (with or use).
+        //
+        // `use Ada.Text_IO;` brings the package's exports into bare scope —
+        // the wildcard case. But Ada also implicitly imports primitive
+        // operations of types declared by `with`-only imports: when a file
+        // does `with Interfaces;` and uses an `Interfaces.Unsigned_16`
+        // value, `Shift_Right(X, N)` is automatically callable bare because
+        // it's a primitive on the modular type. The compiler resolves these
+        // via type-driven rules; we approximate by checking every imported
+        // package for a member whose name matches.
+        //
+        // This bypasses the engine's `file_stem_matches` heuristic, which
         // breaks for GNAT's krunched filenames (`a-textio.ads` vs module
-        // last-segment `text_io`); the qname-via-members_of path here works
-        // independent of the file naming convention.
+        // last-segment `text_io`), and unlocks `with`-only primitives.
         if !target.contains('.') {
             for import in &file_ctx.imports {
-                if !import.is_wildcard {
-                    continue;
-                }
                 let Some(module_path) = &import.module_path else {
                     continue;
                 };
@@ -119,10 +145,15 @@ impl LanguageResolver for AdaResolver {
                     if sym.name.to_lowercase() == simple_lower
                         && predicates::kind_compatible(edge_kind, &sym.kind)
                     {
+                        let strategy = if import.is_wildcard {
+                            "ada_use_clause"
+                        } else {
+                            "ada_with_primitive"
+                        };
                         return Some(Resolution {
                             target_symbol_id: sym.id,
-                            confidence: 0.95,
-                            strategy: "ada_use_clause",
+                            confidence: if import.is_wildcard { 0.95 } else { 0.85 },
+                            strategy,
                             resolved_yield_type: None,
                         });
                     }
@@ -130,14 +161,27 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
-        // Alias substitution: `package ASU renames Ada.Strings.Unbounded;`
-        // produces an Imports ref with target_name="ASU" and
-        // module=Some("Ada.Strings.Unbounded"). When a call writes
-        // `ASU.To_String(...)`, replace the leading "ASU" with the rename
-        // target and probe the canonical qname. This catches the very common
-        // pattern where files alias long stdlib paths (`ASU`, `ASB`, `Trace`).
+        // Alias substitution. Two paths feed into the same lookup machinery:
+        //
+        //  1. File-local alias: `package ASU renames Ada.Strings.Unbounded;`
+        //     declared in this file produces an Imports ref with
+        //     target_name="ASU" + module=Some("Ada.Strings.Unbounded"). When
+        //     a call writes `ASU.To_String(...)`, replace the leading "ASU"
+        //     with the rename target and probe the canonical qname.
+        //
+        //  2. Cross-file alias visible via `use`: `package SP.Strings is
+        //     package ASU renames Ada.Strings.Unbounded; end SP.Strings;`
+        //     emits a Namespace symbol `SP.Strings.ASU` with signature
+        //     `"renames Ada.Strings.Unbounded"`. Files that `use SP.Strings;`
+        //     can write `ASU.To_String` bare; the leading ASU is found via
+        //     `members_of("SP.Strings")` whose signature reveals the rename
+        //     target. Substitute and retry.
         if target.contains('.') {
             let leading = target.split('.').next().unwrap_or("");
+            let leading_lower = leading.to_lowercase();
+            let suffix = &target[leading.len()..]; // includes leading dot
+
+            // Path 1: file-local rename (Imports edge).
             for import in &file_ctx.imports {
                 if import.imported_name != leading {
                     continue;
@@ -146,35 +190,97 @@ impl LanguageResolver for AdaResolver {
                     continue;
                 };
                 if module_path == leading {
-                    continue; // not an alias, just a qualified import
+                    continue;
                 }
-                // Replace the leading segment.
-                let rewritten = format!(
-                    "{}{}",
-                    module_path,
-                    &target[leading.len()..] // includes the dot prefix
-                );
-                let parts: Vec<&str> = rewritten.split('.').collect();
-                for split in (1..parts.len()).rev() {
-                    let parent = parts[..split].join(".");
-                    let leaf = parts[split..].join(".");
-                    let leaf_lower = leaf.to_lowercase();
-                    for sym in lookup.members_of(&parent) {
-                        if sym.qualified_name
-                            .rsplit_once('.')
-                            .map(|(_, n)| n)
-                            .unwrap_or(&sym.qualified_name)
-                            .to_lowercase()
-                            == leaf_lower
-                            && predicates::kind_compatible(edge_kind, &sym.kind)
-                        {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 0.92,
-                                strategy: "ada_alias_substitution",
-                                resolved_yield_type: None,
-                            });
+                let rewritten = format!("{module_path}{suffix}");
+                if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
+                    return Some(res);
+                }
+            }
+
+            // Path 2: cross-file rename visible through a use'd package.
+            for import in &file_ctx.imports {
+                if !import.is_wildcard {
+                    continue;
+                }
+                let Some(module_path) = &import.module_path else {
+                    continue;
+                };
+                for member in lookup.members_of(module_path) {
+                    if member.name.to_lowercase() != leading_lower {
+                        continue;
+                    }
+                    let Some(sig) = &member.signature else { continue };
+                    let Some(rename_target) = sig.strip_prefix("renames ") else { continue };
+                    let rewritten = format!("{rename_target}{suffix}");
+                    if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
+                        return Some(res);
+                    }
+                }
+            }
+        }
+
+        // Variable-type dispatch: `Result.Append(...)` where `Result` is a
+        // local variable typed `Vector`. The extractor emits each
+        // `object_declaration` / `parameter_specification` as a Variable
+        // symbol with `signature = "type: T"`. Look up the leading segment
+        // in the file's variables (case-insensitively), parse the encoded
+        // type, and retry the lookup with the type's qualified name.
+        //
+        // Three retry paths in order of specificity:
+        //   1. The type as written (`Timer.CCER`) — works for project-local
+        //      types whose record members were extracted with the bare-name
+        //      parent.
+        //   2. The type resolved to its full qname (`STM32.Timers.Timer.CCER`)
+        //      via `types_by_name` — needed when record members live under
+        //      a fully-qualified parent (typical of stdlib types and most
+        //      multi-package projects).
+        //   3. Chase through one level of generic instantiation
+        //      (`String_Vectors` → `Ada.Containers.Vectors`).
+        if target.contains('.') {
+            let leading = target.split('.').next().unwrap_or("");
+            let leading_lower = leading.to_lowercase();
+            let suffix = &target[leading.len()..];
+            for sym in lookup.in_file(&file_ctx.file_path) {
+                if sym.kind != "variable" {
+                    continue;
+                }
+                if sym.name.to_lowercase() != leading_lower {
+                    continue;
+                }
+                let Some(sig) = &sym.signature else { continue };
+                let Some(ty) = sig.strip_prefix("type: ") else { continue };
+
+                // 1. Bare-type retry.
+                let rewritten = format!("{ty}{suffix}");
+                if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
+                    return Some(res);
+                }
+
+                // 2. Resolve bare type to its fully-qualified form.
+                let ty_leaf = ty.split('.').next_back().unwrap_or(ty);
+                for ty_sym in lookup.types_by_name(ty_leaf) {
+                    let qualified = format!("{}{suffix}", ty_sym.qualified_name);
+                    if let Some(res) = probe_dotted_qname(&qualified, edge_kind, lookup) {
+                        return Some(res);
+                    }
+                    // Also chase through instantiations on the qualified
+                    // form — e.g., `Vector` resolves to a synthetic
+                    // namespace whose signature is `instantiates
+                    // Ada.Containers.Vectors`.
+                    if let Some(chained) = chase_instantiation(&qualified, lookup) {
+                        if let Some(res) = probe_dotted_qname(&chained, edge_kind, lookup) {
+                            return Some(res);
                         }
+                    }
+                }
+
+                // 3. Chase one level of generic instantiation on the bare
+                // form: `String_Vectors.Vector.Append` → walk up to find
+                // String_Vectors as an instantiation, rewrite the prefix.
+                if let Some(chained) = chase_instantiation(&rewritten, lookup) {
+                    if let Some(res) = probe_dotted_qname(&chained, edge_kind, lookup) {
+                        return Some(res);
                     }
                 }
             }
@@ -239,4 +345,95 @@ impl LanguageResolver for AdaResolver {
         let _ = (file_ctx, ref_ctx, project_ctx);
         None
     }
+}
+
+/// True iff the name is one of Ada's language-defined modular-type
+/// primitives (RM 13.7). These are implicitly visible wherever a
+/// modular type is in scope, and BW resolves them generously to
+/// `Interfaces.<name>` when an `Interfaces` symbol of that name exists.
+fn is_ada_modular_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "Shift_Right"
+            | "Shift_Left"
+            | "Rotate_Right"
+            | "Rotate_Left"
+            | "Shift_Right_Arithmetic"
+    )
+}
+
+/// Walk a dotted qname looking for any prefix that corresponds to a
+/// generic-instantiation symbol (`signature = "instantiates X"`). When
+/// found, replace that prefix with the generic's qname so the suffix
+/// can resolve against the generic's exported members.
+///
+/// Example: `String_Vectors.Vector.Append`
+///   * `String_Vectors` is a Namespace symbol with
+///     `signature = "instantiates Ada.Containers.Vectors"`
+///   * Returns `"Ada.Containers.Vectors.Vector.Append"`.
+fn chase_instantiation(target: &str, lookup: &dyn SymbolLookup) -> Option<String> {
+    let parts: Vec<&str> = target.split('.').collect();
+    for split in 1..=parts.len() {
+        let prefix = parts[..split].join(".");
+        let suffix = if split == parts.len() {
+            String::new()
+        } else {
+            format!(".{}", parts[split..].join("."))
+        };
+        if let Some(sym) = lookup.by_qualified_name(&prefix) {
+            if let Some(sig) = &sym.signature {
+                if let Some(generic) = sig.strip_prefix("instantiates ") {
+                    return Some(format!("{generic}{suffix}"));
+                }
+            }
+        }
+        // Also try by simple name if the qname lookup fails — covers
+        // bare-name instantiations like `package Foo is new Bar(...)`.
+        if split == 1 {
+            for sym in lookup.by_name(&prefix) {
+                if let Some(sig) = &sym.signature {
+                    if let Some(generic) = sig.strip_prefix("instantiates ") {
+                        return Some(format!("{generic}{suffix}"));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Walk a dotted target back through its parents, probing
+/// `members_of(parent)` for a leaf whose name matches case-insensitively
+/// and whose kind is compatible with the edge. Returns the first hit.
+/// Used by both file-local and cross-file alias substitution.
+fn probe_dotted_qname(
+    target: &str,
+    edge_kind: EdgeKind,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    let parts: Vec<&str> = target.split('.').collect();
+    for split in (1..parts.len()).rev() {
+        let parent = parts[..split].join(".");
+        let leaf = parts[split..].join(".");
+        let leaf_lower = leaf.to_lowercase();
+        for sym in lookup.members_of(&parent) {
+            let sym_leaf = sym
+                .qualified_name
+                .rsplit_once('.')
+                .map(|(_, n)| n)
+                .unwrap_or(&sym.qualified_name)
+                .to_lowercase();
+            if sym_leaf == leaf_lower
+                && predicates::kind_compatible(edge_kind, &sym.kind)
+            {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.92,
+                    strategy: "ada_alias_substitution",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+    }
+    None
 }

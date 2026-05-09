@@ -52,9 +52,13 @@ impl LanguagePlugin for AdaPlugin {
             "subprogram_renaming_declaration",
             "generic_subprogram_declaration",
             "generic_package_declaration",
+            "generic_instantiation",
             "package_declaration",
             "package_body",
             "full_type_declaration",
+            "object_declaration",
+            "parameter_specification",
+            "component_declaration",
         ]
     }
 

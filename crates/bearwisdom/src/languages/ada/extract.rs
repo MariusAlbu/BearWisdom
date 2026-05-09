@@ -64,10 +64,14 @@ fn walk_node(
             walk_children(node, src, symbols, refs, idx.or(parent_idx));
         }
         "generic_package_declaration" => {
-            // `generic ... package Foo is ... end Foo;` — extract the inner
-            // package_declaration's name and walk its body.
+            // `generic ... package Foo is ... end Foo;` — emit one Namespace
+            // for Foo, then walk the inner package_declaration's CHILDREN
+            // directly (skipping the package_declaration node itself, which
+            // would otherwise double-emit and produce qnames like
+            // `Foo.Foo.X` for every member).
             let mut cursor = node.walk();
             let mut idx: Option<usize> = None;
+            let mut inner_decl: Option<Node> = None;
             for child in node.children(&mut cursor) {
                 if child.kind() == "package_declaration" {
                     let inner_name = child
@@ -77,10 +81,25 @@ fn walk_node(
                     if !inner_name.is_empty() {
                         idx = Some(push_sym(node, inner_name, SymbolKind::Namespace, symbols, parent_idx));
                     }
+                    inner_decl = Some(child);
                     break;
                 }
             }
-            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+            // Walk other children (generic_formal_part) under the parent;
+            // walk the inner package_declaration's children under the new
+            // namespace so its members nest correctly without duplication.
+            let mut cur = node.walk();
+            for child in node.children(&mut cur) {
+                if matches!(child.kind(), "package_declaration") {
+                    let mut cur2 = child.walk();
+                    for inner in child.children(&mut cur2) {
+                        walk_node(inner, src, symbols, refs, idx.or(parent_idx));
+                    }
+                } else {
+                    walk_node(child, src, symbols, refs, parent_idx);
+                }
+            }
+            let _ = inner_decl;
         }
         "package_declaration" => {
             let name = node
@@ -110,6 +129,163 @@ fn walk_node(
             let idx = extract_type_decl(node, src, symbols, parent_idx);
             walk_children(node, src, symbols, refs, idx.or(parent_idx));
         }
+        "component_declaration" => {
+            // Record field: `Field_Name : Field_Type;` inside `record ... end record`.
+            // Same structure as object_declaration / parameter_specification —
+            // identifier(s) before the colon, type after. Emit one Field
+            // symbol per declared name qualified under the enclosing struct
+            // so `members_of(<struct.qname>)` returns the field for record-
+            // method dispatch (`This.CCER`, `Display.Buffers`).
+            let mut cursor = node.walk();
+            let mut names: Vec<(Node, String)> = Vec::new();
+            let mut type_name: Option<String> = None;
+            let mut seen_colon = false;
+            for child in node.children(&mut cursor) {
+                let kind = child.kind();
+                if kind == ":" {
+                    seen_colon = true;
+                    continue;
+                }
+                if !seen_colon {
+                    if kind == "identifier" {
+                        let name = text(child, src);
+                        if !name.is_empty() {
+                            names.push((child, name));
+                        }
+                    }
+                    continue;
+                }
+                if type_name.is_some() {
+                    continue;
+                }
+                if matches!(kind, "identifier" | "selected_component") {
+                    let t = text(child, src);
+                    if !t.is_empty() && !is_ada_mode_keyword(&t) {
+                        type_name = Some(t);
+                    }
+                } else if matches!(kind, "subtype_indication" | "subtype_mark" | "component_definition") {
+                    let mut cur = child.walk();
+                    for inner in child.children(&mut cur) {
+                        if matches!(inner.kind(), "identifier" | "selected_component") {
+                            let t = text(inner, src);
+                            if !t.is_empty() && !is_ada_mode_keyword(&t) {
+                                type_name = Some(t);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            for (n, name) in names {
+                let idx = push_sym(n, name, SymbolKind::Field, symbols, parent_idx);
+                if let (Some(sym), Some(ty)) = (symbols.get_mut(idx), type_name.as_ref()) {
+                    sym.signature = Some(format!("type: {ty}"));
+                }
+            }
+            walk_children(node, src, symbols, refs, parent_idx);
+        }
+        "object_declaration" | "parameter_specification" => {
+            // `X : T;` / `X : T := init;` / `X : in out T;` etc. We emit a
+            // Variable symbol per declared name with the type encoded into
+            // `signature` so the resolver can chain `X.Method` →
+            // `<type-of-X>.Method`. This is the minimum-viable type tracking
+            // for Ada record-method dispatch (`This.CCER`, `Result.Append`).
+            //
+            // Defining names live before the `:` (collected as `identifier`
+            // children of `_defining_identifier_list`); the type appears
+            // after — first non-keyword identifier-shaped node we encounter.
+            let mut cursor = node.walk();
+            let mut names: Vec<(Node, String)> = Vec::new();
+            let mut type_name: Option<String> = None;
+            let mut seen_colon = false;
+            for child in node.children(&mut cursor) {
+                let kind = child.kind();
+                if kind == ":" {
+                    seen_colon = true;
+                    continue;
+                }
+                if !seen_colon {
+                    // Identifier(s) before colon are the defining names.
+                    if kind == "identifier" {
+                        let name = text(child, src);
+                        if !name.is_empty() {
+                            names.push((child, name));
+                        }
+                    }
+                    continue;
+                }
+                // After the colon — first identifier-shaped node is the type.
+                if type_name.is_some() {
+                    continue;
+                }
+                if matches!(kind, "identifier" | "selected_component") {
+                    let t = text(child, src);
+                    if !t.is_empty() && !is_ada_mode_keyword(&t) {
+                        type_name = Some(t);
+                    }
+                } else if matches!(
+                    kind,
+                    "subtype_indication" | "subtype_mark"
+                ) {
+                    // Walk one layer deeper for the inner identifier.
+                    let mut cur = child.walk();
+                    for inner in child.children(&mut cur) {
+                        if matches!(
+                            inner.kind(),
+                            "identifier" | "selected_component"
+                        ) {
+                            let t = text(inner, src);
+                            if !t.is_empty() && !is_ada_mode_keyword(&t) {
+                                type_name = Some(t);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            for (n, name) in names {
+                let idx = push_sym(n, name, SymbolKind::Variable, symbols, parent_idx);
+                if let (Some(sym), Some(ty)) = (symbols.get_mut(idx), type_name.as_ref()) {
+                    sym.signature = Some(format!("type: {ty}"));
+                }
+            }
+            walk_children(node, src, symbols, refs, parent_idx);
+        }
+        "generic_instantiation" => {
+            // `package String_Vectors is new Ada.Containers.Vectors (...)` or
+            // `function To_Address is new Ada.Unchecked_Conversion (...)`.
+            // Emit the local name as a symbol whose signature encodes the
+            // generic source so the resolver can chain through:
+            //   Result : String_Vectors.Vector → String_Vectors is an
+            //   instantiation of Ada.Containers.Vectors → look up Append on
+            //   Ada.Containers.Vectors.
+            let name_node = node.child_by_field_name("name");
+            let local_name = name_node.map(|n| text(n, src));
+            let mut cursor = node.walk();
+            let mut seen_new = false;
+            let mut is_package = false;
+            let mut generic_name: Option<String> = None;
+            for child in node.children(&mut cursor) {
+                let kind = child.kind();
+                match kind {
+                    "package" => is_package = true,
+                    "procedure" | "function" => is_package = false,
+                    "new" => seen_new = true,
+                    "identifier" | "selected_component" if seen_new && generic_name.is_none() => {
+                        generic_name = Some(text(child, src));
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(name) = local_name.filter(|n| !n.is_empty()) {
+                let kind = if is_package { SymbolKind::Namespace } else { SymbolKind::Function };
+                let idx = push_sym(node, name, kind, symbols, parent_idx);
+                if let (Some(sym), Some(g)) = (symbols.get_mut(idx), generic_name) {
+                    sym.signature = Some(format!("instantiates {g}"));
+                }
+            }
+            walk_children(node, src, symbols, refs, parent_idx);
+        }
         "subprogram_renaming_declaration" => {
             // `procedure Put_Line (S : String) renames Trendy_Terminal.IO.Put_Line;`
             // declares Put_Line as a local alias inside the enclosing package.
@@ -134,6 +310,17 @@ fn walk_node(
             // references an undefined symbol (Simple_Logging is typically
             // an external Ada library — Alire's lib uses `Trace renames
             // Simple_Logging` for ~600 unresolveds in alire).
+            //
+            // Two emissions:
+            //  1. An Imports edge so the file-local `Trace.x` resolution
+            //     works via the resolver's alias-substitution path.
+            //  2. A Namespace symbol for the alias under the enclosing
+            //     package's qname (e.g. `SP.Strings.ASU`) with `signature
+            //     = "renames Ada.Strings.Unbounded"` — this makes nested
+            //     package renames discoverable through `members_of(parent)`
+            //     for files that `use parent;` and access the alias bare.
+            //     The resolver detects the `renames <target>` signature
+            //     and chains through to the target package.
             //
             // tree-sitter-ada emits the rename as:
             //   package identifier "<alias>" renames <identifier|selected_component> ;
@@ -164,14 +351,22 @@ fn walk_node(
                 if !alias.is_empty() && !target.is_empty() {
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
-                        target_name: alias,
+                        target_name: alias.clone(),
                         kind: EdgeKind::Imports,
                         line: node.start_position().row as u32,
-                        module: Some(target),
+                        module: Some(target.clone()),
                         chain: None,
                         byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                    });
+                    // Emit the alias as a real Namespace symbol qualified
+                    // under its parent so cross-file `members_of(parent)`
+                    // sees it. The resolver looks at `signature` to chain
+                    // alias.<x> → target.<x>.
+                    let alias_idx = push_sym(node, alias, SymbolKind::Namespace, symbols, parent_idx);
+                    if let Some(sym) = symbols.get_mut(alias_idx) {
+                        sym.signature = Some(format!("renames {target}"));
+                    }
                 }
             }
         }
@@ -384,6 +579,17 @@ fn walk_children(
 
 fn text(node: Node, src: &[u8]) -> String {
     node.utf8_text(src).unwrap_or("").trim().to_string()
+}
+
+/// True if the token is one of Ada's parameter / object mode markers,
+/// not a type identifier. Used to skip `in`, `out`, `aliased`, etc.
+/// when scanning a `parameter_specification` for the actual type.
+fn is_ada_mode_keyword(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "in" | "out" | "access" | "aliased" | "constant" | "not" | "null" | "exception"
+    )
 }
 
 /// True if the call node is actually an Ada attribute reference such as
