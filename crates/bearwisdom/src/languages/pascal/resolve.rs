@@ -111,12 +111,17 @@ impl LanguageResolver for PascalResolver {
     fn infer_external_namespace(
         &self,
         _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
+        ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        // Pascal built-ins classify via the engine's keywords() set
-        // populated from pascal/keywords.rs; freepascal_runtime walker
-        // emits real symbols for installed RTL units.
+        // The engine's keyword set is case-sensitive but Pascal identifiers
+        // are case-insensitive.  A ref to `SIZEOF` or `fillchar` should
+        // classify as a primitive just like `SizeOf` or `FillChar`.
+        let target_lower = ref_ctx.extracted_ref.target_name.to_lowercase();
+        let keywords = super::keywords::KEYWORDS;
+        if keywords.iter().any(|k| k.to_lowercase() == target_lower) {
+            return Some("primitive".to_string());
+        }
         None
     }
 }
