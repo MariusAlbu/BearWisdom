@@ -13,6 +13,15 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "Boolean", "Char", "String", "AnsiString", "WideString",
     "Pointer", "PChar", "PAnsiChar", "PWideChar",
     "Variant", "OleVariant",
+    // FPC System unit additional scalar types (part of the language runtime)
+    "UTF8String", "UnicodeChar", "PUTF8Char",
+    "PByte", "PWord", "PCardinal", "PInteger", "PInt64", "PUInt64",
+    "PDWord", "PLongWord", "PLongInt", "PSmallInt", "PShortInt",
+    "PBoolean", "PPointer", "PPChar",
+    "TGUID", "PGUID",
+    "UInt", "UIntPtr", "IntPtr", "NativeInt", "NativeUInt",
+    "SizeInt", "SizeUInt", "PtrInt", "PtrUInt",
+    "TDateTime", "TDate", "TTime",
     // interfaces
     "IInterface", "IUnknown", "GUID", "HRESULT",
     // VCL/LCL components
@@ -30,6 +39,7 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "WriteLn", "ReadLn", "Write", "Read",
     // built-in procedures / functions
     "Inc", "Dec", "High", "Low", "Length", "SetLength",
+    "Include", "Exclude",
     "Copy", "Concat", "Pos", "Delete", "Insert",
     "Trim", "IntToStr", "StrToInt", "FloatToStr", "StrToFloat",
     "Format", "Assigned", "FreeAndNil",
@@ -41,6 +51,7 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "Sqr", "Sqrt", "Sin", "Cos", "Ln", "Exp",
     "Random", "Randomize", "Ceil", "Floor",
     "Assert", "Halt", "Exit", "Break", "Continue",
+    "SetString", "LoadResString",
     // String / case helpers
     "TrimLeft", "TrimRight", "UpperCase", "LowerCase",
     "CompareStr", "CompareText",
