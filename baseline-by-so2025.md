@@ -43,7 +43,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 35 | Fortran             | 1.4%     | 86.67%   | 30,971     | 4,765      | 🟡     | fpm needs re-export chain walking; stdlib needs fypp template preprocessor |
 | 36 | Ada                 | 1.4%     | 95.30%   | 27,876     | 1,374      | 🟢     |       |
 | 37 | F#                  | 1.3%     | 95.01%   | 5,565      | 292        | 🟢     |       |
-| 38 | OCaml               | 1.2%     | 90.23%   | 86,509     | 9,370      | 🟡     | Cmdliner + Alcotest sources |
+| 38 | OCaml               | 1.2%     | 90.59%   | 87,852     | 9,128      | 🟡     | dune-fresh 94.6% ≈ ✓; comby/irmin/mirage need opam Stdlib + Alcotest + Lwt sources |
 | 39 | Gleam               | 1.1%     | 98.58%   | 24,364     | 351        | ✅     |       |
 | 40 | Prolog              | 1.1%     | 96.55%   | 97,436     | 3,478      | 🟢     |       |
 | 41 | COBOL               | 1.0%     | 100.00%  | 5,719      | 0          | ✅     |       |
@@ -51,7 +51,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | —  | Pascal (FreePascal) | —        | 92.99%   | 412,063    | 31,069     | 🟡     | castle-fresh's cross-unit refs through Castle Game Engine include-file splitting |
 | —  | Odin                | —        | 97.77%   | 107,348    | 2,453      | 🟢     |       |
 | —  | Vue                 | —        | 98.75%   | 57,764     | 731        | ✅     |       |
-| —  | Haskell             | —        | 91.50%   | 115,120    | 9,828      | 🟡     | re-export chains, lens operators, optparse-applicative internals |
+| —  | Haskell             | —        | 95.46%   | 118,625    | 5,644      | 🟢     |       |
 | —  | Bicep               | —        | 97.21%   | 124,011    | 3,565      | 🟢     |       |
 | —  | Nim                 | —        | 100.00%  | 1,908      | 0          | ✅     |       |
 | —  | Jinja               | —        | 65.45%   | 3,353      | 1,770      | 🔴     | template macros + Ansible variable namespace not resolved |
