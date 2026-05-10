@@ -232,24 +232,113 @@ fn walk_node(
         }
         "use_statement" => {
             let sym_idx = parent_idx.unwrap_or(0);
-            // `module_name` child holds the module name
+            let mut module_name = String::new();
+            let mut has_only_list = false;
+            let mut only_refs: Vec<ExtractedRef> = Vec::new();
+
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if child.kind() == "module_name" || child.kind() == "name" {
-                    let name = text(child, src);
-                    if !name.is_empty() {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: sym_idx,
-                            target_name: name,
-                            kind: EdgeKind::Imports,
-                            line: node.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-});
+                match child.kind() {
+                    "module_name" | "name" if module_name.is_empty() => {
+                        module_name = text(child, src);
                     }
-                    break;
+                    "included_items" => {
+                        // `only: sym1, local_alias => source_name, ...`
+                        has_only_list = true;
+                        let mut ic = child.walk();
+                        for item in child.children(&mut ic) {
+                            match item.kind() {
+                                "identifier" => {
+                                    // Plain symbol name in `only:` list.
+                                    let sym_name = text(item, src);
+                                    if !sym_name.is_empty() {
+                                        only_refs.push(ExtractedRef {
+                                            source_symbol_index: sym_idx,
+                                            target_name: sym_name,
+                                            kind: EdgeKind::Imports,
+                                            line: node.start_position().row as u32,
+                                            module: None, // filled in below once module_name is known
+                                            chain: None,
+                                            byte_offset: 0,
+                                            namespace_segments: Vec::new(),
+                                        });
+                                    }
+                                }
+                                "use_alias" => {
+                                    // `local_name => source_name` rename.
+                                    // local_name child kind is "local_name" or "identifier" (grammar alias).
+                                    // source_name child kind is "identifier".
+                                    let mut local = String::new();
+                                    let mut source = String::new();
+                                    let mut ac = item.walk();
+                                    for part in item.children(&mut ac) {
+                                        match part.kind() {
+                                            "local_name" | "identifier" if local.is_empty() => {
+                                                local = text(part, src);
+                                            }
+                                            "identifier" if !local.is_empty() && source.is_empty() => {
+                                                source = text(part, src);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    // Emit the rename: local_name is what callers use,
+                                    // source is the actual name in the module.
+                                    // Encode as: target_name = local, module = source
+                                    // so the resolver can look up source in the module file.
+                                    if !local.is_empty() {
+                                        only_refs.push(ExtractedRef {
+                                            source_symbol_index: sym_idx,
+                                            target_name: local,
+                                            kind: EdgeKind::Imports,
+                                            line: node.start_position().row as u32,
+                                            // module field holds the source symbol name for renames.
+                                            // If there's no rename, this stays None.
+                                            module: if source.is_empty() { None } else { Some(source) },
+                                            chain: None,
+                                            byte_offset: 0,
+                                            namespace_segments: Vec::new(),
+                                        });
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Always emit the module-level import (wildcard if no only: list).
+            if !module_name.is_empty() {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: module_name.clone(),
+                    kind: EdgeKind::Imports,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                    byte_offset: 0,
+                    namespace_segments: Vec::new(),
+                });
+            }
+
+            // Emit per-symbol imports if an only: list was present.
+            // These let the resolver match individual call refs to their source module.
+            if has_only_list && !module_name.is_empty() {
+                for mut r in only_refs {
+                    // Fill in the module path (except for rename refs where
+                    // `module` already holds the source symbol name — we need
+                    // a separate field to carry both, so we use namespace_segments
+                    // to store the module name for rename refs).
+                    if r.module.is_none() {
+                        r.module = Some(module_name.clone());
+                    } else {
+                        // Rename: module = source_name. Store module path in
+                        // namespace_segments[0] so build_file_context can recover it.
+                        r.namespace_segments = vec![module_name.clone()];
+                    }
+                    refs.push(r);
                 }
             }
         }

@@ -2850,12 +2850,22 @@ pub fn resolve_common(
             continue;
         }
 
-        // Named import: target matches the imported name
-        let matches_import = import.imported_name == *target
-            || import.alias.as_deref() == Some(target);
-        if matches_import {
-            // Find the symbol in the imported module's file
-            let by_name = lookup.by_name(target);
+        // Named import: target matches the imported name or its local alias.
+        // When an alias is present (e.g. `import { Foo as Bar }`, or Fortran
+        // `use m, only: local => source`), the target is the *local* name but
+        // the symbol in the index uses the *source* name — look up by
+        // `imported_name` when the alias matched.
+        let matches_direct = import.imported_name == *target;
+        let matches_alias = import.alias.as_deref() == Some(target);
+        if matches_direct || matches_alias {
+            // When the local alias matched, the actual symbol name is
+            // `imported_name`; otherwise use the target as-is.
+            let lookup_name: &str = if matches_alias {
+                &import.imported_name
+            } else {
+                target
+            };
+            let by_name = lookup.by_name(lookup_name);
             for sym in by_name {
                 if kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {

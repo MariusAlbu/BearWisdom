@@ -6,12 +6,27 @@
 //   1. Scope chain walk: innermost subroutine/function → module → program.
 //   2. Same-file resolution: all top-level procedures visible within the file.
 //   3. Import-based resolution:
-//        `use module_name`                   → all public symbols from module
-//        `use module_name, only: sym1, sym2` → only named symbols
+//        `use module_name`                     → wildcard import (all public symbols)
+//        `use module_name, only: sym1, sym2`   → named import for each symbol
+//        `use module_name, only: local => src` → rename: local_name resolves to src
 //
-// The extractor emits EdgeKind::Imports with:
-//   target_name = module name (or specific symbol for `only:` clauses)
-//   module      = module name when target_name is a renamed/only symbol
+// The extractor emits EdgeKind::Imports refs in three shapes:
+//
+//   1. Module-level wildcard:
+//        target_name = module_name, module = None, namespace_segments = []
+//
+//   2. Named only-symbol:
+//        target_name = symbol_name, module = Some(module_name), namespace_segments = []
+//
+//   3. Rename (local_name => source_name):
+//        target_name = local_name, module = Some(source_name),
+//        namespace_segments = [module_name]
+//
+// `build_file_context` translates shape (3) into an ImportEntry with
+//   imported_name = source_name (what to look up in the index)
+//   alias         = local_name  (what call-site refs use)
+//   module_path   = module_name
+// so `resolve_common`'s alias-aware lookup can find it.
 // =============================================================================
 
 use super::predicates;
@@ -40,17 +55,45 @@ impl LanguageResolver for FortranResolver {
             if r.kind != EdgeKind::Imports {
                 continue;
             }
-            // `use module_name` → target_name = module_name, module = None
-            // `use module_name, only: sym` → target_name = sym, module = module_name
-            let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
-            let is_wildcard = r.module.is_none(); // plain `use` = wildcard
 
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(module_path),
-                alias: None,
-                is_wildcard,
-            });
+            let is_rename = !r.namespace_segments.is_empty();
+
+            if is_rename {
+                // Shape (3): rename `local_name => source_name`.
+                // namespace_segments[0] = module_name, module = source_name,
+                // target_name = local_name.
+                let module_path = r.namespace_segments.first().cloned();
+                let source_name = r.module.clone().unwrap_or_default();
+                let local_name = r.target_name.clone();
+                if !source_name.is_empty() {
+                    imports.push(ImportEntry {
+                        // imported_name is the actual symbol name in the module.
+                        imported_name: source_name,
+                        module_path,
+                        // alias is the local call-site name.
+                        alias: Some(local_name),
+                        is_wildcard: false,
+                    });
+                }
+            } else if r.module.is_some() {
+                // Shape (2): named only-symbol.
+                // target_name = symbol, module = module_name.
+                imports.push(ImportEntry {
+                    imported_name: r.target_name.clone(),
+                    module_path: r.module.clone(),
+                    alias: None,
+                    is_wildcard: false,
+                });
+            } else {
+                // Shape (1): module-level wildcard.
+                // target_name = module_name.
+                imports.push(ImportEntry {
+                    imported_name: r.target_name.clone(),
+                    module_path: Some(r.target_name.clone()),
+                    alias: None,
+                    is_wildcard: true,
+                });
+            }
         }
 
         FileContext {
