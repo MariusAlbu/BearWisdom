@@ -453,12 +453,14 @@ fn seed_demand_from_user_refs_inner(
             // still recover **ambient globals** — `document`, `Buffer`,
             // `fetch`, `process`, `HTMLElement` etc. that `scan_declare
             // _global_blocks` deposited under `NPM_GLOBALS_MODULE` — by
-            // probing that synthetic module first. Refs that miss
-            // globals too (plain method calls like `.map()`, `.push()`,
-            // unknown identifiers) stay unseeded; the chain walker's
-            // expand pass picks them up later with type context, which
-            // is tighter than blasting `find_by_name` into dozens of
-            // unrelated hits.
+            // probing that synthetic module first. `Inherits`/`Implements`
+            // refs without a module are also seeded via the bare-name
+            // fallback: class hierarchy edges are narrow (one entry per
+            // `extends`/`implements` clause) so `find_by_name` blasting
+            // is safe — it only fires when the index has no module-keyed
+            // entry. Plain call targets stay excluded; the chain walker's
+            // expand pass picks them up later with type context.
+            let is_hierarchy = matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements);
             let effective_module: Option<&str> = if r.module.is_some() {
                 r.module.as_deref()
             } else if symbol_index
@@ -469,6 +471,8 @@ fn seed_demand_from_user_refs_inner(
                 .is_some()
             {
                 Some(crate::ecosystem::npm::NPM_GLOBALS_MODULE)
+            } else if is_hierarchy {
+                None // bare-name fallback via find_by_name below
             } else {
                 continue;
             };
@@ -604,7 +608,10 @@ fn enqueue_named_target(
         }
     }
 
-    // Module-qualified hit via the index (direct locate).
+    // Module-qualified hit via the index (direct locate). For JVM Inherits refs
+    // the enriched module carries the FQN ("spock.lang.Specification") while
+    // the symbol index keys by Java package ("spock.lang"). Try the direct key
+    // first; if it misses, strip the last segment and retry as a package key.
     if let Some(m) = module {
         if let Some(path) = symbol_index.locate(m, target_name) {
             let owned = path.to_path_buf();
@@ -612,6 +619,16 @@ fn enqueue_named_target(
                 queue.push_back(owned);
             }
             return;
+        }
+        if let Some(dot) = m.rfind('.') {
+            let pkg = &m[..dot];
+            if let Some(path) = symbol_index.locate(pkg, target_name) {
+                let owned = path.to_path_buf();
+                if seen.insert(owned.clone()) {
+                    queue.push_back(owned);
+                }
+                return;
+            }
         }
     }
 
@@ -678,9 +695,21 @@ fn follow_inheritance_closure(
                 }
             }
         } else if let Some(path) = symbol_index.locate(module, parent_name) {
+            // Direct module-keyed hit (e.g. npm package name).
             let owned = path.to_path_buf();
             if seen_paths.insert(owned.clone()) {
                 queue.push_back(owned);
+            }
+        } else if let Some(dot) = module.rfind('.') {
+            // JVM fully-qualified class name: module = "spock.mock.MockingApi".
+            // The symbol index is keyed by the Java package path ("spock.mock"),
+            // not the FQN. Strip the last segment and retry with the package key.
+            let pkg = &module[..dot];
+            if let Some(path) = symbol_index.locate(pkg, parent_name) {
+                let owned = path.to_path_buf();
+                if seen_paths.insert(owned.clone()) {
+                    queue.push_back(owned);
+                }
             }
         }
     }

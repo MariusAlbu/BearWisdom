@@ -515,3 +515,100 @@ fn ref_import_static_not_polluted_as_module() {
             .collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Hierarchy ref enrichment from imports
+// ---------------------------------------------------------------------------
+
+/// Inherits ref gets module annotated from matching import declaration.
+///
+/// `import spock.lang.Specification` + `class MySpec extends Specification`
+/// → the Inherits ref for Specification has module="spock.lang.Specification".
+#[test]
+fn ref_inherits_gets_module_from_import() {
+    let src = "import spock.lang.Specification\n\
+               class MySpec extends Specification {\n\
+                   def 'a feature'() { expect: true }\n\
+               }";
+    let r = extract(src);
+    let inh = r.refs.iter().find(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Specification");
+    assert!(
+        inh.is_some(),
+        "expected Inherits ref for Specification; refs={:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        inh.unwrap().module.as_deref(),
+        Some("spock.lang.Specification"),
+        "Inherits ref must carry the FQN from the import"
+    );
+}
+
+/// Implements ref gets module annotated from matching import declaration.
+#[test]
+fn ref_implements_gets_module_from_import() {
+    let src = "import java.io.Serializable\n\
+               class MyClass implements Serializable {}";
+    let r = extract(src);
+    let imp = r.refs.iter().find(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "Serializable");
+    assert!(
+        imp.is_some(),
+        "expected Implements ref for Serializable; refs={:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        imp.unwrap().module.as_deref(),
+        Some("java.io.Serializable"),
+        "Implements ref must carry the FQN from the import"
+    );
+}
+
+/// Inherits ref without a matching import leaves module=None.
+#[test]
+fn ref_inherits_without_import_leaves_module_none() {
+    let src = "class Child extends Parent {}";
+    let r = extract(src);
+    let inh = r.refs.iter().find(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Parent");
+    assert!(inh.is_some(), "expected Inherits ref for Parent");
+    assert_eq!(
+        inh.unwrap().module,
+        None,
+        "Inherits without matching import must leave module=None"
+    );
+}
+
+/// symbol_node_kind: `interface_declaration` → Class symbol is emitted.
+#[test]
+fn symbol_interface_declaration() {
+    let src = "interface Serializable {}";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Serializable" && s.kind == SymbolKind::Class),
+        "expected Class symbol for interface Serializable; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Nested interface inside a class body is extracted as a Class symbol.
+#[test]
+fn symbol_nested_interface_in_class() {
+    let src = "class Outer {\n    interface Inner {}\n}";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Inner" && s.kind == SymbolKind::Class),
+        "expected Class symbol for nested interface Inner; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Interface with `extends` emits an Inherits edge to each parent interface.
+#[test]
+fn ref_interface_extends_emits_inherits() {
+    let src = "interface Child extends Parent {}";
+    let r = extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Parent"),
+        "expected Inherits ref to Parent from interface; refs={:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

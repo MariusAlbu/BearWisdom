@@ -104,7 +104,45 @@ pub fn extract(source: &str) -> ExtractionResult {
         scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
     }
 
+    // Annotate Inherits/Implements refs with the FQN from the file's imports.
+    // `extends Specification` + `import spock.lang.Specification` →
+    // Inherits ref gets module="spock.lang.Specification", enabling both the
+    // demand seeder and the import-resolution path to match it without a
+    // full class index scan.
+    enrich_hierarchy_refs_from_imports(&mut refs);
+
     ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Annotate Inherits/Implements refs whose module is None with the FQN from
+/// the file's import declarations.
+///
+/// Matches the target_name (simple class name) against single-class Imports
+/// refs and sets module = FQN when found. Wildcard imports are excluded.
+fn enrich_hierarchy_refs_from_imports(refs: &mut Vec<ExtractedRef>) {
+    use crate::types::EdgeKind;
+    use std::collections::HashMap;
+
+    let import_map: HashMap<String, String> = refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .filter_map(|r| {
+            let fqn = r.module.as_deref()?;
+            if r.target_name == "*" { return None; }
+            if fqn.is_empty() || fqn == r.target_name { return None; }
+            Some((r.target_name.clone(), fqn.to_string()))
+        })
+        .collect();
+
+    if import_map.is_empty() { return; }
+
+    for r in refs.iter_mut() {
+        if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) { continue; }
+        if r.module.is_some() { continue; }
+        if let Some(fqn) = import_map.get(&r.target_name) {
+            r.module = Some(fqn.clone());
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -156,7 +156,60 @@ pub fn extract(source: &str) -> ExtractionResult {
         }
     }
 
+    // Post-processing: annotate Inherits/Implements refs that have no module
+    // with the FQN from the file's import table. A Groovy file that writes
+    //   import spock.lang.Specification
+    //   class MySpec extends Specification { ... }
+    // emits an Imports ref with module="spock.lang.Specification" and an
+    // Inherits ref with target_name="Specification" and module=None. Matching
+    // the short name against imports provides the FQN so:
+    //   (a) the Java resolver's exact-import path resolves it via by_qualified_name;
+    //   (b) the demand seeder can route through the symbol location index rather
+    //       than falling through to the unfiltered find_by_name fallback.
+    enrich_hierarchy_refs_from_imports(&mut refs);
+
     ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Annotate Inherits/Implements refs whose module is None with the FQN from
+/// the file's import declarations.
+///
+/// The Groovy extractor emits Imports refs where target_name carries the full
+/// FQN (e.g. "spock.lang.Specification"). This pass derives the simple name
+/// from the last dot segment, builds a simple_name → FQN map, and writes the
+/// FQN into the module field of any Inherits/Implements ref whose target_name
+/// matches a simple name from an import. Wildcard and static imports are
+/// excluded.
+fn enrich_hierarchy_refs_from_imports(refs: &mut Vec<ExtractedRef>) {
+    // Build simple_name → fqn. The Groovy extractor stores the full FQN in
+    // both target_name and module for non-static imports. Extract the simple
+    // name from the last dot segment of target_name.
+    let import_map: std::collections::HashMap<String, String> = refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .filter_map(|r| {
+            // Skip wildcards and empty refs.
+            if r.target_name.is_empty() || r.target_name == "*" { return None; }
+            let fqn = r.target_name.as_str();
+            // Single-class imports have at least one dot; skip bare names.
+            let dot = fqn.rfind('.')?;
+            let simple = &fqn[dot + 1..];
+            // Static-member imports have a lowercase simple name (method/field).
+            // Only class imports start with uppercase.
+            if !simple.starts_with(|c: char| c.is_uppercase()) { return None; }
+            Some((simple.to_string(), fqn.to_string()))
+        })
+        .collect();
+
+    if import_map.is_empty() { return; }
+
+    for r in refs.iter_mut() {
+        if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) { continue; }
+        if r.module.is_some() { continue; }
+        if let Some(fqn) = import_map.get(&r.target_name) {
+            r.module = Some(fqn.clone());
+        }
+    }
 }
 
 /// Scan source lines for method declarations that the grammar failed to parse.
@@ -406,6 +459,9 @@ fn visit(
             "class_declaration" => {
                 extract_class(&child, src, symbols, refs, parent_index, namespace);
             }
+            "interface_declaration" => {
+                extract_interface(&child, src, symbols, refs, parent_index, namespace);
+            }
             // Top-level `def fn(...)` — grammar emits function_definition
             "function_definition" => {
                 extract_function(&child, src, symbols, refs, parent_index, inside_class, None);
@@ -550,6 +606,10 @@ fn extract_class(
                     // Inner / nested class — recurse so its methods are found.
                     extract_class(&child, src, symbols, refs, Some(class_idx), namespace);
                 }
+                "interface_declaration" => {
+                    // Nested interface — extract so implementations resolve.
+                    extract_interface(&child, src, symbols, refs, Some(class_idx), namespace);
+                }
                 "field_declaration" => {
                     extract_field(&child, src, symbols, Some(class_idx));
                 }
@@ -560,6 +620,55 @@ fn extract_class(
                     visit_for_calls(&child, src, class_idx, refs);
                 }
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Interface extraction (interface_declaration)
+// ---------------------------------------------------------------------------
+
+fn extract_interface(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    namespace: Option<&str>,
+) {
+    let name = match named_field_text(node, "name", src) {
+        Some(n) => n,
+        None => return,
+    };
+
+    let iface_qname = match namespace {
+        Some(ns) => format!("{}.{}", ns, name),
+        None => name.clone(),
+    };
+
+    let line = node.start_position().row as u32;
+    let iface_idx = symbols.len();
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: iface_qname.clone(),
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: line,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: 0,
+        signature: Some(format!("interface {} {{ ... }}", name)),
+        doc_comment: None,
+        scope_path: None,
+        parent_index,
+    });
+
+    // Extract parent interfaces (extends_interfaces child → type_list)
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "extends_interfaces" {
+            extract_type_list_refs(&child, src, iface_idx, EdgeKind::Inherits, refs);
         }
     }
 }
