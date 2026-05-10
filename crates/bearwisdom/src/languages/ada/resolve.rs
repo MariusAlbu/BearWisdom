@@ -550,6 +550,11 @@ impl LanguageResolver for AdaResolver {
             }
 
             // Source 2: package-level variables brought into scope by wildcard imports.
+            // Also collect the source package qname so we can probe it as a type
+            // package fallback (for subtype-alias variables like `Green_LED : User_LED`
+            // where `User_LED` is a subtype of the underlying type — the method
+            // `Toggle` lives in the variable's declaring package, not the type).
+            let mut var_packages: Vec<String> = Vec::new();
             for import in &file_ctx.imports {
                 if !import.is_wildcard {
                     continue;
@@ -562,6 +567,7 @@ impl LanguageResolver for AdaResolver {
                     let Some(sig) = &sym.signature else { continue };
                     let Some(ty) = sig.strip_prefix("type: ") else { continue };
                     var_types.push(ty.to_string());
+                    var_packages.push(module_path.to_string());
                 }
             }
 
@@ -616,6 +622,38 @@ impl LanguageResolver for AdaResolver {
                     }
                     if let Some(res) = probe_package_of_type(&chained, edge_kind, lookup) {
                         return Some(res);
+                    }
+                }
+            }
+
+            // Fallback: when a variable from a use'd package has a single-segment
+            // type name (e.g. `Green_LED : User_LED` where `User_LED` is a subtype
+            // alias not independently indexed), Ada's primitive operations for the
+            // underlying type often live in the variable's declaring package. Probe
+            // the source package directly for the trailing method name.
+            //
+            // Example: `Green_LED.Toggle` — variable `STM32.Board.Green_LED` typed
+            // `User_LED` (subtype of GPIO_Point) — `Toggle` lives in `STM32.Board`.
+            if suffix.split('.').filter(|s| !s.is_empty()).count() == 1 {
+                let method = suffix.trim_start_matches('.');
+                let method_lower = method.to_lowercase();
+                for pkg in &var_packages {
+                    for sym in lookup.members_of(pkg) {
+                        let sym_leaf = sym
+                            .qualified_name
+                            .rsplit_once('.')
+                            .map(|(_, n)| n)
+                            .unwrap_or(&sym.qualified_name);
+                        if sym_leaf.to_lowercase() == method_lower
+                            && predicates::kind_compatible(edge_kind, &sym.kind)
+                        {
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 0.82,
+                                strategy: "ada_var_pkg_method",
+                                resolved_yield_type: None,
+                            });
+                        }
                     }
                 }
             }
@@ -749,19 +787,18 @@ impl LanguageResolver for AdaResolver {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
+        let root = target.split('.').next().unwrap_or(target);
 
-        // Ada standard library imports are classified by their top-level package name.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let root = target.split('.').next().unwrap_or(target);
-            if matches!(root, "Ada" | "System" | "Interfaces" | "GNAT" | "Standard") {
-                return Some(root.to_string());
-            }
-            // Non-stdlib imports: fall through to common handler.
+        // Ada standard library packages (root segment) — classify both Imports
+        // and Calls edges so that unresolved `GNAT.OS_Lib.Is_Directory` calls
+        // and similar are attributed to the stdlib namespace rather than left as
+        // opaque unresolved refs.
+        if matches!(root, "Ada" | "System" | "Interfaces" | "GNAT" | "Standard") {
+            return Some(root.to_string());
         }
 
         // Bare names are classified by the engine's keywords() set
-        // populated from ada/keywords.rs. The Ada.* / System.* / GNAT.*
-        // import-classification above handles the namespace cases.
+        // populated from ada/keywords.rs.
         let _ = (file_ctx, ref_ctx, project_ctx);
         None
     }
