@@ -3,14 +3,14 @@
   "projects": [
     {
       "assertions": {
-        "min_resolution_rate": 93
+        "min_resolution_rate": 95
       },
-      "code_chunks": 37894,
+      "code_chunks": 38020,
       "files": 1555,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 14118,
-      "internal_unresolved": 980,
+      "internal_edges": 13692,
+      "internal_unresolved": 713,
       "languages": {
         "ada": 467,
         "c": 2,
@@ -26,16 +26,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-alire",
       "perf": {
-        "end_ws_mb": 111,
-        "files_per_sec": 55,
-        "index_duration_ms": 28449
+        "end_ws_mb": 112,
+        "files_per_sec": 54,
+        "index_duration_ms": 28805
       },
       "project": "ada-alire",
-      "resolution_rate": 93.51,
+      "resolution_rate": 95.05,
       "routes": 0,
-      "symbols": 16675,
+      "symbols": 16807,
       "unresolved_by_lang_kind": {
-        "ada.calls": 953,
+        "ada.calls": 686,
         "c.calls": 1,
         "javascript.calls": 2,
         "javascript.type_ref": 4,
@@ -46,14 +46,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 94
+        "min_resolution_rate": 95
       },
-      "code_chunks": 151911,
+      "code_chunks": 159105,
       "files": 1123,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 13190,
-      "internal_unresolved": 817,
+      "internal_edges": 13224,
+      "internal_unresolved": 629,
       "languages": {
         "ada": 1015,
         "make": 1,
@@ -63,30 +63,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-drivers",
       "perf": {
-        "end_ws_mb": 166,
-        "files_per_sec": 109,
-        "index_duration_ms": 10334
+        "end_ws_mb": 129,
+        "files_per_sec": 114,
+        "index_duration_ms": 9825
       },
       "project": "ada-drivers",
-      "resolution_rate": 94.17,
+      "resolution_rate": 95.46,
       "routes": 0,
-      "symbols": 71147,
+      "symbols": 76036,
       "unresolved_by_lang_kind": {
-        "ada.calls": 802,
+        "ada.calls": 614,
         "python.calls": 14,
         "shell.calls": 1
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 94
+        "min_resolution_rate": 96
       },
-      "code_chunks": 1875,
+      "code_chunks": 1876,
       "files": 42,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 979,
-      "internal_unresolved": 58,
+      "internal_edges": 960,
+      "internal_unresolved": 32,
       "languages": {
         "ada": 37,
         "markdown": 3,
@@ -94,51 +94,51 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-septum",
       "perf": {
-        "end_ws_mb": 190,
-        "files_per_sec": 37,
-        "index_duration_ms": 1121
+        "end_ws_mb": 65,
+        "files_per_sec": 39,
+        "index_duration_ms": 1075
       },
       "project": "ada-septum",
-      "resolution_rate": 94.41,
+      "resolution_rate": 96.77,
       "routes": 0,
-      "symbols": 1155,
+      "symbols": 1156,
       "unresolved_by_lang_kind": {
-        "ada.calls": 58
+        "ada.calls": 32
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 98
       },
-      "code_chunks": 3098,
-      "files": 213,
+      "code_chunks": 7404,
+      "files": 261,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2645,
-      "internal_unresolved": 20,
+      "internal_edges": 6779,
+      "internal_unresolved": 131,
       "languages": {
         "angular_template": 52,
         "html": 1,
-        "json": 6,
+        "json": 8,
         "markdown": 3,
         "scss": 17,
-        "typescript": 127,
+        "typescript": 173,
         "xml": 7
       },
       "path": "F:/Work/Projects/TestProjects/angular-coreui",
       "perf": {
-        "end_ws_mb": 267,
-        "files_per_sec": 47,
-        "index_duration_ms": 4572
+        "end_ws_mb": 69,
+        "files_per_sec": 59,
+        "index_duration_ms": 4452
       },
       "project": "angular-coreui",
-      "resolution_rate": 99.25,
+      "resolution_rate": 98.1,
       "routes": 0,
-      "symbols": 1725,
+      "symbols": 5947,
       "unresolved_by_lang_kind": {
         "scss.calls": 3,
-        "typescript.calls": 16,
-        "typescript.type_ref": 1
+        "typescript.calls": 117,
+        "typescript.type_ref": 11
       }
     },
     {
@@ -8683,9 +8683,9 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 95
       },
-      "code_chunks": 25579,
+      "code_chunks": 31274,
       "files": 1097,
       "flow_edge_types": {
         "service_dependency": 1
@@ -8699,21 +8699,21 @@
         "gotemplate": 1,
         "html": 1,
         "javascript": 8,
-        "json": 46,
+        "json": 47,
         "markdown": 10,
         "mdx": 90,
         "nginx": 1,
         "shell": 1,
         "sql": 20,
-        "typescript": 698,
+        "typescript": 890,
         "xml": 10,
         "yaml": 14
       },
       "path": "F:/Work/Projects/TestProjects/ts-kaneo",
       "perf": {
-        "end_ws_mb": 319,
-        "files_per_sec": 95,
-        "index_duration_ms": 9516
+        "end_ws_mb": 124,
+        "files_per_sec": 116,
+        "index_duration_ms": 9492
       },
       "project": "ts-kaneo",
       "resolution_rate": 95.27,
@@ -8721,9 +8721,9 @@
       "symbols": 16585,
       "unresolved_by_lang_kind": {
         "mdx.calls": 58,
-        "typescript.calls": 132,
+        "typescript.calls": 679,
         "typescript.instantiates": 12,
-        "typescript.type_ref": 96
+        "typescript.type_ref": 189
       }
     },
     {
@@ -8758,23 +8758,23 @@
       "assertions": {
         "min_resolution_rate": 98
       },
-      "code_chunks": 383845,
+      "code_chunks": 656884,
       "files": 28995,
       "flow_edge_types": {
-        "http_call": 36,
+        "http_call": 50,
         "ipc_call": 1
       },
       "flow_edges": 51,
-      "internal_edges": 641858,
-      "internal_unresolved": 11532,
+      "internal_edges": 711378,
+      "internal_unresolved": 12336,
       "languages": {
         "c": 1,
-        "css": 645,
+        "css": 857,
         "dockerfile": 5,
         "graphql": 5,
         "html": 13,
-        "javascript": 9441,
-        "json": 1051,
+        "javascript": 10221,
+        "json": 1069,
         "markdown": 455,
         "mdx": 679,
         "nginx": 1,
@@ -8782,40 +8782,54 @@
         "pug": 1,
         "python": 1,
         "rust": 963,
-        "scss": 203,
+        "scss": 244,
         "shell": 20,
         "sql": 1,
         "toml": 72,
-        "typescript": 10331,
-        "xml": 253,
+        "typescript": 14081,
+        "xml": 267,
         "yaml": 36
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 423,
-        "files_per_sec": 25,
-        "index_duration_ms": 956665
+        "end_ws_mb": 263,
+        "files_per_sec": 21,
+        "index_duration_ms": 1408783
       },
       "project": "ts-nextjs",
-      "resolution_rate": 98.24,
+      "resolution_rate": 98.3,
       "routes": 106,
       "symbols": 377329,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 645,
-        "javascript.imports": 114,
-        "javascript.type_ref": 111,
-        "mdx.calls": 353,
-        "python.type_ref": 1,
-        "rust.calls": 690,
-        "rust.implements": 43,
+        "graphql.type_ref": 1,
+        "html.calls": 2,
+        "javascript.calls": 382,
+        "javascript.implements": 12,
+        "javascript.instantiates": 5,
+        "javascript.type_ref": 525,
+        "markdown.calls": 41,
+        "markdown.implements": 10,
+        "markdown.instantiates": 16,
+        "markdown.type_ref": 259,
+        "mdx.calls": 143,
+        "mdx.inherits": 2,
+        "mdx.instantiates": 6,
+        "mdx.type_ref": 374,
+        "prisma.type_ref": 2,
+        "pug.type_ref": 5,
+        "rust.calls": 550,
+        "rust.implements": 11,
         "rust.inherits": 1,
-        "rust.type_ref": 423,
-        "scss.calls": 6,
-        "shell.calls": 8,
-        "typescript.calls": 1789,
-        "typescript.inherits": 2,
-        "typescript.instantiates": 43,
-        "typescript.type_ref": 1580
+        "rust.instantiates": 18,
+        "rust.type_ref": 1150,
+        "scss.calls": 15,
+        "scss.type_ref": 60,
+        "typescript.calls": 2958,
+        "typescript.implements": 107,
+        "typescript.inherits": 10,
+        "typescript.instantiates": 102,
+        "typescript.type_ref": 5568,
+        "yaml.type_ref": 1
       }
     },
     {

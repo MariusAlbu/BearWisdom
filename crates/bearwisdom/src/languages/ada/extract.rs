@@ -132,6 +132,14 @@ fn walk_node(
             let idx = extract_type_decl(node, src, symbols, parent_idx);
             walk_children(node, src, symbols, refs, idx.or(parent_idx));
         }
+        "subtype_declaration" => {
+            // `subtype User_LED is GPIO_Point;` — emit a TypeAlias symbol so
+            // that variable-type dispatch can walk through the subtype to the
+            // underlying type's members. The underlying type is recorded in
+            // `signature` for the resolver's field-chain and type-lookup paths.
+            let idx = extract_subtype_decl(node, src, symbols, parent_idx);
+            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+        }
         "component_declaration" => {
             // Record field: `Field_Name : Field_Type;` inside `record ... end record`.
             // Same structure as object_declaration / parameter_specification —
@@ -599,6 +607,40 @@ fn extract_type_decl(
 
     if name.is_empty() { return None; }
     let idx = push_sym(node, name, kind, symbols, parent_idx);
+    Some(idx)
+}
+
+fn extract_subtype_decl(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_idx: Option<usize>,
+) -> Option<usize> {
+    let mut name = String::new();
+    let mut base_type: Option<String> = None;
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "identifier" if name.is_empty() => {
+                name = text(child, src);
+            }
+            "subtype_indication" | "subtype_mark" => {
+                if base_type.is_none() {
+                    base_type = extract_first_type_name(child, src);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if name.is_empty() {
+        return None;
+    }
+    let idx = push_sym(node, name, SymbolKind::TypeAlias, symbols, parent_idx);
+    if let (Some(sym), Some(ty)) = (symbols.get_mut(idx), base_type) {
+        sym.signature = Some(format!("subtype: {ty}"));
+    }
     Some(idx)
 }
 

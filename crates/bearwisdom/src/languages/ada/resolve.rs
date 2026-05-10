@@ -206,17 +206,18 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
-        // Parent-package implicit visibility. A child package body (`Alr.Commands.Run`)
-        // implicitly sees all declarations from every ancestor package (`Alr.Commands`,
-        // `Alr`). Walk the ancestor prefixes of the file's own package qname and
-        // check `members_of(ancestor)` for a bare-name match, applying any rename
-        // substitution encoded in a member's signature (`renames <target>`).
+        // Own-package and parent-package visibility. A package body implicitly
+        // sees all declarations from its own spec (indexed under the same package
+        // qname) and from every ancestor package. Walk from the own package down
+        // to the root: `members_of(own_pkg)` finds spec-declared symbols not
+        // present in the body file itself; `members_of(ancestor)` handles
+        // Ada's parent-package visibility rule.
         if !target.contains('.') {
             if let Some(own_pkg) = &file_ctx.file_namespace {
                 let parts: Vec<&str> = own_pkg.split('.').collect();
-                // Walk from immediate parent up to the root (skip the full qname
-                // itself — that's same-file scope already handled above).
-                for depth in (1..parts.len()).rev() {
+                // Walk from own package (depth=parts.len()) down to root children
+                // (depth=1). Reversed so most-specific scope wins first.
+                for depth in (1..=parts.len()).rev() {
                     let ancestor = parts[..depth].join(".");
                     for member in lookup.members_of(&ancestor) {
                         if member.name.to_lowercase() == simple_lower
@@ -717,6 +718,72 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
+        // Fully-qualified variable field chains. Handles `Pkg.Sub.Var.Field`
+        // where the variable is at a deep qname (e.g. SVD-generated peripheral
+        // instances: `NRF_SVD.TIMER.TIMER0_Periph.EVENTS_COMPARE`). For each
+        // possible variable qname prefix (longest first), look the prefix up
+        // as a variable symbol, read its type from the signature, and walk
+        // the remaining segments as a field chain.
+        if target.contains('.') {
+            let parts: Vec<&str> = target.split('.').collect();
+            // Need at least: package + variable + field (3 segments).
+            if parts.len() >= 3 {
+                for var_end in (2..parts.len()).rev() {
+                    let var_qname = parts[..var_end].join(".");
+                    let remainder: Vec<&str> = parts[var_end..].to_vec();
+                    if let Some(sym) = lookup.by_qualified_name(&var_qname) {
+                        if sym.kind == "variable" {
+                            if let Some(sig) = &sym.signature {
+                                if let Some(ty) = sig.strip_prefix("type: ") {
+                                    // Expand bare type to qualified form.
+                                    let ty_leaf =
+                                        ty.split('.').next_back().unwrap_or(ty);
+                                    let base_candidates: Vec<String> = {
+                                        let mut v = vec![ty.to_string()];
+                                        v.extend(
+                                            lookup
+                                                .types_by_name(ty_leaf)
+                                                .iter()
+                                                .map(|s| s.qualified_name.clone()),
+                                        );
+                                        v
+                                    };
+                                    for base in &base_candidates {
+                                        if remainder.len() == 1 {
+                                            let candidate = format!("{base}.{}", remainder[0]);
+                                            if let Some(res) = probe_dotted_qname(
+                                                &candidate,
+                                                edge_kind,
+                                                lookup,
+                                            ) {
+                                                return Some(Resolution {
+                                                    strategy: "ada_qual_var_field_chain",
+                                                    ..res
+                                                });
+                                            }
+                                        } else if let Some(res) = walk_field_chain(
+                                            base,
+                                            &remainder
+                                                .iter()
+                                                .map(|s| *s)
+                                                .collect::<Vec<_>>(),
+                                            edge_kind,
+                                            lookup,
+                                        ) {
+                                            return Some(Resolution {
+                                                strategy: "ada_qual_var_field_chain",
+                                                ..res
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Partial qualification expansion. Ada child-package files may omit the
         // shared ancestor prefix in dotted calls — a file in `Alire.Index.Search`
         // that does `with Alire.Utils.TTY` may call `Utils.TTY.Name` (dropping
@@ -797,9 +864,75 @@ impl LanguageResolver for AdaResolver {
             return Some(root.to_string());
         }
 
+        // Ada language-defined predefined numeric types. These are declared in
+        // the `Standard` or `Interfaces` package and are visible without any
+        // `with` clause. Type conversions (`Long_Integer(X)`) look like calls
+        // to tree-sitter, producing unresolved Calls refs when the spec file
+        // that declares the type is not indexed (e.g. Latin-1 encoded).
+        if !target.contains('.')
+            && matches!(
+                root,
+                "Long_Integer"
+                    | "Long_Long_Integer"
+                    | "Short_Integer"
+                    | "Short_Short_Integer"
+                    | "Integer_8"
+                    | "Integer_16"
+                    | "Integer_32"
+                    | "Integer_64"
+                    | "Unsigned_8"
+                    | "Unsigned_16"
+                    | "Unsigned_32"
+                    | "Unsigned_64"
+                    | "Long_Float"
+                    | "Long_Long_Float"
+                    | "Short_Float"
+                    | "Duration"
+                    | "Wide_Character"
+                    | "Wide_Wide_Character"
+                    | "Wide_String"
+                    | "Wide_Wide_String"
+            )
+        {
+            return Some("Standard".to_string());
+        }
+
         // Bare names are classified by the engine's keywords() set
         // populated from ada/keywords.rs.
         let _ = (file_ctx, ref_ctx, project_ctx);
+        None
+    }
+
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        // Apply the lookup-free check first.
+        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
+            return Some(ns);
+        }
+
+        // Import-based external: when the target's root segment matches an
+        // imported package name that has no indexed symbols, the call is
+        // into an external (non-indexed) dependency. This covers third-party
+        // Ada crate dependencies (e.g. Trendy_Terminal, Atomic) where the
+        // source is not part of the indexed project tree.
+        let target = &ref_ctx.extracted_ref.target_name;
+        let root = target.split('.').next().unwrap_or(target);
+        let root_lower = root.to_lowercase();
+        for import in &file_ctx.imports {
+            let Some(module_path) = &import.module_path else { continue };
+            let mp_root = module_path.split('.').next().unwrap_or(module_path);
+            if mp_root.to_lowercase() == root_lower
+                && !lookup.has_in_namespace(module_path)
+            {
+                return Some(mp_root.to_string());
+            }
+        }
+
         None
     }
 }
@@ -982,13 +1115,22 @@ fn walk_field_chain(
         let Some(next_raw) = next_type else {
             return None; // Chain broken — give up.
         };
-        // Expand bare field type to fully-qualified form when possible.
+        // Expand bare field type to fully-qualified form. When multiple
+        // candidates share the same leaf name (e.g. `CFGR_Register` in
+        // multiple SVD packages), prefer the one whose package prefix matches
+        // the current type's package — otherwise the chain walks into the
+        // wrong package.
         let next_leaf = next_raw.split('.').next_back().unwrap_or(&next_raw);
+        let pkg_prefix: &str = current_type
+            .rsplit_once('.')
+            .map(|(p, _)| p)
+            .unwrap_or("");
         let expanded = lookup
             .types_by_name(next_leaf)
             .iter()
+            .find(|s| !pkg_prefix.is_empty() && s.qualified_name.starts_with(pkg_prefix))
+            .or_else(|| lookup.types_by_name(next_leaf).iter().next())
             .map(|s| s.qualified_name.clone())
-            .next()
             .unwrap_or_else(|| next_raw.clone());
         current_type = expanded;
     }
