@@ -660,7 +660,18 @@ fn is_ident_char(b: u8) -> bool {
 }
 
 fn is_primitive(name: &str) -> bool {
-    PRIMITIVES.contains(&name)
+    if PRIMITIVES.contains(&name) {
+        return true;
+    }
+    // Zig allows arbitrary-width integers: u1..u65535 and i1..i65535.
+    // The PRIMITIVES table only covers common widths; handle the rest here.
+    let rest = name.strip_prefix('u').or_else(|| name.strip_prefix('i'));
+    if let Some(digits) = rest {
+        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -804,7 +815,22 @@ fn parse_struct_field(line: &str) -> Option<(String, String)> {
     let type_end = type_rest
         .find(|c: char| c == '=' || c == ',')
         .unwrap_or(type_rest.len());
-    let type_name = type_rest[..type_end].trim().to_string();
+    let mut type_name = type_rest[..type_end].trim().to_string();
+    if type_name.is_empty() {
+        return None;
+    }
+    // Strip generic arguments: `ArrayList(u8)` → `ArrayList`.
+    // Zig generics are written as function calls at the type level, so
+    // the argument list is not part of the symbol name.
+    if let Some(paren_pos) = type_name.find('(') {
+        type_name = type_name[..paren_pos].trim().to_string();
+    }
+    // Reject inline expression types (contain spaces) — these are anonymous
+    // inline struct/union/enum/if/switch expressions that can never map to a
+    // named symbol: `struct { x: i32 }`, `union(enum) { ... }`, etc.
+    if type_name.contains(' ') {
+        return None;
+    }
     if type_name.is_empty() {
         return None;
     }

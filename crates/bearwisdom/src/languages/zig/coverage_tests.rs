@@ -335,3 +335,50 @@ fn cov_struct_field_non_primitive_type_produces_typeref() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+/// Inline anonymous struct/union/enum types in field positions must not
+/// produce TypeRef — `struct { ... }`, `union(enum) { ... }` have no
+/// symbol name and can never resolve.
+#[test]
+fn cov_inline_struct_type_field_no_typeref() {
+    let r = extract::extract(
+        "const Outer = struct {\n    inner: struct { x: i32 },\n    tag: union(enum) { a, b },\n};",
+    );
+    let bogus: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name.starts_with("struct"))
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(bogus.is_empty(), "inline struct types must not emit TypeRef; got {bogus:?}");
+}
+
+/// Generic field types have their argument list stripped: `ArrayList(u8)` →
+/// TypeRef target is `ArrayList`, not `ArrayList(u8)`.
+#[test]
+fn cov_generic_field_type_stripped() {
+    let r = extract::extract(
+        "const MyList = struct {\n    items: ArrayList(u8),\n};",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "ArrayList"),
+        "generic field type should strip args to ArrayList; got: {:?}",
+        r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+    assert!(
+        !r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "ArrayList(u8)"),
+        "full generic type with args must not appear as TypeRef target"
+    );
+}
+
+/// Arbitrary-width integer types (u1, i31, u65535) are primitives and
+/// must not emit TypeRef.
+#[test]
+fn cov_arbitrary_width_int_no_typeref() {
+    let r = extract::extract(
+        "const Packed = struct {\n    bits: u31,\n    signed: i15,\n};",
+    );
+    let int_typerefs: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && (rf.target_name == "u31" || rf.target_name == "i15"))
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(int_typerefs.is_empty(), "arbitrary-width int types must not emit TypeRef; got {int_typerefs:?}");
+}
