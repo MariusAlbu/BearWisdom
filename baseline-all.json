@@ -5016,6 +5016,127 @@
     },
     {
       "assertions": {
+        "min_resolution_rate": 93
+      },
+      "code_chunks": 5896,
+      "files": 346,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 173,
+      "internal_unresolved": 13,
+      "languages": {
+        "css": 2,
+        "json": 2,
+        "markdown": 5,
+        "nim": 317,
+        "python": 17,
+        "ruby": 1,
+        "yaml": 2
+      },
+      "path": "F:/Work/Projects/TestProjects/nim-arraymancer",
+      "perf": {
+        "end_ws_mb": 68,
+        "files_per_sec": 56,
+        "index_duration_ms": 6148
+      },
+      "project": "nim-arraymancer",
+      "resolution_rate": 93.01,
+      "routes": 0,
+      "symbols": 1885,
+      "unresolved_by_lang_kind": {
+        "python.calls": 4,
+        "ruby.type_ref": 9
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 88
+      },
+      "code_chunks": 58854,
+      "files": 3810,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1484,
+      "internal_unresolved": 189,
+      "languages": {
+        "c": 10,
+        "cpp": 7,
+        "css": 3,
+        "html": 15,
+        "markdown": 69,
+        "nim": 3682,
+        "python": 4,
+        "shell": 6,
+        "sql": 1,
+        "vba": 1,
+        "xml": 1,
+        "yaml": 11
+      },
+      "path": "F:/Work/Projects/TestProjects/nim-compiler",
+      "perf": {
+        "end_ws_mb": 75,
+        "files_per_sec": 59,
+        "index_duration_ms": 64400
+      },
+      "project": "nim-compiler",
+      "resolution_rate": 88.7,
+      "routes": 0,
+      "symbols": 28207,
+      "unresolved_by_lang_kind": {
+        "c.calls": 7,
+        "c.type_ref": 16,
+        "cpp.type_ref": 46,
+        "python.calls": 101,
+        "python.type_ref": 7,
+        "shell.calls": 3,
+        "sql.type_ref": 9
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 93
+      },
+      "code_chunks": 13255,
+      "files": 463,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1235,
+      "internal_unresolved": 80,
+      "languages": {
+        "c": 4,
+        "cpp": 1,
+        "dockerfile": 6,
+        "go": 2,
+        "json": 5,
+        "markdown": 12,
+        "nim": 412,
+        "nix": 5,
+        "python": 1,
+        "rust": 1,
+        "shell": 4,
+        "toml": 1,
+        "yaml": 9
+      },
+      "path": "F:/Work/Projects/TestProjects/nim-libp2p",
+      "perf": {
+        "end_ws_mb": 81,
+        "files_per_sec": 13,
+        "index_duration_ms": 35091
+      },
+      "project": "nim-libp2p",
+      "resolution_rate": 93.92,
+      "routes": 0,
+      "symbols": 3891,
+      "unresolved_by_lang_kind": {
+        "c.calls": 1,
+        "c.type_ref": 13,
+        "nix.calls": 61,
+        "rust.calls": 4,
+        "shell.calls": 1
+      }
+    },
+    {
+      "assertions": {
         "min_resolution_rate": 100
       },
       "code_chunks": 4865,
@@ -5133,6 +5254,34 @@
         "python.calls": 122,
         "scss.calls": 24
       }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 100
+      },
+      "code_chunks": 5817,
+      "files": 126,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 0,
+      "internal_unresolved": 0,
+      "languages": {
+        "markdown": 2,
+        "nim": 101,
+        "xml": 21,
+        "yaml": 2
+      },
+      "path": "F:/Work/Projects/TestProjects/nim-pixie",
+      "perf": {
+        "end_ws_mb": 330,
+        "files_per_sec": 43,
+        "index_duration_ms": 2920
+      },
+      "project": "nim-pixie",
+      "resolution_rate": 100.0,
+      "routes": 0,
+      "symbols": 728,
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
