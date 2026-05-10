@@ -54,4 +54,18 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | —  | Haskell             | —        | 95.46%   | 118,625    | 5,644      | 🟢     |       |
 | —  | Bicep               | —        | 97.21%   | 124,011    | 3,565      | 🟢     |       |
 | —  | Nim                 | —        | 100.00%  | 1,908      | 0          | ✅     |       |
+| —  | Clojure             | —        | ~98.6%   | —          | 611        | ✅     | rate from 3 dominant projects (babashka/datascript/ring) |
+| —  | Razor               | —        | ~100%    | —          | 55         | ✅     | dotnet-fluentui-blazor at 100% |
+| —  | Astro               | —        | ~98.9%   | —          | 69         | ✅     | astro-awesome-privacy dominant |
+| —  | Robot               | —        | ~97.5%   | —          | 936        | 🟢     | robot-framework / robot-cookbook |
+| —  | Jupyter             | —        | ~97.1%   | —          | 1,430      | 🟢     | jupyter-ml-for-beginners; cell-level extraction |
+| —  | Svelte              | —        | ~96.9%   | —          | 1,155      | 🟢     | svelte-realworld / svelte-shadcn |
+| —  | Nix                 | —        | ~95.6%   | —          | 3,059      | 🟢     | dream2nix's flake outputs lower the average; home-manager solid |
+| —  | Starlark            | —        | ~95.4%   | —          | 249        | 🟢     | bazel-skylib / rules-python |
+| —  | MDX                 | —        | ~87.9%   | —          | 1,808      | 🟡     | astro-starlight; React + Markdown polyglot needs JSX expression resolution |
+| —  | CMake               | —        | ~80.2%   | —          | 1,775      | 🟡     | function calls into project-internal CMakeLists with include() chains |
 | —  | Jinja               | —        | 65.45%   | 3,353      | 1,770      | 🔴     | template macros + Ansible variable namespace not resolved |
+
+*Rates marked `~` are weighted averages from projects where the language is ≥30% of files (per-language resolved-edge counts aren't tracked separately in `baseline-all.json`).*
+
+**93 language plugins total.** Not in the table above: ~40 templating engines (blade, ejs, erb, eex, heex, freemarker, gotemplate, gsp, haml, handlebars, hcl, jsp, liquid, mako, nunjucks, pug, shakespeare, slim, smarty, templ, thymeleaf, twig, velocity), schema/config languages (graphql, prisma, proto, dockerfile, systemd, crontab, make, nginx, puppet, hcl), markup (markdown, json, yaml, xml, toml, scss, css, html), and embedded sub-languages (angular, angular_template, julius). Most have either trivial unresolved counts (≤30) or no `internal_edges` graph at all (markup/config). They're indexed and parsed but don't move resolution-rate metrics meaningfully.
