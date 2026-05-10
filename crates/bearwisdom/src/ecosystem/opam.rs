@@ -71,6 +71,23 @@ impl Ecosystem for OpamEcosystem {
         build_ocaml_symbol_index(dep_roots)
     }
 
+    /// Stdlib substrate (List, String, Array, Printf, Buffer, Bytes, ...) is
+    /// auto-opened in every OCaml compilation unit. Bare uses like
+    /// `List.fold_left` and `String.length` don't appear as imports for the
+    /// demand BFS to chase, so the substrate files would never get pulled.
+    /// Pre-pulling each `ocaml` and `stdlib-shims` root makes their symbols
+    /// reachable for any project. Third-party deps stay demand-driven.
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> Vec<WalkedFile> {
+        dep_roots
+            .iter()
+            .filter(|d| matches!(d.module_path.as_str(), "ocaml" | "stdlib-shims"))
+            .flat_map(walk_ocaml_root)
+            .collect()
+    }
+
     fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
