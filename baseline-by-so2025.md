@@ -28,10 +28,10 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 20 | Swift               | 5.4%     | 97.82%   | 57,170     | 1,272      | 🟢     |       |
 | 21 | R                   | 4.9%     | 100.00%  | 9,481      | 0          | ✅     |       |
 | 22 | Groovy              | 4.8%     | 93.91%   | 100,768    | 6,534      | 🟡     | gradle-plugin 72.56% needs type inference for untyped receivers; spock now 96.32% ✓ |
-| 23 | VB.NET              | 4.4%     | 98.70%   | 986        | 13         | ✅     | thin corpus |
-| 24 | VBA                 | 4.2%     | 89.83%   | 1,572      | 178        | 🟡     | thin corpus |
+| 23 | VB.NET              | 4.4%     | 97.22%   | 455        | 13         | ✅     | sparse OSS — large VB.NET projects rarely on GitHub |
+| 24 | VBA                 | 4.2%     | 86.26%   | 1,676      | 267        | 🟡     | sparse OSS — VBA lives in `.xlsm` files, not raw `.bas` repos |
 | 25 | MATLAB              | 3.9%     | 67.55%   | 10,284     | 4,938      | 🔴     | walker wired but install-gated (no MathWorks license on dev box) |
-| 26 | Perl                | 3.8%     | 99.89%   | 6,274      | 7          | ✅     |       |
+| 26 | Perl                | 3.8%     | 96.27%   | 126,837    | 4,919      | 🟢     | corpus expanded with perl5/Moose/Catalyst/Mojo/Dancer2 |
 | 27 | GDScript            | 3.3%     | 89.85%   | 6,295      | 711        | 🟡     |       |
 | 28 | Elixir              | 2.7%     | 98.04%   | 173,540    | 3,470      | ✅     |       |
 | 29 | Scala               | 2.6%     | 96.01%   | 173,827    | 7,215      | 🟢     |       |
@@ -42,7 +42,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 34 | Erlang              | 1.5%     | 84.52%   | 90,457     | 16,571     | 🟡     | OTP source walker missing |
 | 35 | Fortran             | 1.4%     | 86.67%   | 30,971     | 4,765      | 🟡     | fpm needs re-export chain walking; stdlib needs fypp template preprocessor |
 | 36 | Ada                 | 1.4%     | 95.30%   | 27,876     | 1,374      | 🟢     |       |
-| 37 | F#                  | 1.3%     | 95.01%   | 5,565      | 292        | 🟢     |       |
+| 37 | F#                  | 1.3%     | 94.56%   | 132,679    | 7,640      | 🟡     | corpus expanded with Fable/Saturn/Ionide/Giraffe; saturn 47.47% drags aggregate |
 | 38 | OCaml               | 1.2%     | 93.64%   | 99,502     | 6,753      | 🟡     | dune-fresh 95.82% ✓; remaining gap is Cmdliner DSL operators (`$`, `&`, `case1`) + Ctypes FFI (`returning`, `unstage`) |
 | 39 | Gleam               | 1.1%     | 98.58%   | 24,364     | 351        | ✅     |       |
 | 40 | Prolog              | 1.1%     | 96.55%   | 97,436     | 3,478      | 🟢     |       |
@@ -53,7 +53,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | —  | Vue                 | —        | 98.75%   | 57,764     | 731        | ✅     |       |
 | —  | Haskell             | —        | 95.46%   | 118,625    | 5,644      | 🟢     |       |
 | —  | Bicep               | —        | 97.21%   | 124,011    | 3,565      | 🟢     |       |
-| —  | Nim                 | —        | 100.00%  | 1,908      | 0          | ✅     |       |
+| —  | Nim                 | —        | 85.30%   | 4,800      | 827        | 🟡     | extractor edge density 0.4 refs/file (vs F# Fable 100/file); even nim-lang/Nim itself emits sparse refs — extractor work, not corpus |
 | —  | Clojure             | —        | ~98.6%   | —          | 611        | ✅     | rate from 3 dominant projects (babashka/datascript/ring) |
 | —  | Razor               | —        | ~100%    | —          | 55         | ✅     | dotnet-fluentui-blazor at 100% |
 | —  | Astro               | —        | ~98.9%   | —          | 69         | ✅     | astro-awesome-privacy dominant |
