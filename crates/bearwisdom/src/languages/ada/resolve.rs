@@ -714,6 +714,30 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
+        // Last-segment import shorthand. Ada code may qualify a call using only
+        // the last segment of a `with`-imported package: `Text_IO.Put_Line` when
+        // `with Ada.Text_IO;` is in scope. When the target's leading segment
+        // matches the last dot-segment of an imported module path, rewrite the
+        // target using the full package name and probe again.
+        if target.contains('.') {
+            let leading = target.split('.').next().unwrap_or("");
+            let leading_lower = leading.to_lowercase();
+            let suffix = &target[leading.len()..];
+            for import in &file_ctx.imports {
+                let Some(module_path) = &import.module_path else { continue };
+                let last_seg = module_path.rsplit_once('.').map(|(_, s)| s).unwrap_or(module_path);
+                if last_seg.to_lowercase() == leading_lower && module_path.to_lowercase() != leading_lower {
+                    let rewritten = format!("{module_path}{suffix}");
+                    if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
+                        return Some(Resolution {
+                            strategy: "ada_last_seg_import",
+                            ..res
+                        });
+                    }
+                }
+            }
+        }
+
         let _ = target_lower;
         engine::resolve_common("ada", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
@@ -889,6 +913,9 @@ fn walk_field_chain(
         let field_qname = format!("{current_type}.{field_seg}");
         // Look up the field type by exact qname; fall back to a
         // case-insensitive scan of the current type's members.
+        // Ada extractors store field type in `signature = "type: T"` rather
+        // than emitting TypeRef edges, so also read the signature as a fallback
+        // when field_type_name (which queries TypeRef edges) returns None.
         let next_type = lookup
             .field_type_name(&field_qname)
             .map(|s| s.to_string())
@@ -899,13 +926,20 @@ fn walk_field_chain(
                         .rsplit_once('.')
                         .map(|(_, n)| n)
                         .unwrap_or(&m.qualified_name);
-                    if leaf.to_lowercase() == field_lower {
-                        lookup
-                            .field_type_name(&m.qualified_name)
-                            .map(|s| s.to_string())
-                    } else {
-                        None
+                    if leaf.to_lowercase() != field_lower {
+                        return None;
                     }
+                    // TypeRef-edge path.
+                    lookup
+                        .field_type_name(&m.qualified_name)
+                        .map(|s| s.to_string())
+                        // Signature-path fallback for Ada fields (no TypeRef edges).
+                        .or_else(|| {
+                            m.signature
+                                .as_deref()
+                                .and_then(|s| s.strip_prefix("type: "))
+                                .map(|t| t.to_string())
+                        })
                 })
             });
         let Some(next_raw) = next_type else {

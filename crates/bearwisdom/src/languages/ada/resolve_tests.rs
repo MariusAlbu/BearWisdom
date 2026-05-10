@@ -417,6 +417,36 @@ fn walk_field_chain_returns_none_when_field_type_unknown() {
     );
 }
 
+/// Ada fields store their type in `signature = "type: T"` rather than via
+/// TypeRef edges, so `field_type_name` returns None. The walk_field_chain must
+/// fall back to reading the member's signature to obtain the intermediate type.
+#[test]
+fn walk_field_chain_reads_signature_when_field_type_name_empty() {
+    // Search.File_Cache has signature "type: SP.Cache.Async_File_Cache";
+    // SP.Cache has Clear as a member.
+    let fix = AdaFixture::new()
+        // field symbol with signature-based type (no TypeRef edge)
+        .with_member_sig(
+            "SP.Searches.Search",
+            "File_Cache",
+            "SP.Searches.Search.File_Cache",
+            "field",
+            "type: SP.Cache.Async_File_Cache",
+        )
+        .with_member("SP.Cache", "Clear", "SP.Cache.Clear", "function");
+
+    let res = _test_walk_field_chain(
+        "SP.Searches.Search",
+        &["File_Cache", "Clear"],
+        EdgeKind::Calls,
+        &fix,
+    );
+    assert!(
+        res.is_some(),
+        "expected field-chain via signature fallback to resolve File_Cache.Clear"
+    );
+}
+
 #[test]
 fn walk_field_chain_respects_depth_cap() {
     // 7 segments exceeds the cap of 6 — must return None immediately.
