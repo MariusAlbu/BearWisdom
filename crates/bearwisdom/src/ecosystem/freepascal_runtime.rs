@@ -141,6 +141,23 @@ fn discover_freepascal_roots() -> Vec<ExternalDepRoot> {
                     break;
                 }
             }
+            // inc — platform-independent RTL declarations (heap.inc,
+            // mathh.inc, systemh.inc, generic.inc, etc.). These are included
+            // by the platform-specific system.pp via {$I} directives; the
+            // walker indexes them directly so that compiler-intrinsic
+            // declarations (GetMem, FreeMem, Abs, Sqr, Move, ...) are
+            // present in the symbol index without requiring a preprocessor.
+            let inc = rtl.join("inc");
+            if inc.is_dir() {
+                roots.push(ExternalDepRoot {
+                    module_path: "fpc-rtl-inc".to_string(),
+                    version: String::new(),
+                    root: inc,
+                    ecosystem: LEGACY_ECOSYSTEM_TAG,
+                    package_id: None,
+                    requested_imports: Vec::new(),
+                });
+            }
             // objpas — common units (Classes, SysUtils, Math, Variants,
             // ...). Loaded on every target.
             let objpas = rtl.join("objpas");
