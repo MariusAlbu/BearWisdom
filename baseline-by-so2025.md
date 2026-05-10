@@ -43,7 +43,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 35 | Fortran             | 1.4%     | 86.67%   | 30,971     | 4,765      | 🟡     | fpm needs re-export chain walking; stdlib needs fypp template preprocessor |
 | 36 | Ada                 | 1.4%     | 95.30%   | 27,876     | 1,374      | 🟢     |       |
 | 37 | F#                  | 1.3%     | 95.01%   | 5,565      | 292        | 🟢     |       |
-| 38 | OCaml               | 1.2%     | 90.59%   | 87,852     | 9,128      | 🟡     | dune-fresh 94.6% ≈ ✓; comby/irmin/mirage need opam Stdlib + Alcotest + Lwt sources |
+| 38 | OCaml               | 1.2%     | 92.92%   | 97,642     | 7,443      | 🟡     | dune-fresh 95.82% ✓; module-qualified Stdlib lookups (`List.fold_left`, `String.length`) not matching symbol index — resolver-side fix needed |
 | 39 | Gleam               | 1.1%     | 98.58%   | 24,364     | 351        | ✅     |       |
 | 40 | Prolog              | 1.1%     | 96.55%   | 97,436     | 3,478      | 🟢     |       |
 | 41 | COBOL               | 1.0%     | 100.00%  | 5,719      | 0          | ✅     |       |
