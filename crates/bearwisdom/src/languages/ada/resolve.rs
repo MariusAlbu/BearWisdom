@@ -614,6 +614,20 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
+        // Fully-qualified variable-at-package-scope chains. For a target like
+        // `AAA.Strings.Empty_Vector.Append` where `AAA.Strings.Empty_Vector`
+        // is a package-level variable (not a local), the qualified-name walk
+        // above won't find `Append` because `members_of("AAA.Strings.Empty_Vector")`
+        // returns nothing (it's a variable, not a namespace). Strip the
+        // second-to-last segment (the object/variable name) and probe the
+        // owning package — the same transformation that `probe_package_of_type`
+        // applies to type-qualified calls.
+        if target.contains('.') {
+            if let Some(res) = probe_package_of_type(target, edge_kind, lookup) {
+                return Some(res);
+            }
+        }
+
         // Partial qualification expansion. Ada child-package files may omit the
         // shared ancestor prefix in dotted calls — a file in `Alire.Index.Search`
         // that does `with Alire.Utils.TTY` may call `Utils.TTY.Name` (dropping
