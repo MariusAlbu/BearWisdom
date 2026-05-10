@@ -426,3 +426,116 @@ fn walk_field_chain_respects_depth_cap() {
         _test_walk_field_chain("Root", &segs, EdgeKind::Calls, &fix).is_none()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Ancestor-package instantiation dispatch (Fix #6)
+// ---------------------------------------------------------------------------
+
+/// `Version_Outcomes.Outcome_Failure` called from a file in
+/// `Alire.Origins.Deployers.System.Apt`. The instantiation
+/// `Version_Outcomes` is declared in the parent package
+/// `Alire.Origins.Deployers.System` with a partial generic name
+/// (`Outcomes.Definite`, not the full `Alire.Outcomes.Definite`).
+/// The resolver must find it via ancestor walk and expand the partial name.
+#[test]
+fn ancestor_pkg_instantiation_dispatch_resolves_child_call() {
+    use std::sync::Arc as A;
+    // Custom fixture that supports both by_name and members_of.
+    struct WithByName {
+        members: HashMap<String, Vec<SymbolInfo>>,
+        by_name_map: HashMap<String, Vec<SymbolInfo>>,
+        empty: Vec<SymbolInfo>,
+        empty_reexports: Vec<(String, String)>,
+    }
+    impl SymbolLookup for WithByName {
+        fn by_name(&self, name: &str) -> &[SymbolInfo] {
+            self.by_name_map.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        }
+        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
+        fn members_of(&self, p: &str) -> &[SymbolInfo] {
+            self.members.get(p).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        }
+        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
+        fn has_in_namespace(&self, _: &str) -> bool { false }
+        fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn field_type_name(&self, _: &str) -> Option<&str> { None }
+        fn return_type_name(&self, _: &str) -> Option<&str> { None }
+        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
+        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
+        fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
+        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+    }
+
+    let mut members: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
+    let mut by_name_map: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
+    let mut id = 1i64;
+
+    // Parent package has Version_Outcomes as a namespace with PARTIAL generic name.
+    let vo = SymbolInfo {
+        id: { id += 1; id },
+        name: "Version_Outcomes".to_string(),
+        qualified_name: "Alire.Origins.Deployers.System.Version_Outcomes".to_string(),
+        kind: "namespace".to_string(),
+        visibility: Some("public".to_string()),
+        file_path: A::from("src/alire-origins-deployers-system.ads"),
+        scope_path: None,
+        package_id: None,
+        signature: Some("instantiates Outcomes.Definite".to_string()), // partial name, as in real DB
+    };
+    members.entry("Alire.Origins.Deployers.System".to_string()).or_default().push(vo);
+
+    // The fully-qualified generic namespace is indexable by name "Definite".
+    let definite_ns = SymbolInfo {
+        id: { id += 1; id },
+        name: "Definite".to_string(),
+        qualified_name: "Alire.Outcomes.Definite".to_string(),
+        kind: "namespace".to_string(),
+        visibility: Some("public".to_string()),
+        file_path: A::from("src/alire-outcomes-definite.ads"),
+        scope_path: None,
+        package_id: None,
+        signature: None,
+    };
+    by_name_map.entry("Definite".to_string()).or_default().push(definite_ns);
+
+    // Outcome_Failure lives as a member of Alire.Outcomes.Definite.
+    let outcome_failure = SymbolInfo {
+        id: { id += 1; id },
+        name: "Outcome_Failure".to_string(),
+        qualified_name: "Alire.Outcomes.Definite.Outcome_Failure".to_string(),
+        kind: "function".to_string(),
+        visibility: Some("public".to_string()),
+        file_path: A::from("src/alire-outcomes-definite.ads"),
+        scope_path: None,
+        package_id: None,
+        signature: None,
+    };
+    members.entry("Alire.Outcomes.Definite".to_string()).or_default().push(outcome_failure);
+
+    let fix = WithByName { members, by_name_map, empty: Vec::new(), empty_reexports: Vec::new() };
+
+    let file_ctx = FileContext {
+        file_path: "src/alire-origins-deployers-system-apt.adb".to_string(),
+        language: "ada".to_string(),
+        imports: Vec::new(),
+        file_namespace: Some("Alire.Origins.Deployers.System.Apt".to_string()),
+    };
+
+    let source_sym = make_extracted_sym("Detect", "Alire.Origins.Deployers.System.Apt.Detect");
+    let extracted = make_extracted_ref("Version_Outcomes.Outcome_Failure");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+
+    let res = AdaResolver.resolve(&file_ctx, &ref_ctx, &fix);
+    assert!(
+        res.is_some(),
+        "expected ancestor-package instantiation to resolve Version_Outcomes.Outcome_Failure"
+    );
+    assert_eq!(res.unwrap().strategy, "ada_local_instantiation");
+}
+

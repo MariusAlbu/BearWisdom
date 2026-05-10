@@ -359,7 +359,13 @@ impl LanguageResolver for AdaResolver {
             let leading_lower = leading.to_lowercase();
             let suffix = &target[leading.len()..];
 
-            // Collect candidate namespace-instantiation symbols from in_file + file pkg members.
+            // Collect candidate namespace-instantiation symbols from:
+            //   1. in_file — compilation unit's own namespace body/spec.
+            //   2. members_of(file_namespace) — own package members (includes
+            //      instantiations from the sibling .ads spec).
+            //   3. members_of(ancestor) for each ancestor package — a child
+            //      package body implicitly sees instantiations declared in any
+            //      ancestor spec (Ada parent-package visibility rule).
             let mut candidates: Vec<String> = Vec::new();
             for sym in lookup.in_file(&file_ctx.file_path) {
                 if sym.kind == "namespace" && sym.name.to_lowercase() == leading_lower {
@@ -371,12 +377,19 @@ impl LanguageResolver for AdaResolver {
                 }
             }
             if let Some(own_pkg) = &file_ctx.file_namespace {
-                for sym in lookup.members_of(own_pkg) {
-                    if sym.kind == "namespace" && sym.name.to_lowercase() == leading_lower {
-                        if let Some(sig) = &sym.signature {
-                            if let Some(gs) = sig.strip_prefix("instantiates ") {
-                                if !candidates.contains(&gs.to_string()) {
-                                    candidates.push(gs.to_string());
+                let parts: Vec<&str> = own_pkg.split('.').collect();
+                // depth==parts.len(): own package (members visible in body).
+                // depth<parts.len(): ancestor packages (parent-pkg visibility).
+                for depth in (1..=parts.len()).rev() {
+                    let scope = parts[..depth].join(".");
+                    for sym in lookup.members_of(&scope) {
+                        if sym.kind == "namespace" && sym.name.to_lowercase() == leading_lower {
+                            if let Some(sig) = &sym.signature {
+                                if let Some(gs) = sig.strip_prefix("instantiates ") {
+                                    let gs = gs.to_string();
+                                    if !candidates.contains(&gs) {
+                                        candidates.push(gs);
+                                    }
                                 }
                             }
                         }
@@ -411,6 +424,72 @@ impl LanguageResolver for AdaResolver {
                         });
                     }
                 }
+
+                // The instantiation signature stores the generic name as-written in
+                // source — which may be a partial name when the generic is in scope
+                // via a `with` clause. Ada stores namespace `name` = the full package
+                // identifier (e.g. `Alire.Outcomes.Definite`), so look it up directly
+                // and also try ancestor-prefix expansions of the file's own namespace.
+                let generic_src_lower = generic_src.to_lowercase();
+                let mut expanded_generics: Vec<String> = Vec::new();
+                // Try the generic source as a direct name (Ada name = full dotted id).
+                if !lookup.by_name(generic_src).is_empty() {
+                    expanded_generics.push(generic_src.clone());
+                }
+                // Try prepending each ancestor prefix of the file's own namespace.
+                if let Some(own_pkg) = &file_ctx.file_namespace {
+                    let parts: Vec<&str> = own_pkg.split('.').collect();
+                    for depth in (1..=parts.len()).rev() {
+                        let prefix = parts[..depth].join(".");
+                        let candidate = format!("{prefix}.{generic_src}");
+                        if !expanded_generics.iter().any(|e| e.to_lowercase() == candidate.to_lowercase()) {
+                            expanded_generics.push(candidate);
+                        }
+                    }
+                }
+                for expanded_generic in &expanded_generics {
+                    let expanded_lower = expanded_generic.to_lowercase();
+                    // by_name in Ada uses full dotted identifier as the `name` field.
+                    for expanded_sym in lookup.by_name(expanded_generic) {
+                        if expanded_sym.qualified_name.to_lowercase() == expanded_lower
+                            && expanded_sym.kind == "namespace"
+                        {
+                            let expanded_rewritten = format!("{}{}", expanded_sym.qualified_name, suffix);
+                            if let Some(res) = probe_dotted_qname(&expanded_rewritten, edge_kind, lookup) {
+                                return Some(Resolution {
+                                    strategy: "ada_local_instantiation",
+                                    ..res
+                                });
+                            }
+                            for member in lookup.members_of(&expanded_sym.qualified_name) {
+                                let member_leaf = member
+                                    .qualified_name
+                                    .rsplit_once('.')
+                                    .map(|(_, n)| n)
+                                    .unwrap_or(&member.qualified_name);
+                                if member_leaf.to_lowercase() == method_lower
+                                    && predicates::kind_compatible(edge_kind, &member.kind)
+                                {
+                                    return Some(Resolution {
+                                        target_symbol_id: member.id,
+                                        confidence: 0.88,
+                                        strategy: "ada_local_instantiation",
+                                        resolved_yield_type: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    // Also probe directly by qualified_name in case by_name misses it.
+                    let expanded_rewritten = format!("{expanded_generic}{suffix}");
+                    if let Some(res) = probe_dotted_qname(&expanded_rewritten, edge_kind, lookup) {
+                        return Some(Resolution {
+                            strategy: "ada_local_instantiation",
+                            ..res
+                        });
+                    }
+                }
+                let _ = generic_src_lower;
             }
         }
 

@@ -451,7 +451,7 @@ fn walk_node(
             // bogus `System` calls that pollute the unresolved bank.
             if !is_attribute_reference(node) {
                 if let Some(name_node) = node.child_by_field_name("name") {
-                    let name = text(name_node, src);
+                    let name = call_target_text(name_node, src);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index: sym_idx,
@@ -603,6 +603,19 @@ fn walk_children(
 
 fn text(node: Node, src: &[u8]) -> String {
     node.utf8_text(src).unwrap_or("").trim().to_string()
+}
+
+/// Extract text for a call-target node, collapsing all internal whitespace
+/// (including newlines from multi-line selected_component chains). Ada
+/// identifiers and the dot separator never contain whitespace, so stripping
+/// it yields a canonical dotted name regardless of source formatting.
+fn call_target_text(node: Node, src: &[u8]) -> String {
+    let raw = node.utf8_text(src).unwrap_or("").trim().to_string();
+    // Collapse runs of whitespace characters (space, tab, newline, CR) to
+    // nothing — the dot already serves as the separator.
+    raw.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect()
 }
 
 /// True if the token is one of Ada's parameter / object mode markers,

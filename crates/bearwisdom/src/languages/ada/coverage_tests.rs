@@ -390,3 +390,40 @@ fn nested_package_qualification_chains() {
     assert_eq!(format.qualified_name, "Trace.IO.Format",
         "expected qualified_name 'Trace.IO.Format', got '{}'", format.qualified_name);
 }
+
+// ---------------------------------------------------------------------------
+// Call-target whitespace normalization
+// ---------------------------------------------------------------------------
+
+/// A `selected_component` that spans multiple lines produces a raw text with
+/// embedded newlines and indentation. The extractor must strip all whitespace
+/// so the stored target_name is a plain dotted name without embedded control
+/// characters.
+#[test]
+fn multiline_call_target_has_no_embedded_whitespace() {
+    let src = concat!(
+        "procedure Main is\n",
+        "begin\n",
+        "   AAA.Strings.Empty_Vector\n",
+        "      .Append (\"x\");\n",
+        "end Main;\n"
+    );
+    let r = extract(src);
+    let append_refs: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.target_name.contains("Append"))
+        .collect();
+    assert!(!append_refs.is_empty(), "expected at least one Append call ref");
+    for rf in &append_refs {
+        assert!(
+            !rf.target_name.chars().any(|c| c.is_whitespace()),
+            "target_name contained whitespace: {:?}",
+            rf.target_name,
+        );
+        // Confirm the normalized form is the expected dotted name.
+        assert!(
+            rf.target_name.contains('.'),
+            "expected dotted name, got: {:?}",
+            rf.target_name,
+        );
+    }
+}
