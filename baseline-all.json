@@ -5937,6 +5937,33 @@
     },
     {
       "assertions": {
+        "min_resolution_rate": 100
+      },
+      "code_chunks": 4935,
+      "files": 262,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 252,
+      "internal_unresolved": 0,
+      "languages": {
+        "json": 1,
+        "markdown": 1,
+        "perl": 260
+      },
+      "path": "F:/Work/Projects/TestProjects/perl-catalyst",
+      "perf": {
+        "end_ws_mb": 29,
+        "files_per_sec": 210,
+        "index_duration_ms": 1248
+      },
+      "project": "perl-catalyst",
+      "resolution_rate": 100.0,
+      "routes": 0,
+      "symbols": 1618,
+      "unresolved_by_lang_kind": {}
+    },
+    {
+      "assertions": {
         "min_resolution_rate": 98
       },
       "code_chunks": 3228,
@@ -6069,6 +6096,80 @@
       "routes": 0,
       "symbols": 1571,
       "unresolved_by_lang_kind": {}
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 46
+      },
+      "code_chunks": 9858,
+      "files": 472,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1025,
+      "internal_unresolved": 1166,
+      "languages": {
+        "c": 3,
+        "markdown": 2,
+        "perl": 466,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/perl-moose",
+      "perf": {
+        "end_ws_mb": 43,
+        "files_per_sec": 201,
+        "index_duration_ms": 2345
+      },
+      "project": "perl-moose",
+      "resolution_rate": 46.78,
+      "routes": 0,
+      "symbols": 3523,
+      "unresolved_by_lang_kind": {
+        "c.calls": 395,
+        "c.type_ref": 771
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 97
+      },
+      "code_chunks": 199088,
+      "files": 1802,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 124883,
+      "internal_unresolved": 3703,
+      "languages": {
+        "c": 241,
+        "cpp": 13,
+        "json": 22,
+        "make": 2,
+        "markdown": 22,
+        "pascal": 17,
+        "perl": 1306,
+        "prolog": 3,
+        "shell": 90,
+        "xml": 34,
+        "yaml": 52
+      },
+      "path": "F:/Work/Projects/TestProjects/perl-perl5",
+      "perf": {
+        "end_ws_mb": 121,
+        "files_per_sec": 13,
+        "index_duration_ms": 135776
+      },
+      "project": "perl-perl5",
+      "resolution_rate": 97.12,
+      "routes": 0,
+      "symbols": 68460,
+      "unresolved_by_lang_kind": {
+        "c.calls": 1220,
+        "c.type_ref": 1587,
+        "cpp.calls": 11,
+        "cpp.type_ref": 71,
+        "make.calls": 9,
+        "pascal.calls": 768,
+        "shell.calls": 37
+      }
     },
     {
       "assertions": {
