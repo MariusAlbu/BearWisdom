@@ -27,20 +27,20 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 19 | Dart                | 5.9%     | 96.86%   | 235,700    | 7,644      | 🟢     |       |
 | 20 | Swift               | 5.4%     | 97.82%   | 57,170     | 1,272      | 🟢     |       |
 | 21 | R                   | 4.9%     | 100.00%  | 9,481      | 0          | ✅     |       |
-| 22 | Groovy              | 4.8%     | 92.03%   | 272,693    | 23,608     | 🟡     | Spock `Specification` not yet reachable via inheritance lookup |
+| 22 | Groovy              | 4.8%     | 93.91%   | 100,768    | 6,534      | 🟡     | gradle-plugin 72.56% needs type inference for untyped receivers; spock now 96.32% ✓ |
 | 23 | VB.NET              | 4.4%     | 98.70%   | 986        | 13         | ✅     | thin corpus |
 | 24 | VBA                 | 4.2%     | 89.83%   | 1,572      | 178        | 🟡     | thin corpus |
 | 25 | MATLAB              | 3.9%     | 67.55%   | 10,284     | 4,938      | 🔴     | walker wired but install-gated (no MathWorks license on dev box) |
 | 26 | Perl                | 3.8%     | 99.89%   | 6,274      | 7          | ✅     |       |
 | 27 | GDScript            | 3.3%     | 89.85%   | 6,295      | 711        | 🟡     |       |
 | 28 | Elixir              | 2.7%     | 98.04%   | 173,540    | 3,470      | ✅     |       |
-| 29 | Scala               | 2.6%     | 92.70%   | 138,209    | 10,888     | 🟡     | ScalaTest matchers + Twitter util types from sources jars |
+| 29 | Scala               | 2.6%     | 96.01%   | 173,827    | 7,215      | 🟢     |       |
 | 30 | Delphi              | 2.5%     | —        | —          | —          | —      | Object Pascal-adjacent; not bucketed |
 | 31 | Lisp                | 2.4%     | —        | —          | —          | —      | not bucketed |
 | 32 | MicroPython         | 2.3%     | —        | —          | —          | —      | folds into Python |
 | 33 | Zig                 | 2.1%     | 97.38%   | 2,462,498  | 65,711     | 🟢     |       |
 | 34 | Erlang              | 1.5%     | 84.52%   | 90,457     | 16,571     | 🟡     | OTP source walker missing |
-| 35 | Fortran             | 1.4%     | 70.38%   | 15,045     | 6,331      | 🟡     | intrinsics + use/module resolution |
+| 35 | Fortran             | 1.4%     | 86.67%   | 30,971     | 4,765      | 🟡     | fpm needs re-export chain walking; stdlib needs fypp template preprocessor |
 | 36 | Ada                 | 1.4%     | 95.30%   | 27,876     | 1,374      | 🟢     |       |
 | 37 | F#                  | 1.3%     | 95.01%   | 5,565      | 292        | 🟢     |       |
 | 38 | OCaml               | 1.2%     | 90.23%   | 86,509     | 9,370      | 🟡     | Cmdliner + Alcotest sources |
@@ -48,7 +48,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 40 | Prolog              | 1.1%     | 96.55%   | 97,436     | 3,478      | 🟢     |       |
 | 41 | COBOL               | 1.0%     | 100.00%  | 5,719      | 0          | ✅     |       |
 | 42 | Mojo                | 0.4%     | —        | —          | —          | —      | not bucketed |
-| —  | Pascal (FreePascal) | —        | 89.56%   | 410,782    | 47,881     | 🟡     | Win32 + Cocoa + glib2 C-binding RTL not yet covered by walker |
+| —  | Pascal (FreePascal) | —        | 92.99%   | 412,063    | 31,069     | 🟡     | castle-fresh's cross-unit refs through Castle Game Engine include-file splitting |
 | —  | Odin                | —        | 97.77%   | 107,348    | 2,453      | 🟢     |       |
 | —  | Vue                 | —        | 98.75%   | 57,764     | 731        | ✅     |       |
 | —  | Haskell             | —        | 91.50%   | 115,120    | 9,828      | 🟡     | re-export chains, lens operators, optparse-applicative internals |
