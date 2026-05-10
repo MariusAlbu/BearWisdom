@@ -308,3 +308,107 @@ fn symbol_value_specification_in_mli() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+/// `local_open_expression` as a function callee (e.g. `Alcotest.(check int)`)
+/// must NOT produce a Calls ref — the multi-word text is not a resolvable name.
+#[test]
+fn local_open_expression_does_not_emit_calls_ref() {
+    let r = extract(
+        "let () = Alcotest.(check int) \"msg\" 1 1",
+        "test.ml",
+    );
+    // No ref whose target contains '(' should appear.
+    assert!(
+        !r.refs.iter().any(|rf| rf.target_name.contains('(')),
+        "expected no paren-target Calls ref from local_open_expression; got {:?}",
+        r.refs.iter().filter(|rf| rf.target_name.contains('(')).collect::<Vec<_>>()
+    );
+}
+
+/// Variant constructors in a `type_definition` are extracted as individual
+/// `Struct`-kinded child symbols so constructor applications can resolve.
+#[test]
+fn variant_constructors_extracted_as_struct_symbols() {
+    let r = extract(
+        "type color = Red | Green | Blue of int",
+        "test.ml",
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Red" && s.kind == SymbolKind::Struct),
+        "expected Struct 'Red' from variant constructor; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Green" && s.kind == SymbolKind::Struct),
+        "expected Struct 'Green' from variant constructor; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Blue" && s.kind == SymbolKind::Struct),
+        "expected Struct 'Blue' from variant constructor; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Variant constructors at top level have unqualified names (file-level module
+/// prefix is not added by the extractor).
+#[test]
+fn variant_constructor_top_level_unqualified() {
+    let r = extract(
+        "type result = Ok of int | Err of string",
+        "test.ml",
+    );
+    let ok = r.symbols.iter().find(|s| s.name == "Ok").expect("Ok");
+    assert_eq!(ok.qualified_name, "Ok");
+    assert_eq!(ok.scope_path, None);
+}
+
+/// Variant constructors inside a module are scoped to the module, not the type.
+#[test]
+fn variant_constructor_inside_module_scoped_to_module() {
+    let r = extract(
+        "module M = struct\n  type color = Red | Green\nend",
+        "test.ml",
+    );
+    let red = r.symbols.iter().find(|s| s.name == "Red").expect("Red");
+    assert_eq!(red.qualified_name, "M.Red");
+    assert_eq!(red.scope_path.as_deref(), Some("M"));
+}
+
+/// Constructor applied to an argument is an `application_expression` and emits
+/// a Calls ref. A bare constructor with no argument is a value expression and
+/// does not produce a Calls ref (it's not an application in OCaml grammar).
+#[test]
+fn variant_constructor_application_emits_calls_ref() {
+    let r = extract(
+        "type shape = Circle | Square of int\nlet t = Square 5",
+        "test.ml",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Square" && rf.kind == EdgeKind::Calls),
+        "expected Calls->Square; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Qualified constructor application `Module.Ctor arg` is split into
+/// `target_name="Ctor", module=Some("Module")` so the module-qualified resolver
+/// step can find it. The raw text `"Module.Ctor"` must NOT appear as target.
+#[test]
+fn qualified_constructor_path_is_split() {
+    let r = extract(
+        "let () = Result.Ok 42 |> ignore",
+        "test.ml",
+    );
+    let ok_ref = r.refs.iter().find(|rf| rf.target_name == "Ok" && rf.kind == EdgeKind::Calls);
+    assert!(
+        ok_ref.is_some(),
+        "expected split Calls->Ok from Result.Ok; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, &rf.module, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        ok_ref.unwrap().module.as_deref(),
+        Some("Result"),
+        "expected module=Some(\"Result\") for Result.Ok"
+    );
+}

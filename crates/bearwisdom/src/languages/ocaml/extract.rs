@@ -128,27 +128,34 @@ fn walk_node(
             let sym_idx = parent_idx.unwrap_or(0);
             // `function` field is the callee
             if let Some(fn_node) = node.child_by_field_name("function") {
-                let (target_name, module) = if fn_node.kind() == "value_path" {
-                    split_value_path(fn_node, src)
-                } else {
-                    (text(fn_node, src), None)
-                };
-                // Skip polymorphic variant constructors (`Ok, `Error, `P, etc.)
-                // and names with newlines (multi-line expressions, not real callees).
-                if !target_name.is_empty()
-                    && !target_name.starts_with('`')
-                    && !target_name.contains('\n')
-                {
-                    refs.push(ExtractedRef {
-                        source_symbol_index: sym_idx,
-                        target_name,
-                        kind: EdgeKind::Calls,
-                        line: node.start_position().row as u32,
-                        module,
-                        chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                // `Module.(expr)` local-open is not a callable symbol name —
+                // the inner expression resolves separately when walked below.
+                if fn_node.kind() != "local_open_expression" {
+                    let (target_name, module) = match fn_node.kind() {
+                        "value_path" => split_value_path(fn_node, src),
+                        // `constructor_path` covers qualified constructors like
+                        // `Command.Args.S` — split into (S, Some("Command.Args"))
+                        // so the module-qualified resolver step can find them.
+                        "constructor_path" => split_constructor_path(fn_node, src),
+                        _ => (text(fn_node, src), None),
+                    };
+                    // Skip polymorphic variant constructors (`Ok, `Error, `P, etc.)
+                    // and names with newlines (multi-line expressions, not real callees).
+                    if !target_name.is_empty()
+                        && !target_name.starts_with('`')
+                        && !target_name.contains('\n')
+                    {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: sym_idx,
+                            target_name,
+                            kind: EdgeKind::Calls,
+                            line: node.start_position().row as u32,
+                            module,
+                            chain: None,
+                            byte_offset: 0,
+                            namespace_segments: Vec::new(),
+                        });
+                    }
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -291,7 +298,8 @@ fn extract_type_def(
             if name.is_empty() { continue; }
 
             // Determine kind from body
-            let kind = match child.child_by_field_name("body") {
+            let body_opt = child.child_by_field_name("body");
+            let kind = match body_opt {
                 Some(body) => match body.kind() {
                     "variant_declaration" => SymbolKind::Enum,
                     "record_declaration" => SymbolKind::Struct,
@@ -311,7 +319,7 @@ fn extract_type_def(
             let scope_path = scope_path_from_parent(parent_idx, symbols);
             let idx = symbols.len();
             symbols.push(ExtractedSymbol {
-                qualified_name,
+                qualified_name: qualified_name.clone(),
                 name,
                 kind,
                 visibility: Some(Visibility::Public),
@@ -321,13 +329,72 @@ fn extract_type_def(
                 end_col: 0,
                 signature: None,
                 doc_comment: None,
-                scope_path,
+                scope_path: scope_path.clone(),
                 parent_index: parent_idx,
             });
+
+            // For variant types, emit each constructor as a child symbol so
+            // that constructor applications resolve. Constructors live at module
+            // scope in OCaml — not under the type name — so qualify them via
+            // the same parent as the type itself (the enclosing module or None
+            // at file top level). `scope_path` is that parent's qname.
+            if let Some(body) = body_opt {
+                if body.kind() == "variant_declaration" {
+                    extract_variant_constructors(
+                        body,
+                        src,
+                        symbols,
+                        parent_idx,
+                        scope_path.as_deref(),
+                    );
+                }
+            }
+
             return Some(idx);
         }
     }
     None
+}
+
+/// Emit one `Struct`-kinded symbol per `constructor_declaration` child of a
+/// `variant_declaration` node. GADT constructors (`| S : 'a t list -> 'a t`)
+/// are included — `constructor_name` is always the first named child.
+///
+/// `module_scope` is the enclosing module's qualified name, or `None` at file
+/// top level. OCaml constructors are in module scope, not type scope — so
+/// `type t = A | B` inside `module M` produces `M.A` and `M.B`, not `M.t.A`.
+fn extract_variant_constructors(
+    variant_decl: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_idx: Option<usize>,
+    module_scope: Option<&str>,
+) {
+    let mut cursor = variant_decl.walk();
+    for child in variant_decl.children(&mut cursor) {
+        if child.kind() == "constructor_declaration" {
+            let ctor_name = extract_constructor_name(child, src);
+            if ctor_name.is_empty() { continue; }
+            let qualified_name = match module_scope {
+                Some(scope) => format!("{scope}.{ctor_name}"),
+                None => ctor_name.clone(),
+            };
+            symbols.push(ExtractedSymbol {
+                qualified_name,
+                name: ctor_name,
+                kind: SymbolKind::Struct,
+                visibility: Some(Visibility::Public),
+                start_line: child.start_position().row as u32,
+                end_line: child.end_position().row as u32,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: module_scope.map(str::to_string),
+                parent_index: parent_idx,
+            });
+        }
+    }
 }
 
 fn extract_module_def(
@@ -644,6 +711,33 @@ fn split_value_path(node: Node, src: &[u8]) -> (String, Option<String>) {
         .collect();
     let module = module_parts.join(".");
     (fn_name, if module.is_empty() { None } else { Some(module) })
+}
+
+/// Split a `constructor_path` node into `(constructor_name, module_qualifier)`.
+///
+/// Grammar: `constructor_path = module_path? constructor_name`.
+/// For `Command.Args.S`: module_path = "Command.Args", constructor_name = "S".
+/// For bare `Circle`: no module_path, constructor_name = "Circle".
+fn split_constructor_path(node: Node, src: &[u8]) -> (String, Option<String>) {
+    let count = node.named_child_count();
+    if count == 0 {
+        return (text(node, src), None);
+    }
+    // The last named child is always the constructor_name.
+    let last = match node.named_child(count - 1) {
+        Some(n) => n,
+        None => return (text(node, src), None),
+    };
+    let ctor_name = text(last, src);
+    if count == 1 {
+        return (ctor_name, None);
+    }
+    let module_parts: Vec<String> = (0..count - 1)
+        .filter_map(|i| node.named_child(i))
+        .map(|n| text(n, src))
+        .collect();
+    let module = module_parts.join(".");
+    (ctor_name, if module.is_empty() { None } else { Some(module) })
 }
 
 fn text(node: Node, src: &[u8]) -> String {

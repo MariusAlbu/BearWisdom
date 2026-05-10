@@ -5236,14 +5236,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 91
+        "min_resolution_rate": 94
       },
-      "code_chunks": 99960,
-      "files": 2948,
+      "code_chunks": 103963,
+      "files": 2952,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 63185,
-      "internal_unresolved": 6122,
+      "internal_edges": 64528,
+      "internal_unresolved": 3678,
       "languages": {
         "c": 60,
         "cpp": 10,
@@ -5253,6 +5253,7 @@
         "markdown": 114,
         "nix": 4,
         "ocaml": 2691,
+        "pascal": 4,
         "puppet": 1,
         "python": 4,
         "shell": 45,
@@ -5260,26 +5261,22 @@
       },
       "path": "F:/Work/Projects/TestProjects/ocaml-dune-fresh",
       "perf": {
-        "end_ws_mb": 178,
-        "files_per_sec": 13,
-        "index_duration_ms": 226599
+        "end_ws_mb": 268,
+        "files_per_sec": 5,
+        "index_duration_ms": 564831
       },
       "project": "ocaml-dune-fresh",
-      "resolution_rate": 91.17,
+      "resolution_rate": 94.61,
       "routes": 0,
-      "symbols": 62560,
+      "symbols": 66576,
       "unresolved_by_lang_kind": {
-        "c.calls": 896,
-        "c.type_ref": 233,
-        "cpp.calls": 5,
-        "cpp.type_ref": 2,
-        "nix.calls": 215,
-        "nix.imports": 13,
-        "ocaml.calls": 4724,
-        "ocaml.imports": 12,
-        "python.calls": 1,
-        "python.imports": 1,
-        "shell.calls": 20
+        "c.calls": 15,
+        "markdown.calls": 56,
+        "nix.calls": 8,
+        "ocaml.calls": 3364,
+        "ocaml.type_ref": 164,
+        "shell.calls": 57,
+        "shell.type_ref": 14
       }
     },
     {

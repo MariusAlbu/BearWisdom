@@ -18,7 +18,7 @@
 use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
-    SymbolLookup,
+    SymbolInfo, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -73,14 +73,59 @@ impl LanguageResolver for OcamlResolver {
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
         if edge_kind == EdgeKind::Imports {
             return None;
         }
 
-        engine::resolve_common("ocaml", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        if let Some(res) = engine::resolve_common("ocaml", file_ctx, ref_ctx, lookup, predicates::kind_compatible) {
+            return Some(res);
+        }
+
+        // OCaml files implicitly define a module named after the file stem (e.g.
+        // `command.ml` → module `Command`). Refs like `Command.Args.S` are
+        // split into `module=Some("Command.Args"), target="S"` by the extractor.
+        // The symbols inside `command.ml` are indexed without the `Command.`
+        // file-stem prefix, so `Args.S` exists but `Command.Args.S` doesn't.
+        // Strip the leading component from the module path and retry the
+        // qualified lookup: `Command.Args.S` → try `Args.S`.
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            let target = &ref_ctx.extracted_ref.target_name;
+            if let Some(dot) = module.find('.') {
+                let stripped_module = &module[dot + 1..];
+                let candidate = format!("{stripped_module}.{target}");
+                if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.90,
+                            strategy: "ocaml_stem_stripped",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+                // Fallback: name-only lookup restricted to files whose path
+                // contains the stripped module's last segment.
+                let stripped_lower = stripped_module.to_lowercase();
+                let last_seg = stripped_lower.rsplit('.').next().unwrap_or(&stripped_lower);
+                let by_name = lookup.by_name(target);
+                if let Some(sym) = by_name.iter().find(|s: &&SymbolInfo| {
+                    let fl = s.file_path.to_lowercase().replace('\\', "/");
+                    (fl.contains(&format!("/{last_seg}.")) || fl.contains(&format!("/{last_seg}/")))
+                        && predicates::kind_compatible(edge_kind, &s.kind)
+                }) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.88,
+                        strategy: "ocaml_stem_stripped_name",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(
