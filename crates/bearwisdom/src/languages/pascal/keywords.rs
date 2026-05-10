@@ -55,6 +55,9 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "ShowMessage", "MessageDlg", "InputBox",
     // VCL globals
     "Application", "Screen", "Sender",
+    // language keywords that appear as identifiers in error-recovery paths
+    "const", "var", "out", "array", "of", "set", "type",
+    "begin", "end", "then", "do", "to", "downto",
     // keywords used as references
     "Result", "Self", "inherited", "nil", "True", "False",
     // From former builtin_type_names:

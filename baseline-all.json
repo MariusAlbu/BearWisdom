@@ -5485,8 +5485,8 @@
       "files": 3857,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 283521,
-      "internal_unresolved": 29582,
+      "internal_edges": 283767,
+      "internal_unresolved": 29009,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -5514,27 +5514,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 284,
-        "files_per_sec": 10,
-        "index_duration_ms": 376255
+        "end_ws_mb": 272,
+        "files_per_sec": 13,
+        "index_duration_ms": 293434
       },
       "project": "pascal-castle-fresh",
-      "resolution_rate": 90.55,
+      "resolution_rate": 90.73,
       "routes": 0,
       "symbols": 258437,
       "unresolved_by_lang_kind": {
         "c.calls": 23,
-        "c.type_ref": 747,
+        "c.type_ref": 744,
         "cmake.type_ref": 92,
-        "cpp.calls": 633,
+        "cpp.calls": 631,
         "cpp.inherits": 4,
         "cpp.instantiates": 16,
-        "cpp.type_ref": 3112,
+        "cpp.type_ref": 2781,
         "java.calls": 13,
         "java.instantiates": 6,
         "java.type_ref": 140,
         "matlab.calls": 59,
-        "pascal.calls": 24519,
+        "pascal.calls": 24282,
         "pascal.inherits": 182,
         "php.calls": 1,
         "scss.calls": 1,
@@ -5543,23 +5543,24 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 88
       },
-      "code_chunks": 177204,
-      "files": 989,
+      "code_chunks": 180420,
+      "files": 1046,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 57260,
-      "internal_unresolved": 176,
+      "internal_edges": 102401,
+      "internal_unresolved": 13229,
       "languages": {
-        "c": 8,
+        "c": 6,
+        "cpp": 2,
         "css": 1,
         "html": 6,
         "json": 14,
         "lua": 4,
         "make": 1,
         "markdown": 3,
-        "pascal": 834,
+        "pascal": 891,
         "puppet": 8,
         "python": 1,
         "shell": 17,
@@ -5567,54 +5568,55 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-doublecmd",
       "perf": {
-        "end_ws_mb": 311,
-        "files_per_sec": 11,
-        "index_duration_ms": 90125
+        "end_ws_mb": 260,
+        "files_per_sec": 8,
+        "index_duration_ms": 137041
       },
       "project": "pascal-doublecmd",
-      "resolution_rate": 99.69,
+      "resolution_rate": 88.56,
       "routes": 0,
-      "symbols": 94766,
+      "symbols": 104282,
       "unresolved_by_lang_kind": {
         "c.calls": 2,
         "c.type_ref": 73,
-        "lua.calls": 3,
-        "pascal.calls": 69,
+        "pascal.calls": 13078,
+        "pascal.inherits": 47,
         "shell.calls": 29
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 82
       },
-      "code_chunks": 60919,
-      "files": 177,
+      "code_chunks": 61329,
+      "files": 187,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 18439,
-      "internal_unresolved": 58,
+      "internal_edges": 32517,
+      "internal_unresolved": 7020,
       "languages": {
         "html": 1,
         "json": 4,
         "markdown": 10,
-        "pascal": 153,
+        "pascal": 163,
         "php": 7,
         "xml": 2
       },
       "path": "F:/Work/Projects/TestProjects/pascal-heidisql",
       "perf": {
-        "end_ws_mb": 319,
+        "end_ws_mb": 232,
         "files_per_sec": 3,
-        "index_duration_ms": 60486
+        "index_duration_ms": 72285
       },
       "project": "pascal-heidisql",
-      "resolution_rate": 99.69,
+      "resolution_rate": 82.24,
       "routes": 0,
-      "symbols": 28694,
+      "symbols": 31418,
       "unresolved_by_lang_kind": {
-        "pascal.calls": 2,
-        "php.calls": 55,
-        "php.instantiates": 1
+        "pascal.calls": 6859,
+        "pascal.inherits": 45,
+        "php.calls": 113,
+        "php.instantiates": 3
       }
     },
     {
