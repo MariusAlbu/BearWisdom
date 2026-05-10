@@ -941,7 +941,7 @@ fn is_generic_name(name: &str) -> bool {
             | "input" | "output" | "source" | "target" | "path" | "url"
             | "text" | "message" | "label" | "title" | "description"
             | "callback" | "handler" | "listener" | "observer"
-            | "create" | "update" | "delete" | "get" | "set" | "add" | "remove"
+            | "create" | "update" | "delete" | "get" | "add" | "remove"
             | "start" | "stop" | "open" | "close" | "read" | "write"
             | "load" | "save" | "init" | "reset" | "clear" | "build" | "run"
             | "apply" | "call" | "invoke" | "execute" | "process" | "handle"
