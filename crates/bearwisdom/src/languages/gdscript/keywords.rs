@@ -85,4 +85,15 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "RenderingServer", "AudioServer", "DisplayServer",
     // OO keyword
     "super",
+    // GDScript 3 coroutine keyword used with call syntax: yield(signal, "done").
+    // Removed in GDScript 4 (replaced by `await`), but appears in Godot 3
+    // projects and is a language primitive, not a user-defined symbol.
+    "yield",
+    // Control-flow keywords that tree-sitter occasionally surfaces as call-node
+    // callees — e.g. `else: if (cond)` on one line produces a spurious `call`
+    // whose callee reads as "if".
+    "if", "elif", "else", "while", "for", "match", "break", "continue",
+    "return", "pass", "await", "and", "or", "not", "in", "is", "as",
+    "var", "const", "func", "class", "extends", "signal", "enum",
+    "static", "setget", "onready", "export", "tool", "null", "true", "false",
 ];

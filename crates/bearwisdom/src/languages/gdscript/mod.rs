@@ -67,17 +67,7 @@ impl LanguagePlugin for GDScriptPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "int", "float", "bool", "String", "StringName", "NodePath",
-            "Vector2", "Vector2i", "Vector3", "Vector3i", "Vector4", "Vector4i",
-            "Color", "Rect2", "Rect2i", "Transform2D", "Transform3D",
-            "Basis", "Quaternion", "Plane", "AABB",
-            "Array", "Dictionary", "PackedByteArray", "PackedInt32Array",
-            "PackedInt64Array", "PackedFloat32Array", "PackedFloat64Array",
-            "PackedStringArray", "PackedVector2Array", "PackedVector3Array",
-            "PackedColorArray", "Object", "Node", "RefCounted", "Resource",
-            "void", "Variant", "Callable", "Signal", "RID",
-        ]
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

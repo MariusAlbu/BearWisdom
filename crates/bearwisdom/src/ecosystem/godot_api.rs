@@ -175,7 +175,70 @@ fn probe_extension_api_json() -> Option<PathBuf> {
             if p.is_file() { return Some(p); }
         }
     }
+    // BearWisdom-managed cache: ~/.bearwisdom/godot/extension_api.json.
+    // Populated on first run when Godot is not installed locally (fetch below).
+    if let Some(p) = bw_cache_path() {
+        if p.is_file() {
+            return Some(p);
+        }
+        // Cache miss — attempt a one-time network fetch from the godot-cpp
+        // repository, which ships a copy of the current stable extension API.
+        // Failure is silent; the file is simply absent and the walker degrades
+        // gracefully (no external symbols → lower resolution rate).
+        if fetch_extension_api_to_cache(&p) {
+            return Some(p);
+        }
+    }
     None
+}
+
+/// Returns the BearWisdom-managed cache path for extension_api.json, or None
+/// if the home directory cannot be determined.
+fn bw_cache_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    let dir = PathBuf::from(home).join(".bearwisdom").join("godot");
+    Some(dir.join("extension_api.json"))
+}
+
+/// Attempt to download extension_api.json from the godot-cpp GitHub repository
+/// (master branch, `gdextension/extension_api.json`) into `dest`.
+///
+/// Returns true only when the file is fully written and non-empty.
+fn fetch_extension_api_to_cache(dest: &Path) -> bool {
+    const URL: &str = "https://raw.githubusercontent.com/godotengine/godot-cpp/master/gdextension/extension_api.json";
+
+    if let Some(parent) = dest.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return false;
+        }
+    }
+
+    // Use a blocking HTTP GET via std::process (no reqwest in ecosystem crates).
+    // curl is universally available on the target platforms (Linux, macOS, Windows 10+).
+    let status = std::process::Command::new("curl")
+        .args([
+            "--silent",
+            "--show-error",
+            "--location",
+            "--max-time", "30",
+            "--output", dest.to_str().unwrap_or(""),
+            URL,
+        ])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            let ok = dest.is_file()
+                && std::fs::metadata(dest).map(|m| m.len() > 10_000).unwrap_or(false);
+            if ok {
+                debug!("GodotApi: cached extension_api.json at {}", dest.display());
+            } else {
+                let _ = std::fs::remove_file(dest);
+            }
+            ok
+        }
+        _ => false,
+    }
 }
 
 // ---------------------------------------------------------------------------

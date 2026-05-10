@@ -77,8 +77,11 @@ impl LanguageResolver for GDScriptResolver {
 
         // Language-keyword tokens that tree-sitter sometimes emits as ref
         // targets: `super` is the parent-class access keyword; `$` is the
-        // node-path sugar for `get_node()`. Neither maps to a user symbol.
-        if matches!(target.as_str(), "super" | "$") {
+        // node-path sugar for `get_node()`; `if` appears as a spurious call
+        // target when `else: if (cond)` is on one line (the grammar produces a
+        // `call` node whose callee reads as the keyword). None map to a user
+        // symbol.
+        if matches!(target.as_str(), "super" | "$" | "if") {
             return None;
         }
 

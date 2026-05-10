@@ -2701,14 +2701,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 99
       },
-      "code_chunks": 11077,
+      "code_chunks": 11054,
       "files": 416,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 3675,
-      "internal_unresolved": 46,
+      "internal_edges": 5862,
+      "internal_unresolved": 42,
       "languages": {
         "csharp": 1,
         "css": 2,
@@ -2720,30 +2720,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/gdscript-beehave",
       "perf": {
-        "end_ws_mb": 290,
-        "files_per_sec": 61,
-        "index_duration_ms": 6768
+        "end_ws_mb": 118,
+        "files_per_sec": 54,
+        "index_duration_ms": 7719
       },
       "project": "gdscript-beehave",
-      "resolution_rate": 98.76,
+      "resolution_rate": 99.29,
       "routes": 0,
       "symbols": 7366,
       "unresolved_by_lang_kind": {
-        "gdscript.calls": 30,
-        "gdscript.inherits": 6,
+        "gdscript.calls": 29,
+        "gdscript.inherits": 3,
         "html.calls": 10
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 65
+        "min_resolution_rate": 93
       },
-      "code_chunks": 6719,
+      "code_chunks": 6699,
       "files": 268,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1194,
-      "internal_unresolved": 616,
+      "internal_edges": 2802,
+      "internal_unresolved": 195,
       "languages": {
         "css": 1,
         "gdscript": 228,
@@ -2756,30 +2756,31 @@
       },
       "path": "F:/Work/Projects/TestProjects/gdscript-learn",
       "perf": {
-        "end_ws_mb": 272,
+        "end_ws_mb": 77,
         "files_per_sec": 41,
-        "index_duration_ms": 6548
+        "index_duration_ms": 6506
       },
       "project": "gdscript-learn",
-      "resolution_rate": 65.97,
+      "resolution_rate": 93.49,
       "routes": 0,
       "symbols": 4558,
       "unresolved_by_lang_kind": {
-        "gdscript.calls": 599,
-        "gdscript.inherits": 16,
-        "python.calls": 1
+        "gdscript.calls": 171,
+        "javascript.calls": 15,
+        "python.calls": 1,
+        "typescript.type_ref": 8
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 93
+        "min_resolution_rate": 96
       },
-      "code_chunks": 12507,
+      "code_chunks": 12466,
       "files": 460,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 3350,
-      "internal_unresolved": 232,
+      "internal_edges": 4971,
+      "internal_unresolved": 203,
       "languages": {
         "csharp": 1,
         "css": 4,
@@ -2791,17 +2792,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/gdscript-pandora",
       "perf": {
-        "end_ws_mb": 292,
-        "files_per_sec": 68,
-        "index_duration_ms": 6717
+        "end_ws_mb": 119,
+        "files_per_sec": 57,
+        "index_duration_ms": 8120
       },
       "project": "gdscript-pandora",
-      "resolution_rate": 93.52,
+      "resolution_rate": 96.08,
       "routes": 0,
       "symbols": 8342,
       "unresolved_by_lang_kind": {
-        "gdscript.calls": 52,
-        "gdscript.inherits": 8,
+        "gdscript.calls": 29,
+        "gdscript.inherits": 2,
         "html.calls": 172
       }
     },
