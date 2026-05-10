@@ -32,7 +32,7 @@ impl LanguagePlugin for FortranPlugin {
 
     fn language_ids(&self) -> &[&str] { &["fortran"] }
 
-    fn extensions(&self) -> &[&str] { &[".f90", ".f95", ".f03", ".f08", ".f"] }
+    fn extensions(&self) -> &[&str] { &[".f90", ".f95", ".f03", ".f08", ".f", ".fypp"] }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_fortran::LANGUAGE.into())

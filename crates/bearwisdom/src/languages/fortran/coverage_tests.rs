@@ -340,6 +340,41 @@ end subroutine
 }
 
 // ---------------------------------------------------------------------------
+// .fypp recovery: tree-sitter-fortran partially parses preprocessed files
+// ---------------------------------------------------------------------------
+
+/// .fypp files mix valid Fortran with `#:for`, `#:if`, `${...}$` directives
+/// that tree-sitter-fortran cannot parse. The parser sets `has_error()` but
+/// still recovers the surrounding valid nodes. When the module statement
+/// appears after any leading directives, the extractor must still produce
+/// the module symbol from the valid region.
+#[test]
+fn fypp_partial_parse_extracts_module_and_procedures() {
+    // Directives inside the module body (not at file start) — this mirrors
+    // the common .fypp pattern where `module foo` is the first real line.
+    let src = concat!(
+        "module stdlib_math\n",
+        "  implicit none\n",
+        "  private\n",
+        "  public :: clip\n",
+        "#:if WITH_QP\n",
+        "  real :: EULERS_NUMBER_QP\n",
+        "#:endif\n",
+        "contains\n",
+        "  pure elemental subroutine clip_i32(x, xmin, xmax)\n",
+        "    integer, intent(in) :: x, xmin, xmax\n",
+        "  end subroutine\n",
+        "end module stdlib_math\n",
+    );
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "stdlib_math" && s.kind == SymbolKind::Namespace),
+        "expected Namespace 'stdlib_math' extracted despite fypp directives; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
 // .fypp recovery: string literals must never become Calls refs
 // ---------------------------------------------------------------------------
 
