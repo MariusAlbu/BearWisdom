@@ -5198,14 +5198,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 79
+        "min_resolution_rate": 82
       },
-      "code_chunks": 10069,
+      "code_chunks": 10410,
       "files": 255,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 4094,
-      "internal_unresolved": 1086,
+      "internal_edges": 4362,
+      "internal_unresolved": 908,
       "languages": {
         "c": 12,
         "dockerfile": 6,
@@ -5218,32 +5218,32 @@
       },
       "path": "F:/Work/Projects/TestProjects/ocaml-comby",
       "perf": {
-        "end_ws_mb": 88,
-        "files_per_sec": 23,
-        "index_duration_ms": 11022
+        "end_ws_mb": 126,
+        "files_per_sec": 4,
+        "index_duration_ms": 67565
       },
       "project": "ocaml-comby",
-      "resolution_rate": 79.03,
+      "resolution_rate": 82.77,
       "routes": 0,
-      "symbols": 6578,
+      "symbols": 6900,
       "unresolved_by_lang_kind": {
-        "c.calls": 249,
+        "c.calls": 239,
         "c.type_ref": 160,
         "go.calls": 2,
-        "ocaml.calls": 674,
+        "ocaml.calls": 506,
         "shell.calls": 1
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 94
+        "min_resolution_rate": 95
       },
       "code_chunks": 103963,
       "files": 2952,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 64528,
-      "internal_unresolved": 3678,
+      "internal_edges": 72385,
+      "internal_unresolved": 3157,
       "languages": {
         "c": 60,
         "cpp": 10,
@@ -5261,34 +5261,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/ocaml-dune-fresh",
       "perf": {
-        "end_ws_mb": 268,
+        "end_ws_mb": 264,
         "files_per_sec": 5,
-        "index_duration_ms": 564831
+        "index_duration_ms": 573363
       },
       "project": "ocaml-dune-fresh",
-      "resolution_rate": 94.61,
+      "resolution_rate": 95.82,
       "routes": 0,
       "symbols": 66576,
       "unresolved_by_lang_kind": {
-        "c.calls": 15,
-        "markdown.calls": 56,
-        "nix.calls": 8,
-        "ocaml.calls": 3364,
-        "ocaml.type_ref": 164,
-        "shell.calls": 57,
-        "shell.type_ref": 14
+        "c.calls": 806,
+        "c.type_ref": 186,
+        "cpp.calls": 3,
+        "cpp.type_ref": 2,
+        "nix.calls": 209,
+        "ocaml.calls": 1930,
+        "python.calls": 1,
+        "shell.calls": 20
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 80
+        "min_resolution_rate": 84
       },
-      "code_chunks": 36776,
+      "code_chunks": 37083,
       "files": 564,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 16475,
-      "internal_unresolved": 3932,
+      "internal_edges": 17341,
+      "internal_unresolved": 3111,
       "languages": {
         "c": 3,
         "cpp": 1,
@@ -5300,54 +5301,53 @@
       },
       "path": "F:/Work/Projects/TestProjects/ocaml-irmin",
       "perf": {
-        "end_ws_mb": 123,
-        "files_per_sec": 63,
-        "index_duration_ms": 8961
+        "end_ws_mb": 191,
+        "files_per_sec": 9,
+        "index_duration_ms": 62679
       },
       "project": "ocaml-irmin",
-      "resolution_rate": 80.73,
+      "resolution_rate": 84.79,
       "routes": 0,
-      "symbols": 22010,
+      "symbols": 22448,
       "unresolved_by_lang_kind": {
-        "c.calls": 229,
+        "c.calls": 221,
         "c.type_ref": 93,
-        "cpp.calls": 38,
-        "cpp.type_ref": 16,
+        "cpp.calls": 7,
         "html.calls": 20,
         "html.type_ref": 5,
-        "ocaml.calls": 3528,
-        "ocaml.imports": 3
+        "ocaml.calls": 2765
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 86
+        "min_resolution_rate": 89
       },
-      "code_chunks": 5752,
-      "files": 168,
+      "code_chunks": 5831,
+      "files": 169,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2755,
-      "internal_unresolved": 432,
+      "internal_edges": 2862,
+      "internal_unresolved": 328,
       "languages": {
         "c": 1,
         "markdown": 4,
         "ocaml": 161,
+        "pascal": 1,
         "shell": 1,
         "xml": 1
       },
       "path": "F:/Work/Projects/TestProjects/ocaml-mirage",
       "perf": {
-        "end_ws_mb": 89,
-        "files_per_sec": 149,
-        "index_duration_ms": 1124
+        "end_ws_mb": 228,
+        "files_per_sec": 2,
+        "index_duration_ms": 102078
       },
       "project": "ocaml-mirage",
-      "resolution_rate": 86.44,
+      "resolution_rate": 89.72,
       "routes": 0,
-      "symbols": 3915,
+      "symbols": 4012,
       "unresolved_by_lang_kind": {
-        "ocaml.calls": 429,
+        "ocaml.calls": 325,
         "shell.calls": 3
       }
     },

@@ -324,15 +324,21 @@ fn ocaml_lib_dirs(project_root: &Path) -> Vec<PathBuf> {
         let lib = PathBuf::from(switch).join("lib");
         if lib.is_dir() { dirs.push(lib) }
     }
+    let mut opam_roots: Vec<PathBuf> = Vec::new();
+    if let Ok(root) = std::env::var("OPAMROOT") {
+        opam_roots.push(PathBuf::from(root));
+    }
     if let Some(home) = dirs::home_dir() {
-        let opam = home.join(".opam");
-        if opam.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&opam) {
-                for e in entries.flatten() {
-                    let lib = e.path().join("lib");
-                    if lib.is_dir() { dirs.push(lib) }
-                }
-            }
+        opam_roots.push(home.join(".opam"));
+    }
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        opam_roots.push(PathBuf::from(local).join("opam"));
+    }
+    for opam in opam_roots {
+        let Ok(entries) = std::fs::read_dir(&opam) else { continue };
+        for e in entries.flatten() {
+            let lib = e.path().join("lib");
+            if lib.is_dir() { dirs.push(lib) }
         }
     }
     dirs
