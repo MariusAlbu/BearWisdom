@@ -49,7 +49,10 @@ fn walk_node(
     parent_idx: Option<usize>,
 ) {
     match node.kind() {
-        "subprogram_declaration" | "subprogram_body" => {
+        "subprogram_declaration" | "subprogram_body" | "expression_function_declaration" => {
+            // `expression_function_declaration` — `function F (...) return T is (expr)`
+            // shares the same `function_specification` child structure as
+            // `subprogram_declaration`, so `extract_subprogram` handles it unchanged.
             let idx = extract_subprogram(node, src, symbols, parent_idx);
             walk_children(node, src, symbols, refs, idx.or(parent_idx));
         }

@@ -535,6 +535,27 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
+        // Partial qualification expansion. Ada child-package files may omit the
+        // shared ancestor prefix in dotted calls — a file in `Alire.Index.Search`
+        // that does `with Alire.Utils.TTY` may call `Utils.TTY.Name` (dropping
+        // the leading `Alire.`). Try prepending each ancestor prefix of the
+        // file's own namespace and re-probing the expanded qualified name.
+        if target.contains('.') {
+            if let Some(own_pkg) = &file_ctx.file_namespace {
+                let parts: Vec<&str> = own_pkg.split('.').collect();
+                for depth in (1..=parts.len()).rev() {
+                    let prefix = parts[..depth].join(".");
+                    let expanded = format!("{prefix}.{target}");
+                    if let Some(res) = probe_dotted_qname(&expanded, edge_kind, lookup) {
+                        return Some(Resolution {
+                            strategy: "ada_partial_qualification",
+                            ..res
+                        });
+                    }
+                }
+            }
+        }
+
         let _ = target_lower;
         engine::resolve_common("ada", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }

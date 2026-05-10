@@ -2,12 +2,12 @@
 // ada/coverage_tests.rs — One test per declared symbol_node_kind and ref_node_kind
 //
 // symbol_node_kinds: ["subprogram_declaration", "subprogram_body",
+//                     "expression_function_declaration",
 //                     "package_declaration", "package_body",
 //                     "full_type_declaration"]
 // ref_node_kinds:    ["with_clause", "procedure_call_statement", "function_call"]
 //
 // Rules also specify the following types not yet wired into the extractor:
-//   expression_function_declaration  — TODO (extractor falls through to walk_children)
 //   subtype_declaration              — TODO (not handled; would be TypeAlias)
 //   object_declaration               — TODO (not handled; would be Variable)
 //   full_type_declaration derived    — TODO (derived_type_definition → Class)
@@ -329,6 +329,18 @@ fn diag_package_rename_ast_dump() {
         }
     }
     walk(tree.root_node(), src, 0);
+}
+
+/// `function F (...) return T is (expr)` — expression function → Function symbol.
+#[test]
+fn expression_function_declaration_emits_function_symbol() {
+    let src = "package body P is\n  function Name (C : String) return String is (C);\nend P;";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Name" && s.kind == SymbolKind::Function),
+        "expected Function(Name) from expression_function_declaration; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// `package X is new Gen;` — simple instantiation emits signature `"instantiates Gen"`.

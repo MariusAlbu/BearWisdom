@@ -313,6 +313,38 @@ fn local_instantiation_dispatch_resolves_dotted_call() {
     assert_eq!(res.unwrap().strategy, "ada_local_instantiation");
 }
 
+/// Partial qualification: `Alire.Index.Search` calls `Utils.TTY.Name` where
+/// the full path is `Alire.Utils.TTY.Name`. The resolver must expand the
+/// partial call by prepending the common ancestor prefix `Alire.`.
+#[test]
+fn partial_qualification_expands_ancestor_prefix() {
+    let fix = AdaFixture::new()
+        .with_member("Alire.Utils.TTY", "Name", "Alire.Utils.TTY.Name", "function");
+
+    let file_ctx = FileContext {
+        file_path: "src/alire-index-search.adb".to_string(),
+        language: "ada".to_string(),
+        imports: Vec::new(),
+        file_namespace: Some("Alire.Index.Search".to_string()),
+    };
+
+    let source_sym = make_extracted_sym("Print_Dependents", "Alire.Index.Search.Print_Dependents");
+    let extracted = make_extracted_ref("Utils.TTY.Name");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+
+    let res = AdaResolver.resolve(&file_ctx, &ref_ctx, &fix);
+    assert!(
+        res.is_some(),
+        "expected partial-qualification expansion to resolve Utils.TTY.Name → Alire.Utils.TTY.Name"
+    );
+    assert_eq!(res.unwrap().strategy, "ada_partial_qualification");
+}
+
 // ---------------------------------------------------------------------------
 // probe_package_of_type (Fix #3)
 // ---------------------------------------------------------------------------
