@@ -9360,14 +9360,15 @@
       "assertions": {
         "min_resolution_rate": 99
       },
-      "code_chunks": 199102,
+      "code_chunks": 191631,
       "files": 2647,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 81657,
-      "internal_unresolved": 347,
+      "internal_edges": 90955,
+      "internal_unresolved": 407,
       "languages": {
-        "c": 64,
+        "c": 4,
+        "cpp": 60,
         "csharp": 2515,
         "groovy": 2,
         "java": 3,
@@ -9379,34 +9380,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/vba-rubberduck",
       "perf": {
-        "end_ws_mb": 411,
-        "files_per_sec": 33,
-        "index_duration_ms": 81229
+        "end_ws_mb": 252,
+        "files_per_sec": 17,
+        "index_duration_ms": 157637
       },
       "project": "vba-rubberduck",
-      "resolution_rate": 99.58,
+      "resolution_rate": 99.55,
       "routes": 0,
-      "symbols": 58865,
+      "symbols": 58528,
       "unresolved_by_lang_kind": {
-        "c.calls": 27,
-        "c.inherits": 2,
-        "c.type_ref": 312,
-        "java.calls": 2,
+        "cpp.calls": 25,
+        "cpp.inherits": 2,
+        "cpp.type_ref": 369,
+        "java.calls": 7,
         "vba.calls": 4
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 87
+        "min_resolution_rate": 92
       },
-      "code_chunks": 26707,
+      "code_chunks": 27636,
       "files": 163,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1563,
-      "internal_unresolved": 232,
+      "internal_edges": 1973,
+      "internal_unresolved": 166,
       "languages": {
-        "c": 3,
+        "c": 1,
+        "cpp": 2,
         "javascript": 2,
         "json": 9,
         "markdown": 33,
@@ -9416,19 +9418,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/vba-stdvba",
       "perf": {
-        "end_ws_mb": 310,
-        "files_per_sec": 13,
-        "index_duration_ms": 12613
+        "end_ws_mb": 91,
+        "files_per_sec": 3,
+        "index_duration_ms": 53389
       },
       "project": "vba-stdvba",
-      "resolution_rate": 87.08,
+      "resolution_rate": 92.24,
       "routes": 0,
-      "symbols": 4218,
+      "symbols": 5121,
       "unresolved_by_lang_kind": {
-        "c.calls": 27,
-        "c.type_ref": 46,
-        "typescript.type_ref": 1,
-        "vba.calls": 158
+        "cpp.calls": 23,
+        "cpp.instantiates": 2,
+        "cpp.type_ref": 72,
+        "javascript.calls": 12,
+        "typescript.type_ref": 3,
+        "vba.calls": 54
       }
     },
     {
@@ -9503,14 +9507,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 76
+        "min_resolution_rate": 86
       },
-      "code_chunks": 2701,
+      "code_chunks": 2733,
       "files": 83,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 113,
-      "internal_unresolved": 35,
+      "internal_edges": 124,
+      "internal_unresolved": 19,
       "languages": {
         "html": 6,
         "markdown": 13,
@@ -9521,19 +9525,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/vbnet-vbaweb",
       "perf": {
-        "end_ws_mb": 256,
-        "files_per_sec": 53,
-        "index_duration_ms": 1563
+        "end_ws_mb": 35,
+        "files_per_sec": 107,
+        "index_duration_ms": 777
       },
       "project": "vbnet-vbaweb",
-      "resolution_rate": 76.35,
+      "resolution_rate": 86.71,
       "routes": 0,
-      "symbols": 982,
+      "symbols": 1020,
       "unresolved_by_lang_kind": {
         "html.calls": 8,
         "html.type_ref": 10,
-        "scss.inherits": 1,
-        "vba.calls": 16
+        "scss.inherits": 1
       }
     },
     {

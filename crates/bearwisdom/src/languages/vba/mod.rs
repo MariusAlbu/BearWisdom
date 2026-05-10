@@ -5,6 +5,7 @@
 
 pub mod extract;
 
+mod keywords;
 mod predicates;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
@@ -61,24 +62,7 @@ impl LanguagePlugin for VbaPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "Integer",
-            "Long",
-            "LongLong",
-            "Single",
-            "Double",
-            "Currency",
-            "Decimal",
-            "Boolean",
-            "Byte",
-            "Date",
-            "String",
-            "Object",
-            "Variant",
-            "Nothing",
-            "Empty",
-            "Null",
-        ]
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

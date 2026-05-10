@@ -74,7 +74,29 @@ impl LanguageResolver for VbaResolver {
             return None;
         }
 
-        engine::resolve_common("vba", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        if let Some(r) = engine::resolve_common("vba", file_ctx, ref_ctx, lookup, predicates::kind_compatible) {
+            return Some(r);
+        }
+
+        // VBA identifiers are case-insensitive. resolve_common does exact-case
+        // matching; try a case-folded same-file scan for the common case where
+        // the declaration and the call site differ only in capitalisation
+        // (e.g. "CallVt" vs "CallVT").
+        let target_upper = target.to_uppercase();
+        for sym in lookup.in_file(&file_ctx.file_path) {
+            if sym.name.to_uppercase() == target_upper
+                && predicates::kind_compatible(edge_kind, &sym.kind)
+            {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "vba_case_insensitive",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(

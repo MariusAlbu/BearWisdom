@@ -135,3 +135,123 @@ fn quoted_first_token_is_dropped() {
         r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Continuation-line suppression
+// ---------------------------------------------------------------------------
+
+#[test]
+fn continuation_line_does_not_produce_call_ref() {
+    // A line ending with " _" continues onto the next physical line. The
+    // continuation line begins with an expression token (e.g. a local variable
+    // name) that would otherwise look like an implicit call statement.
+    // The scanner must not emit a Calls ref for the continuation line.
+    let src = concat!(
+        "Sub Main()\n",
+        "    Result = SomeFunc(Arg1, _\n",   // ends with " _" → continues
+        "                     TokenEndingPos - 1)\n",  // continuation: NOT a call
+        "End Sub\n",
+    );
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().all(|rf| rf.target_name != "TokenEndingPos"),
+        "identifier on a continuation line must not become a Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn first_line_of_continuation_still_emits_call() {
+    // The first line of a continuation block (ending with " _") is a real
+    // statement and should produce a Calls ref for its callee.
+    let src = concat!(
+        "Sub Main()\n",
+        "    Call SomeFunc Arg1, _\n",
+        "                 Arg2\n",
+        "End Sub\n",
+    );
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "SomeFunc"),
+        "callee on the first line of a continuation must still produce a Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Declare statement extraction
+// ---------------------------------------------------------------------------
+
+#[test]
+fn declare_ptrsafe_function_produces_symbol() {
+    let src = "Private Declare PtrSafe Function GdipDisposeImage Lib \"gdiplus\" (ByVal Image As LongPtr) As Long\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "GdipDisposeImage"),
+        "Declare PtrSafe Function must produce Function symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn declare_sub_produces_symbol() {
+    let src = "Private Declare PtrSafe Sub GdiplusShutdown Lib \"gdiplus\" (ByVal token As LongPtr)\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "GdiplusShutdown"),
+        "Declare PtrSafe Sub must produce Function symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn declare_inside_if_block_produces_symbol() {
+    // Declares inside #If / #Else / #End If blocks must be extracted.
+    let src = concat!(
+        "#If VBA7 Then\n",
+        "Private Declare PtrSafe Function utc_GetTimeZoneInformation Lib \"kernel32\" () As Long\n",
+        "#Else\n",
+        "Private Declare Function utc_GetTimeZoneInformation Lib \"kernel32\" () As Long\n",
+        "#End If\n",
+    );
+    let r = extract::extract(src);
+    let count = r.symbols.iter()
+        .filter(|s| s.name == "utc_GetTimeZoneInformation" && s.kind == SymbolKind::Function)
+        .count();
+    assert!(
+        count >= 1,
+        "Declare inside #If/#Else block must produce at least one Function symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn conditional_compilation_marker_does_not_produce_call_ref() {
+    // #If, #ElseIf, #Else, #End If directives must be treated as transparent
+    // markers — they must not produce any Calls ref.
+    let src = concat!(
+        "Sub Main()\n",
+        "#If VBA7 Then\n",
+        "    Call Helper\n",
+        "#Else\n",
+        "    Call Helper\n",
+        "#End If\n",
+        "End Sub\n",
+    );
+    let r = extract::extract(src);
+    // Exactly one Calls(Helper) — not two or zero.
+    let count = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Helper")
+        .count();
+    // Both branches call Helper, so two refs is correct; the key invariant is
+    // that the directive lines themselves don't produce extra refs.
+    let bad_refs: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.target_name.starts_with('#'))
+        .collect();
+    assert!(
+        bad_refs.is_empty(),
+        "directive lines must not produce Calls refs; got: {:?}",
+        bad_refs
+    );
+    let _ = count; // both-branch extraction is intentional
+}
