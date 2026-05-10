@@ -172,6 +172,24 @@ pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             }
         }
     }
+    // OCaml Stdlib + shims are language substrate, not project-declared deps.
+    // Every project uses Printf, List, String, Array, Buffer, Bytes, etc.
+    for substrate in ["ocaml", "stdlib-shims"] {
+        for lib in &lib_dirs {
+            let pkg_dir = lib.join(substrate);
+            if pkg_dir.is_dir() {
+                roots.push(ExternalDepRoot {
+                    module_path: substrate.to_string(),
+                    version: String::new(),
+                    root: pkg_dir,
+                    ecosystem: LEGACY_ECOSYSTEM_TAG,
+                    package_id: None,
+                    requested_imports: user_modules.clone(),
+                });
+                break;
+            }
+        }
+    }
     debug!("OCaml: {} external package roots", roots.len());
     roots
 }
