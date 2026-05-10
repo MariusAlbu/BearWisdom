@@ -286,6 +286,27 @@ fn cov_method_inside_struct_produces_method() {
 }
 
 // ---------------------------------------------------------------------------
+// predicates — kind_compatible
+// ---------------------------------------------------------------------------
+
+/// Calls edge resolves against a Variable symbol. Zig idiom binds std functions
+/// to local constants: `const assert = std.debug.assert; assert(...)`.
+#[test]
+fn kind_compatible_calls_accepts_variable() {
+    assert!(
+        super::predicates::kind_compatible(EdgeKind::Calls, "variable"),
+        "Calls must be compatible with variable so function-aliased consts resolve"
+    );
+}
+
+/// Existing accepted kinds are unaffected.
+#[test]
+fn kind_compatible_calls_still_accepts_function_and_method() {
+    assert!(super::predicates::kind_compatible(EdgeKind::Calls, "function"));
+    assert!(super::predicates::kind_compatible(EdgeKind::Calls, "method"));
+}
+
+// ---------------------------------------------------------------------------
 // Additional ref coverage — calls and field TypeRef
 // ---------------------------------------------------------------------------
 

@@ -7,9 +7,12 @@ use crate::types::EdgeKind;
 /// Check that the edge kind is compatible with the symbol kind.
 pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     match edge_kind {
+        // Zig idiom: `const assert = std.debug.assert` binds a function to a
+        // Variable symbol. Calls to that binding must resolve against the
+        // Variable, so "variable" is a valid target kind here.
         EdgeKind::Calls => matches!(
             sym_kind,
-            "method" | "function" | "constructor" | "test" | "class"
+            "method" | "function" | "constructor" | "test" | "class" | "variable"
         ),
         EdgeKind::Inherits => matches!(sym_kind, "class"),
         EdgeKind::Implements => matches!(sym_kind, "class" | "interface"),
