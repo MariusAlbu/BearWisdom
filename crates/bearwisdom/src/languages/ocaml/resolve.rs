@@ -122,6 +122,27 @@ impl LanguageResolver for OcamlResolver {
                         resolved_yield_type: None,
                     });
                 }
+            } else {
+                // Single-segment module: `List.fold_left`, `String.length`,
+                // `Printf.printf`. The symbol is indexed inside `list.ml`/
+                // `string.ml`/`printf.ml` with no qname prefix (file-stem-as-
+                // module convention). Match by name + file-stem.
+                let module_lower = module.to_lowercase();
+                let by_name = lookup.by_name(target);
+                if let Some(sym) = by_name.iter().find(|s: &&SymbolInfo| {
+                    let fl = s.file_path.to_lowercase().replace('\\', "/");
+                    (fl.ends_with(&format!("/{module_lower}.ml"))
+                        || fl.ends_with(&format!("/{module_lower}.mli"))
+                        || fl.contains(&format!("/{module_lower}/")))
+                        && predicates::kind_compatible(edge_kind, &s.kind)
+                }) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.92,
+                        strategy: "ocaml_module_to_file_stem",
+                        resolved_yield_type: None,
+                    });
+                }
             }
         }
 
