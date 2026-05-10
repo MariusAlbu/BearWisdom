@@ -366,9 +366,20 @@ impl LanguageResolver for AdaResolver {
             //   3. members_of(ancestor) for each ancestor package — a child
             //      package body implicitly sees instantiations declared in any
             //      ancestor spec (Ada parent-package visibility rule).
+            //
+            // Name matching: Ada namespace symbols may store the full dotted
+            // package name as `name` (e.g. `name = "Alire.Containers"` for a
+            // top-level `package body Alire.Containers is` declaration) or
+            // just the leaf segment (e.g. `name = "Version_Outcomes"` for a
+            // nested instantiation). Match both forms.
+            let ns_name_matches = |sym: &SymbolInfo| -> bool {
+                let n = sym.name.to_lowercase();
+                n == leading_lower
+                    || n.ends_with(&format!(".{leading_lower}"))
+            };
             let mut candidates: Vec<String> = Vec::new();
             for sym in lookup.in_file(&file_ctx.file_path) {
-                if sym.kind == "namespace" && sym.name.to_lowercase() == leading_lower {
+                if sym.kind == "namespace" && ns_name_matches(sym) {
                     if let Some(sig) = &sym.signature {
                         if let Some(gs) = sig.strip_prefix("instantiates ") {
                             candidates.push(gs.to_string());
@@ -383,7 +394,7 @@ impl LanguageResolver for AdaResolver {
                 for depth in (1..=parts.len()).rev() {
                     let scope = parts[..depth].join(".");
                     for sym in lookup.members_of(&scope) {
-                        if sym.kind == "namespace" && sym.name.to_lowercase() == leading_lower {
+                        if sym.kind == "namespace" && ns_name_matches(sym) {
                             if let Some(sig) = &sym.signature {
                                 if let Some(gs) = sig.strip_prefix("instantiates ") {
                                     let gs = gs.to_string();
@@ -612,6 +623,18 @@ impl LanguageResolver for AdaResolver {
                     }
                 }
             }
+            // Also chase one level of generic instantiation: a fully-qualified
+            // target like `Alire.Containers.Crate_Name_Sets.To_Set` won't have
+            // `Crate_Name_Sets.To_Set` directly, but `Crate_Name_Sets` is an
+            // instantiation of a generic that does have `To_Set`.
+            if let Some(chased) = chase_instantiation(target, lookup) {
+                if let Some(res) = probe_dotted_qname(&chased, edge_kind, lookup) {
+                    return Some(Resolution {
+                        strategy: "ada_qualified_ci",
+                        ..res
+                    });
+                }
+            }
         }
 
         // Fully-qualified variable-at-package-scope chains. For a target like
@@ -633,6 +656,11 @@ impl LanguageResolver for AdaResolver {
         // that does `with Alire.Utils.TTY` may call `Utils.TTY.Name` (dropping
         // the leading `Alire.`). Try prepending each ancestor prefix of the
         // file's own namespace and re-probing the expanded qualified name.
+        // After the direct qname probe, also chase one level of generic
+        // instantiation so that partially-qualified calls into instantiated
+        // packages (e.g. `Containers.Crate_Name_Sets.To_Set` → expanded to
+        // `Alire.Containers.Crate_Name_Sets.To_Set` → chased to
+        // `Ada.Containers.Indefinite_Ordered_Sets.To_Set`) resolve.
         if target.contains('.') {
             if let Some(own_pkg) = &file_ctx.file_namespace {
                 let parts: Vec<&str> = own_pkg.split('.').collect();
@@ -644,6 +672,15 @@ impl LanguageResolver for AdaResolver {
                             strategy: "ada_partial_qualification",
                             ..res
                         });
+                    }
+                    // Chase one level of instantiation on the expanded form.
+                    if let Some(chased) = chase_instantiation(&expanded, lookup) {
+                        if let Some(res) = probe_dotted_qname(&chased, edge_kind, lookup) {
+                            return Some(Resolution {
+                                strategy: "ada_partial_qualification",
+                                ..res
+                            });
+                        }
                     }
                 }
             }
