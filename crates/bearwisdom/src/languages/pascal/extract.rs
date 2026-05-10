@@ -62,8 +62,32 @@ fn visit_root(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // For complete units/programs, the root has children we iterate normally.
+    // For .inc fragments, three error-recovery variants apply:
+    //
+    //   Root is ERROR (Variants A/C): dispatch the root so try_extract_error_type_decl
+    //   can see all children (name-error + body children) in one call.
+    //
+    //   Root is 'root' with ERROR children (Variant B: interface/class where the
+    //   type keyword is inline in the same ERROR as identifier+kEq): collect all
+    //   root children and call try_extract_error_type_decl with the whole set so
+    //   the body siblings are accessible for member extraction.
+    if node.kind() == "ERROR" {
+        dispatch(node, src, symbols, refs, None);
+        return;
+    }
+
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
+    let root_children: Vec<Node> = node.children(&mut cursor).collect();
+
+    // Detect Variant B at the root level: at least one ERROR child starts with
+    // [identifier, kEq, type_keyword].  If found, group all children into a
+    // virtual container for try_extract_error_type_decl.
+    if try_extract_root_type_decls(&root_children, src, symbols, refs) {
+        return;
+    }
+
+    for child in root_children {
         dispatch(child, src, symbols, refs, None);
     }
 }
@@ -106,6 +130,17 @@ fn dispatch(
             }
         }
         "typeref" => extract_typeref(node, src, refs, parent_index),
+        "ERROR" => {
+            // When a .inc file contains `TypeName = class ...` without the surrounding
+            // `type` keyword, tree-sitter produces an ERROR node rather than declType →
+            // declClass. Try to recover the declaration; fall back to generic recursion.
+            if !try_extract_error_type_decl(node, src, symbols, refs, parent_index) {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    dispatch(child, src, symbols, refs, parent_index);
+                }
+            }
+        }
         _ => {
             // Recurse into containers.
             let mut cursor = node.walk();
@@ -115,6 +150,200 @@ fn dispatch(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Error-recovery helpers called from visit_root
+
+/// Called when the tree root has kind 'root' (not ERROR). Checks if the root
+/// children contain ERROR nodes with inline type keywords (Variant B pattern
+/// from try_extract_error_type_decl's documentation). Returns true when at
+/// least one type declaration was recovered and emitted, signalling that
+/// normal child iteration should be skipped.
+fn try_extract_root_type_decls(
+    root_children: &[Node],
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) -> bool {
+    let mut recovered = false;
+    let mut i = 0;
+    while i < root_children.len() {
+        let child = root_children[i];
+        if child.kind() == "ERROR" {
+            // Check if this is a name-error with inline type keyword (Variant B).
+            let mut nc = child.walk();
+            let nc_children: Vec<Node> = child.children(&mut nc).collect();
+            let is_name_err = nc_children.len() >= 3
+                && nc_children[0].kind() == "identifier"
+                && nc_children[1].kind() == "kEq"
+                && matches!(nc_children[2].kind(), "kClass" | "kInterface" | "kRecord");
+
+            if is_name_err {
+                let name = node_text(nc_children[0], src);
+                let type_kw = nc_children[2].kind();
+                let kind = match type_kw {
+                    "kClass" => SymbolKind::Class,
+                    "kInterface" => SymbolKind::Interface,
+                    "kRecord" => SymbolKind::Struct,
+                    _ => { i += 1; continue; }
+                };
+                if !name.is_empty() {
+                    let sig = first_line_of(child, src);
+                    let idx = symbols.len();
+                    symbols.push(make_symbol(
+                        name.clone(),
+                        name,
+                        kind,
+                        &child,
+                        Some(sig),
+                        None,
+                    ));
+                    // Recurse into the remaining root children for body content.
+                    for sibling in root_children.iter().skip(i + 1) {
+                        dispatch(*sibling, src, symbols, refs, Some(idx));
+                    }
+                    recovered = true;
+                    break; // one type declaration per root-level cluster
+                }
+            }
+        }
+        i += 1;
+    }
+    recovered
+}
+
+// ---------------------------------------------------------------------------
+// Error-recovery: TypeName = class/record/interface without 'type' keyword
+//
+// Pascal .inc files are fragments that belong inside a `type` block in the
+// parent .pas file. Parsed standalone, tree-sitter produces ERROR nodes.
+// Three AST variants arise depending on the presence of preprocessor guards
+// and the type keyword (class vs interface):
+//
+//  Variant A — class, no preprocessor:
+//    ERROR
+//      ERROR { identifier kEq }
+//      declProc { kClass ERROR... }
+//
+//  Variant B — interface (kInterface lands in the same ERROR as identifier):
+//    root
+//      ERROR { identifier kEq kInterface }
+//      ERROR { body... }
+//
+//  Variant C — class inside {$ifdef}/{$endif} guards:
+//    ERROR
+//      pp "{$ifdef ...}"
+//      ERROR { identifier kEq }
+//      declProc { kClass ... }
+//      pp "{$endif ...}"
+//
+// In all variants the type name is always in an ERROR node that starts with
+// [identifier, kEq, ...]. The type keyword (kClass/kInterface/kRecord) is
+// either inside that same ERROR or in a sibling node/subtree.
+// ---------------------------------------------------------------------------
+
+/// Attempt to recover a type declaration from an ERROR node produced when
+/// `TypeName = class/interface/record ...` appears without the surrounding
+/// `type` keyword (typical in Pascal .inc fragment files).
+///
+/// Returns `true` when a symbol was recovered; `false` when the node doesn't
+/// match any recognized pattern, deferring to generic recursion.
+fn try_extract_error_type_decl(
+    node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) -> bool {
+    let mut cursor = node.walk();
+    let children: Vec<Node> = node.children(&mut cursor).collect();
+
+    // Find the name-bearing ERROR sub-node: a node of kind ERROR whose
+    // first two children are [identifier, kEq].  It may be:
+    //   - `node` itself (Variant B: interface where kInterface is inline)
+    //   - a child of `node` (Variants A and C: class with or without {$ifdef})
+    let is_name_err = |n: &Node| -> bool {
+        let mut c = n.walk();
+        let ch: Vec<Node> = n.children(&mut c).collect();
+        ch.len() >= 2 && ch[0].kind() == "identifier" && ch[1].kind() == "kEq"
+    };
+
+    // Check if `node` itself is the name-error (Variant B).
+    let (name_err, search_in): (Node, &[Node]) = if is_name_err(&node) {
+        (node, &children)
+    } else {
+        // Look for the name-error among children, skipping pp nodes (Variant A/C).
+        let Some(found) = children.iter().find(|c| c.kind() == "ERROR" && is_name_err(c)) else {
+            return false;
+        };
+        (*found, &children)
+    };
+
+    let mut nec = name_err.walk();
+    let ne_children: Vec<Node> = name_err.children(&mut nec).collect();
+    let name_node = ne_children[0];
+
+    // Find the type keyword: first look inside the name-error (Variant B has
+    // kInterface there), then in sibling nodes (Variants A/C have kClass in
+    // a declProc sibling).
+    let type_kw: &'static str = {
+        let in_name_err = ne_children.iter().skip(2).find_map(|c| {
+            if matches!(c.kind(), "kClass" | "kInterface" | "kRecord") {
+                Some(c.kind())
+            } else {
+                None
+            }
+        });
+        if let Some(kw) = in_name_err {
+            kw
+        } else {
+            let in_sibling = search_in.iter().find_map(|c| {
+                if c.start_byte() <= name_node.start_byte() { return None; }
+                if matches!(c.kind(), "kClass" | "kInterface" | "kRecord") {
+                    return Some(c.kind());
+                }
+                let mut cur2 = c.walk();
+                for gc in c.children(&mut cur2) {
+                    if matches!(gc.kind(), "kClass" | "kInterface" | "kRecord") {
+                        return Some(gc.kind());
+                    }
+                }
+                None
+            });
+            let Some(kw) = in_sibling else { return false; };
+            kw
+        }
+    };
+
+    let name = node_text(name_node, src);
+    if name.is_empty() { return false; }
+
+    let kind = match type_kw {
+        "kClass" => SymbolKind::Class,
+        "kInterface" => SymbolKind::Interface,
+        "kRecord" => SymbolKind::Struct,
+        _ => return false,
+    };
+
+    let sig = first_line_of(node, src);
+    let idx = symbols.len();
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        kind,
+        &node,
+        Some(sig),
+        parent_index,
+    ));
+
+    // Recurse all children for member symbols and refs.  Generic recursion is
+    // appropriate here since the body content is already in ERROR subtrees.
+    for child in &children {
+        dispatch(*child, src, symbols, refs, Some(idx));
+    }
+    true
+}
+
 
 // ---------------------------------------------------------------------------
 // unit <Name>;  →  Namespace
@@ -882,3 +1111,7 @@ fn make_symbol(
 fn node_text(node: Node, src: &str) -> String {
     src[node.start_byte()..node.end_byte()].to_string()
 }
+
+#[cfg(test)]
+#[path = "extract_tests.rs"]
+mod extract_tests;
