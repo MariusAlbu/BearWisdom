@@ -187,6 +187,73 @@ fn walk_node(
             }
             walk_children(node, src, symbols, refs, parent_idx);
         }
+        "object_renaming_declaration" => {
+            // `Green_LED : GPIO_Point renames PC2;` — an object rename
+            // declares a new name for an existing object. Emit a Variable
+            // symbol with the type encoded in `signature` so the resolver
+            // can chain `Green_LED.Toggle` → `<GPIO_Point>.Toggle`. The
+            // grammar structure mirrors `object_declaration`: identifier(s)
+            // before the colon, type mark between colon and `renames`.
+            let mut cursor = node.walk();
+            let mut names: Vec<(Node, String)> = Vec::new();
+            let mut type_name: Option<String> = None;
+            let mut seen_colon = false;
+            let mut seen_renames = false;
+            for child in node.children(&mut cursor) {
+                let kind = child.kind();
+                if kind == ":" {
+                    seen_colon = true;
+                    continue;
+                }
+                if kind == "renames" {
+                    seen_renames = true;
+                    continue;
+                }
+                // Identifiers before the colon are the defining names.
+                if !seen_colon {
+                    if kind == "identifier" {
+                        let name = text(child, src);
+                        if !name.is_empty() {
+                            names.push((child, name));
+                        }
+                    }
+                    continue;
+                }
+                // After `renames`, the remaining nodes are the renamed object —
+                // skip them; only the type (before `renames`) matters.
+                if seen_renames {
+                    continue;
+                }
+                // Between colon and `renames` is the type mark / subtype indication.
+                if type_name.is_some() {
+                    continue;
+                }
+                if matches!(kind, "identifier" | "selected_component") {
+                    let t = text(child, src);
+                    if !t.is_empty() && !is_ada_mode_keyword(&t) {
+                        type_name = Some(t);
+                    }
+                } else if matches!(kind, "subtype_indication" | "subtype_mark" | "component_definition") {
+                    let mut cur = child.walk();
+                    for inner in child.children(&mut cur) {
+                        if matches!(inner.kind(), "identifier" | "selected_component") {
+                            let t = text(inner, src);
+                            if !t.is_empty() && !is_ada_mode_keyword(&t) {
+                                type_name = Some(t);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            for (n, name) in names {
+                let idx = push_sym(n, name, SymbolKind::Variable, symbols, parent_idx);
+                if let (Some(sym), Some(ty)) = (symbols.get_mut(idx), type_name.as_ref()) {
+                    sym.signature = Some(format!("type: {ty}"));
+                }
+            }
+            walk_children(node, src, symbols, refs, parent_idx);
+        }
         "object_declaration" | "parameter_specification" => {
             // `X : T;` / `X : T := init;` / `X : in out T;` etc. We emit a
             // Variable symbol per declared name with the type encoded into

@@ -5,12 +5,12 @@
       "assertions": {
         "min_resolution_rate": 92
       },
-      "code_chunks": 37634,
+      "code_chunks": 37683,
       "files": 1555,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 13788,
-      "internal_unresolved": 1126,
+      "internal_edges": 13802,
+      "internal_unresolved": 1112,
       "languages": {
         "ada": 467,
         "c": 2,
@@ -26,16 +26,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-alire",
       "perf": {
-        "end_ws_mb": 115,
+        "end_ws_mb": 114,
         "files_per_sec": 55,
-        "index_duration_ms": 28106
+        "index_duration_ms": 28143
       },
       "project": "ada-alire",
-      "resolution_rate": 92.45,
+      "resolution_rate": 92.54,
       "routes": 0,
-      "symbols": 16497,
+      "symbols": 16535,
       "unresolved_by_lang_kind": {
-        "ada.calls": 1099,
+        "ada.calls": 1085,
         "c.calls": 1,
         "javascript.calls": 2,
         "javascript.type_ref": 4,
@@ -46,14 +46,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 91
+        "min_resolution_rate": 93
       },
-      "code_chunks": 151121,
+      "code_chunks": 151903,
       "files": 1123,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 12795,
-      "internal_unresolved": 1212,
+      "internal_edges": 13046,
+      "internal_unresolved": 961,
       "languages": {
         "ada": 1015,
         "make": 1,
@@ -63,16 +63,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-drivers",
       "perf": {
-        "end_ws_mb": 167,
+        "end_ws_mb": 163,
         "files_per_sec": 110,
-        "index_duration_ms": 10239
+        "index_duration_ms": 10217
       },
       "project": "ada-drivers",
-      "resolution_rate": 91.35,
+      "resolution_rate": 93.14,
       "routes": 0,
-      "symbols": 70419,
+      "symbols": 71143,
       "unresolved_by_lang_kind": {
-        "ada.calls": 1197,
+        "ada.calls": 946,
         "python.calls": 14,
         "shell.calls": 1
       }
@@ -81,7 +81,7 @@
       "assertions": {
         "min_resolution_rate": 89
       },
-      "code_chunks": 1831,
+      "code_chunks": 1833,
       "files": 42,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -94,14 +94,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-septum",
       "perf": {
-        "end_ws_mb": 190,
-        "files_per_sec": 38,
-        "index_duration_ms": 1105
+        "end_ws_mb": 191,
+        "files_per_sec": 39,
+        "index_duration_ms": 1081
       },
       "project": "ada-septum",
       "resolution_rate": 89.34,
       "routes": 0,
-      "symbols": 1133,
+      "symbols": 1134,
       "unresolved_by_lang_kind": {
         "ada.calls": 111
       }

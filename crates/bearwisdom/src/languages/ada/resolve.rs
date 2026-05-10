@@ -524,20 +524,48 @@ impl LanguageResolver for AdaResolver {
         // field — look up `field_type_name(current_type.Segment)` and advance
         // the current type — until only the trailing method segment remains.
         // Depth is capped at 6 to avoid infinite cycles on malformed indexes.
+        //
+        // Variable scope searched:
+        //   1. in_file — local subprogram variables and parameters.
+        //   2. members_of(use'd packages) — package-level variables brought
+        //      into bare scope by `use` clauses (e.g. `use STM32.Board;`
+        //      makes the `Display` variable callable as `Display.Hidden_Buffer`).
         if target.contains('.') {
             let leading = target.split('.').next().unwrap_or("");
             let leading_lower = leading.to_lowercase();
             let suffix = &target[leading.len()..];
+
+            // Collect variable symbols from both in_file and use'd-package members.
+            // Store (type_string, symbol_id_unused) pairs; we only need the type.
+            let mut var_types: Vec<String> = Vec::new();
+
+            // Source 1: in_file variables.
             for sym in lookup.in_file(&file_ctx.file_path) {
-                if sym.kind != "variable" {
-                    continue;
-                }
-                if sym.name.to_lowercase() != leading_lower {
+                if sym.kind != "variable" || sym.name.to_lowercase() != leading_lower {
                     continue;
                 }
                 let Some(sig) = &sym.signature else { continue };
                 let Some(ty) = sig.strip_prefix("type: ") else { continue };
+                var_types.push(ty.to_string());
+            }
 
+            // Source 2: package-level variables brought into scope by wildcard imports.
+            for import in &file_ctx.imports {
+                if !import.is_wildcard {
+                    continue;
+                }
+                let Some(module_path) = &import.module_path else { continue };
+                for sym in lookup.members_of(module_path) {
+                    if sym.kind != "variable" || sym.name.to_lowercase() != leading_lower {
+                        continue;
+                    }
+                    let Some(sig) = &sym.signature else { continue };
+                    let Some(ty) = sig.strip_prefix("type: ") else { continue };
+                    var_types.push(ty.to_string());
+                }
+            }
+
+            for ty in &var_types {
                 // Resolve initial variable type to a set of candidate qnames.
                 let mut type_candidates: Vec<String> = Vec::new();
                 type_candidates.push(ty.to_string());

@@ -539,3 +539,108 @@ fn ancestor_pkg_instantiation_dispatch_resolves_child_call() {
     assert_eq!(res.unwrap().strategy, "ada_local_instantiation");
 }
 
+// ---------------------------------------------------------------------------
+// Use'd-package variable-type dispatch
+//
+// `use STM32.Board;` brings `Display` (typed Frame_Buffer) into scope.
+// `Display.Hidden_Buffer` should resolve via variable-type dispatch against
+// the imported package's variable, not just in_file variables.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn used_package_variable_type_dispatch_resolves_dotted_call() {
+    use std::sync::Arc as A;
+
+    struct WithInFile {
+        members: HashMap<String, Vec<SymbolInfo>>,
+        in_file_syms: Vec<SymbolInfo>,
+        empty: Vec<SymbolInfo>,
+        empty_reexports: Vec<(String, String)>,
+    }
+
+    impl SymbolLookup for WithInFile {
+        fn by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
+        fn members_of(&self, p: &str) -> &[SymbolInfo] {
+            self.members.get(p).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        }
+        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
+        fn has_in_namespace(&self, _: &str) -> bool { false }
+        fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.in_file_syms }
+        fn field_type_name(&self, _: &str) -> Option<&str> { None }
+        fn return_type_name(&self, _: &str) -> Option<&str> { None }
+        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
+        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
+        fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
+        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+    }
+
+    let mut members: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
+    let mut id = 1i64;
+
+    // STM32.Board has `Display` as a package-level variable typed `Frame_Buffer`.
+    let display_var = SymbolInfo {
+        id: { id += 1; id },
+        name: "Display".to_string(),
+        qualified_name: "STM32.Board.Display".to_string(),
+        kind: "variable".to_string(),
+        visibility: Some("public".to_string()),
+        file_path: A::from("boards/stm32/src/stm32-board.ads"),
+        scope_path: None,
+        package_id: None,
+        signature: Some("type: Framebuffer_OTM8009A.Frame_Buffer".to_string()),
+    };
+    members.entry("STM32.Board".to_string()).or_default().push(display_var);
+
+    // Framebuffer_OTM8009A has `Hidden_Buffer` as a function.
+    let hidden_buf = SymbolInfo {
+        id: { id += 1; id },
+        name: "Hidden_Buffer".to_string(),
+        qualified_name: "Framebuffer_OTM8009A.Hidden_Buffer".to_string(),
+        kind: "function".to_string(),
+        visibility: Some("public".to_string()),
+        file_path: A::from("src/framebuffer_otm8009a.ads"),
+        scope_path: None,
+        package_id: None,
+        signature: None,
+    };
+    members.entry("Framebuffer_OTM8009A.Frame_Buffer".to_string()).or_default().push(hidden_buf);
+
+    let fix = WithInFile {
+        members,
+        in_file_syms: Vec::new(), // no local variables — must come from use'd package
+        empty: Vec::new(),
+        empty_reexports: Vec::new(),
+    };
+
+    let file_ctx = FileContext {
+        file_path: "examples/shared/common/gui/lcd_std_out.adb".to_string(),
+        language: "ada".to_string(),
+        imports: vec![
+            ImportEntry {
+                imported_name: "STM32.Board".to_string(),
+                module_path: Some("STM32.Board".to_string()),
+                alias: None,
+                is_wildcard: true, // `use STM32.Board;`
+            },
+        ],
+        file_namespace: Some("LCD_Std_Out".to_string()),
+    };
+
+    let source_sym = make_extracted_sym("Clear_Screen", "LCD_Std_Out.Clear_Screen");
+    let extracted = make_extracted_ref("Display.Hidden_Buffer");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+
+    let res = AdaResolver.resolve(&file_ctx, &ref_ctx, &fix);
+    assert!(
+        res.is_some(),
+        "expected use'd-package variable type dispatch to resolve Display.Hidden_Buffer"
+    );
+}
+

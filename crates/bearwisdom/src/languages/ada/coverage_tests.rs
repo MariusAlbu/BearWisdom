@@ -395,6 +395,26 @@ fn nested_package_qualification_chains() {
 // Call-target whitespace normalization
 // ---------------------------------------------------------------------------
 
+/// `object_renaming_declaration` — `Green_LED : GPIO_Point renames PC2;` — must
+/// emit a Variable symbol with `signature = "type: GPIO_Point"` so the resolver
+/// can dispatch `Green_LED.Toggle` via variable-type dispatch exactly as it
+/// would for an `object_declaration`.
+#[test]
+fn object_renaming_emits_variable_with_type() {
+    let src = concat!(
+        "package body Board is\n",
+        "   Green_LED : GPIO_Point renames PC2;\n",
+        "end Board;\n"
+    );
+    let r = extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "Green_LED");
+    assert!(sym.is_some(), "expected Variable symbol for Green_LED from object_renaming_declaration");
+    let sym = sym.unwrap();
+    assert_eq!(sym.kind, SymbolKind::Variable, "expected Variable kind for Green_LED");
+    let sig = sym.signature.as_deref().unwrap_or("");
+    assert_eq!(sig, "type: GPIO_Point", "expected signature 'type: GPIO_Point', got {:?}", sig);
+}
+
 /// A `selected_component` that spans multiple lines produces a raw text with
 /// embedded newlines and indentation. The extractor must strip all whitespace
 /// so the stored target_name is a plain dotted name without embedded control
