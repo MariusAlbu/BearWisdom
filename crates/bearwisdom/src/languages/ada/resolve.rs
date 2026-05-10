@@ -348,19 +348,43 @@ impl LanguageResolver for AdaResolver {
         // variable-type path below, the leading segment is a Namespace symbol,
         // not a Variable. Probe `members_of(generic_source)` directly and via
         // `probe_dotted_qname` for the trailing method.
+        //
+        // Two candidate sources for the leading namespace:
+        //   1. `in_file` — symbols defined in the current compilation unit.
+        //   2. `members_of(file_namespace)` — members of the file's own package,
+        //      which includes instantiations from the sibling `.ads` spec (merged
+        //      at the index level under the same parent qname).
         if target.contains('.') {
             let leading = target.split('.').next().unwrap_or("");
             let leading_lower = leading.to_lowercase();
             let suffix = &target[leading.len()..];
+
+            // Collect candidate namespace-instantiation symbols from in_file + file pkg members.
+            let mut candidates: Vec<String> = Vec::new();
             for sym in lookup.in_file(&file_ctx.file_path) {
-                if sym.kind != "namespace" {
-                    continue;
+                if sym.kind == "namespace" && sym.name.to_lowercase() == leading_lower {
+                    if let Some(sig) = &sym.signature {
+                        if let Some(gs) = sig.strip_prefix("instantiates ") {
+                            candidates.push(gs.to_string());
+                        }
+                    }
                 }
-                if sym.name.to_lowercase() != leading_lower {
-                    continue;
+            }
+            if let Some(own_pkg) = &file_ctx.file_namespace {
+                for sym in lookup.members_of(own_pkg) {
+                    if sym.kind == "namespace" && sym.name.to_lowercase() == leading_lower {
+                        if let Some(sig) = &sym.signature {
+                            if let Some(gs) = sig.strip_prefix("instantiates ") {
+                                if !candidates.contains(&gs.to_string()) {
+                                    candidates.push(gs.to_string());
+                                }
+                            }
+                        }
+                    }
                 }
-                let Some(sig) = &sym.signature else { continue };
-                let Some(generic_src) = sig.strip_prefix("instantiates ") else { continue };
+            }
+
+            for generic_src in &candidates {
                 let rewritten = format!("{generic_src}{suffix}");
                 if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
                     return Some(Resolution {
@@ -368,7 +392,6 @@ impl LanguageResolver for AdaResolver {
                         ..res
                     });
                 }
-                // Also try members_of(generic_src) for the trailing segment.
                 let method = suffix.trim_start_matches('.').split('.').next_back().unwrap_or("");
                 let method_lower = method.to_lowercase();
                 for member in lookup.members_of(generic_src) {
