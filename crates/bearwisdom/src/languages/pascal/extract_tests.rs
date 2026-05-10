@@ -6,6 +6,33 @@ use super::extract;
 use crate::types::SymbolKind;
 
 // ---------------------------------------------------------------------------
+// Multiple sequential forward declarations (castle-fresh x3dnodes pattern)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn inc_fragment_multiple_forward_declarations() {
+    // {$ifdef} guard wrapping multiple `TypeName = class;` forward declarations,
+    // as seen in x3dnodes_initial_types.inc and similar files.
+    let source = r#"{$ifdef read_interface}
+  TX3DNodeList = class;
+  TX3DNode = class;
+  TAbstractGeometryNode = class;
+  TSFNode = class;
+{$endif read_interface}
+"#;
+    let result = extract(source);
+    let names: Vec<&str> = result.symbols.iter().map(|s| s.name.as_str()).collect();
+    for expected in &["TX3DNodeList", "TX3DNode", "TAbstractGeometryNode", "TSFNode"] {
+        assert!(
+            result.symbols.iter().any(|s| &s.name == expected && s.kind == SymbolKind::Class),
+            "expected class {} to be extracted; got: {:?}",
+            expected,
+            names
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Class extraction from .inc fragments (no 'type' keyword)
 // ---------------------------------------------------------------------------
 
