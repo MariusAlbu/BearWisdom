@@ -1,77 +1,51 @@
 // =============================================================================
-// pascal/keywords.rs — Pascal/Delphi/FPC primitive and built-in types
+// pascal/keywords.rs — Pascal/Delphi syntactic keywords
+//
+// This list contains only true grammar tokens — reserved words and
+// pseudo-identifiers that appear as syntactic elements in the Pascal
+// grammar, not in any library declaration. Library types, procedures,
+// and classes (RTL, VCL, LCL, SysUtils, etc.) are discovered by the
+// freepascal_runtime ecosystem walker and resolved via the symbol index.
 // =============================================================================
 
-/// Primitive and built-in type/function names for Pascal/Delphi/FPC.
+/// True Pascal/Delphi syntactic keywords — reserved words, directives,
+/// and pseudo-identifiers (Result, Self, inherited, nil, True, False)
+/// that the grammar treats as tokens rather than ordinary identifiers.
 pub(crate) const KEYWORDS: &[&str] = &[
-    // integer types
-    "Integer", "LongInt", "ShortInt", "SmallInt", "Cardinal",
-    "Word", "Byte", "Int64", "QWord",
-    // float types
-    "Real", "Double", "Extended", "Single", "Currency", "Comp",
-    // other primitives
-    "Boolean", "Char", "String", "AnsiString", "WideString",
-    "Pointer", "PChar", "PAnsiChar", "PWideChar",
-    "Variant", "OleVariant",
-    // FPC System unit additional scalar types (part of the language runtime)
-    "UTF8String", "UnicodeChar", "PUTF8Char",
-    "PByte", "PWord", "PCardinal", "PInteger", "PInt64", "PUInt64",
-    "PDWord", "PLongWord", "PLongInt", "PSmallInt", "PShortInt",
-    "PBoolean", "PPointer", "PPChar",
-    "TGUID", "PGUID",
-    "UInt", "UIntPtr", "IntPtr", "NativeInt", "NativeUInt",
-    "SizeInt", "SizeUInt", "PtrInt", "PtrUInt",
-    "TDateTime", "TDate", "TTime",
-    // interfaces
-    "IInterface", "IUnknown", "GUID", "HRESULT",
-    // VCL/LCL components
-    "TObject", "TComponent", "TForm", "TPanel", "TButton", "TLabel",
-    "TEdit", "TMemo", "TListBox", "TComboBox", "TStringList",
-    "TStream", "TFileStream", "TMemoryStream", "TStringStream",
-    "TThread", "TList", "TDictionary", "TQueue", "TStack",
-    // GTK/C FFI types
-    "gboolean", "gint", "guint", "gchar", "Pgchar", "gpointer",
-    "PPGError",
-    // OpenGL types
-    "GLenum", "GLuint", "GLint", "GLsizei", "GLfloat", "GLdouble", "GLvoid",
-    "TGLenum", "TGLint", "TGLuint", "TGLfloat",
-    // I/O
-    "WriteLn", "ReadLn", "Write", "Read",
-    // built-in procedures / functions
-    "Inc", "Dec", "High", "Low", "Length", "SetLength",
-    "Include", "Exclude",
-    "Copy", "Concat", "Pos", "Delete", "Insert",
-    "Trim", "IntToStr", "StrToInt", "FloatToStr", "StrToFloat",
-    "Format", "Assigned", "FreeAndNil",
-    "New", "Dispose", "GetMem", "FreeMem", "ReallocMem",
-    "Move", "FillChar", "CompareMem",
-    "SizeOf", "TypeOf",
-    "Ord", "Chr", "Pred", "Succ",
-    "Abs", "Round", "Trunc", "Frac", "Int",
-    "Sqr", "Sqrt", "Sin", "Cos", "Ln", "Exp",
-    "Random", "Randomize", "Ceil", "Floor",
-    "Assert", "Halt", "Exit", "Break", "Continue",
-    "SetString", "LoadResString",
-    // String / case helpers
-    "TrimLeft", "TrimRight", "UpperCase", "LowerCase",
-    "CompareStr", "CompareText",
-    // Filesystem helpers (SysUtils)
-    "FileExists", "DirectoryExists",
-    "ExtractFileName", "ExtractFilePath", "ExpandFileName",
-    "IncludeTrailingPathDelimiter",
-    // DateTime helpers
-    "Now", "Date", "Time", "FormatDateTime",
-    "EncodeDate", "DecodeDate",
-    // VCL Dialogs
-    "ShowMessage", "MessageDlg", "InputBox",
-    // VCL globals
-    "Application", "Screen", "Sender",
-    // language keywords that appear as identifiers in error-recovery paths
-    "const", "var", "out", "array", "of", "set", "type",
-    "begin", "end", "then", "do", "to", "downto",
-    // keywords used as references
-    "Result", "Self", "inherited", "nil", "True", "False",
-    // From former builtin_type_names:
-    "UInt64", "LongWord", "ByteBool", "WordBool", "LongBool",
-    "WideChar", "AnsiChar", "UnicodeString", "ShortString", "TClass",
+    // Program structure
+    "program", "unit", "library", "package",
+    "uses", "interface", "implementation", "initialization", "finalization",
+    // Declarations
+    "var", "const", "type", "label", "threadvar", "resourcestring",
+    "procedure", "function", "constructor", "destructor", "operator",
+    "class", "object", "record", "interface",
+    "property", "published", "public", "protected", "private", "strict",
+    "abstract", "virtual", "override", "overload", "reintroduce",
+    "dynamic", "message", "static", "inline", "assembler",
+    "external", "forward", "stdcall", "cdecl", "pascal", "register",
+    "safecall", "winapi",
+    // Type modifiers
+    "array", "of", "set", "file", "string",
+    "packed", "dispinterface",
+    "generic", "specialize",
+    // Control flow
+    "begin", "end",
+    "if", "then", "else",
+    "case", "of",
+    "while", "do",
+    "repeat", "until",
+    "for", "to", "downto",
+    "with",
+    "goto",
+    // Exception handling
+    "try", "except", "finally", "raise", "on",
+    // Boolean / logic operators (appear as keywords in the grammar)
+    "and", "or", "not", "xor", "in", "is", "as",
+    "div", "mod", "shl", "shr",
+    // Pseudo-identifiers that the grammar treats as keywords
+    "nil", "True", "False",
+    "Self", "inherited", "Result",
+    // Compiler-directive-adjacent keywords
+    "out", "default", "name", "index", "read", "write",
+    "stored", "nodefault",
 ];

@@ -114,14 +114,49 @@ impl LanguageResolver for PascalResolver {
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        // The engine's keyword set is case-sensitive but Pascal identifiers
-        // are case-insensitive.  A ref to `SIZEOF` or `fillchar` should
-        // classify as a primitive just like `SizeOf` or `FillChar`.
+        // Pascal identifiers are case-insensitive; fold both sides so that
+        // `SIZEOF`, `fillchar`, etc. classify identically to `SizeOf`.
         let target_lower = ref_ctx.extracted_ref.target_name.to_lowercase();
         let keywords = super::keywords::KEYWORDS;
         if keywords.iter().any(|k| k.to_lowercase() == target_lower) {
             return Some("primitive".to_string());
         }
+        None
+    }
+
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        // Keyword check first (does not need the index).
+        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
+            return Some(ns);
+        }
+
+        // Classify bare RTL/VCL/LCL calls that resolve to the FPC runtime
+        // walker's ext:pascal: virtual paths. Pascal is case-insensitive, so
+        // check by_name with both the original casing and the lowercased form;
+        // FPC source files store identifiers in canonical mixed case (e.g.
+        // `WriteLn`) while project code often preserves that casing too.
+        let target = &ref_ctx.extracted_ref.target_name;
+        let target_lower = target.to_lowercase();
+
+        // Probe with the original casing first (common case: project code
+        // mirrors FPC canonical casing), then with the fully-lowercased form
+        // (covers callers that write `writeln`, `integer`, etc.).
+        for probe in [target.as_str(), target_lower.as_str()].iter().copied() {
+            for sym in lookup.by_name(probe) {
+                if sym.file_path.starts_with("ext:pascal:")
+                    && sym.name.to_lowercase() == target_lower
+                {
+                    return Some("fpc-runtime".to_string());
+                }
+            }
+        }
+
         None
     }
 }
