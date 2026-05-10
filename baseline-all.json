@@ -3366,14 +3366,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 71
+        "min_resolution_rate": 92
       },
       "code_chunks": 2821,
       "files": 185,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 4955,
-      "internal_unresolved": 1934,
+      "internal_edges": 6256,
+      "internal_unresolved": 539,
       "languages": {
         "dockerfile": 1,
         "haskell": 174,
@@ -3385,30 +3385,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/haskell-hadolint",
       "perf": {
-        "end_ws_mb": 57,
-        "files_per_sec": 58,
-        "index_duration_ms": 3187
+        "end_ws_mb": 79,
+        "files_per_sec": 29,
+        "index_duration_ms": 6350
       },
       "project": "haskell-hadolint",
-      "resolution_rate": 71.93,
+      "resolution_rate": 92.07,
       "routes": 0,
       "symbols": 1919,
       "unresolved_by_lang_kind": {
-        "haskell.calls": 1928,
+        "haskell.calls": 533,
         "nix.calls": 5,
         "shell.calls": 1
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 87
+        "min_resolution_rate": 91
       },
       "code_chunks": 44494,
       "files": 1783,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 87941,
-      "internal_unresolved": 12547,
+      "internal_edges": 91314,
+      "internal_unresolved": 7978,
       "languages": {
         "c": 4,
         "css": 1,
@@ -3431,23 +3431,23 @@
       },
       "path": "F:/Work/Projects/TestProjects/haskell-pandoc",
       "perf": {
-        "end_ws_mb": 144,
-        "files_per_sec": 28,
-        "index_duration_ms": 64192
+        "end_ws_mb": 163,
+        "files_per_sec": 25,
+        "index_duration_ms": 70088
       },
       "project": "haskell-pandoc",
-      "resolution_rate": 87.51,
+      "resolution_rate": 91.97,
       "routes": 0,
       "symbols": 28419,
       "unresolved_by_lang_kind": {
         "c.calls": 1,
         "c.type_ref": 20,
-        "haskell.calls": 11688,
+        "haskell.calls": 7128,
         "html.calls": 55,
         "javascript.calls": 189,
         "javascript.type_ref": 5,
         "jupyter.calls": 2,
-        "lua.calls": 523,
+        "lua.calls": 514,
         "nix.calls": 43,
         "python.type_ref": 1,
         "shell.calls": 20
@@ -3455,14 +3455,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 73
+        "min_resolution_rate": 93
       },
       "code_chunks": 11837,
       "files": 231,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 13924,
-      "internal_unresolved": 5061,
+      "internal_edges": 17550,
+      "internal_unresolved": 1311,
       "languages": {
         "css": 1,
         "dockerfile": 1,
@@ -3479,19 +3479,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/haskell-postgrest",
       "perf": {
-        "end_ws_mb": 104,
-        "files_per_sec": 18,
-        "index_duration_ms": 12897
+        "end_ws_mb": 118,
+        "files_per_sec": 16,
+        "index_duration_ms": 14711
       },
       "project": "haskell-postgrest",
-      "resolution_rate": 73.34,
+      "resolution_rate": 93.05,
       "routes": 0,
       "symbols": 6587,
       "unresolved_by_lang_kind": {
-        "haskell.calls": 4782,
-        "haskell.implements": 28,
+        "haskell.calls": 1057,
+        "haskell.implements": 4,
         "nix.calls": 236,
-        "nix.imports": 1,
         "python.type_ref": 3,
         "shell.calls": 6,
         "sql.type_ref": 5

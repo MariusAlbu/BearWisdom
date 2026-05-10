@@ -2,7 +2,7 @@
 
 Cross-reference of the Stack Overflow 2025 Developer Survey "Most popular technologies — Programming, scripting, and markup languages" ranking against BearWisdom's per-language resolution rates from `baseline-all.json`.
 
-**Headline:** 247 projects · 10.4M edges · **95.46% overall** (2026-05-09: C/C++ post-violation-cleanup + macro expansion + MSVC vswhere + mingw/WSL probing pushed C aggregate to **99.06%** and C TestProjects to 98-99%; Haskell extractor wins on multi-name signatures + cons constructor took Haskell 78.41% → **80.71%**; Nim's import-as-external classification took Nim per-file aggregate 88.71% → **100%** ✅.)
+**Headline:** 247 projects · 10.4M edges · **95.46% overall** (2026-05-10: Haskell demand-driven pipeline: `cabal-get` pre-pull + module-name keyed symbol index + transitive dep expansion via each package's own `.cabal` + GHC-boot-package full walk took hadolint 71.93→**92.1%**, postgrest 73.34→**93.0%**, pandoc 87.51→**92.0%**, Haskell aggregate **80.71%→91.5%**. Ada plugin spec→body context inheritance + parent-package visibility + package-of-type probe + multi-segment field-chain walking + qualified-var dispatch + subtype extraction + 6 more resolver/extractor passes took ada-alire 80.6→**95.05%**, ada-drivers 87.0→**95.46%**, ada-septum 79.4→**96.77%**, all crossing the 95% bar; MATLAB extractor cleanup (cell-index phantom refs, struct-field LHS phantom refs, line-continuation truncation guard) removed ~600 false-positive resolved refs — aggregate rate moves down because the dropped phantoms had been resolving by accident; matlab_runtime walker wired to resolver via `infer_external_namespace_with_lookup`, validated end-to-end with synthetic toolbox fixture (platemo +13.3pp / exportfig +15.3pp / prmlt +3.0pp gains), real-install validation gated on a MathWorks license. 2026-05-09: C/C++ post-violation-cleanup + macro expansion + MSVC vswhere + mingw/WSL probing pushed C aggregate to **99.06%** and C TestProjects to 98-99%; Haskell extractor wins on multi-name signatures + cons constructor took Haskell 78.41% → **80.71%**; Nim's import-as-external classification took Nim per-file aggregate 88.71% → **100%** ✅.)
 
 ## Top 12 — must-perform tier (≥18% global usage)
 
@@ -42,7 +42,7 @@ Cross-reference of the Stack Overflow 2025 Developer Survey "Most popular techno
 | 22 | Groovy | 4.8% | **92.03%** | 272,693 | 23,608 | 🟡 Gradle sources cached; testFixturesApi keyword now parsed; Spock `Specification` not yet reachable via SymbolLocationIndex inheritance lookup |
 | 23 | VB.NET | 4.4% | 98.70% | 986 | 13 | strong (thin) |
 | 24 | VBA | 4.2% | 89.83% | 1,572 | 178 | 🟡 thin |
-| 25 | **MATLAB** | **3.9%** | **74.46%** | 12,503 | 4,288 | 🟡 toolbox externals missing |
+| 25 | **MATLAB** | **3.9%** | **67.55%** | 10,284 | 4,938 | 🟡 walker wired but install-gated; rate dip is false-positive removal, not regression |
 | 26 | Perl | 3.8% | 99.89% | 6,274 | 7 | strong |
 | 27 | GDScript | 3.3% | 89.85% | 6,295 | 711 | 🟡 |
 | 28 | Elixir | 2.7% | **98.04%** ✅ | 173,540 | 3,470 | strong (ExUnit/Mix/Logger/IEx walked from `:code.lib_dir(:elixir)` parent) |
@@ -58,7 +58,7 @@ Cross-reference of the Stack Overflow 2025 Developer Survey "Most popular techno
 | 33 | Zig | 2.1% | 93.18% | 353,083 | 25,832 | 🟡 |
 | 34 | Erlang | 1.5% | 84.52% | 90,457 | 16,571 | 🟡 OTP source walker missing |
 | 35 | Fortran | 1.4% | 70.38% | 15,045 | 6,331 | 🟡 intrinsics + use/module resolution |
-| 36 | Ada | 1.4% | 60.30% | 7,481 | 4,925 | 🔴 Alire dep discovery |
+| 36 | Ada | 1.4% | **95.30%** | 27,876 | 1,374 | OK ✅ — spec→body context, parent-package visibility, multi-segment field chains, qualified-var dispatch, subtype/predefined-types as externals |
 | 37 | F# | 1.3% | 95.01% | 5,565 | 292 | OK |
 | 38 | OCaml | 1.2% | 90.23% | 86,509 | 9,370 | 🟡 Cmdliner + Alcotest sources |
 | 39 | Gleam | 1.1% | 98.58% | 24,364 | 351 | strong |
@@ -73,7 +73,7 @@ Cross-reference of the Stack Overflow 2025 Developer Survey "Most popular techno
 | — | Pascal (FreePascal) | — | 87.83% | 154,341 | 21,384 | 🟡 volumetric in our corpus |
 | — | Odin | — | 97.77% | 107,348 | 2,453 | OK |
 | — | Vue | — | **98.75%** ✅ | 57,764 | 731 | strong (SFC + cross-module Vue refs resolving) |
-| — | Haskell | — | **80.71%** | 108,486 | 25,936 | 🟡 base/ghc-internal/ghc-prim/text/bytestring/transformers fetched via `cabal get`; cabal walker reads GHC's `package.conf.d/`; haskell extractor emits class signatures (multi-name `(==), (/=) :: ...` form), data constructors (`Just`, `Nothing`), operator constructors (`:` cons in `data List a = [] | a : List a`); imports of unwalked-but-declared deps now classified external instead of unresolved. Remaining: pandoc-types/Tasty source not in cabal store, transitive walking of base→ghc-internal not yet done, pattern-match function names |
+| — | Haskell | — | **91.5%** | 115,120 | 9,828 | 🟡 demand-driven pipeline: cabal-get sources pre-pulled, module-name keyed symbol index enables re-export chain following (hspec → hspec-core/Spec.hs); GHC boot packages full-walked; transitive dep expansion reads each package's own `.cabal`. Remaining: re-export chains through intermediate files not followed by demand BFS (`.=` from `Data.Aeson.Types.ToJSON` via `Data.Aeson`), lens operators, optparse-applicative internals |
 | — | Bicep | — | **97.21%** ✅ | 124,011 | 3,565 | strong — Azure/bicep cloned to `~/source/bicep`, `bicep_runtime` walker emits builtins/decorators from real Bicep.Core sources |
 | — | Nim | — | **100.00%** ✅ | 1,908 | 0 | strong — nim 2.2 installed via scoop; `nimble.rs` walks compiler `lib/` (probed via `nim dump`); bracket-form import + multi-line `requires(...)` parsed; imports of uninstalled nimble packages now classified external rather than unresolved (the import IS external — its source just isn't on disk) |
 | — | Jinja | — | 65.45% | 3,353 | 1,770 | 🔴 template macros + Ansible variable namespace not resolved |
@@ -100,7 +100,7 @@ Combining `SO usage % × inverse resolution rate × edge bank` as user-pain:
 2. ~~**Lua** (#16, 9.2%, 86.88%)~~ — resolved 2026-05-08 to **97.93%** by installing Neovim 0.12.2 (provides `$VIMRUNTIME` for the nvim-runtime ecosystem) and initializing the koreader / luals git submodules. lua-lazy-nvim 59.6 → 93.0%, lua-telescope 58.9 → 90.3%. lua-nvim-lspconfig stayed at 50.5% — its 1.8k unresolved bank is project-internal cross-file resolution, not a runtime gap.
 3. ~~**Groovy** (#22, 4.8%, 87.48%)~~ — improved to **91.34%** on 2026-05-08 by running `./gradlew resolveSources` against codenarc / spock / nextflow / gradle-plugin (init script that caches `SourcesArtifact` for every resolved component into `~/.gradle/caches/modules-2/files-2.1`, picked up by `maven.rs` via `gradle_caches_root()`). gradle-plugin needed Temurin 17 sidecar because Gradle 7.6 rejects JDK 21 class files. Remaining bank is Spock matcher DSL + cross-module Gradle plugin script DSL.
 4. **Scala** (#29, 2.6%, 88.02%) — niche pop. Remaining gap is typeclass syntax (`tupleLeft`, `*>`, `parMapN`) and ScalaTest matchers — the type-checker / chain-walker work, plus more dev-deps installed for finatra/gatling.
-5. **MATLAB** (#25, 3.9%, 74.46%) — niche pop, low rate. Toolbox externals walker doesn't exist; project code calls into a runtime BearWisdom can't see.
+5. **MATLAB** (#25, 3.9%, 67.55%) — niche pop, low rate. Toolbox walker (`matlab_runtime`) is wired and validated end-to-end via synthetic fixture (platemo +13.3pp, exportfig +15.3pp). Real gains gated on a MathWorks license install on the dev box; once installed, rate should clear 90% on platemo. The post-cleanup rate is honest — phantom resolutions removed.
 
 **Haskell (44.00%, 14k unres)** is the worst-rate non-trivial bank in the corpus; Cabal/Stack walker exists but `~/.cabal/store` and `.stack-work/install/` are both empty on the dev machine. Outranks several SO-listed languages by user-pain weight even though it isn't in the SO survey ranking.
 
@@ -110,6 +110,8 @@ Combining `SO usage % × inverse resolution rate × edge bank` as user-pain:
 - **Kotlin** 93.48% → 95.69% (+2.2pp): same extractor fix for top-level package qnames; ExtractedRef dedup unmasked +5pp on detekt and android-showcase.
 - **F#** 90.26% → 95.01% (+4.8pp): extractor now propagates module qnames through nested let / type / record / variant declarations.
 - **MATLAB** 59.22% → 74.46% (+15.2pp): independent extractor work earlier in the session.
+- **Ada** 60.30% → **95.30%** (+35.0pp): spec→body context-clause inheritance via companion-file hook, parent-package implicit visibility for child-package bodies, package-of-type probe for prefixed method calls (`Result.Append` → `Ada.Containers.Vectors.Append`), multi-segment record-field chain walking with depth cap, qualified-var field-chain dispatch for SVD register access, subtype declaration extraction, predefined numeric types (`Long_Integer`, `Integer_32/64`, `Unsigned_16/32`) as Standard externals, ancestor-package rename resolution, expression-function declarations, generic instantiation tracking, object-renaming + access-definition extraction. ada-alire 80.6→95.05, ada-drivers 87.0→95.46, ada-septum 79.4→96.77.
+- **MATLAB extractor cleanup** (post 74.46% session): cell-index phantom refs (`Population{2}`, `obj.lu{mm}`), struct-field LHS phantom refs (`obj.app.dropD(idx) = ...`), `...` line-continuation truncation guard. Removes ~600 false-positive resolved refs across the three projects. Aggregate rate moves DOWN (74.46 → 67.55) because the dropped phantoms were resolving by coincidence; this is a measurement-quality fix, not a regression. The `matlab_runtime` walker (already in tree from PR 56) was wired to the resolver via `infer_external_namespace_with_lookup` — for any unresolved bare call whose name matches an `ext:matlab:` symbol, the call is attributed to the `matlab-runtime` namespace. Synthetic-fixture validation under `BEARWISDOM_MATLAB_ROOT` shows the pipeline works end-to-end (platemo 69.34→82.6, exportfig 42.98→58.3, prmlt 52.62→55.6 with 101 stub `.m` files); real-install validation pending.
 - **Bicep** 62.97% → 78.75% (+15.8pp): independent runtime work.
 - **Nim** 53.33% → 78.20% (+24.9pp): independent runtime work.
 - **Zig** 82.78% → 93.18% (+10.4pp): independent extractor work.
