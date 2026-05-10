@@ -5479,14 +5479,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 90
+        "min_resolution_rate": 92
       },
       "code_chunks": 449223,
       "files": 3857,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 276899,
-      "internal_unresolved": 29258,
+      "internal_edges": 277888,
+      "internal_unresolved": 22971,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -5514,28 +5514,28 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 283,
-        "files_per_sec": 13,
-        "index_duration_ms": 307171
+        "end_ws_mb": 273,
+        "files_per_sec": 10,
+        "index_duration_ms": 376116
       },
       "project": "pascal-castle-fresh",
-      "resolution_rate": 90.44,
+      "resolution_rate": 92.36,
       "routes": 0,
       "symbols": 258437,
       "unresolved_by_lang_kind": {
         "c.calls": 23,
-        "c.type_ref": 742,
+        "c.type_ref": 750,
         "cmake.type_ref": 92,
-        "cpp.calls": 631,
+        "cpp.calls": 715,
         "cpp.inherits": 4,
         "cpp.instantiates": 16,
-        "cpp.type_ref": 2771,
-        "java.calls": 13,
+        "cpp.type_ref": 2936,
+        "java.calls": 40,
         "java.instantiates": 6,
         "java.type_ref": 140,
         "matlab.calls": 59,
-        "pascal.calls": 24682,
-        "pascal.inherits": 43,
+        "pascal.calls": 18109,
+        "pascal.inherits": 45,
         "php.calls": 1,
         "scss.calls": 1,
         "shell.calls": 34
@@ -5543,14 +5543,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 87
+        "min_resolution_rate": 95
       },
       "code_chunks": 180420,
       "files": 1046,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 101953,
-      "internal_unresolved": 13949,
+      "internal_edges": 102231,
+      "internal_unresolved": 4478,
       "languages": {
         "c": 6,
         "cpp": 2,
@@ -5568,32 +5568,32 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-doublecmd",
       "perf": {
-        "end_ws_mb": 301,
+        "end_ws_mb": 235,
         "files_per_sec": 7,
-        "index_duration_ms": 141006
+        "index_duration_ms": 153775
       },
       "project": "pascal-doublecmd",
-      "resolution_rate": 87.96,
+      "resolution_rate": 95.8,
       "routes": 0,
       "symbols": 104282,
       "unresolved_by_lang_kind": {
         "c.calls": 2,
         "c.type_ref": 73,
-        "pascal.calls": 13832,
-        "pascal.inherits": 13,
+        "pascal.calls": 4352,
+        "pascal.inherits": 22,
         "shell.calls": 29
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 87
+        "min_resolution_rate": 89
       },
       "code_chunks": 61329,
       "files": 187,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 31930,
-      "internal_unresolved": 4674,
+      "internal_edges": 31944,
+      "internal_unresolved": 3620,
       "languages": {
         "html": 1,
         "json": 4,
@@ -5604,18 +5604,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-heidisql",
       "perf": {
-        "end_ws_mb": 306,
+        "end_ws_mb": 206,
         "files_per_sec": 2,
-        "index_duration_ms": 86952
+        "index_duration_ms": 80731
       },
       "project": "pascal-heidisql",
-      "resolution_rate": 87.23,
+      "resolution_rate": 89.82,
       "routes": 0,
       "symbols": 31418,
       "unresolved_by_lang_kind": {
-        "pascal.calls": 4527,
-        "pascal.inherits": 31,
-        "php.calls": 113,
+        "pascal.calls": 3463,
+        "pascal.inherits": 32,
+        "php.calls": 122,
         "php.instantiates": 3
       }
     },

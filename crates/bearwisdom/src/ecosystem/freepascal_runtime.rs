@@ -171,17 +171,18 @@ fn discover_freepascal_roots() -> Vec<ExternalDepRoot> {
                     requested_imports: Vec::new(),
                 });
             }
-            // FCL packages (XML, registry, fpvectorial, ...).
-            let packages = source.join("packages");
-            if packages.is_dir() {
-                roots.push(ExternalDepRoot {
-                    module_path: "fpc-packages".to_string(),
-                    version: String::new(),
-                    root: packages,
-                    ecosystem: LEGACY_ECOSYSTEM_TAG,
-                    package_id: None,
-                    requested_imports: Vec::new(),
-                });
+            // FPC stdlib packages (winunits-base, fcl-*, gtk2, cocoaint, x11, ...).
+            // Each package under packages/<name>/src/ is emitted as a separate
+            // ExternalDepRoot so the module_path namespaces package symbols
+            // distinctly (fpc-pkg-winunits-base, fpc-pkg-fcl-base, ...).
+            //
+            // Platform-specific packages that are large and irrelevant on the
+            // current host are skipped: cocoaint on non-macOS, x11/gtk2 on
+            // Windows/macOS, winunits-* on Linux/macOS. Cross-platform packages
+            // (fcl-*, rtl-*, paszlib, hash, ...) are always walked.
+            let packages_dir = source.join("packages");
+            if packages_dir.is_dir() {
+                emit_package_roots(&packages_dir, &mut roots);
             }
         }
     }
@@ -258,6 +259,64 @@ fn lazarus_install_root() -> Option<PathBuf> {
         ]
     };
     candidates.into_iter().find(|p| p.is_dir())
+}
+
+/// Enumerate `packages_dir` and push one ExternalDepRoot per package whose
+/// `/src/` subdirectory exists. Platform-specific packages that are large and
+/// irrelevant on the current host are skipped to avoid indexing thousands of
+/// files that the project cannot use.
+fn emit_package_roots(packages_dir: &Path, roots: &mut Vec<ExternalDepRoot>) {
+    let Ok(entries) = std::fs::read_dir(packages_dir) else {
+        return;
+    };
+    let mut pkg_names: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    pkg_names.sort();
+
+    for name in &pkg_names {
+        // Skip packages whose platform does not match the current host.
+        if is_platform_excluded(name) {
+            continue;
+        }
+        let src = packages_dir.join(name).join("src");
+        if !src.is_dir() {
+            continue;
+        }
+        roots.push(ExternalDepRoot {
+            module_path: format!("fpc-pkg-{name}"),
+            version: String::new(),
+            root: src,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        });
+    }
+}
+
+/// Returns true when a package is large, platform-specific, and irrelevant
+/// on the current host. Cross-platform packages always return false.
+fn is_platform_excluded(pkg_name: &str) -> bool {
+    // Cocoa / macOS bindings: only useful on macOS.
+    if matches!(pkg_name, "cocoaint" | "iosxlocale" | "objcrtl" | "univint") {
+        return !cfg!(target_os = "macos");
+    }
+    // X11 / GTK bindings: only useful on Linux/BSD.
+    if matches!(pkg_name, "x11" | "gtk1" | "gtk2" | "fpgtk" | "gnome1" | "ggi" | "svgalib" | "ptc") {
+        return !cfg!(target_os = "linux") && !cfg!(target_os = "freebsd");
+    }
+    // Win32 / Win CE bindings: only useful on Windows.
+    if matches!(pkg_name, "winunits-base" | "winunits-jedi" | "winceunits") {
+        return !cfg!(target_os = "windows");
+    }
+    // AROS / AmigaOS / MorphOS / Palm / DOS units: never relevant on a modern host.
+    if matches!(pkg_name, "arosunits" | "ami-extra" | "amunits" | "os2units" | "os4units"
+        | "morphunits" | "tosunits" | "palmunits" | "libgbafpc" | "libndsfpc" | "libogcfpc") {
+        return true;
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------

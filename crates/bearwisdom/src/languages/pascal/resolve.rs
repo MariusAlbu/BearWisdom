@@ -137,17 +137,31 @@ impl LanguageResolver for PascalResolver {
         }
 
         // Classify bare RTL/VCL/LCL calls that resolve to the FPC runtime
-        // walker's ext:pascal: virtual paths. Pascal is case-insensitive, so
-        // check by_name with both the original casing and the lowercased form;
-        // FPC source files store identifiers in canonical mixed case (e.g.
-        // `WriteLn`) while project code often preserves that casing too.
+        // walker's ext:pascal: virtual paths. Pascal is case-insensitive but
+        // FPC source files use canonical mixed case (e.g. `NativeInt`, `HRESULT`)
+        // while project code may use any casing variant. by_name is an exact
+        // (case-sensitive) lookup, so we probe multiple forms:
+        //   - original casing from the project ref
+        //   - fully lowercased (finds all-lowercase defs)
+        //   - first-char-uppercased (finds TitleCase defs like `Integer`)
+        //   - fully uppercased (finds ALLCAPS defs like `HRESULT`)
         let target = &ref_ctx.extracted_ref.target_name;
         let target_lower = target.to_lowercase();
+        let target_upper = target.to_uppercase();
+        let target_title: String = {
+            let mut c = target.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + &target_lower[f.len_utf8()..],
+            }
+        };
 
-        // Probe with the original casing first (common case: project code
-        // mirrors FPC canonical casing), then with the fully-lowercased form
-        // (covers callers that write `writeln`, `integer`, etc.).
-        for probe in [target.as_str(), target_lower.as_str()].iter().copied() {
+        for probe in [
+            target.as_str(),
+            target_lower.as_str(),
+            target_title.as_str(),
+            target_upper.as_str(),
+        ] {
             for sym in lookup.by_name(probe) {
                 if sym.file_path.starts_with("ext:pascal:")
                     && sym.name.to_lowercase() == target_lower
@@ -176,8 +190,25 @@ pub(super) fn resolve_pascal_wildcard(
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
 ) -> Option<Resolution> {
-    // by_name is case-sensitive; look up with the original casing.
-    let by_name = lookup.by_name(target_orig);
+    // by_name is case-sensitive. Pascal is case-insensitive, so probe multiple
+    // casing forms: original, lowercase, first-char-uppercase (TitleCase), and
+    // all-uppercase. This covers refs like `integer` (→ `Integer` in FPC source)
+    // and `hresult` (→ `HRESULT` in FPC source).
+    let target_upper = target_orig.to_uppercase();
+    let target_title: String = {
+        let mut c = target_orig.chars();
+        match c.next() {
+            None => String::new(),
+            Some(f) => f.to_uppercase().collect::<String>() + &target_lower[f.len_utf8()..],
+        }
+    };
+
+    let probes: [&str; 4] = [
+        target_orig,
+        target_lower,
+        target_title.as_str(),
+        target_upper.as_str(),
+    ];
 
     for import in &file_ctx.imports {
         if !import.is_wildcard {
@@ -188,20 +219,22 @@ pub(super) fn resolve_pascal_wildcard(
         };
         let mod_lower = module_path.to_lowercase();
 
-        for sym in by_name {
-            if sym.name.to_lowercase() != target_lower {
-                continue;
-            }
-            if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                continue;
-            }
-            if pascal_stem_matches(&sym.file_path, &mod_lower) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "pascal_wildcard_import",
-                    resolved_yield_type: None,
-                });
+        for probe in probes {
+            for sym in lookup.by_name(probe) {
+                if sym.name.to_lowercase() != target_lower {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                if pascal_stem_matches(&sym.file_path, &mod_lower) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.95,
+                        strategy: "pascal_wildcard_import",
+                        resolved_yield_type: None,
+                    });
+                }
             }
         }
     }
