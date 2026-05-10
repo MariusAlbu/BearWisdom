@@ -612,3 +612,201 @@ fn ref_interface_extends_emits_inherits() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// 2-space indent extraction + inner-class attribution
+// ---------------------------------------------------------------------------
+
+/// Methods at 2-space indent (class at col 0) are extracted with correct scope_path.
+///
+/// The tree-sitter-groovy grammar sometimes misses `private void` / `static boolean`
+/// declarations that the supplemental scanner must recover.
+#[test]
+fn symbol_two_space_private_method_is_extracted() {
+    let src = "package com.example\n\
+               class Utils {\n\
+               \n\
+               \x20\x20static boolean isAndroid(Project p) {\n\
+               \x20\x20\x20\x20return false\n\
+               \x20\x20}\n\
+               \n\
+               \x20\x20private void checkReady() {\n\
+               \x20\x20\x20\x20// no-op\n\
+               \x20\x20}\n\
+               }";
+    let r = extract(src);
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        r.symbols.iter().any(|s| s.name == "isAndroid" && s.kind == SymbolKind::Method),
+        "expected Method isAndroid at 2-space indent; symbols={:?}", names
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "checkReady" && s.kind == SymbolKind::Method),
+        "expected Method checkReady at 2-space indent; symbols={:?}", names
+    );
+    // scope_path must point to the outer class, not an inner class
+    for sym in r.symbols.iter().filter(|s| s.name == "isAndroid" || s.name == "checkReady") {
+        assert_eq!(
+            sym.scope_path.as_deref(),
+            Some("com.example.Utils"),
+            "{} scope_path should be com.example.Utils; got {:?}", sym.name, sym.scope_path
+        );
+    }
+}
+
+/// Inner class methods are extracted with their correct grammar-assigned scope_path.
+/// The grammar correctly attributes innerMethod to Inner; outerMethod to Outer.
+#[test]
+fn symbol_inner_class_methods_not_attributed_to_outer() {
+    let src = "package com.example\n\
+               class Outer {\n\
+               \n\
+               \x20\x20public class Inner {\n\
+               \x20\x20\x20\x20void innerMethod() {}\n\
+               \x20\x20}\n\
+               \n\
+               \x20\x20void outerMethod() {}\n\
+               }";
+    let r = extract(src);
+    // outerMethod must be scoped to Outer, not Inner
+    let outer_m = r.symbols.iter().find(|s| s.name == "outerMethod");
+    assert!(outer_m.is_some(), "expected outerMethod; symbols={:?}",
+        r.symbols.iter().map(|s| (&s.name, s.scope_path.as_deref())).collect::<Vec<_>>());
+    assert_eq!(
+        outer_m.unwrap().scope_path.as_deref(),
+        Some("com.example.Outer"),
+        "outerMethod must be scoped to Outer"
+    );
+    // innerMethod must be scoped to Inner (grammar handles it)
+    let inner_m = r.symbols.iter().find(|s| s.name == "innerMethod");
+    assert!(inner_m.is_some(), "expected innerMethod from grammar; symbols={:?}",
+        r.symbols.iter().map(|s| (&s.name, s.scope_path.as_deref())).collect::<Vec<_>>());
+    assert_eq!(
+        inner_m.unwrap().scope_path.as_deref(),
+        Some("com.example.Inner"),
+        "innerMethod must be scoped to Inner, not Outer"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Call extraction: all method_invocation receivers produce bare name calls
+// ---------------------------------------------------------------------------
+
+/// Both static-receiver and instance-receiver calls produce bare `name` refs.
+/// `Utils.doSomething(p)` → Calls ref with target_name = "doSomething".
+/// The resolver resolves via groovy_bare_name (which accepts .groovy paths)
+/// once the symbol is indexed with the correct qname.
+#[test]
+fn ref_static_class_call_emits_bare_method_name() {
+    let src = "class Foo {\n\
+               \x20\x20def bar(p) {\n\
+               \x20\x20\x20\x20Utils.doSomething(p)\n\
+               \x20\x20}\n\
+               }";
+    let r = extract(src);
+    let call = r.refs.iter().find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "doSomething");
+    assert!(
+        call.is_some(),
+        "expected Calls ref with target_name='doSomething'; refs={:?}",
+        r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
+/// Instance-method calls on variable receivers produce bare method name refs.
+#[test]
+fn ref_instance_call_on_lowercase_receiver_stays_bare() {
+    let src = "class Foo {\n\
+               \x20\x20def bar(project) {\n\
+               \x20\x20\x20\x20project.afterEvaluate()\n\
+               \x20\x20}\n\
+               }";
+    let r = extract(src);
+    // "afterEvaluate" must appear as a bare call — the resolver picks it up
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "afterEvaluate"),
+        "expected bare Calls ref for afterEvaluate; refs={:?}",
+        r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
+/// 4-space indented class where grammar emits some methods (at col 4) but misses
+/// `private void method(` with continuation args on the next line.
+/// The supplemental scanner must detect member_indent=4 from grammar methods
+/// and recover the multi-line declaration.
+#[test]
+fn symbol_four_space_multiline_method_recovered() {
+    let src = "package com.example\n\
+               \n\
+               class ProtobufPlugin {\n\
+               \n\
+               \x20\x20\x20\x20void apply(Project project) {}\n\
+               \n\
+               \x20\x20\x20\x20private void doApply() {}\n\
+               \n\
+               \x20\x20\x20\x20private void addTasksForSourceSet(\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20SourceSet sourceSet, Configuration config) {}\n\
+               }";
+    let r = extract(src);
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        r.symbols.iter().any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
+        "expected Method addTasksForSourceSet recovered by supplemental scanner; symbols={:?}", names
+    );
+}
+
+/// Regression guard: the actual ProtobufPlugin.groovy file must have
+/// addTasksForSourceSet and addTasksForVariant extracted as methods.
+#[test]
+fn symbol_protobuf_plugin_actual_file_methods_extracted() {
+    let path = "F:/Work/Projects/TestProjects/groovy-gradle-plugin/src/main/groovy/com/google/protobuf/gradle/ProtobufPlugin.groovy";
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return, // skip if test project not present
+    };
+    let r = extract(&src);
+    eprintln!("has_errors={}", r.has_errors);
+    eprintln!("symbols:");
+    for s in &r.symbols {
+        eprintln!("  {:?} name={} col={} scope={:?}", s.kind, s.name, s.start_col, s.scope_path.as_deref());
+    }
+    assert!(
+        r.symbols.iter().any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
+        "expected Method addTasksForSourceSet; has_errors={} symbols={:?}",
+        r.has_errors,
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "addTasksForVariant" && s.kind == SymbolKind::Method),
+        "expected Method addTasksForVariant; has_errors={} symbols={:?}",
+        r.has_errors,
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Same as above but with `implements Plugin<Project>` generic clause which can
+/// trigger grammar parse errors — scanner must still recover multiline methods.
+#[test]
+fn symbol_four_space_multiline_method_recovered_with_generic_implements() {
+    let src = "package com.example\n\
+               \n\
+               @CompileStatic\n\
+               class ProtobufPlugin implements Plugin<Project> {\n\
+               \n\
+               \x20\x20\x20\x20void apply(Project project) {}\n\
+               \n\
+               \x20\x20\x20\x20private void doApply() {}\n\
+               \n\
+               \x20\x20\x20\x20private void addTasksForSourceSet(\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20SourceSet sourceSet, Configuration config) {}\n\
+               }";
+    let r = extract(src);
+    eprintln!("has_errors={}, symbols={:?}", r.has_errors,
+        r.symbols.iter().map(|s| (&s.name, s.kind, s.start_col)).collect::<Vec<_>>());
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        r.symbols.iter().any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
+        "expected Method addTasksForSourceSet recovered; has_errors={} symbols={:?}", r.has_errors, names
+    );
+}

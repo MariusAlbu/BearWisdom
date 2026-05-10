@@ -26,6 +26,10 @@ mod coverage_tests;
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
 
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;

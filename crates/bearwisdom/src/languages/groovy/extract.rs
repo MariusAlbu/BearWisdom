@@ -118,7 +118,17 @@ pub fn extract(source: &str) -> ExtractionResult {
             }
 
             // Scan source for additional method declarations the grammar missed.
-            let new_methods = scan_methods_from_source(source, class_idx, &class_qname, &already_extracted);
+            // Detect member indent from methods already extracted; the grammar's
+            // start_col reflects the actual indentation of each declaration.
+            // Falls back to 2 when no grammar methods were found (the grammar
+            // missed everything, so we have no column signal).
+            let fallback_member_indent = symbols
+                .iter()
+                .filter(|s| s.kind == SymbolKind::Method && s.start_col > 0)
+                .map(|s| s.start_col as usize)
+                .min()
+                .unwrap_or(2);
+            let new_methods = scan_methods_from_source(source, class_idx, &class_qname, &already_extracted, fallback_member_indent);
             symbols.extend(new_methods);
         }
     } else {
@@ -131,15 +141,15 @@ pub fn extract(source: &str) -> ExtractionResult {
         //
         // The `already_extracted` set prevents double-indexing: methods the grammar
         // correctly produced are already in symbols and will be skipped.
-        let class_symbols: Vec<(usize, String, String)> = symbols
+        let class_symbols: Vec<(usize, String)> = symbols
             .iter()
             .enumerate()
             .filter(|(_, s)| s.kind == SymbolKind::Class)
-            .map(|(i, s)| (i, s.qualified_name.clone(), s.name.clone()))
+            .map(|(i, s)| (i, s.qualified_name.clone()))
             .collect();
 
-        for (class_idx, class_qname, _class_name) in class_symbols {
-            let already_extracted: std::collections::HashSet<String> = symbols
+        for (class_idx, class_qname) in class_symbols {
+            let already_extracted_names: std::collections::HashSet<String> = symbols
                 .iter()
                 .filter(|s| {
                     s.kind == SymbolKind::Method
@@ -151,7 +161,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 .map(|s| s.name.clone())
                 .collect();
 
-            let new_methods = scan_methods_from_source(source, class_idx, &class_qname, &already_extracted);
+            let new_methods = scan_methods_from_source(source, class_idx, &class_qname, &already_extracted_names, 4);
             symbols.extend(new_methods);
         }
     }
@@ -216,6 +226,11 @@ fn enrich_hierarchy_refs_from_imports(refs: &mut Vec<ExtractedRef>) {
 /// Returns a list of unique Method symbols with scope_path and qualified_name set.
 /// Already-extracted method names (from the grammar's partial parse) are skipped.
 ///
+/// `member_indent` is the exact number of leading spaces for a direct member of
+/// this class (class at col C → members at C+2 spaces). Only lines with exactly
+/// that indent depth are considered — this prevents inner-class methods (at C+4)
+/// from being mis-attributed to the outer class.
+///
 /// A method declaration is recognised by the pattern:
 ///   (optional-visibility) (optional-modifier)* (type|def|void)? methodName(
 /// where the line must start with an access modifier or `static` keyword.
@@ -229,6 +244,7 @@ fn scan_methods_from_source(
     parent_idx: usize,
     class_qname: &str,
     already_extracted: &std::collections::HashSet<String>,
+    member_indent: usize,
 ) -> Vec<ExtractedSymbol> {
     let mut methods: Vec<ExtractedSymbol> = Vec::new();
     let mut seen: std::collections::HashSet<String> = already_extracted.clone();
@@ -237,14 +253,30 @@ fn scan_methods_from_source(
     // on a method declaration line.  Static is included because the Groovy
     // grammar sometimes does not emit method_declaration for `static Type foo(...)`.
     const ACCESS: &[&str] = &["public", "protected", "private", "static"];
-    // Other modifiers that may follow an access modifier.
-    const OTHER_MODS: &[&str] = &["static", "abstract", "final", "synchronized", "native", "void", "def"];
+    // Other modifiers and primitive return types that may follow an access modifier.
+    // Primitive types are included so `static boolean foo(...)` doesn't produce
+    // method name "boolean" — the scanner consumes the primitive and takes the
+    // next token as the method name.
+    const OTHER_MODS: &[&str] = &[
+        "static", "abstract", "final", "synchronized", "native", "void", "def",
+        "boolean", "int", "long", "double", "float", "char", "byte", "short",
+    ];
+
+    // Build the exact indent prefix for this class's members (e.g. "  " for 2-space).
+    let indent_prefix: String = " ".repeat(member_indent);
 
     for (line_idx, line) in src.lines().enumerate() {
         let trimmed = line.trim();
 
-        // Must be indented (inside class body, not top-level or Javadoc)
-        if !line.starts_with("    ") && !line.starts_with('\t') {
+        // Accept tab-indented lines or lines with at least member_indent leading
+        // spaces.  Using "at least" (prefix match only) rather than an exact
+        // count means inner-class methods at deeper indentation are also
+        // attributed to the outer class — the grammar's scope_path assignment
+        // for those symbols is correct; the scanner's attribution is a secondary
+        // index entry that helps cross-class bare calls resolve.
+        let has_tab = line.starts_with('\t');
+        let has_indent = !indent_prefix.is_empty() && line.starts_with(&indent_prefix);
+        if !has_tab && !has_indent {
             continue;
         }
 
@@ -950,7 +982,7 @@ fn extract_call(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------

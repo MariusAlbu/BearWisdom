@@ -2,21 +2,14 @@
 // groovy/resolve.rs — Groovy language resolver
 //
 // Wraps JavaResolver (shared JVM resolution rules) and adds a Groovy-specific
-// layer in `infer_external_namespace` that classifies DefaultGroovyMethods
-// (DGM), GDK additions, and Groovy DSL builtins as external refs instead of
-// unresolved refs.
+// bare-name step that also searches symbols from `.groovy` source files.
 //
-// Why we need this: The Groovy extractor emits bare calls (chain: None) for
-// every method_invocation — it does not yet build MemberChain segments. This
-// means the chain walker is never invoked for Groovy, and DGM methods like
-// `each`, `find`, `collect`, `push`, etc. have no symbol in any project scope
-// to resolve to. Without a Groovy-specific external classifier they all land
-// in unresolved_refs as noise.
-//
-// The fix: override `infer_external_namespace` to check `is_groovy_builtin`
-// first. If the bare call name is a known DGM / GDK / DSL method, we classify
-// it under the synthetic namespace "groovy.runtime.DefaultGroovyMethods" so it
-// lands in external_refs and disappears from unresolved noise.
+// Without the extra step: bare calls on static methods of same-package classes
+// (e.g. `isAndroidProject()` calling `Utils.isAndroidProject(Project)`) miss
+// `java_bare_name` because that step's file-extension filter excludes `.groovy`
+// to prevent cross-language collisions.  The extra `groovy_bare_name` step
+// applies the same visibility guards but accepts `.groovy` paths in addition to
+// the `.java`/`.jar` paths the Java resolver already handles.
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
@@ -29,9 +22,9 @@ use super::predicates;
 
 /// Groovy language resolver.
 ///
-/// Delegates all resolution logic to `JavaResolver` (same JVM scoping rules).
-/// DGM/GDK Object-mixin methods classify via the engine's keywords() set
-/// populated from groovy/keywords.rs.
+/// Delegates all resolution logic to `JavaResolver` (same JVM scoping rules),
+/// then adds a `groovy_bare_name` step that finds same-package methods in
+/// `.groovy` source files when the Java bare-name step has no match.
 pub struct GroovyResolver;
 
 impl LanguageResolver for GroovyResolver {
@@ -53,7 +46,48 @@ impl LanguageResolver for GroovyResolver {
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        JavaResolver.resolve(file_ctx, ref_ctx, lookup)
+        // Primary path: full Java resolver chain (scope walk, same-package,
+        // imports, FQN, inheritance walk, java_bare_name).
+        if let Some(res) = JavaResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+
+        // Groovy-specific extension: bare-name lookup across `.groovy` files.
+        //
+        // `java_bare_name` skips `.groovy` paths to avoid cross-language
+        // collisions with identically-named Python/TS symbols.  That filter is
+        // safe for Java but too strict for Groovy: same-project static helpers
+        // (e.g. `Utils.isAndroidProject`) live in `.groovy` files and must be
+        // reachable from bare calls in other `.groovy` files.
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        let target = &ref_ctx.extracted_ref.target_name;
+        let effective_target = target.strip_prefix("this.").unwrap_or(target);
+
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && ref_ctx.extracted_ref.chain.is_none()
+            && !effective_target.contains('.')
+        {
+            for sym in lookup.by_name(effective_target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                if !sym.file_path.ends_with(".groovy") {
+                    continue;
+                }
+                if !self.is_visible(file_ctx, ref_ctx, sym) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "groovy_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(
@@ -78,52 +112,4 @@ impl LanguageResolver for GroovyResolver {
     ) -> bool {
         JavaResolver.is_visible(file_ctx, ref_ctx, target)
     }
-}
-
-// =============================================================================
-// Tests
-// =============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::indexer::resolve::engine::FileContext;
-    use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
-
-    fn dummy_sym() -> ExtractedSymbol {
-        ExtractedSymbol {
-            name: "dummy".to_string(),
-            qualified_name: "org.example.Foo.dummy".to_string(),
-            kind: SymbolKind::Method,
-            visibility: None,
-            start_line: 0,
-            end_line: 0,
-            start_col: 0,
-            end_col: 0,
-            signature: None,
-            doc_comment: None,
-            scope_path: Some("org.example.Foo".to_string()),
-            parent_index: None,
-        }
-    }
-
-    fn groovy_file_ctx() -> FileContext {
-        FileContext {
-            file_path: "src/Foo.groovy".to_string(),
-            language: "groovy".to_string(),
-            imports: Vec::new(),
-            file_namespace: None,
-        }
-    }
-
-    #[test]
-    fn groovy_resolver_declares_only_groovy_language() {
-        let r = GroovyResolver;
-        assert_eq!(r.language_ids(), &["groovy"]);
-    }
-
-    // DGM-classification tests removed when is_groovy_builtin was deleted.
-    // DGM/GDK names now classify via the engine's keywords() set populated
-    // from groovy/keywords.rs; the namespace string changed from
-    // "groovy.dgm" to "primitive".
 }
