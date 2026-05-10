@@ -27,12 +27,12 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 19 | Dart                | 5.9%     | 96.86%   | 235,700    | 7,644      | 🟢     |       |
 | 20 | Swift               | 5.4%     | 97.82%   | 57,170     | 1,272      | 🟢     |       |
 | 21 | R                   | 4.9%     | 100.00%  | 9,481      | 0          | ✅     |       |
-| 22 | Groovy              | 4.8%     | 93.91%   | 100,768    | 6,534      | 🟡     | gradle-plugin 72.56% needs type inference for untyped receivers; spock now 96.32% ✓ |
+| 22 | Groovy              | 4.8%     | 94.24%   | 101,491    | 6,206      | 🟡     | gradle-plugin 73.51% (was 72.56) parse-error indent recovery + groovy_bare_name; full type inference still pending |
 | 23 | VB.NET              | 4.4%     | 97.22%   | 455        | 13         | ✅     | sparse OSS — large VB.NET projects rarely on GitHub |
-| 24 | VBA                 | 4.2%     | 86.26%   | 1,676      | 267        | 🟡     | sparse OSS — VBA lives in `.xlsm` files, not raw `.bas` repos |
+| 24 | VBA                 | 4.2%     | 99.39%   | 92,928     | 573        | ✅     | aggregate dominated by rubberduck 99.5%; stdvba 92.2%, vbaweb 86.7% remain on Office Object Model gap |
 | 25 | MATLAB              | 3.9%     | 67.55%   | 10,284     | 4,938      | 🔴     | walker wired but install-gated (no MathWorks license on dev box) |
 | 26 | Perl                | 3.8%     | 96.27%   | 126,837    | 4,919      | 🟢     | corpus expanded with perl5/Moose/Catalyst/Mojo/Dancer2 |
-| 27 | GDScript            | 3.3%     | 89.85%   | 6,295      | 711        | 🟡     |       |
+| 27 | GDScript            | 3.3%     | 96.87%   | 13,635     | 440        | 🟢     | mod.rs keyword-wiring bug fix unblocked ~500 false unresolved; godot_api walker pulls extension_api.json |
 | 28 | Elixir              | 2.7%     | 98.04%   | 173,540    | 3,470      | ✅     |       |
 | 29 | Scala               | 2.6%     | 96.01%   | 173,827    | 7,215      | 🟢     |       |
 | 30 | Delphi              | 2.5%     | —        | —          | —          | —      | Object Pascal-adjacent; not bucketed |
