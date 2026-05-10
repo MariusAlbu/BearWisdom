@@ -255,33 +255,54 @@ fn walk_node(
             // `package String_Vectors is new Ada.Containers.Vectors (...)` or
             // `function To_Address is new Ada.Unchecked_Conversion (...)`.
             // Emit the local name as a symbol whose signature encodes the
-            // generic source so the resolver can chain through:
-            //   Result : String_Vectors.Vector → String_Vectors is an
-            //   instantiation of Ada.Containers.Vectors → look up Append on
-            //   Ada.Containers.Vectors.
-            let name_node = node.child_by_field_name("name");
-            let local_name = name_node.map(|n| text(n, src));
-            let mut cursor = node.walk();
-            let mut seen_new = false;
+            // generic source so the resolver can chain through instantiations.
+            //
+            // The tree-sitter grammar exposes two named fields:
+            //   name:         — the instance identifier (e.g., `String_Vectors`)
+            //   generic_name: — the generic being instantiated (e.g.,
+            //                   `Ada.Containers.Vectors` or, when named actual
+            //                   parameters are present, a `function_call` node
+            //                   whose name field is `Ada.Containers.Vectors`
+            //                   and whose arguments are the association list).
+            // Use field-name access for both; fall back to a keyword scan only
+            // for `is_package` detection (the `package`/`procedure`/`function`
+            // keywords are anonymous tokens, not named fields).
+            let local_name = node.child_by_field_name("name").map(|n| text(n, src));
+
+            // Determine whether this is a package or subprogram instantiation.
             let mut is_package = false;
-            let mut generic_name: Option<String> = None;
+            let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                let kind = child.kind();
-                match kind {
-                    "package" => is_package = true,
-                    "procedure" | "function" => is_package = false,
-                    "new" => seen_new = true,
-                    "identifier" | "selected_component" if seen_new && generic_name.is_none() => {
-                        generic_name = Some(text(child, src));
-                    }
+                match child.kind() {
+                    "package" => { is_package = true; break; }
+                    "procedure" | "function" => { is_package = false; break; }
                     _ => {}
                 }
             }
+
+            // Extract the generic name from the `generic_name:` field.
+            // When actuals are present, tree-sitter wraps the node as a
+            // `function_call` (the call site of the generic) — in that case
+            // grab only the function name, not the argument list, so the
+            // signature records the generic qname without the actual parameters.
+            let generic_name = node.child_by_field_name("generic_name").map(|gn| {
+                if gn.kind() == "function_call" {
+                    // `function_call` has a `name:` field for the callee.
+                    gn.child_by_field_name("name")
+                        .map(|n| text(n, src))
+                        .unwrap_or_else(|| text(gn, src))
+                } else {
+                    text(gn, src)
+                }
+            });
+
             if let Some(name) = local_name.filter(|n| !n.is_empty()) {
                 let kind = if is_package { SymbolKind::Namespace } else { SymbolKind::Function };
                 let idx = push_sym(node, name, kind, symbols, parent_idx);
                 if let (Some(sym), Some(g)) = (symbols.get_mut(idx), generic_name) {
-                    sym.signature = Some(format!("instantiates {g}"));
+                    if !g.is_empty() {
+                        sym.signature = Some(format!("instantiates {g}"));
+                    }
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);

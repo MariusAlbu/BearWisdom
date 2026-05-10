@@ -331,6 +331,43 @@ fn diag_package_rename_ast_dump() {
     walk(tree.root_node(), src, 0);
 }
 
+/// `package X is new Gen;` — simple instantiation emits signature `"instantiates Gen"`.
+#[test]
+fn generic_instantiation_simple_emits_instantiates_sig() {
+    let src = "package body P is\n  package V is new Ada.Containers.Vectors;\nend P;";
+    let r = extract(src);
+    let inst = r.symbols.iter().find(|s| s.name == "V");
+    assert!(inst.is_some(), "expected Namespace symbol V from generic_instantiation");
+    let sig = inst.unwrap().signature.as_deref().unwrap_or("");
+    assert!(
+        sig.starts_with("instantiates "),
+        "expected signature 'instantiates Ada.Containers.Vectors', got {:?}",
+        sig
+    );
+}
+
+/// `package X is new Gen (Named => Actual, ...);` — named-parameter instantiation
+/// must also emit `"instantiates Gen"` without the association list.
+#[test]
+fn generic_instantiation_with_named_params_emits_instantiates_sig() {
+    let src = concat!(
+        "package body P is\n",
+        "   package Sub_Cmd is new CLIC.Subcommand.Instance\n",
+        "     (Main_Command_Name => \"alr\",\n",
+        "      Version           => \"2.0\");\n",
+        "end P;\n"
+    );
+    let r = extract(src);
+    let inst = r.symbols.iter().find(|s| s.name == "Sub_Cmd");
+    assert!(inst.is_some(), "expected Namespace symbol Sub_Cmd from generic_instantiation");
+    let sig = inst.unwrap().signature.as_deref().unwrap_or("");
+    assert_eq!(
+        sig, "instantiates CLIC.Subcommand.Instance",
+        "expected signature without actual params; got {:?}",
+        sig
+    );
+}
+
 /// Nested package bodies must compose qualified names: `Trace.IO.Format`.
 #[test]
 fn nested_package_qualification_chains() {

@@ -342,6 +342,55 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
+        // Local-package instantiation dispatch: `Sub_Cmd.Register(...)` where
+        // `Sub_Cmd` is a locally-declared generic instantiation (namespace with
+        // `signature = "instantiates CLIC.Subcommand.Instance"`). Unlike the
+        // variable-type path below, the leading segment is a Namespace symbol,
+        // not a Variable. Probe `members_of(generic_source)` directly and via
+        // `probe_dotted_qname` for the trailing method.
+        if target.contains('.') {
+            let leading = target.split('.').next().unwrap_or("");
+            let leading_lower = leading.to_lowercase();
+            let suffix = &target[leading.len()..];
+            for sym in lookup.in_file(&file_ctx.file_path) {
+                if sym.kind != "namespace" {
+                    continue;
+                }
+                if sym.name.to_lowercase() != leading_lower {
+                    continue;
+                }
+                let Some(sig) = &sym.signature else { continue };
+                let Some(generic_src) = sig.strip_prefix("instantiates ") else { continue };
+                let rewritten = format!("{generic_src}{suffix}");
+                if let Some(res) = probe_dotted_qname(&rewritten, edge_kind, lookup) {
+                    return Some(Resolution {
+                        strategy: "ada_local_instantiation",
+                        ..res
+                    });
+                }
+                // Also try members_of(generic_src) for the trailing segment.
+                let method = suffix.trim_start_matches('.').split('.').next_back().unwrap_or("");
+                let method_lower = method.to_lowercase();
+                for member in lookup.members_of(generic_src) {
+                    let member_leaf = member
+                        .qualified_name
+                        .rsplit_once('.')
+                        .map(|(_, n)| n)
+                        .unwrap_or(&member.qualified_name);
+                    if member_leaf.to_lowercase() == method_lower
+                        && predicates::kind_compatible(edge_kind, &member.kind)
+                    {
+                        return Some(Resolution {
+                            target_symbol_id: member.id,
+                            confidence: 0.9,
+                            strategy: "ada_local_instantiation",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+        }
+
         // Variable-type dispatch: `Result.Append(...)` where `Result` is a
         // local variable typed `Vector`. The extractor emits each
         // `object_declaration` / `parameter_specification` as a Variable

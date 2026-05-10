@@ -234,6 +234,85 @@ fn ancestor_pkg_rename_walks_multiple_levels() {
     assert_eq!(res.unwrap().strategy, "ada_ancestor_pkg_rename");
 }
 
+/// `Sub_Cmd.Register(...)` where `Sub_Cmd` is a local namespace with
+/// `signature = "instantiates CLIC.Subcommand.Instance"`. The resolver must
+/// look up `Register` in the members of `CLIC.Subcommand.Instance`.
+#[test]
+fn local_instantiation_dispatch_resolves_dotted_call() {
+    let fix = AdaFixture::new()
+        .with_member("CLIC.Subcommand.Instance", "Register", "CLIC.Subcommand.Instance.Register", "function");
+
+    // In-file: Sub_Cmd is a namespace with instantiates signature.
+    // The fixture's `in_file` returns `empty`; we need to wire it up.
+    // Use a custom fixture that has in_file support.
+    struct WithInFile {
+        inner: AdaFixture,
+        file_syms: Vec<SymbolInfo>,
+        empty: Vec<SymbolInfo>,
+        empty_reexports: Vec<(String, String)>,
+    }
+    impl SymbolLookup for WithInFile {
+        fn by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
+        fn members_of(&self, p: &str) -> &[SymbolInfo] { self.inner.members_of(p) }
+        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
+        fn has_in_namespace(&self, _: &str) -> bool { false }
+        fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.file_syms }
+        fn field_type_name(&self, _: &str) -> Option<&str> { None }
+        fn return_type_name(&self, _: &str) -> Option<&str> { None }
+        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
+        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
+        fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
+        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+    }
+
+    let id = std::cell::Cell::new(10i64);
+    let next = || { let v = id.get(); id.set(v + 1); v };
+    let sub_cmd_sym = SymbolInfo {
+        id: next(),
+        name: "Sub_Cmd".to_string(),
+        qualified_name: "Alr.Commands.Sub_Cmd".to_string(),
+        kind: "namespace".to_string(),
+        visibility: Some("public".to_string()),
+        file_path: Arc::from("src/alr-commands.ads"),
+        scope_path: None,
+        package_id: None,
+        signature: Some("instantiates CLIC.Subcommand.Instance".to_string()),
+    };
+
+    let wif = WithInFile {
+        inner: fix,
+        file_syms: vec![sub_cmd_sym],
+        empty: Vec::new(),
+        empty_reexports: Vec::new(),
+    };
+
+    let file_ctx = FileContext {
+        file_path: "src/alr-commands.ads".to_string(),
+        language: "ada".to_string(),
+        imports: Vec::new(),
+        file_namespace: Some("Alr.Commands".to_string()),
+    };
+
+    let source_sym = make_extracted_sym("Alr_Main", "Alr.Commands.Alr_Main");
+    let extracted = make_extracted_ref("Sub_Cmd.Register");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+
+    let resolver = AdaResolver;
+    let res = resolver.resolve(&file_ctx, &ref_ctx, &wif);
+    assert!(
+        res.is_some(),
+        "expected local instantiation to resolve Sub_Cmd.Register"
+    );
+    assert_eq!(res.unwrap().strategy, "ada_local_instantiation");
+}
+
 // ---------------------------------------------------------------------------
 // probe_package_of_type (Fix #3)
 // ---------------------------------------------------------------------------
