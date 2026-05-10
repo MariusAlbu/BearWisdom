@@ -166,17 +166,12 @@ fn walk_node(
                     if !t.is_empty() && !is_ada_mode_keyword(&t) {
                         type_name = Some(t);
                     }
-                } else if matches!(kind, "subtype_indication" | "subtype_mark" | "component_definition") {
-                    let mut cur = child.walk();
-                    for inner in child.children(&mut cur) {
-                        if matches!(inner.kind(), "identifier" | "selected_component") {
-                            let t = text(inner, src);
-                            if !t.is_empty() && !is_ada_mode_keyword(&t) {
-                                type_name = Some(t);
-                                break;
-                            }
-                        }
-                    }
+                } else if matches!(
+                    kind,
+                    "subtype_indication" | "subtype_mark" | "component_definition"
+                    | "access_definition" | "access_to_object_definition"
+                ) {
+                    type_name = extract_first_type_name(child, src);
                 }
             }
             for (n, name) in names {
@@ -233,17 +228,14 @@ fn walk_node(
                     if !t.is_empty() && !is_ada_mode_keyword(&t) {
                         type_name = Some(t);
                     }
-                } else if matches!(kind, "subtype_indication" | "subtype_mark" | "component_definition") {
-                    let mut cur = child.walk();
-                    for inner in child.children(&mut cur) {
-                        if matches!(inner.kind(), "identifier" | "selected_component") {
-                            let t = text(inner, src);
-                            if !t.is_empty() && !is_ada_mode_keyword(&t) {
-                                type_name = Some(t);
-                                break;
-                            }
-                        }
-                    }
+                } else if matches!(
+                    kind,
+                    "subtype_indication" | "subtype_mark" | "component_definition"
+                    | "access_definition" | "access_to_object_definition"
+                ) {
+                    // Recurse one level to find the named type inside composite
+                    // type marks (subtype_indication, access_definition, etc.).
+                    type_name = extract_first_type_name(child, src);
                 }
             }
             for (n, name) in names {
@@ -254,12 +246,15 @@ fn walk_node(
             }
             walk_children(node, src, symbols, refs, parent_idx);
         }
-        "object_declaration" | "parameter_specification" => {
+        "object_declaration" | "parameter_specification" | "extended_return_object_declaration" => {
             // `X : T;` / `X : T := init;` / `X : in out T;` etc. We emit a
             // Variable symbol per declared name with the type encoded into
             // `signature` so the resolver can chain `X.Method` →
             // `<type-of-X>.Method`. This is the minimum-viable type tracking
             // for Ada record-method dispatch (`This.CCER`, `Result.Append`).
+            //
+            // `extended_return_object_declaration` is the `V : T` part inside
+            // `return V : T do ... end return;` — same structure as object_declaration.
             //
             // Defining names live before the `:` (collected as `identifier`
             // children of `_defining_identifier_list`); the type appears
@@ -296,21 +291,9 @@ fn walk_node(
                 } else if matches!(
                     kind,
                     "subtype_indication" | "subtype_mark"
+                    | "access_definition" | "access_to_object_definition"
                 ) {
-                    // Walk one layer deeper for the inner identifier.
-                    let mut cur = child.walk();
-                    for inner in child.children(&mut cur) {
-                        if matches!(
-                            inner.kind(),
-                            "identifier" | "selected_component"
-                        ) {
-                            let t = text(inner, src);
-                            if !t.is_empty() && !is_ada_mode_keyword(&t) {
-                                type_name = Some(t);
-                                break;
-                            }
-                        }
-                    }
+                    type_name = extract_first_type_name(child, src);
                 }
             }
             for (n, name) in names {
@@ -697,6 +680,35 @@ fn is_ada_mode_keyword(s: &str) -> bool {
 }
 
 /// True if the call node is actually an Ada attribute reference such as
+/// Walk one level into a composite type-mark node (subtype_indication,
+/// access_definition, etc.) and return the first identifier or
+/// selected_component text that doesn't look like an Ada mode keyword.
+///
+/// Used by object_declaration, object_renaming_declaration, and
+/// component_declaration to extract the type name from wrapped AST nodes.
+fn extract_first_type_name(node: Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for inner in node.children(&mut cursor) {
+        match inner.kind() {
+            "identifier" | "selected_component" => {
+                let t = text(inner, src);
+                if !t.is_empty() && !is_ada_mode_keyword(&t) {
+                    return Some(t);
+                }
+            }
+            // Recurse one more level for doubly-nested nodes (e.g. access_definition
+            // wrapping a subtype_indication wrapping an identifier).
+            "subtype_indication" | "subtype_mark" | "access_to_object_definition" => {
+                if let Some(t) = extract_first_type_name(inner, src) {
+                    return Some(t);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// `System'To_Address(X)` or `Vec'Length(X)`. tree-sitter-ada parses these
 /// as `procedure_call_statement` / `function_call` because they have an
 /// `actual_parameter_part`, but they're attribute applications — not calls

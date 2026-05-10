@@ -395,6 +395,46 @@ fn nested_package_qualification_chains() {
 // Call-target whitespace normalization
 // ---------------------------------------------------------------------------
 
+/// `object_renaming_declaration` with `access` modifier — `Lines : access T renames ...` —
+/// must emit a Variable with the access target type, not an empty signature.
+#[test]
+fn object_renaming_access_type_extraction() {
+    let src = concat!(
+        "package body P is\n",
+        "   V : AAA.Strings.Vector;\n",
+        "   Lines : access AAA.Strings.Vector renames V;\n",
+        "end P;\n"
+    );
+    let r = extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "Lines");
+    assert!(sym.is_some(), "expected Variable symbol for Lines");
+    let sig = sym.unwrap().signature.as_deref().unwrap_or("");
+    assert_eq!(sig, "type: AAA.Strings.Vector",
+        "expected 'type: AAA.Strings.Vector', got {:?}", sig);
+}
+
+/// `extended_return_object_declaration` — `return V : String_Vectors.Vector do ... end return;`
+/// must emit a Variable symbol with the declared type so `V.Append` resolves.
+#[test]
+fn extended_return_variable_has_type() {
+    let src = concat!(
+        "package body P is\n",
+        "   function Get_Vec return String_Vectors.Vector is\n",
+        "   begin\n",
+        "      return V : String_Vectors.Vector do\n",
+        "         V.Append (\"x\");\n",
+        "      end return;\n",
+        "   end Get_Vec;\n",
+        "end P;\n"
+    );
+    let r = extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "V" && s.kind == SymbolKind::Variable);
+    assert!(sym.is_some(), "expected Variable symbol V from extended_return_object_declaration");
+    let sig = sym.unwrap().signature.as_deref().unwrap_or("");
+    assert_eq!(sig, "type: String_Vectors.Vector",
+        "expected type: String_Vectors.Vector, got {:?}", sig);
+}
+
 /// `object_renaming_declaration` — `Green_LED : GPIO_Point renames PC2;` — must
 /// emit a Variable symbol with `signature = "type: GPIO_Point"` so the resolver
 /// can dispatch `Green_LED.Toggle` via variable-type dispatch exactly as it
