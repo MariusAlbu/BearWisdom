@@ -847,6 +847,19 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
             let after = &s[mod_idx + "/pkg/mod/".len()..];
             Some(format!("ext:go/{after}"))
         }
+        "erlang" => {
+            // OTP layout: `.../lib/<app>-<version>/src/<file>`. Extract the
+            // app name (strip version suffix) and the file path relative to
+            // the src/ directory so demand-pulled files match the virtual
+            // paths emitted by erlang_otp demand_pre_pull.
+            let lib_idx = s.rfind("/lib/")?;
+            let after_lib = &s[lib_idx + "/lib/".len()..];
+            let app_ver = after_lib.split('/').next()?;
+            let app = app_ver.split('-').next()?;
+            let src_idx = after_lib.find("/src/")?;
+            let rel = &after_lib[src_idx + "/src/".len()..];
+            Some(format!("ext:erlang:{app}/{rel}"))
+        }
         _ => None,
     }
 }

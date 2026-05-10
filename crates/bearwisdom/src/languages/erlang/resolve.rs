@@ -79,11 +79,11 @@ impl LanguageResolver for ErlangResolver {
 
         // Bare-name walker lookup. erlang_otp emits real symbols for
         // BIFs (length, hd, tl, spawn) and stdlib modules (lists, gen_server,
-        // gen_statem, supervisor). ext:-only filter so resolve_common's
-        // import / scope / same-file paths still win for project symbols.
+        // gen_statem, supervisor). Scoped to ext:erlang: so C/C++ symbols from
+        // NIF-adjacent projects cannot be matched here.
         if !target.contains(':') {
             for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
+                if !sym.file_path.starts_with("ext:erlang:") {
                     continue;
                 }
                 if !predicates::kind_compatible(edge_kind, &sym.kind) {
@@ -150,4 +150,7 @@ impl LanguageResolver for ErlangResolver {
         // being blanket-classified as `builtin`.
         None
     }
+
+    // No infer_external_namespace_with_lookup override — default delegates
+    // to infer_external_namespace which returns None.
 }

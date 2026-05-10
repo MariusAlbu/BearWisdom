@@ -2123,14 +2123,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 96
+        "min_resolution_rate": 67
       },
-      "code_chunks": 6936,
+      "code_chunks": 6934,
       "files": 221,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 4605,
-      "internal_unresolved": 143,
+      "internal_edges": 4886,
+      "internal_unresolved": 2374,
       "languages": {
         "c": 16,
         "erlang": 186,
@@ -2142,33 +2142,34 @@
       },
       "path": "F:/Work/Projects/TestProjects/erlang-cowboy",
       "perf": {
-        "end_ws_mb": 262,
-        "files_per_sec": 32,
-        "index_duration_ms": 6958
+        "end_ws_mb": 64,
+        "files_per_sec": 5,
+        "index_duration_ms": 46824
       },
       "project": "erlang-cowboy",
-      "resolution_rate": 96.99,
+      "resolution_rate": 67.3,
       "routes": 0,
       "symbols": 4606,
       "unresolved_by_lang_kind": {
         "c.calls": 3,
         "c.type_ref": 40,
-        "erlang.calls": 48,
-        "erlang.implements": 2,
+        "erlang.calls": 2240,
+        "erlang.implements": 35,
+        "erlang.instantiates": 6,
         "html.calls": 6,
         "make.calls": 44
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 92
+        "min_resolution_rate": 81
       },
-      "code_chunks": 97287,
+      "code_chunks": 96950,
       "files": 3273,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 78045,
-      "internal_unresolved": 6425,
+      "internal_edges": 86266,
+      "internal_unresolved": 19730,
       "languages": {
         "c": 18,
         "dockerfile": 2,
@@ -2189,39 +2190,37 @@
       },
       "path": "F:/Work/Projects/TestProjects/erlang-emqx",
       "perf": {
-        "end_ws_mb": 391,
-        "files_per_sec": 27,
-        "index_duration_ms": 119451
+        "end_ws_mb": 202,
+        "files_per_sec": 18,
+        "index_duration_ms": 177618
       },
       "project": "erlang-emqx",
-      "resolution_rate": 92.39,
+      "resolution_rate": 81.39,
       "routes": 0,
       "symbols": 69004,
       "unresolved_by_lang_kind": {
         "c.calls": 269,
         "c.type_ref": 110,
-        "elixir.calls": 33,
-        "elixir.type_ref": 20,
-        "erlang.calls": 4982,
-        "erlang.implements": 161,
+        "erlang.calls": 18022,
+        "erlang.implements": 476,
         "erlang.instantiates": 302,
         "html.calls": 231,
         "html.type_ref": 213,
-        "python.calls": 19,
-        "python.type_ref": 3,
+        "python.calls": 21,
+        "python.type_ref": 4,
         "shell.calls": 82
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 85
+        "min_resolution_rate": 79
       },
-      "code_chunks": 92383,
-      "files": 2672,
+      "code_chunks": 94553,
+      "files": 2762,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 76181,
-      "internal_unresolved": 13102,
+      "internal_edges": 88730,
+      "internal_unresolved": 22521,
       "languages": {
         "c": 4,
         "csharp": 13,
@@ -2235,7 +2234,7 @@
         "hcl": 10,
         "html": 14,
         "java": 30,
-        "javascript": 108,
+        "javascript": 198,
         "json": 72,
         "kotlin": 3,
         "make": 19,
@@ -2250,33 +2249,33 @@
       },
       "path": "F:/Work/Projects/TestProjects/erlang-rabbitmq",
       "perf": {
-        "end_ws_mb": 269,
-        "files_per_sec": 27,
-        "index_duration_ms": 98382
+        "end_ws_mb": 261,
+        "files_per_sec": 26,
+        "index_duration_ms": 105251
       },
       "project": "erlang-rabbitmq",
-      "resolution_rate": 85.33,
+      "resolution_rate": 79.76,
       "routes": 39,
-      "symbols": 56460,
+      "symbols": 59399,
       "unresolved_by_lang_kind": {
         "c.calls": 65,
-        "c.type_ref": 31,
+        "c.type_ref": 32,
+        "ejs.calls": 2,
         "ejs.type_ref": 2,
-        "elixir.calls": 707,
-        "elixir.type_ref": 17,
-        "erlang.calls": 5855,
-        "erlang.implements": 61,
+        "elixir.calls": 34,
+        "elixir.type_ref": 11,
+        "erlang.calls": 14132,
+        "erlang.implements": 211,
         "erlang.instantiates": 5154,
-        "fsharp.imports": 1,
-        "html.calls": 48,
-        "java.calls": 244,
-        "java.instantiates": 5,
-        "java.type_ref": 33,
-        "javascript.calls": 773,
-        "javascript.type_ref": 11,
+        "html.calls": 76,
+        "java.calls": 257,
+        "java.instantiates": 8,
+        "java.type_ref": 65,
+        "javascript.calls": 2363,
+        "javascript.type_ref": 12,
         "kotlin.calls": 1,
         "make.calls": 42,
-        "python.calls": 37,
+        "python.calls": 39,
         "python.type_ref": 1,
         "shell.calls": 14
       }
