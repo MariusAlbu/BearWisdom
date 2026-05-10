@@ -228,6 +228,25 @@ fn cov_type_family_emits_type_alias() {
     assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
 }
 
+/// Record field names → SymbolKind::Function
+/// `data T = T { fieldA :: Int, fieldB :: Bool }` must emit Function symbols
+/// for `fieldA` and `fieldB`. Haskell generates accessor functions for every
+/// record field that is callable anywhere the type is imported.
+#[test]
+fn cov_record_field_names_emit_functions() {
+    let src = "data SResponse = SResponse\n    { simpleStatus :: Int\n    , simpleHeaders :: [String]\n    , simpleBody :: String\n    }\n";
+    let r = extract::extract(src);
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    for field in ["simpleStatus", "simpleHeaders", "simpleBody"] {
+        assert!(
+            names.iter().any(|&n| n == field),
+            "expected record field accessor '{field}' as Function; symbols: {names:?}"
+        );
+    }
+    let field_sym = r.symbols.iter().find(|s| s.name == "simpleStatus");
+    assert_eq!(field_sym.map(|s| s.kind), Some(SymbolKind::Function));
+}
+
 /// data_constructor → SymbolKind::EnumMember
 #[test]
 fn cov_data_constructor_emits_enum_member() {

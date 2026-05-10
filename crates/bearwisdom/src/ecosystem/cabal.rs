@@ -473,11 +473,19 @@ pub(crate) fn find_haskell_cabal_get_deps_in_dir(
         for dep in declared {
             let prefix = format!("{dep}-");
             if name_str.starts_with(&prefix) {
+                let remainder = &name_str[prefix.len()..];
+                // The character after `<pkg>-` must be a digit (version number).
+                // Without this check `wai-extra-3.x` would match `wai` because
+                // `"wai-"` is a prefix of `"wai-extra-3.x"`.
+                let version_start = remainder.chars().next().map_or(false, |c| c.is_ascii_digit());
+                if !version_start {
+                    continue;
+                }
                 // The source root is `src/` when present, otherwise the
                 // package dir itself (some packages use a flat layout).
                 let src = path.join("src");
                 let root = if src.is_dir() { src } else { path.clone() };
-                let version = name_str[prefix.len()..].to_string();
+                let version = remainder.to_string();
                 roots.push(ExternalDepRoot {
                     module_path: dep.clone(),
                     version,
@@ -506,7 +514,13 @@ fn find_haskell_pkgs_in_dir(
         for dep in declared {
             let prefix = format!("{dep}-");
             if name_str.starts_with(&prefix) && entry.path().is_dir() {
-                let version = name_str[prefix.len()..].to_string();
+                let remainder = &name_str[prefix.len()..];
+                // Require a digit-start remainder to prevent `wai` matching
+                // `wai-extra-3.x` or `wai-cors-0.x`.
+                if !remainder.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                    continue;
+                }
+                let version = remainder.to_string();
                 roots.push(ExternalDepRoot {
                     module_path: dep.clone(),
                     version,
@@ -770,7 +784,7 @@ pub(crate) fn path_to_haskell_module(file: &Path, root: &Path) -> String {
 /// Header-only tree-sitter scan of a Haskell source file. Records top-level
 /// `data`, `newtype`, `type`, `class`, and function signatures. Function
 /// bodies are not descended.
-fn scan_haskell_header(source: &str) -> Vec<String> {
+pub(crate) fn scan_haskell_header(source: &str) -> Vec<String> {
     let language = tree_sitter_haskell::LANGUAGE.into();
     let mut parser = Parser::new();
     if parser.set_language(&language).is_err() {
@@ -791,28 +805,107 @@ fn scan_haskell_header(source: &str) -> Vec<String> {
 
 fn collect_haskell_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
     match node.kind() {
-        "data_type"
-        | "data"
-        | "newtype"
-        | "type_synomym"
-        | "type_family"
-        | "class"
-        | "function"
-        | "signature"
-        | "bind"
-        | "decl" => {
+        "function" | "bind" | "decl" => {
             if let Some(name_node) = node
                 .child_by_field_name("name")
                 .or_else(|| node.child_by_field_name("variable"))
             {
                 if let Ok(t) = name_node.utf8_text(bytes) {
-                    out.push(t.to_string());
+                    out.push(t.trim_matches(|c: char| c == '(' || c == ')').to_string());
                 }
             }
         }
-        // Haskell grammar wraps multi-form decls in a `declarations` / `decls`
-        // block. Recurse once.
-        "declarations" | "haskell" | "module" => {
+        // `data_type` / `newtype`: extract the type name AND walk into constructors
+        // to collect record field accessor names. Field names become standalone
+        // Haskell functions visible to any module that imports the type.
+        "data_type" | "data" | "newtype" | "type_synomym" | "type_family" => {
+            if let Some(name_node) = node
+                .child_by_field_name("name")
+                .or_else(|| node.child_by_field_name("variable"))
+            {
+                if let Ok(t) = name_node.utf8_text(bytes) {
+                    out.push(t.trim_matches(|c: char| c == '(' || c == ')').to_string());
+                }
+            }
+            // Recurse to collect record field names and constructor names.
+            let mut cursor = node.walk();
+            for inner in node.children(&mut cursor) {
+                collect_haskell_top_level_name(&inner, bytes, out);
+            }
+        }
+        // Type-class `signature` nodes carry operator method names like `(.=)`.
+        // The `names` field (plural) covers multi-name signatures; fall back to `name`.
+        "signature" => {
+            let name_node = node
+                .child_by_field_name("names")
+                .or_else(|| node.child_by_field_name("name"));
+            if let Some(nnode) = name_node {
+                // A `binding_list` or similar wrapper holds multiple names.
+                let mut cursor = nnode.walk();
+                let mut found_any = false;
+                for child in nnode.children(&mut cursor) {
+                    match child.kind() {
+                        "variable" | "operator" | "operator_name" | "prefix_id" => {
+                            if let Ok(t) = child.utf8_text(bytes) {
+                                let trimmed = t.trim_matches(|c: char| c == '(' || c == ')');
+                                if !trimmed.is_empty() {
+                                    out.push(trimmed.to_string());
+                                    found_any = true;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if !found_any {
+                    if let Ok(t) = nnode.utf8_text(bytes) {
+                        let trimmed = t.trim_matches(|c: char| c == '(' || c == ')');
+                        if !trimmed.is_empty() {
+                            out.push(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        // `class` extracts its name AND recurses into its body so that method
+        // signatures like `(.=) :: ...` are included in the symbol index.
+        "class" | "instance" => {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                if let Ok(t) = name_node.utf8_text(bytes) {
+                    out.push(t.to_string());
+                }
+            }
+            let mut cursor = node.walk();
+            for inner in node.children(&mut cursor) {
+                collect_haskell_top_level_name(&inner, bytes, out);
+            }
+        }
+        // `constructor` nodes hold the name of a data constructor or operator
+        // constructor. These are reachable from `prefix.name` and `infix`.
+        "constructor" | "constructor_operator" => {
+            if let Ok(t) = node.utf8_text(bytes) {
+                let trimmed = t.trim();
+                if !trimmed.is_empty() {
+                    out.push(trimmed.to_string());
+                }
+            }
+        }
+        // `field_name` contains the variable child that is the record field accessor.
+        "field_name" => {
+            if let Some(var) = node.named_child(0) {
+                if let Ok(t) = var.utf8_text(bytes) {
+                    let trimmed = t.trim();
+                    if !trimmed.is_empty() {
+                        out.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+        // Containers: recurse to reach declarations and field definitions.
+        "data_constructors" | "data_constructor" | "gadt_constructors" | "gadt_constructor"
+        | "record" | "fields" | "field" | "prefix"
+        | "class_declarations" | "instance_declarations"
+        | "declarations" | "where" | "haskell" | "module" => {
             let mut cursor = node.walk();
             for inner in node.children(&mut cursor) {
                 collect_haskell_top_level_name(&inner, bytes, out);

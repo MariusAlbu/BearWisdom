@@ -568,6 +568,30 @@ fn seed_demand_from_user_refs_inner(
             }
         }
 
+        // Transitive import walk for Haskell external files. Haskell modules
+        // re-export from sibling modules via `module Foo (module Bar) where`
+        // — the project only imports `Foo` but the symbols are defined in `Bar`.
+        // Follow `Imports` edges from the pulled external file to pull the
+        // defining sub-modules. The `wanted_names` set is not restricted here
+        // because Haskell re-export lists can be wildcard (`module Bar`), so
+        // we pull the full sub-module and let the resolver sort out membership.
+        if pf.language == "haskell" && pf.path.starts_with("ext:") {
+            for r in &pf.refs {
+                if r.kind != EdgeKind::Imports {
+                    continue;
+                }
+                let Some(module) = r.module.as_deref() else { continue };
+                enqueue_named_target(
+                    symbol_index,
+                    &r.target_name,
+                    Some(module),
+                    None,
+                    &mut seen_paths,
+                    &mut queue,
+                );
+            }
+        }
+
         all_parsed.push(pf);
     }
 

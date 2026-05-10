@@ -506,9 +506,51 @@ fn collect_constructors(
                         parent_idx,
                     ));
                 }
+                // Record-syntax constructors (`Foo { field :: T }`) generate
+                // field accessor functions visible to any importer. Emit them
+                // as Function symbols so the resolver can bind calls to them.
+                collect_record_field_names(&child, src, parent_idx, symbols);
             }
             _ => {
                 collect_constructors(&child, src, parent_idx, symbols);
+            }
+        }
+    }
+}
+
+/// Walk a `data_constructor` node looking for `field_name` nodes inside any
+/// `record` → `fields` → `field` subtree. Each `field_name` child `variable`
+/// is the record accessor function name.
+fn collect_record_field_names(
+    node: &Node,
+    src: &[u8],
+    parent_idx: Option<usize>,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "field_name" => {
+                // field_name contains a single variable child.
+                if let Some(var) = child.named_child(0) {
+                    let name = node_text(var, src);
+                    if !name.is_empty() {
+                        symbols.push(make_symbol(
+                            name.clone(),
+                            name,
+                            SymbolKind::Function,
+                            &child,
+                            None,
+                            parent_idx,
+                        ));
+                    }
+                }
+            }
+            "record" | "fields" | "field" | "prefix" => {
+                collect_record_field_names(&child, src, parent_idx, symbols);
+            }
+            _ => {
+                collect_record_field_names(&child, src, parent_idx, symbols);
             }
         }
     }
@@ -567,16 +609,27 @@ fn extract_import(
     if module.is_empty() {
         return;
     }
+    // `alias` field is set by `import qualified M as A` — the `as A` part.
+    // When present, `target_name` carries the alias so the resolver can map
+    // qualified calls like `A.foo` to the full module `M.foo`.
+    let alias_text = node
+        .child_by_field_name("alias")
+        .map(|n| node_text(n, src))
+        .filter(|s| !s.is_empty());
+    let target_name = match &alias_text {
+        Some(a) => a.clone(),
+        None => module.rsplit('.').next().unwrap_or(&module).to_string(),
+    };
     refs.push(ExtractedRef {
         source_symbol_index: source_idx,
-        target_name: module.rsplit('.').next().unwrap_or(&module).to_string(),
+        target_name,
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
         module: Some(module),
         chain: None,
         byte_offset: 0,
-            namespace_segments: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -653,10 +706,21 @@ fn extract_apply(
 fn extract_apply_target(node: Node, src: &[u8]) -> (String, Option<String>) {
     match node.kind() {
         "variable" | "name" | "constructor" | "operator" | "operator_name" | "prefix_id" => {
-            let name = node_text(node, src)
+            let raw = node_text(node, src)
                 .trim_matches(|c: char| c == '(' || c == ')' || c == '`')
                 .to_string();
-            (name, None)
+            // `variable` nodes can carry a dotted qualifier when the grammar
+            // doesn't produce a `qualified` node — e.g. `T.isPrefixOf` parsed
+            // as a single token. Split at the last `.` so the resolver sees a
+            // plain name with its module qualifier, matching the import alias.
+            if let Some(dot) = raw.rfind('.') {
+                let module_part = raw[..dot].to_string();
+                let name_part = raw[dot + 1..].to_string();
+                if !module_part.is_empty() && !name_part.is_empty() {
+                    return (name_part, Some(module_part));
+                }
+            }
+            (raw, None)
         }
         "qualified" => {
             // tree-sitter-haskell `qualified` has named fields `module` and `id`.
