@@ -4,7 +4,9 @@ pub static PASCAL: LanguageDescriptor = LanguageDescriptor {
     id: "pascal",
     display_name: "Pascal",
     // .pp omitted — conflicts with Puppet (Puppet is more common).
-    file_extensions: &[".pas", ".dpr"],
+    // .inc: FPC/Lazarus convention for partial-unit source fragments
+    //   included via {$I filename.inc} into a parent .pas file.
+    file_extensions: &[".pas", ".dpr", ".inc"],
     filenames: &[],
     aliases: &["delphi"],
     exclude_dirs: &[],

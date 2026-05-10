@@ -31,7 +31,7 @@ impl LanguagePlugin for PascalPlugin {
     }
 
     fn extensions(&self) -> &[&str] {
-        &[".pas", ".pp", ".dpr", ".dpk"]
+        &[".pas", ".pp", ".dpr", ".dpk", ".inc"]
     }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
