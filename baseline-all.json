@@ -3,6 +3,56 @@
   "projects": [
     {
       "assertions": {
+        "min_resolution_rate": 98
+      },
+      "code_chunks": 50181,
+      "files": 1464,
+      "flow_edge_types": {
+        "di_binding": 60
+      },
+      "flow_edges": 60,
+      "internal_edges": 12698,
+      "internal_unresolved": 245,
+      "languages": {
+        "csharp": 814,
+        "css": 19,
+        "dockerfile": 2,
+        "html": 98,
+        "javascript": 209,
+        "json": 82,
+        "markdown": 5,
+        "powershell": 1,
+        "razor": 181,
+        "ruby": 1,
+        "scss": 16,
+        "shell": 3,
+        "sql": 27,
+        "xml": 5,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/SimplCommerce",
+      "perf": {
+        "end_ws_mb": 361,
+        "files_per_sec": 11,
+        "index_duration_ms": 133982
+      },
+      "project": "SimplCommerce",
+      "resolution_rate": 98.11,
+      "routes": 688,
+      "symbols": 17264,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 224,
+        "javascript.imports": 1,
+        "razor.calls": 18,
+        "razor.type_ref": 2
+      }
+    },
+    {
+      "path": "F:/Work/Projects/TestProjects/Smartstore",
+      "project": "Smartstore"
+    },
+    {
+      "assertions": {
         "min_resolution_rate": 95
       },
       "code_chunks": 38020,
@@ -1469,6 +1519,80 @@
     },
     {
       "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 2846,
+      "files": 199,
+      "flow_edge_types": {
+        "di_binding": 9
+      },
+      "flow_edges": 9,
+      "internal_edges": 1860,
+      "internal_unresolved": 1,
+      "languages": {
+        "angular_template": 10,
+        "csharp": 110,
+        "html": 2,
+        "javascript": 18,
+        "json": 21,
+        "markdown": 6,
+        "powershell": 3,
+        "scss": 4,
+        "typescript": 25
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
+      "perf": {
+        "end_ws_mb": 308,
+        "files_per_sec": 6,
+        "index_duration_ms": 32011
+      },
+      "project": "dotnet-CleanArchitecture",
+      "resolution_rate": 99.95,
+      "routes": 12,
+      "symbols": 1648,
+      "unresolved_by_lang_kind": {
+        "typescript.type_ref": 1
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 2965,
+      "files": 138,
+      "flow_edge_types": {
+        "di_binding": 8
+      },
+      "flow_edges": 8,
+      "internal_edges": 909,
+      "internal_unresolved": 4,
+      "languages": {
+        "csharp": 90,
+        "css": 1,
+        "dockerfile": 2,
+        "javascript": 2,
+        "json": 14,
+        "markdown": 4,
+        "razor": 22,
+        "xml": 2,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
+      "perf": {
+        "end_ws_mb": 296,
+        "files_per_sec": 8,
+        "index_duration_ms": 17274
+      },
+      "project": "dotnet-EquinoxProject",
+      "resolution_rate": 99.56,
+      "routes": 40,
+      "symbols": 1074,
+      "unresolved_by_lang_kind": {
+        "razor.calls": 4
+      }
+    },
+    {
+      "assertions": {
         "min_resolution_rate": 98
       },
       "code_chunks": 350385,
@@ -1593,80 +1717,6 @@
         "shell.calls": 27,
         "typescript.calls": 39,
         "typescript.type_ref": 36
-      }
-    },
-    {
-      "assertions": {
-        "min_resolution_rate": 99
-      },
-      "code_chunks": 2846,
-      "files": 199,
-      "flow_edge_types": {
-        "di_binding": 9
-      },
-      "flow_edges": 9,
-      "internal_edges": 1860,
-      "internal_unresolved": 1,
-      "languages": {
-        "angular_template": 10,
-        "csharp": 110,
-        "html": 2,
-        "javascript": 18,
-        "json": 21,
-        "markdown": 6,
-        "powershell": 3,
-        "scss": 4,
-        "typescript": 25
-      },
-      "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
-      "perf": {
-        "end_ws_mb": 308,
-        "files_per_sec": 6,
-        "index_duration_ms": 32011
-      },
-      "project": "dotnet-CleanArchitecture",
-      "resolution_rate": 99.95,
-      "routes": 12,
-      "symbols": 1648,
-      "unresolved_by_lang_kind": {
-        "typescript.type_ref": 1
-      }
-    },
-    {
-      "assertions": {
-        "min_resolution_rate": 99
-      },
-      "code_chunks": 2965,
-      "files": 138,
-      "flow_edge_types": {
-        "di_binding": 8
-      },
-      "flow_edges": 8,
-      "internal_edges": 909,
-      "internal_unresolved": 4,
-      "languages": {
-        "csharp": 90,
-        "css": 1,
-        "dockerfile": 2,
-        "javascript": 2,
-        "json": 14,
-        "markdown": 4,
-        "razor": 22,
-        "xml": 2,
-        "yaml": 1
-      },
-      "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
-      "perf": {
-        "end_ws_mb": 296,
-        "files_per_sec": 8,
-        "index_duration_ms": 17274
-      },
-      "project": "dotnet-EquinoxProject",
-      "resolution_rate": 99.56,
-      "routes": 40,
-      "symbols": 1074,
-      "unresolved_by_lang_kind": {
-        "razor.calls": 4
       }
     },
     {
@@ -1828,6 +1878,47 @@
       "unresolved_by_lang_kind": {
         "astro.calls": 1,
         "mdx.calls": 1
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 15319,
+      "files": 737,
+      "flow_edge_types": {
+        "di_binding": 27,
+        "event_handler": 48
+      },
+      "flow_edges": 75,
+      "internal_edges": 6418,
+      "internal_unresolved": 2,
+      "languages": {
+        "csharp": 527,
+        "css": 30,
+        "html": 1,
+        "javascript": 5,
+        "json": 39,
+        "markdown": 5,
+        "powershell": 2,
+        "proto": 2,
+        "razor": 58,
+        "typescript": 6,
+        "xml": 60,
+        "yaml": 2
+      },
+      "path": "F:/Work/Projects/TestProjects/eShop",
+      "perf": {
+        "end_ws_mb": 153,
+        "files_per_sec": 32,
+        "index_duration_ms": 22806
+      },
+      "project": "eShop",
+      "resolution_rate": 99.97,
+      "routes": 87,
+      "symbols": 6773,
+      "unresolved_by_lang_kind": {
+        "typescript.calls": 2
       }
     },
     {
@@ -2192,47 +2283,6 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
-      },
-      "code_chunks": 15319,
-      "files": 737,
-      "flow_edge_types": {
-        "di_binding": 27,
-        "event_handler": 48
-      },
-      "flow_edges": 75,
-      "internal_edges": 6418,
-      "internal_unresolved": 2,
-      "languages": {
-        "csharp": 527,
-        "css": 30,
-        "html": 1,
-        "javascript": 5,
-        "json": 39,
-        "markdown": 5,
-        "powershell": 2,
-        "proto": 2,
-        "razor": 58,
-        "typescript": 6,
-        "xml": 60,
-        "yaml": 2
-      },
-      "path": "F:/Work/Projects/TestProjects/eShop",
-      "perf": {
-        "end_ws_mb": 153,
-        "files_per_sec": 32,
-        "index_duration_ms": 22806
-      },
-      "project": "eShop",
-      "resolution_rate": 99.97,
-      "routes": 87,
-      "symbols": 6773,
-      "unresolved_by_lang_kind": {
-        "typescript.calls": 2
-      }
-    },
-    {
-      "assertions": {
         "min_resolution_rate": 80
       },
       "code_chunks": 14353,
@@ -2390,6 +2440,62 @@
       "assertions": {
         "min_resolution_rate": 95
       },
+      "code_chunks": 253831,
+      "files": 1281,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 128815,
+      "internal_unresolved": 6275,
+      "languages": {
+        "dart": 8,
+        "erlang": 38,
+        "fsharp": 972,
+        "javascript": 17,
+        "json": 27,
+        "markdown": 35,
+        "php": 14,
+        "python": 72,
+        "rust": 40,
+        "shell": 4,
+        "toml": 8,
+        "typescript": 35,
+        "xml": 5,
+        "yaml": 6
+      },
+      "path": "F:/Work/Projects/TestProjects/fsharp-fable",
+      "perf": {
+        "end_ws_mb": 136,
+        "files_per_sec": 14,
+        "index_duration_ms": 89705
+      },
+      "project": "fsharp-fable",
+      "resolution_rate": 95.35,
+      "routes": 0,
+      "symbols": 103566,
+      "unresolved_by_lang_kind": {
+        "dart.calls": 3,
+        "erlang.calls": 775,
+        "fsharp.calls": 3459,
+        "javascript.calls": 16,
+        "php.calls": 61,
+        "php.instantiates": 1,
+        "php.type_ref": 17,
+        "python.calls": 352,
+        "python.type_ref": 112,
+        "rust.calls": 180,
+        "rust.implements": 41,
+        "rust.inherits": 2,
+        "rust.type_ref": 537,
+        "shell.calls": 1,
+        "typescript.calls": 294,
+        "typescript.instantiates": 2,
+        "typescript.type_ref": 422
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 95
+      },
       "code_chunks": 29082,
       "files": 546,
       "flow_edge_types": {},
@@ -2452,6 +2558,37 @@
     },
     {
       "assertions": {
+        "min_resolution_rate": 75
+      },
+      "code_chunks": 9312,
+      "files": 107,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1267,
+      "internal_unresolved": 415,
+      "languages": {
+        "fsharp": 34,
+        "json": 7,
+        "markdown": 8,
+        "shell": 1,
+        "xml": 57
+      },
+      "path": "F:/Work/Projects/TestProjects/fsharp-ionide",
+      "perf": {
+        "end_ws_mb": 85,
+        "files_per_sec": 15,
+        "index_duration_ms": 7134
+      },
+      "project": "fsharp-ionide",
+      "resolution_rate": 75.33,
+      "routes": 0,
+      "symbols": 3188,
+      "unresolved_by_lang_kind": {
+        "fsharp.calls": 415
+      }
+    },
+    {
+      "assertions": {
         "min_resolution_rate": 100
       },
       "code_chunks": 2887,
@@ -2480,6 +2617,44 @@
       "routes": 0,
       "symbols": 1176,
       "unresolved_by_lang_kind": {}
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 47
+      },
+      "code_chunks": 4135,
+      "files": 111,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 836,
+      "internal_unresolved": 925,
+      "languages": {
+        "css": 8,
+        "fsharp": 75,
+        "html": 5,
+        "javascript": 5,
+        "json": 2,
+        "markdown": 14,
+        "shell": 1,
+        "xml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/fsharp-saturn",
+      "perf": {
+        "end_ws_mb": 92,
+        "files_per_sec": 8,
+        "index_duration_ms": 14565
+      },
+      "project": "fsharp-saturn",
+      "resolution_rate": 47.47,
+      "routes": 0,
+      "symbols": 1516,
+      "unresolved_by_lang_kind": {
+        "fsharp.calls": 772,
+        "html.calls": 2,
+        "javascript.calls": 147,
+        "javascript.type_ref": 1,
+        "shell.calls": 3
+      }
     },
     {
       "assertions": {
@@ -7736,52 +7911,6 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
-      },
-      "code_chunks": 50181,
-      "files": 1464,
-      "flow_edge_types": {
-        "di_binding": 60
-      },
-      "flow_edges": 60,
-      "internal_edges": 12698,
-      "internal_unresolved": 245,
-      "languages": {
-        "csharp": 814,
-        "css": 19,
-        "dockerfile": 2,
-        "html": 98,
-        "javascript": 209,
-        "json": 82,
-        "markdown": 5,
-        "powershell": 1,
-        "razor": 181,
-        "ruby": 1,
-        "scss": 16,
-        "shell": 3,
-        "sql": 27,
-        "xml": 5,
-        "yaml": 1
-      },
-      "path": "F:/Work/Projects/TestProjects/SimplCommerce",
-      "perf": {
-        "end_ws_mb": 361,
-        "files_per_sec": 11,
-        "index_duration_ms": 133982
-      },
-      "project": "SimplCommerce",
-      "resolution_rate": 98.11,
-      "routes": 688,
-      "symbols": 17264,
-      "unresolved_by_lang_kind": {
-        "javascript.calls": 224,
-        "javascript.imports": 1,
-        "razor.calls": 18,
-        "razor.type_ref": 2
-      }
-    },
-    {
-      "assertions": {
         "min_resolution_rate": 100
       },
       "code_chunks": 980,
@@ -7811,10 +7940,6 @@
       "routes": 0,
       "symbols": 607,
       "unresolved_by_lang_kind": {}
-    },
-    {
-      "path": "F:/Work/Projects/TestProjects/Smartstore",
-      "project": "Smartstore"
     },
     {
       "assertions": {
