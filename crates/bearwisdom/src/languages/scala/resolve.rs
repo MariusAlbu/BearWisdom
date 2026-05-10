@@ -98,26 +98,34 @@ impl LanguageResolver for ScalaResolver {
             return None;
         }
 
-        // Bare-name walker lookup. scala_stdlib + jdk_src + maven (sources
-        // jars) emit real symbols for the Scala stdlib (List, Option, Either,
-        // Try), JVM types, and declared deps. ext:-only filter so chain
-        // walker / scope / wildcard-import paths still win for project
-        // symbols. Skip when the ref has a chain so the chain walker's
-        // receiver-type context wins.
-        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
+        // Global external lookup for bare names. Prefers chain walker context
+        // when the ref has a real multi-segment chain, but falls back here
+        // when the chain is a single-segment stub (common for ScalaTest DSL
+        // calls like `equal` or `be` extracted from infix expressions where
+        // the receiver is a separate ref) or when chain resolution fails.
+        let try_external_global = |target: &str| -> Option<Resolution> {
+            if target.contains('.') { return None; }
             for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
+                if !sym.file_path.starts_with("ext:") { continue; }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) { continue; }
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 0.95,
                     strategy: "scala_synthetic_global",
                     resolved_yield_type: None,
                 });
+            }
+            None
+        };
+
+        // Single-segment chain or no chain: try external global first.
+        let chain_is_single_segment = ref_ctx.extracted_ref.chain
+            .as_ref()
+            .map(|c| c.segments.len() <= 1)
+            .unwrap_or(false);
+        if ref_ctx.extracted_ref.chain.is_none() || chain_is_single_segment {
+            if let Some(res) = try_external_global(target) {
+                return Some(res);
             }
         }
 
@@ -137,6 +145,12 @@ impl LanguageResolver for ScalaResolver {
             if let Some(res) = chain::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
             ) {
+                return Some(res);
+            }
+            // Chain resolution failed — fall back to external global for
+            // DSL methods whose receiver type is unavailable (e.g. ScalaTest
+            // matchers on the right-hand side of an infix chain).
+            if let Some(res) = try_external_global(target) {
                 return Some(res);
             }
         }

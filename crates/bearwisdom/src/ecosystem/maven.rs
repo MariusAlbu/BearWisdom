@@ -34,8 +34,9 @@ use super::{
 };
 use crate::ecosystem::externals::{
     collect_pom_files_bounded, coursier_cache_root, extract_java_sources_jar, gradle_caches_root,
-    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar, resolve_gradle_sources_jar,
-    resolve_maven_artifact_dir, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
+    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar, resolve_coursier_submodule_jars,
+    resolve_gradle_sources_jar, resolve_maven_artifact_dir, ExternalDepRoot, ExternalSourceLocator,
+    MAX_WALK_DEPTH,
 };
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
 use crate::ecosystem::manifest::{
@@ -420,6 +421,51 @@ fn resolve_and_push_jvm(
         }
     }
 
+    // Aggregator check: some Scala libraries (e.g. ScalaTest, Cats) publish
+    // a top-level artifact whose -sources.jar is an empty shell containing
+    // only META-INF. The real sources live in constituent sub-module jars
+    // in the same Coursier group directory (e.g. scalatest-core_2.13,
+    // scalatest-shouldmatchers_2.13). When the extracted cache dir is empty,
+    // probe Coursier for those sub-module jars.
+    let cache_is_empty = std::fs::read_dir(&cache_dir)
+        .map(|mut d| d.next().is_none())
+        .unwrap_or(true);
+    if cache_is_empty {
+        if let Some(coursier) = coursier_cache {
+            // Derive the prefix by stripping the Scala binary-version suffix.
+            let artifact_base = strip_scala_version_suffix(&coord.artifact_id);
+            let sub_jars = resolve_coursier_submodule_jars(
+                coursier,
+                &coord.group_id,
+                artifact_base,
+                Some(&version),
+            );
+            for (sub_artifact, sub_version, sub_jar) in sub_jars {
+                let sub_cache = cache_base
+                    .join(coord.group_id.replace('.', "_"))
+                    .join(&sub_artifact)
+                    .join(&sub_version);
+                if !sub_cache.exists() || is_cache_stale(&sub_jar, &sub_cache) {
+                    if let Err(e) = extract_java_sources_jar(&sub_jar, &sub_cache) {
+                        debug!("Failed to extract sub-module {sub_artifact}: {e}");
+                        continue;
+                    }
+                }
+                if !seen.insert(sub_cache.clone()) { continue; }
+                roots.push(ExternalDepRoot {
+                    module_path: format!("{}:{}", coord.group_id, sub_artifact),
+                    version: sub_version,
+                    root: sub_cache,
+                    ecosystem: ID.as_str(),
+                    package_id: None,
+                    requested_imports: user_imports.to_vec(),
+                });
+            }
+        }
+        // The aggregator itself has no source files — don't push it as a root.
+        return;
+    }
+
     if !seen.insert(cache_dir.clone()) { return }
     roots.push(ExternalDepRoot {
         module_path: format!("{}:{}", coord.group_id, coord.artifact_id),
@@ -429,6 +475,17 @@ fn resolve_and_push_jvm(
         package_id: None,
         requested_imports: user_imports.to_vec(),
     });
+}
+
+/// Strip a Scala binary-version suffix from an artifact name.
+/// `scalatest_2.13` → `scalatest`, `cats-core_3` → `cats-core`.
+fn strip_scala_version_suffix(artifact: &str) -> &str {
+    for suffix in &["_2.13", "_2.12", "_2.11", "_3"] {
+        if let Some(base) = artifact.strip_suffix(suffix) {
+            return base;
+        }
+    }
+    artifact
 }
 
 /// Probe each cache (Maven local, Gradle, Coursier) for a sources jar

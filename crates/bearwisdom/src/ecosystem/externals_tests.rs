@@ -2,7 +2,10 @@ use std::fs;
 
 use tempfile::TempDir;
 
-use super::{pick_newest_version, resolve_coursier_sources_jar, resolve_gradle_sources_jar};
+use super::{
+    pick_newest_version, resolve_coursier_sources_jar, resolve_coursier_submodule_jars,
+    resolve_gradle_sources_jar, strip_scala_suffix,
+};
 use crate::ecosystem::manifest::maven::MavenCoord;
 
 #[test]
@@ -266,4 +269,83 @@ fn resolve_coursier_sources_jar_returns_none_for_missing_artifact() {
         version: Some("1.0.0".to_string()),
     };
     assert!(resolve_coursier_sources_jar(tmp.path(), &coord).is_none());
+}
+
+#[test]
+fn strip_scala_suffix_removes_version_suffixes() {
+    assert_eq!(strip_scala_suffix("scalatest_2.13"), "scalatest");
+    assert_eq!(strip_scala_suffix("cats-core_3"), "cats-core");
+    assert_eq!(strip_scala_suffix("scalatest-core_2.12"), "scalatest-core");
+    assert_eq!(strip_scala_suffix("scalatest-compatible"), "scalatest-compatible");
+    assert_eq!(strip_scala_suffix("akka-actor_2.13"), "akka-actor");
+}
+
+#[test]
+fn resolve_coursier_submodule_jars_finds_split_modules() {
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+
+    // Aggregator artifact — the jar BW initially resolves.
+    make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "org.scalatest",
+        "scalatest_2.13",
+        "3.2.20",
+        "scalatest_2.13-3.2.20-sources.jar",
+    );
+    // Sub-module sources jars under the same Coursier group dir.
+    let core_jar = make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "org.scalatest",
+        "scalatest-core_2.13",
+        "3.2.20",
+        "scalatest-core_2.13-3.2.20-sources.jar",
+    );
+    let matchers_jar = make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "org.scalatest",
+        "scalatest-shouldmatchers_2.13",
+        "3.2.20",
+        "scalatest-shouldmatchers_2.13-3.2.20-sources.jar",
+    );
+
+    let subs = resolve_coursier_submodule_jars(cache, "org.scalatest", "scalatest", Some("3.2.20"));
+    let found_artifacts: Vec<&str> = subs.iter().map(|(a, _, _)| a.as_str()).collect();
+
+    // Both sub-modules found; aggregator itself excluded.
+    assert!(found_artifacts.contains(&"scalatest-core_2.13"), "missing core");
+    assert!(found_artifacts.contains(&"scalatest-shouldmatchers_2.13"), "missing matchers");
+    assert!(!found_artifacts.contains(&"scalatest_2.13"), "aggregator must be excluded");
+
+    // Verify the jar paths are correct.
+    let core_found = subs.iter().find(|(a, _, _)| a == "scalatest-core_2.13").unwrap();
+    assert_eq!(core_found.2, core_jar);
+    let matchers_found = subs.iter().find(|(a, _, _)| a == "scalatest-shouldmatchers_2.13").unwrap();
+    assert_eq!(matchers_found.2, matchers_jar);
+}
+
+#[test]
+fn resolve_coursier_submodule_jars_empty_when_no_siblings() {
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+
+    // Only the aggregator, no sub-modules.
+    make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "com.example",
+        "mylib_2.13",
+        "1.0.0",
+        "mylib_2.13-1.0.0-sources.jar",
+    );
+
+    let subs = resolve_coursier_submodule_jars(cache, "com.example", "mylib", Some("1.0.0"));
+    assert!(subs.is_empty(), "no sub-modules should be found");
 }

@@ -542,6 +542,123 @@ pub(crate) fn resolve_coursier_sources_jar(
     search(cache_root, coord, group_first, &target_name, 0)
 }
 
+/// Scan a Coursier group directory for sub-module sources jars whose
+/// artifact name begins with `artifact_prefix`. Returns
+/// `(artifact_id, version, sources_jar_path)` for every sub-module jar
+/// found. Intended for Scala aggregator artifacts (e.g. `scalatest_2.13`)
+/// whose published `-sources.jar` contains only `META-INF` while the real
+/// source files live in constituent modules (`scalatest-core_2.13`,
+/// `scalatest-shouldmatchers_2.13`, etc.) under the same Coursier group dir.
+///
+/// `artifact_prefix` is the base name without the `_2.13` / `_3` Scala
+/// version suffix and without any `-<module>` suffix — e.g. `"scalatest"`.
+/// Every sibling artifact directory whose name starts with that prefix is
+/// probed for a `-sources.jar` at `preferred_version`; when that version is
+/// absent the newest available version is used instead.
+pub(crate) fn resolve_coursier_submodule_jars(
+    cache_root: &Path,
+    group_id: &str,
+    artifact_prefix: &str,
+    preferred_version: Option<&str>,
+) -> Vec<(String, String, PathBuf)> {
+    // Walk scheme/host/repo-base wrappers to locate the Coursier group dir.
+    fn find_group_dir(dir: &Path, group_id: &str, depth: u32) -> Option<PathBuf> {
+        if depth > 8 { return None; }
+        let group_first = group_id.split('.').next()?;
+        let entries = std::fs::read_dir(dir).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() { continue; }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if name == group_first {
+                // Navigate remaining group segments.
+                let mut group_path = path.clone();
+                for seg in group_id.split('.').skip(1) {
+                    group_path.push(seg);
+                }
+                if group_path.is_dir() {
+                    return Some(group_path);
+                }
+            }
+            if let Some(found) = find_group_dir(&path, group_id, depth + 1) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    let Some(group_dir) = find_group_dir(cache_root, group_id, 0) else {
+        return Vec::new();
+    };
+
+    let Ok(entries) = std::fs::read_dir(&group_dir) else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() { continue; }
+        let Some(artifact_dir_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+
+        // Strip the Scala version suffix to get the base artifact name, then
+        // check that it starts with our prefix. `scalatest-core_2.13` →
+        // base = `scalatest-core`; `scalatest_2.13` itself is the aggregator
+        // we already processed — skip it.
+        let base = strip_scala_suffix(artifact_dir_name);
+        if !base.starts_with(artifact_prefix) { continue; }
+        // Skip the aggregator itself (exact match after suffix strip).
+        if base == artifact_prefix { continue; }
+
+        // Pick version: preferred first, then newest available.
+        let version = if let Some(v) = preferred_version {
+            let vdir = path.join(v);
+            if vdir.is_dir() { v.to_string() }
+            else {
+                let Some(newest) = pick_newest_version_from_dir(&path) else { continue };
+                newest
+            }
+        } else {
+            let Some(newest) = pick_newest_version_from_dir(&path) else { continue };
+            newest
+        };
+
+        let sources_jar = path.join(&version)
+            .join(format!("{artifact_dir_name}-{version}-sources.jar"));
+        if sources_jar.is_file() {
+            out.push((artifact_dir_name.to_string(), version, sources_jar));
+        }
+    }
+    out
+}
+
+/// Strip a Scala binary-version suffix from an artifact directory name.
+/// `scalatest-core_2.13` → `scalatest-core`
+/// `scalatest_3`         → `scalatest`
+/// `scalatest-compatible` → `scalatest-compatible` (no suffix — unchanged)
+pub(crate) fn strip_scala_suffix(name: &str) -> &str {
+    for suffix in &["_2.13", "_2.12", "_2.11", "_3"] {
+        if let Some(base) = name.strip_suffix(suffix) {
+            return base;
+        }
+    }
+    name
+}
+
+fn pick_newest_version_from_dir(dir: &Path) -> Option<String> {
+    let versions: Vec<String> = std::fs::read_dir(dir).ok()?
+        .flatten()
+        .filter_map(|e| {
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().into_string().ok()
+            } else {
+                None
+            }
+        })
+        .collect();
+    pick_newest_version(&versions)
+}
+
 /// Mini walker that finds every `pom.xml` under a project root up to a
 /// bounded depth. Mirrors the helper in `manifest/maven.rs` because that
 /// one is private to the module.

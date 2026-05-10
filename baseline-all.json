@@ -7454,14 +7454,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 86
+        "min_resolution_rate": 93
       },
       "code_chunks": 20303,
       "files": 1056,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 49157,
-      "internal_unresolved": 7493,
+      "internal_edges": 57001,
+      "internal_unresolved": 3677,
       "languages": {
         "css": 1,
         "handlebars": 9,
@@ -7478,39 +7478,39 @@
       },
       "path": "F:/Work/Projects/TestProjects/scala-finatra",
       "perf": {
-        "end_ws_mb": 127,
-        "files_per_sec": 5,
-        "index_duration_ms": 210993
+        "end_ws_mb": 137,
+        "files_per_sec": 4,
+        "index_duration_ms": 271839
       },
       "project": "scala-finatra",
-      "resolution_rate": 86.77,
+      "resolution_rate": 93.94,
       "routes": 0,
       "symbols": 10246,
       "unresolved_by_lang_kind": {
         "html.calls": 2,
         "java.calls": 63,
         "java.implements": 4,
-        "java.instantiates": 1,
-        "java.type_ref": 155,
+        "java.instantiates": 2,
+        "java.type_ref": 141,
         "python.calls": 4,
         "python.type_ref": 2,
-        "scala.calls": 4582,
-        "scala.implements": 18,
+        "scala.calls": 786,
+        "scala.implements": 17,
         "scala.inherits": 57,
-        "scala.type_ref": 2604,
+        "scala.type_ref": 2598,
         "shell.calls": 1
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 95
+        "min_resolution_rate": 97
       },
       "code_chunks": 31734,
       "files": 1015,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 80592,
-      "internal_unresolved": 3578,
+      "internal_edges": 96834,
+      "internal_unresolved": 2786,
       "languages": {
         "css": 2,
         "html": 6,
@@ -7524,12 +7524,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/scala-gatling",
       "perf": {
-        "end_ws_mb": 147,
-        "files_per_sec": 7,
-        "index_duration_ms": 142649
+        "end_ws_mb": 126,
+        "files_per_sec": 6,
+        "index_duration_ms": 164661
       },
       "project": "scala-gatling",
-      "resolution_rate": 95.75,
+      "resolution_rate": 97.2,
       "routes": 0,
       "symbols": 17405,
       "unresolved_by_lang_kind": {
@@ -7537,12 +7537,12 @@
         "java.calls": 52,
         "java.implements": 4,
         "java.instantiates": 26,
-        "java.type_ref": 536,
+        "java.type_ref": 440,
         "javascript.calls": 28,
-        "scala.calls": 1456,
-        "scala.implements": 9,
+        "scala.calls": 807,
+        "scala.implements": 7,
         "scala.inherits": 53,
-        "scala.type_ref": 1411
+        "scala.type_ref": 1366
       }
     },
     {
@@ -7551,14 +7551,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 90
+        "min_resolution_rate": 96
       },
       "code_chunks": 4217,
       "files": 184,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 8460,
-      "internal_unresolved": 922,
+      "internal_edges": 19992,
+      "internal_unresolved": 752,
       "languages": {
         "dockerfile": 1,
         "html": 2,
@@ -7572,18 +7572,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/scala-trading",
       "perf": {
-        "end_ws_mb": 101,
+        "end_ws_mb": 84,
         "files_per_sec": 3,
-        "index_duration_ms": 56541
+        "index_duration_ms": 60073
       },
       "project": "scala-trading",
-      "resolution_rate": 90.17,
+      "resolution_rate": 96.37,
       "routes": 0,
       "symbols": 3093,
       "unresolved_by_lang_kind": {
         "javascript.calls": 6,
         "nix.calls": 218,
-        "scala.calls": 435,
+        "scala.calls": 265,
         "scala.inherits": 20,
         "scala.type_ref": 243
       }
