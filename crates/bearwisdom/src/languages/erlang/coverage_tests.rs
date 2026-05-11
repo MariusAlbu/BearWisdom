@@ -264,3 +264,39 @@ fn symbol_fun_decl_zero_arity() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+/// -spec annotations must NOT emit Calls refs for type atoms.
+///
+/// Dialyzer type names like `pid()`, `any()`, `binary()`, `req()` appear
+/// syntactically as zero-argument calls inside spec nodes. Emitting them as
+/// Calls refs produces false positives — they have no function definition to
+/// resolve to.
+#[test]
+fn spec_does_not_emit_type_atom_calls() {
+    let src = concat!(
+        "-module(mymod).\n",
+        "-export([start/1]).\n",
+        "-spec start(Opts :: list()) -> {ok, pid()} | {error, any()}.\n",
+        "start(Opts) -> {ok, Opts}.\n",
+    );
+    let r = extract(src);
+    // `pid` and `any` must not appear as Calls refs
+    let type_call_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| {
+            rf.kind == EdgeKind::Calls
+                && (rf.target_name == "pid/0" || rf.target_name == "any/0"
+                    || rf.target_name == "list/1" || rf.target_name == "error/1"
+                    || rf.target_name == "ok/1")
+        })
+        .collect();
+    assert!(
+        type_call_refs.is_empty(),
+        "spec type atoms emitted as Calls refs (false positives): {:?}",
+        type_call_refs
+            .iter()
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
+    );
+}

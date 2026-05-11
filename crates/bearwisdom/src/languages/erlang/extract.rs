@@ -76,10 +76,14 @@ pub fn extract(source: &str) -> ExtractionResult {
             "wild_attribute" => {
                 extract_wild_attr(&child, source, &mut symbols);
             }
-            // Type specs (-spec, -type) and other attributes may contain `call`
-            // nodes (type applications like `list(integer())` in type specs).
-            // Collect calls from these so the coverage engine's `call` budget
-            // for those nodes is satisfied.
+            // Spec declarations (-spec) carry type signatures, not call edges.
+            // Atoms inside type signatures (e.g. `pid()`, `any()`, `binary()`)
+            // look like zero-argument calls to the parser but are type
+            // applications — emitting them as Calls refs produces false positives
+            // that can never resolve to a function definition.
+            "spec" => {}
+            // Other top-level nodes (attributes, define macros, etc.) may contain
+            // genuine call expressions — recurse to collect them.
             _ => {
                 let sym_idx = symbols.len().saturating_sub(1);
                 collect_calls(&child, source, sym_idx, &mut refs);

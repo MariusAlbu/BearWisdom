@@ -66,7 +66,8 @@ impl LanguagePlugin for ErlangPlugin {
             "atom", "integer", "float", "boolean", "binary", "bitstring",
             "list", "tuple", "map", "pid", "port", "reference", "fun",
             "iolist", "iodata", "string", "char", "byte", "timeout",
-            "any", "none", "term", "number",
+            "any", "none", "term", "number", "no_return",
+            "neg_integer", "non_neg_integer", "pos_integer", "nonempty_list", "mfa",
         ]
     }
 
