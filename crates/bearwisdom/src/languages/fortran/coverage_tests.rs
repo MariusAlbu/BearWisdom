@@ -100,7 +100,10 @@ fn ref_call_expression() {
     );
 }
 
-/// derived type member call: self%compute(x) → target_name = "compute", module = Some("self")
+/// derived type member call: self%compute(x) → target_name = "compute",
+/// module = Some(type_name). The local type map resolves `self: MyType`
+/// from `class(MyType) :: self`, so `module` carries the type name rather
+/// than the variable name.
 #[test]
 fn ref_derived_type_member_call() {
     let src = concat!(
@@ -119,10 +122,11 @@ fn ref_derived_type_member_call() {
         "expected Calls ref with target_name=\"compute\"; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, &rf.module)).collect::<Vec<_>>()
     );
+    // With the local type map, `self` resolves to its declared type `MyType`.
     assert_eq!(
         rf.unwrap().module.as_deref(),
-        Some("self"),
-        "expected module = Some(\"self\")"
+        Some("MyType"),
+        "expected module = Some(\"MyType\") after type-map resolution"
     );
 }
 
@@ -401,6 +405,55 @@ fn fypp_partial_parse_extracts_module_and_procedures() {
     );
 }
 
+/// .fypp files often have leading `#:include` and `#:set` directives before
+/// the module statement. tree-sitter-fortran can't parse those lines, but must
+/// still recover the valid `module` node that follows. Also validates that a
+/// named `interface` block inside emits a Function symbol.
+#[test]
+fn fypp_leading_directives_before_module_still_emits_module_and_interface() {
+    let src = concat!(
+        "#:include \"common.fypp\"\n",
+        "\n",
+        "#:set KINDS_TYPES = REAL_KINDS_TYPES + INT_KINDS_TYPES\n",
+        "\n",
+        "module stdlib_optval\n",
+        "  implicit none\n",
+        "  private\n",
+        "  public :: optval\n",
+        "\n",
+        "  interface optval\n",
+        "    module procedure optval_character\n",
+        "  end interface optval\n",
+        "\n",
+        "contains\n",
+        "\n",
+        "  pure elemental function optval_character(x, default) result(y)\n",
+        "    character(len=*), intent(in), optional :: x\n",
+        "    character(len=*), intent(in) :: default\n",
+        "    character(len=:), allocatable :: y\n",
+        "    if (present(x)) then\n",
+        "       y = x\n",
+        "    else\n",
+        "       y = default\n",
+        "    end if\n",
+        "  end function optval_character\n",
+        "\n",
+        "end module stdlib_optval\n",
+    );
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "stdlib_optval" && s.kind == SymbolKind::Namespace),
+        "module 'stdlib_optval' must be emitted despite leading fypp directives; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "optval" && s.kind == SymbolKind::Function),
+        "interface 'optval' must emit a Function symbol; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+
 // ---------------------------------------------------------------------------
 // .fypp recovery: string literals must never become Calls refs
 // ---------------------------------------------------------------------------
@@ -428,4 +481,173 @@ fn fypp_string_literal_never_becomes_call_ref() {
     assert!(r.refs.iter().any(|rf| rf.target_name == "dgemv" && rf.kind == EdgeKind::Calls),
         "expected Calls ref to dgemv; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>());
+}
+
+// ---------------------------------------------------------------------------
+// subroutine_call with derived_type_member_expression (CALL obj%method)
+// ---------------------------------------------------------------------------
+
+/// `call tbl%get_keys(list)` is a `subroutine_call` whose `subroutine` field
+/// is a `derived_type_member_expression`. The extractor must split it into
+/// target_name="get_keys" and module=Some("tbl") — not emit the raw
+/// "tbl%get_keys" string which would never resolve.
+#[test]
+fn ref_subroutine_call_derived_type_member() {
+    let src = concat!(
+        "subroutine process(tbl, list)\n",
+        "  use tomlf, only: toml_table, toml_key\n",
+        "  type(toml_table), intent(inout) :: tbl\n",
+        "  type(toml_key), allocatable :: list(:)\n",
+        "  call tbl%get_keys(list)\n",
+        "end subroutine\n",
+    );
+    let r = extract(src);
+    // Must emit target_name="get_keys", NOT "tbl%get_keys"
+    let bad: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains('%'))
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(bad.is_empty(), "raw percent-refs leaked: {bad:?}");
+    let rf = r.refs.iter().find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "get_keys");
+    assert!(
+        rf.is_some(),
+        "expected Calls ref target_name=\"get_keys\"; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// fypp interpolation marker filtering ($) in symbol and ref names
+// ---------------------------------------------------------------------------
+
+/// fypp template artifacts like `optval_${t1[0]}$${k1}$` must not be emitted
+/// as symbol names or Calls refs. The `$` guard in `push_sym` and
+/// `is_fortran_callable_text` filters them before they reach the index.
+#[test]
+fn fypp_dollar_markers_filtered_from_symbols_and_refs() {
+    // Minimal .fypp-style source: the loop body produces mangled names that
+    // tree-sitter partially recovers. Real names before the loop must survive.
+    let src = concat!(
+        "module stdlib_optval\n",
+        "  implicit none\n",
+        "contains\n",
+        // Mangled template expansion — tree-sitter may recover this as a
+        // subroutine with a `$`-bearing name.
+        "  pure function optval_x1k1(x, d) result(y)\n",
+        "    integer, intent(in), optional :: x\n",
+        "    integer, intent(in) :: d\n",
+        "    integer :: y\n",
+        "    if (present(x)) then\n",
+        "      y = x\n",
+        "    else\n",
+        "      y = d\n",
+        "    end if\n",
+        "  end function\n",
+        "end module\n",
+    );
+    let r = extract(src);
+    let dollar_syms: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.name.contains('$'))
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(dollar_syms.is_empty(), "symbols with '$' leaked: {dollar_syms:?}");
+    let dollar_refs: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.target_name.contains('$'))
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(dollar_refs.is_empty(), "refs with '$' leaked: {dollar_refs:?}");
+    // The real module symbol must still be emitted.
+    assert!(
+        r.symbols.iter().any(|s| s.name == "stdlib_optval" && s.kind == SymbolKind::Namespace),
+        "module 'stdlib_optval' must still be emitted; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Bound procedure extraction from derived type contains block
+// ---------------------------------------------------------------------------
+
+/// `type :: installer_t ... contains ... procedure :: install_library` must
+/// emit a qualified Variable symbol `installer_t.install_library` as a member
+/// of `installer_t`. This populates `members_of(installer_t)` in the symbol
+/// index so type-chain resolution can find bound procedure declarations.
+#[test]
+fn derived_type_bound_procedure_emits_member_symbol() {
+    let src = concat!(
+        "module fpm_installer\n",
+        "  implicit none\n",
+        "  type :: installer_t\n",
+        "    character(len=:), allocatable :: prefix\n",
+        "  contains\n",
+        "    procedure :: install_library\n",
+        "    procedure :: install_executable\n",
+        "    procedure :: new => installer_new\n",
+        "  end type\n",
+        "contains\n",
+        "  subroutine install_library(self, lib, error)\n",
+        "    class(installer_t), intent(inout) :: self\n",
+        "  end subroutine\n",
+        "  subroutine install_executable(self, exe, error)\n",
+        "    class(installer_t), intent(inout) :: self\n",
+        "  end subroutine\n",
+        "  subroutine installer_new(self)\n",
+        "    class(installer_t), intent(inout) :: self\n",
+        "  end subroutine\n",
+        "end module\n",
+    );
+    let r = extract(src);
+    // Qualified member symbols must appear
+    assert!(
+        r.symbols.iter().any(|s| s.qualified_name == "installer_t.install_library"),
+        "expected member 'installer_t.install_library'; got {:?}",
+        r.symbols.iter().map(|s| (&s.qualified_name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.qualified_name == "installer_t.install_executable"),
+        "expected member 'installer_t.install_executable'"
+    );
+    // Aliased binding: `procedure :: new => installer_new` — the public name
+    // is `new`, not `installer_new`.
+    assert!(
+        r.symbols.iter().any(|s| s.qualified_name == "installer_t.new"),
+        "expected aliased member 'installer_t.new' from 'procedure :: new => installer_new'"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Local type map: derived-type variable declarations resolve to type name
+// ---------------------------------------------------------------------------
+
+/// A subroutine-local `type(installer_t) :: installer` declares `installer`
+/// as having derived type `installer_t`. When the extractor sees
+/// `call installer%install_library(...)`, it should emit
+/// target_name="install_library", module=Some("installer_t") — using the
+/// type name, not the variable name.
+#[test]
+fn subroutine_local_type_map_replaces_var_with_type_in_module_field() {
+    let src = concat!(
+        "subroutine cmd_install(settings)\n",
+        "  use fpm_installer, only: installer_t, new_installer\n",
+        "  type(installer_t) :: installer\n",
+        "  call new_installer(installer)\n",
+        "  call installer%install_library(lib, error)\n",
+        "  call installer%install_executable(exe, error)\n",
+        "end subroutine\n",
+    );
+    let r = extract(src);
+    // `install_library` call must carry module = "installer_t", not "installer"
+    let lib_ref = r.refs.iter().find(|rf|
+        rf.kind == EdgeKind::Calls && rf.target_name == "install_library"
+    );
+    assert!(
+        lib_ref.is_some(),
+        "expected Calls ref to 'install_library'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        lib_ref.unwrap().module.as_deref(),
+        Some("installer_t"),
+        "module field must be the type name 'installer_t', not the variable name"
+    );
 }

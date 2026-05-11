@@ -2283,14 +2283,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 90
+        "min_resolution_rate": 97
       },
-      "code_chunks": 14353,
+      "code_chunks": 14626,
       "files": 340,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 5817,
-      "internal_unresolved": 638,
+      "internal_edges": 5987,
+      "internal_unresolved": 172,
       "languages": {
         "c": 20,
         "cpp": 2,
@@ -2301,19 +2301,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/fortran-fpm",
       "perf": {
-        "end_ws_mb": 73,
+        "end_ws_mb": 71,
         "files_per_sec": 6,
-        "index_duration_ms": 57500
+        "index_duration_ms": 56563
       },
       "project": "fortran-fpm",
-      "resolution_rate": 90.12,
+      "resolution_rate": 97.21,
       "routes": 0,
-      "symbols": 1725,
+      "symbols": 1923,
       "unresolved_by_lang_kind": {
         "c.calls": 11,
         "c.type_ref": 6,
         "cpp.calls": 8,
-        "fortran.calls": 613
+        "fortran.calls": 147
       }
     },
     {
@@ -2340,9 +2340,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/fortran-json",
       "perf": {
-        "end_ws_mb": 218,
+        "end_ws_mb": 221,
         "files_per_sec": 1,
-        "index_duration_ms": 59037
+        "index_duration_ms": 63651
       },
       "project": "fortran-json",
       "resolution_rate": 95.48,
@@ -2355,14 +2355,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 88
+        "min_resolution_rate": 93
       },
-      "code_chunks": 57398,
+      "code_chunks": 67779,
       "files": 783,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 25575,
-      "internal_unresolved": 3483,
+      "internal_edges": 21054,
+      "internal_unresolved": 1495,
       "languages": {
         "c": 7,
         "cmake": 93,
@@ -2375,18 +2375,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/fortran-stdlib",
       "perf": {
-        "end_ws_mb": 256,
-        "files_per_sec": 4,
-        "index_duration_ms": 175890
+        "end_ws_mb": 228,
+        "files_per_sec": 5,
+        "index_duration_ms": 151524
       },
       "project": "fortran-stdlib",
-      "resolution_rate": 88.01,
+      "resolution_rate": 93.37,
       "routes": 0,
-      "symbols": 17401,
+      "symbols": 17166,
       "unresolved_by_lang_kind": {
         "cmake.type_ref": 118,
         "cpp.type_ref": 33,
-        "fortran.calls": 3332
+        "fortran.calls": 1344
       }
     },
     {

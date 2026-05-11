@@ -132,6 +132,47 @@ impl LanguageResolver for FortranResolver {
             }
         }
 
+        // Derived-type method call: `module` holds the declared type name
+        // (as extracted by the local type map or left as the variable name).
+        // Probe members_of(type_name) for a bound procedure with this name.
+        // When found, the backing subroutine is the same-named symbol anywhere
+        // in the index (Fortran bound procedures delegate to top-level subs).
+        if let Some(type_name) = &ref_ctx.extracted_ref.module {
+            let type_lower = type_name.to_lowercase();
+            // Try both case variants — Fortran is case-insensitive but symbol
+            // storage preserves source case from the extractor.
+            for tname in [type_name.as_str(), type_lower.as_str()] {
+                for member in lookup.members_of(tname) {
+                    if member.name.to_lowercase() == target_lower {
+                        // Bound procedure declared. Resolve to the backing
+                        // subroutine by name (confidence 0.9) or fall back
+                        // to the member symbol itself (confidence 0.85).
+                        for sym in lookup.by_name(target) {
+                            if sym.name.to_lowercase() == target_lower
+                                && predicates::kind_compatible(
+                                    ref_ctx.extracted_ref.kind,
+                                    &sym.kind,
+                                )
+                            {
+                                return Some(Resolution {
+                                    target_symbol_id: sym.id,
+                                    confidence: 0.9,
+                                    strategy: "fortran_type_member",
+                                    resolved_yield_type: None,
+                                });
+                            }
+                        }
+                        return Some(Resolution {
+                            target_symbol_id: member.id,
+                            confidence: 0.85,
+                            strategy: "fortran_type_member_direct",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+        }
+
         engine::resolve_common("fortran", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
