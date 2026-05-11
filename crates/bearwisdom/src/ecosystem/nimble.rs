@@ -437,6 +437,8 @@ pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
     let mut record_dep = |raw: &str, deps: &mut Vec<String>| {
         let dep = raw.trim();
         if dep.is_empty() { return }
+        // Skip https:// URLs — they're not simple package names.
+        if dep.starts_with("https://") || dep.starts_with("http://") { return }
         let name = dep
             .split(|c: char| c == '>' || c == '<' || c == '=' || c == '#' || c == '@' || c.is_whitespace())
             .next().unwrap_or("").trim();
@@ -448,31 +450,80 @@ pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
         }
     };
 
-    let mut in_block = false;
+    // Nimble `requires` can appear in several forms:
+    //
+    //   requires "foo >= 1.0"
+    //
+    //   requires "foo >= 1.0", \
+    //     "bar"
+    //
+    //   requires "foo",
+    //     "bar",                          ← comma-continuation, no parens
+    //     "baz"
+    //
+    //   requires(
+    //     "foo",
+    //     "bar",
+    //   )
+    //
+    // The continuation lines have no `requires` keyword; we detect them by
+    // tracking whether the previous requires-carrying line ended with `,` or
+    // `\` (implicit continuation), or whether we entered a `(` block.
+    let mut in_requires = false; // comma-continuation mode (no parens)
+    let mut in_block = false;    // explicit `requires(` block
     for line in content.lines() {
         let trimmed = line.trim();
 
         // Single-line `requires "name"` and multi-line `requires(` opener.
         if trimmed.starts_with("requires") {
-            // Switch into block mode for the `requires(` form (block extends
-            // across lines until the matching `)`).
+            // `requires(` form — block extends until the matching `)`.
             if trimmed.contains('(') && !trimmed.contains(')') {
                 in_block = true;
+                in_requires = false;
             }
-            // Strip the keyword + opening paren before scanning quoted args
-            // so the inline `requires "name"` form keeps working.
+            // Strip the keyword + opening paren before scanning quoted args.
             let after_kw = trimmed.trim_start_matches("requires").trim_start_matches('(');
             for part in after_kw.split('"') {
+                record_dep(part, &mut deps);
+            }
+            // Comma-continuation: the line (or its visible content after
+            // stripping comments) ends with `,` or `\` — subsequent
+            // indented lines belong to the same requires statement.
+            let visible = after_kw.split('#').next().unwrap_or("").trim_end_matches('\\').trim();
+            in_requires = !in_block && visible.ends_with(',');
+            continue;
+        }
+
+        // Inside a `requires(...)` block.
+        if in_block {
+            if trimmed.contains(')') {
+                in_block = false;
+                in_requires = false;
+            }
+            for part in trimmed.split('"') {
                 record_dep(part, &mut deps);
             }
             continue;
         }
 
-        // Inside a `requires( ... )` block — every quoted token is a dep.
-        if in_block {
-            if trimmed.contains(')') { in_block = false; }
+        // Comma-continuation lines: indented lines containing quoted dep
+        // strings that follow a `requires` line ending with `,`.
+        if in_requires {
+            // A line that is not indented and is not a continuation (no leading
+            // whitespace and not just a comma or quote) ends the block.
+            if !trimmed.is_empty() && !line.starts_with(char::is_whitespace)
+                && !trimmed.starts_with('"') && !trimmed.starts_with(',')
+            {
+                in_requires = false;
+                continue;
+            }
             for part in trimmed.split('"') {
                 record_dep(part, &mut deps);
+            }
+            // Keep continuation mode while the line ends with `,`.
+            let visible = trimmed.split('#').next().unwrap_or("").trim_end_matches('\\').trim();
+            if !visible.ends_with(',') {
+                in_requires = false;
             }
         }
     }
@@ -547,26 +598,40 @@ const STDLIB_PRE_PULL_SUBDIRS: &[&str] = &[
     "std",
 ];
 
-/// Walk the stdlib root's pre-pull subdirs plus the top-level `system.nim`
-/// and return them as WalkedFiles for eager parsing. Called by the demand-
-/// driven pipeline before symbol-index queries begin so that stdlib symbols
-/// are written to the DB and reachable via the normal resolve pass.
+/// Walk the stdlib subdirs and the main entry file of every nimble package dep,
+/// returning WalkedFiles for eager parsing. Called by the demand-driven pipeline
+/// before symbol-index queries begin so that stdlib AND package symbols are
+/// available on the first resolve pass — before the chain-walker expand loop runs.
+///
+/// For the stdlib dep: walks `system.nim` + `pure/`, `core/`, `std/` subdirs.
+/// For each nimble package dep: includes `<module_path>.nim` at the package root
+/// (the canonical entry point for single-file packages like `results.nim`) so
+/// bare call targets (`ok`, `tryGet`, `some`, …) resolve on pass 1.
 fn nim_stdlib_pre_pull(dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
     let mut out = Vec::new();
     for dep in dep_roots {
-        if dep.module_path != "nim-stdlib" { continue; }
         let root = &dep.root;
-        // Top-level system.nim is the auto-imported prelude.
-        let sys = root.join("system.nim");
-        if sys.is_file() {
-            let rel = format!("ext:nim:{}/system.nim", dep.module_path);
-            out.push(WalkedFile { relative_path: rel, absolute_path: sys, language: "nim" });
-        }
-        for sub in STDLIB_PRE_PULL_SUBDIRS {
-            let dir = root.join(sub);
-            if dir.is_dir() {
-                walk_dir_bounded(&dir, root, dep, &mut out, 0);
+        if dep.module_path == "nim-stdlib" {
+            // Top-level system.nim is the auto-imported prelude.
+            let sys = root.join("system.nim");
+            if sys.is_file() {
+                let rel = format!("ext:nim:{}/system.nim", dep.module_path);
+                out.push(WalkedFile { relative_path: rel, absolute_path: sys, language: "nim" });
             }
+            for sub in STDLIB_PRE_PULL_SUBDIRS {
+                let dir = root.join(sub);
+                if dir.is_dir() {
+                    walk_dir_bounded(&dir, root, dep, &mut out, 0);
+                }
+            }
+        } else {
+            // For nimble package deps, pre-pull all `.nim` files in the
+            // package. Packages like `chronos` expose their surface via
+            // re-exported submodules; indexing only the root entry file
+            // misses the symbols in `asyncloop.nim`, `asyncsync.nim`, etc.
+            // The walker respects the standard exclusions (tests/, examples/,
+            // nimcache) so depth is bounded in practice.
+            walk_dir_bounded(root, root, dep, &mut out, 0);
         }
     }
     out
@@ -681,65 +746,7 @@ fn extract_nim_identifier(rest: &str) -> String {
     name
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "nimble_tests.rs"]
+mod tests;
 
-    #[test]
-    fn ecosystem_identity() {
-        let n = NimbleEcosystem;
-        assert_eq!(n.id(), ID);
-        assert_eq!(Ecosystem::kind(&n), EcosystemKind::Package);
-        assert_eq!(Ecosystem::languages(&n), &["nim"]);
-    }
-
-    #[test]
-    fn legacy_locator_tag_is_nim() {
-        assert_eq!(ExternalSourceLocator::ecosystem(&NimbleEcosystem), "nim");
-    }
-
-    #[test]
-    fn nim_parses_nimble_requires() {
-        let tmp = std::env::temp_dir().join("bw-test-nimble-parse");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        std::fs::write(tmp.join("test.nimble"), r#"
-requires "nim >= 2.0.0"
-requires "jester#baca3f"
-requires "karax#5cf360c"
-"#).unwrap();
-        let deps = parse_nimble_requires(&tmp);
-        assert_eq!(deps, vec!["jester", "karax"]);
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[allow(dead_code)]
-    fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
-        shared_locator()
-    }
-
-    #[test]
-    fn nim_extract_imports_handles_group_form() {
-        let mut out = std::collections::HashSet::new();
-        extract_nim_imports(
-            "import strutils\nimport std/strformat\nimport pkg/foo/[bar, baz]\nfrom os import getEnv\nimport other as O\n",
-            &mut out,
-        );
-        assert!(out.contains("strutils"));
-        assert!(out.contains("std/strformat"));
-        assert!(out.contains("pkg/foo/bar"));
-        assert!(out.contains("pkg/foo/baz"));
-        assert!(out.contains("os"));
-        assert!(out.contains("other"));
-    }
-
-    #[test]
-    fn nim_module_to_path_tail_converts() {
-        assert_eq!(nim_module_to_path_tail("strutils"), Some("strutils.nim".to_string()));
-        assert_eq!(nim_module_to_path_tail("std/strutils"), Some("std/strutils.nim".to_string()));
-    }
-}

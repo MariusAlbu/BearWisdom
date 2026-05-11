@@ -18,7 +18,7 @@
 use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
-    SymbolLookup,
+    SymbolInfo, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -86,7 +86,26 @@ impl LanguageResolver for NimResolver {
             return None;
         }
 
-        engine::resolve_common("nim", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        if let Some(res) = engine::resolve_common("nim", file_ctx, ref_ctx, lookup, predicates::kind_compatible) {
+            return Some(res);
+        }
+
+        // Nim files expose symbols via their module name (the file stem). When
+        // `import foo` or `import std/foo` is present, all exported symbols
+        // from `foo.nim` are in scope — but `resolve_common`'s wildcard step
+        // can only match when the symbol lives in a file whose stem equals
+        // the last path segment of the import. Refs that arrive here without
+        // a module qualifier (bare `target_name`, `module=None`) but whose
+        // definition is in an external Nim file reachable from ANY of this
+        // file's imports fall through that step.
+        //
+        // Strategy: look up `target` by name and filter candidates to those
+        // whose file path contains a segment that matches one of the file's
+        // imported module leaf names. This covers:
+        //   `import results`     → `some(...)` from results.nim (Opt.some pattern)
+        //   `import chronos`     → `newFuture(...)` from chronos.nim
+        //   `import std/options` → `some(...)` / `none(...)` from options.nim
+        nim_module_file_stem_resolve(file_ctx, target, edge_kind, lookup)
     }
 
     fn infer_external_namespace(
@@ -116,4 +135,93 @@ impl LanguageResolver for NimResolver {
         }
         None
     }
+}
+
+// ---------------------------------------------------------------------------
+// Module-to-file-stem resolution
+// ---------------------------------------------------------------------------
+
+/// Resolve a bare Nim ref whose `module` field is absent by matching its
+/// name against external symbols in files reachable from the file's imports.
+///
+/// Nim's `import foo` / `import std/foo` brings every exported symbol from
+/// `foo.nim` into scope.  The extractor emits bare target names (no `module`
+/// qualifier) because Nim source rarely qualifies calls.  `resolve_common`'s
+/// wildcard step handles the common case; this function covers the remainder:
+///
+/// - Method-call terminals (`Opt.some(...)` → target `some`, no module) where
+///   the receiver type's defining module is NOT among the file's direct imports
+///   but IS transitively available.
+/// - Symbols available via `export` re-exports inside an already-imported module.
+///
+/// For each candidate in `by_name(target)` whose file path (lowercased) contains
+/// a segment equal to the leaf of any import in the file context, return the
+/// first kind-compatible match.  Confidence is 0.85 — lower than `resolve_common`'s
+/// 0.95 wildcard step to preserve its priority.
+fn nim_module_file_stem_resolve(
+    file_ctx: &FileContext,
+    target: &str,
+    edge_kind: EdgeKind,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    // Build a set of leaf module names from the file's imports.
+    // `std/options` → `options`, `chronos` → `chronos`, `system` → `system`.
+    let import_leaves: Vec<&str> = file_ctx
+        .imports
+        .iter()
+        .filter_map(|imp| imp.module_path.as_deref())
+        .map(|mp| {
+            // Strip `std/` / `pkg/` prefix then take the final `/`-segment.
+            let stripped = mp
+                .strip_prefix("std/")
+                .or_else(|| mp.strip_prefix("pkg/"))
+                .unwrap_or(mp);
+            stripped.rsplit('/').next().unwrap_or(stripped)
+        })
+        .collect();
+
+    if import_leaves.is_empty() {
+        return None;
+    }
+
+    let by_name = lookup.by_name(target);
+
+    // Prefer symbols from external Nim files (the project files were already
+    // tried by `resolve_common`'s same-file and scope-chain steps).
+    let nim_external: Vec<&SymbolInfo> = by_name
+        .iter()
+        .filter(|s| {
+            let fp = s.file_path.as_ref();
+            (fp.starts_with("ext:nim:") || fp.starts_with("ext:idx:"))
+                && fp.to_lowercase().ends_with(".nim")
+        })
+        .collect();
+
+    if nim_external.is_empty() {
+        return None;
+    }
+
+    for sym in &nim_external {
+        if !predicates::kind_compatible(edge_kind, &sym.kind) {
+            continue;
+        }
+        let fl = sym.file_path.to_lowercase().replace('\\', "/");
+        for leaf in &import_leaves {
+            let leaf_lower = leaf.to_lowercase();
+            // File stem match: `.../<leaf>.nim` — direct module file.
+            // Path segment match: `.../<leaf>/...` — package subdirectory.
+            if fl.ends_with(&format!("/{leaf_lower}.nim"))
+                || fl.contains(&format!("/{leaf_lower}/"))
+            {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.85,
+                    strategy: "nim_module_file_stem",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+    }
+
+    None
 }

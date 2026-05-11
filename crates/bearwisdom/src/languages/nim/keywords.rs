@@ -43,6 +43,9 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "..", "..<",
     "addr", "unsafeAddr",
     "sizeof", "alignof", "offsetof", "typeof",
+    // language-level builtins with no definition in any stdlib file
+    "cast", "move", "wasMoved", "reset",
+    "copyMem", "moveMem", "zeroMem", "equalMem",
     // compile-time / meta
     "compileOption", "defined", "declared",
     "gorge", "staticRead", "staticExec", "slurp",

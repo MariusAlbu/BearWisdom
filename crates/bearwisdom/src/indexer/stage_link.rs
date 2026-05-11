@@ -860,6 +860,47 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
             let rel = &after_lib[src_idx + "/src/".len()..];
             Some(format!("ext:erlang:{app}/{rel}"))
         }
+        "nim" => {
+            // Nimble layout: `~/.nimble/pkgs2/<pkg>-<version>[-<hash>]/<rel>`.
+            // Stdlib layout: `<nim-install>/lib/<rel>`.
+            // Both produce `ext:nim:<pkg>/<rel>` matching the virtual paths
+            // emitted by `walk_dir_bounded` and `nim_stdlib_pre_pull`.
+            if let Some(pkgs_idx) = s.rfind("/pkgs2/") {
+                let after = &s[pkgs_idx + "/pkgs2/".len()..];
+                // `<pkg>-<version>-<hash>/...` — strip version+hash suffix.
+                let slash = after.find('/')?;
+                let dir_name = &after[..slash];
+                let rel = &after[slash + 1..];
+                // Package directory name may be `<pkg>-<version>[-<hash>]`
+                // or just `<pkg>` (no version). Extract the bare pkg name as
+                // the leading sequence of `-`-separated components up to (but
+                // not including) the first component that starts with a digit
+                // (the semver major). Hash components start with a hex char
+                // that may not be a digit, so we stop at the semver component,
+                // which always starts with a digit.
+                let pkg: String = dir_name
+                    .split('-')
+                    .take_while(|part| {
+                        part.chars().next().map_or(false, |c| !c.is_ascii_digit())
+                    })
+                    .collect::<Vec<_>>()
+                    .join("-");
+                if pkg.is_empty() || rel.is_empty() { return None; }
+                return Some(format!("ext:nim:{pkg}/{rel}"));
+            }
+            // Stdlib: path contains `/lib/` and is under a Nim install.
+            // The stdlib pre-pull uses `ext:nim:nim-stdlib/<rel>` where <rel>
+            // is relative to `<install>/lib/`. Match files from both the
+            // compiler's lib/ and the scoop shim at the same virtual root.
+            if let Some(lib_idx) = s.rfind("/lib/") {
+                let rel = &s[lib_idx + "/lib/".len()..];
+                // Sanity-check: must end in .nim and not be nested under site-packages
+                if rel.ends_with(".nim") && !s.contains("/site-packages/") {
+                    return Some(format!("ext:nim:nim-stdlib/{rel}"));
+                }
+            }
+            None
+        }
         _ => None,
     }
 }
