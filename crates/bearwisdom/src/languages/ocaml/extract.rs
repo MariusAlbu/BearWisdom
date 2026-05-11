@@ -66,30 +66,35 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None);
+    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None, None);
 
     ExtractionResult::new(symbols, refs, tree.root_node().has_error())
 }
 
+/// `local_open_ctx` carries the opened module name when the current node is
+/// inside a `local_open_expression` body. All `application_expression` nodes
+/// within that body use it as their module qualifier so `Fmt.(any ",")` emits
+/// `any` with `module=Some("Fmt")` rather than bare.
 fn walk_node(
     node: Node,
     src: &[u8],
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
+    local_open_ctx: Option<&str>,
 ) {
     match node.kind() {
         "value_definition" => {
             let idx = extract_value_def(node, src, symbols, parent_idx);
-            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+            walk_children(node, src, symbols, refs, idx.or(parent_idx), local_open_ctx);
         }
         "type_definition" => {
             let idx = extract_type_def(node, src, symbols, parent_idx);
-            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+            walk_children(node, src, symbols, refs, idx.or(parent_idx), local_open_ctx);
         }
         "module_definition" => {
             let idx = extract_module_def(node, src, symbols, parent_idx);
-            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+            walk_children(node, src, symbols, refs, idx.or(parent_idx), local_open_ctx);
         }
         "open_module" => {
             if let Some(mod_node) = node.child_by_field_name("module") {
@@ -119,8 +124,8 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                    });
                 }
             }
         }
@@ -131,7 +136,7 @@ fn walk_node(
                 // `Module.(expr)` local-open is not a callable symbol name —
                 // the inner expression resolves separately when walked below.
                 if fn_node.kind() != "local_open_expression" {
-                    let (target_name, module) = match fn_node.kind() {
+                    let (target_name, extracted_module) = match fn_node.kind() {
                         "value_path" => split_value_path(fn_node, src),
                         // `constructor_path` covers qualified constructors like
                         // `Command.Args.S` — split into (S, Some("Command.Args"))
@@ -139,12 +144,22 @@ fn walk_node(
                         "constructor_path" => split_constructor_path(fn_node, src),
                         _ => (text(fn_node, src), None),
                     };
-                    // Skip polymorphic variant constructors (`Ok, `Error, `P, etc.)
-                    // and names with newlines (multi-line expressions, not real callees).
+                    // Skip polymorphic variant constructors (`Ok, `Error, `P, etc.),
+                    // names with newlines (multi-line expressions, not real callees),
+                    // and names containing spaces or brackets — those come from
+                    // attribute-annotated calls like `(aux [@tailcall])` which are
+                    // not direct symbol references.
                     if !target_name.is_empty()
                         && !target_name.starts_with('`')
                         && !target_name.contains('\n')
+                        && !target_name.contains(' ')
+                        && !target_name.contains('[')
                     {
+                        // Prefer the explicitly extracted module; fall back to
+                        // the inherited local_open context when no qualifier was
+                        // present in the source text.
+                        let module = extracted_module
+                            .or_else(|| local_open_ctx.map(|m| m.to_string()));
                         refs.push(ExtractedRef {
                             source_symbol_index: sym_idx,
                             target_name,
@@ -158,19 +173,34 @@ fn walk_node(
                     }
                 }
             }
-            walk_children(node, src, symbols, refs, parent_idx);
+            walk_children(node, src, symbols, refs, parent_idx, local_open_ctx);
+        }
+        "local_open_expression" => {
+            // Propagate the opened module name into all child nodes so every
+            // `application_expression` within the body emits a qualified Calls
+            // ref (module=Some("Fmt") for `Fmt.(any ",")`, including nested
+            // calls like `Fmt.(option ~none:(any "") ...)` where `any` is
+            // inside a labeled argument subtree).
+            if let Some(mod_node) = node.named_child(0) {
+                let opened_module = text(mod_node, src);
+                if !opened_module.is_empty() {
+                    walk_children(node, src, symbols, refs, parent_idx, Some(&opened_module));
+                    return;
+                }
+            }
+            walk_children(node, src, symbols, refs, parent_idx, local_open_ctx);
         }
         "exception_definition" => {
             let idx = extract_exception_def(node, src, symbols, parent_idx);
-            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+            walk_children(node, src, symbols, refs, idx.or(parent_idx), local_open_ctx);
         }
         "module_type_definition" => {
             let idx = extract_module_type_def(node, src, symbols, parent_idx);
-            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+            walk_children(node, src, symbols, refs, idx.or(parent_idx), local_open_ctx);
         }
         "class_definition" => {
             let idx = extract_class_def(node, src, symbols, parent_idx);
-            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+            walk_children(node, src, symbols, refs, idx.or(parent_idx), local_open_ctx);
         }
         "external" => {
             extract_external(node, src, symbols, parent_idx);
@@ -179,6 +209,10 @@ fn walk_node(
         "value_specification" => {
             extract_value_specification(node, src, symbols, parent_idx);
         }
+        // Attributes (`[@attr payload]`, `[@@attr payload]`) contain expression-
+        // like payloads (e.g. `[@@deriving irmin ~pp]`) that parse as application
+        // expressions but are not runtime calls — skip them entirely.
+        "attribute" | "item_attribute" | "floating_attribute" => {}
         "inheritance_definition" => {
             let sym_idx = parent_idx.unwrap_or(0);
             // `class` field is the parent class expression
@@ -193,11 +227,11 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                    });
                 }
             }
-            walk_children(node, src, symbols, refs, parent_idx);
+            walk_children(node, src, symbols, refs, parent_idx, local_open_ctx);
         }
         "new_expression" => {
             let sym_idx = parent_idx.unwrap_or(0);
@@ -215,16 +249,16 @@ fn walk_node(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                        });
                     }
                     break;
                 }
             }
-            walk_children(node, src, symbols, refs, parent_idx);
+            walk_children(node, src, symbols, refs, parent_idx, local_open_ctx);
         }
         _ => {
-            walk_children(node, src, symbols, refs, parent_idx);
+            walk_children(node, src, symbols, refs, parent_idx, local_open_ctx);
         }
     }
 }
@@ -671,10 +705,11 @@ fn walk_children(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
+    local_open_ctx: Option<&str>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        walk_node(child, src, symbols, refs, parent_idx);
+        walk_node(child, src, symbols, refs, parent_idx, local_open_ctx);
     }
 }
 

@@ -325,6 +325,109 @@ fn local_open_expression_does_not_emit_calls_ref() {
     );
 }
 
+/// `local_open_expression` callee emits a qualified Calls ref for the inner
+/// function so `Fmt.(any ",")` resolves `any` with module=Some("Fmt") rather
+/// than remaining invisible to the resolver.
+#[test]
+fn local_open_expression_emits_qualified_calls_ref() {
+    let r = extract(
+        "let () = ignore (Fmt.(any \",\"))",
+        "test.ml",
+    );
+    let qualified = r.refs.iter().find(|rf| {
+        rf.kind == EdgeKind::Calls
+            && rf.target_name == "any"
+            && rf.module.as_deref() == Some("Fmt")
+    });
+    assert!(
+        qualified.is_some(),
+        "expected Calls ref for 'any' with module='Fmt' from local_open_expression; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.module.as_deref(), rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Dotted-module local open `Outer.Inner.(f arg)` emits a Calls ref for `f`
+/// with `module=Some("Outer.Inner")`. Nested calls inside labeled arguments
+/// also receive the opened module so `Fmt.(option ~none:(any "") ...)` emits
+/// both `option` and `any` with `module=Some("Fmt")`.
+#[test]
+fn dotted_local_open_expression_emits_qualified_ref() {
+    let r = extract(
+        "let x = Irmin.Type.(unstage (compare t))",
+        "test.ml",
+    );
+    let unstage_ref = r.refs.iter().find(|rf| {
+        rf.kind == EdgeKind::Calls && rf.target_name == "unstage"
+            && rf.module.as_deref() == Some("Irmin.Type")
+    });
+    assert!(
+        unstage_ref.is_some(),
+        "expected Calls ref for 'unstage' with module='Irmin.Type'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.module.as_deref(), rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Nested calls inside a local_open body (e.g. as labeled argument values)
+/// inherit the opened module context so they resolve against the same package.
+#[test]
+fn nested_call_in_local_open_body_gets_module_context() {
+    // `option` is the top-level call, `any` is nested inside a labeled argument.
+    // Both must carry module=Some("Fmt").
+    let r = extract(
+        r#"let () = Fmt.(option ~none:(any "") Format.pp_print_string) fmt v"#,
+        "test.ml",
+    );
+    let has_any_fmt = r.refs.iter().any(|rf| {
+        rf.kind == EdgeKind::Calls && rf.target_name == "any"
+            && rf.module.as_deref() == Some("Fmt")
+    });
+    assert!(
+        has_any_fmt,
+        "expected Calls ref for 'any' with module='Fmt' from nested local_open arg; got {:?}",
+        r.refs.iter().filter(|rf| rf.target_name == "any" || rf.target_name == "option")
+            .map(|rf| (&rf.target_name, rf.module.as_deref(), rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Inline attribute annotations on call sites (`(aux [@tailcall]) t1 t2`) must
+/// not produce a Calls ref with the raw bracketed text as target_name. The
+/// actual callee `aux` may still appear from a separate walk of the same
+/// application node, but the raw `(aux [@tailcall])` form must be dropped.
+#[test]
+fn inline_attribute_annotated_call_does_not_emit_bracket_target() {
+    let r = extract(
+        "let () = (aux [@tailcall]) t1 t2",
+        "test.ml",
+    );
+    let bracket_refs: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.target_name.contains('['))
+        .collect();
+    assert!(
+        bracket_refs.is_empty(),
+        "expected no Calls ref with bracket in target_name; got {:?}",
+        bracket_refs
+    );
+}
+
+/// Attribute payloads (`[@@deriving foo ~bar]`) look like application_expressions
+/// but must not emit Calls refs — they are metadata, not runtime call sites.
+#[test]
+fn attribute_payload_does_not_emit_calls_ref() {
+    let r = extract(
+        "type t = int [@@deriving irmin ~pp ~compare]",
+        "test.ml",
+    );
+    let ppx_calls: Vec<_> = r.refs.iter().filter(|rf| {
+        rf.kind == EdgeKind::Calls
+            && (rf.target_name == "irmin" || rf.target_name == "pp" || rf.target_name == "compare")
+    }).collect();
+    assert!(
+        ppx_calls.is_empty(),
+        "expected no Calls refs from attribute payload; got {:?}",
+        ppx_calls
+    );
+}
+
 /// Variant constructors in a `type_definition` are extracted as individual
 /// `Struct`-kinded child symbols so constructor applications can resolve.
 #[test]

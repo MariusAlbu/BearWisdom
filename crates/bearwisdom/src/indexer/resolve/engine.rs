@@ -3134,8 +3134,13 @@ fn file_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
             }
         }
     }
-    // Check path segment: "src/lists/mod.rs"
-    normalized.split('/').any(|seg| seg == module_lower)
+    // Check path segment: "src/lists/mod.rs".
+    // External paths carry an "ext:<lang>:<pkg>" prefix segment — strip the
+    // colon-delimited prefix so "ext:ocaml:ctypes" matches module "ctypes".
+    normalized.split('/').any(|seg| {
+        seg == module_lower
+            || seg.split(':').last().map_or(false, |tail| tail == module_lower)
+    })
 }
 
 /// Strategy name helper — returns a leaked &'static str for diagnostics.

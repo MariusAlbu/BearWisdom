@@ -72,19 +72,42 @@ impl Ecosystem for OpamEcosystem {
     }
 
     /// Stdlib substrate (List, String, Array, Printf, Buffer, Bytes, ...) is
-    /// auto-opened in every OCaml compilation unit. Bare uses like
-    /// `List.fold_left` and `String.length` don't appear as imports for the
-    /// demand BFS to chase, so the substrate files would never get pulled.
-    /// Pre-pulling each `ocaml` and `stdlib-shims` root makes their symbols
-    /// reachable for any project. Third-party deps stay demand-driven.
+    /// auto-opened in every OCaml compilation unit. Third-party packages
+    /// opened with `open Pkg` bring all their names into scope without
+    /// qualified module prefixes, so refs like `returning` or `const` carry
+    /// no module context and the demand BFS can't chase them. Pre-pulling any
+    /// dep root where the project code opens the corresponding module (i.e.
+    /// the module name, lowercased, matches the package name) covers both
+    /// cases. The narrowed walk limits what's pulled to the files that stem-
+    /// match the demanded module names — no unrelated package files are
+    /// traversed.
     fn demand_pre_pull(
         &self,
         dep_roots: &[ExternalDepRoot],
     ) -> Vec<WalkedFile> {
         dep_roots
             .iter()
-            .filter(|d| matches!(d.module_path.as_str(), "ocaml" | "stdlib-shims"))
-            .flat_map(walk_ocaml_root)
+            .filter(|d| {
+                if matches!(d.module_path.as_str(), "ocaml" | "stdlib-shims") {
+                    return true;
+                }
+                // Pre-pull any third-party package where the project opens
+                // the corresponding OCaml module directly (open Pkg or open
+                // Pkg.Sub). Module names are CamelCase; package names are
+                // lowercase and may use hyphens instead of underscores.
+                d.requested_imports.iter().any(|m| {
+                    let lower = m.to_lowercase();
+                    lower == d.module_path
+                        || lower.replace('_', "-") == d.module_path
+                })
+            })
+            .flat_map(|d| {
+                if matches!(d.module_path.as_str(), "ocaml" | "stdlib-shims") {
+                    walk_ocaml_root(d)
+                } else {
+                    walk_ocaml_narrowed(d)
+                }
+            })
             .collect()
     }
 
@@ -116,15 +139,19 @@ impl ManifestReader for OpamManifest {
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let Ok(entries) = std::fs::read_dir(project_root) else { return None };
-        let opam_file = entries.flatten().find(|e| {
-            e.path().extension().and_then(|x| x.to_str()) == Some("opam")
-        })?;
-        let content = std::fs::read_to_string(opam_file.path()).ok()?;
         let mut data = ManifestData::default();
-        for name in parse_opam_depends(&content) {
-            data.dependencies.insert(name);
+        let mut any_opam = false;
+        for e in entries.flatten() {
+            if e.path().extension().and_then(|x| x.to_str()) == Some("opam") {
+                any_opam = true;
+                if let Ok(content) = std::fs::read_to_string(e.path()) {
+                    for name in parse_opam_depends(&content) {
+                        data.dependencies.insert(name);
+                    }
+                }
+            }
         }
-        Some(data)
+        if any_opam { Some(data) } else { None }
     }
 }
 
@@ -159,13 +186,24 @@ pub fn parse_opam_depends(content: &str) -> Vec<String> {
 
 pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let Ok(entries) = std::fs::read_dir(project_root) else { return Vec::new() };
-    let opam_file = entries.flatten().find(|e| {
-        e.path().extension().and_then(|x| x.to_str()) == Some("opam")
-    });
-    let Some(opam_entry) = opam_file else { return Vec::new() };
-    let Ok(content) = std::fs::read_to_string(opam_entry.path()) else { return Vec::new() };
-    let declared = parse_opam_depends(&content);
-    if declared.is_empty() { return Vec::new() }
+    // Union deps from every *.opam file at the project root — monorepos
+    // declare sub-package deps (cmdliner, ctypes, …) in individual package
+    // files rather than the primary opam file.
+    let mut declared: Vec<String> = Vec::new();
+    let mut any_opam = false;
+    for e in entries.flatten() {
+        if e.path().extension().and_then(|x| x.to_str()) == Some("opam") {
+            any_opam = true;
+            if let Ok(content) = std::fs::read_to_string(e.path()) {
+                for dep in parse_opam_depends(&content) {
+                    if !declared.contains(&dep) {
+                        declared.push(dep);
+                    }
+                }
+            }
+        }
+    }
+    if !any_opam || declared.is_empty() { return Vec::new() }
 
     let lib_dirs = ocaml_lib_dirs(project_root);
     let user_modules: Vec<String> = collect_ocaml_user_modules(project_root)
@@ -509,55 +547,6 @@ fn first_identifier_child<'a>(node: &'a Node<'a>) -> Option<Node<'a>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "opam_tests.rs"]
+mod tests;
 
-    #[test]
-    fn ecosystem_identity() {
-        assert_eq!(OpamEcosystem.id(), ID);
-        assert_eq!(Ecosystem::languages(&OpamEcosystem), &["ocaml"]);
-    }
-
-    #[test]
-    fn parse_opam_deps() {
-        let content = r#"
-depends: [
-  "dune" {>= "2.8.0"}
-  "ocaml" {>= "4.08.1"}
-  "conf-libpcre"
-  "cohttp-lwt-unix"
-  "core"
-  "lwt"
-]
-"#;
-        let deps = parse_opam_depends(content);
-        assert!(deps.contains(&"cohttp-lwt-unix".to_string()));
-        assert!(deps.contains(&"core".to_string()));
-        assert!(deps.contains(&"lwt".to_string()));
-        assert!(!deps.contains(&"ocaml".to_string()));
-        assert!(!deps.contains(&"conf-libpcre".to_string()));
-    }
-
-    #[allow(dead_code)]
-    fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
-        shared_locator()
-    }
-
-    #[test]
-    fn ocaml_extracts_open_and_dotted() {
-        let mut out = std::collections::HashSet::new();
-        extract_ocaml_modules(
-            "open Core\nopen Lwt.Infix\nlet x = Cohttp_lwt_unix.Client.get url\n",
-            &mut out,
-        );
-        assert!(out.contains("Core"));
-        assert!(out.contains("Lwt"));
-        assert!(out.contains("Cohttp_lwt_unix"));
-    }
-
-    #[test]
-    fn ocaml_module_path_tail_is_lowercase_ml() {
-        assert_eq!(ocaml_module_to_path_tail("Core"), Some("core.ml".to_string()));
-        assert_eq!(ocaml_module_to_path_tail("Cohttp_lwt_unix"), Some("cohttp_lwt_unix.ml".to_string()));
-    }
-}
