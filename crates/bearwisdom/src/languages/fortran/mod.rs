@@ -10,6 +10,7 @@
 
 pub mod keywords;
 pub mod extract;
+pub mod fypp;
 
 mod predicates;
 pub(crate) mod type_checker;
@@ -40,7 +41,16 @@ impl LanguagePlugin for FortranPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] { &[] }
 
-    fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
+    fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
+        // For .fypp files, attempt fypp preprocessing to generate concrete
+        // per-type instantiations before tree-sitter sees the source.
+        // If fypp is unavailable or fails, extract::extract falls back to
+        // line-blanking the template directives — the same path used before.
+        if file_path.ends_with(".fypp") {
+            if let Some(expanded) = fypp::preprocess(file_path, source.as_bytes()) {
+                return extract::extract(&expanded);
+            }
+        }
         extract::extract(source)
     }
 

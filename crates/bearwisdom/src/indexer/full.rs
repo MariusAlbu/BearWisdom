@@ -1084,10 +1084,13 @@ pub(crate) fn parse_file_with_demand(
     // Dispatch to the language plugin (dedicated or generic fallback).
     // When demand is Some, the plugin's demand-aware path runs; with None it
     // degrades to the regular `extract` via the trait's default impl.
+    // The absolute path is passed as file_path so plugins that need filesystem
+    // access (e.g. Fortran's fypp preprocessor) can locate sibling files.
     let plugin = registry.get(walked.language);
+    let abs_path_str = walked.absolute_path.to_string_lossy();
     let mut r = plugin.extract_with_demand(
         &content,
-        &walked.relative_path,
+        &abs_path_str,
         walked.language,
         demand,
     );
