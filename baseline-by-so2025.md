@@ -53,7 +53,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | —  | Vue                 | —        | 98.75%   | 57,764     | 731        | ✅     |       |
 | —  | Haskell             | —        | 95.46%   | 118,625    | 5,644      | 🟢     |       |
 | —  | Bicep               | —        | 97.21%   | 124,011    | 3,565      | 🟢     |       |
-| —  | Nim                 | —        | 85.30%   | 4,800      | 827        | 🟡     | extractor edge density 0.4 refs/file (vs F# Fable 100/file); even nim-lang/Nim itself emits sparse refs — extractor work, not corpus |
+| —  | Nim                 | —        | 79.84%   | 152,038    | 38,394     | 🟡     | extractor density fixed (0.4 → 30+ refs/file, 31× edge growth); rate dropped because surfaced refs need stdlib coverage — nimble walker doesn't walk all of `<nim>/lib/` subdirs |
 | —  | Clojure             | —        | ~98.6%   | —          | 611        | ✅     | rate from 3 dominant projects (babashka/datascript/ring) |
 | —  | Razor               | —        | ~100%    | —          | 55         | ✅     | dotnet-fluentui-blazor at 100% |
 | —  | Astro               | —        | ~98.9%   | —          | 69         | ✅     | astro-awesome-privacy dominant |
