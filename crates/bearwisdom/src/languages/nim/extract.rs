@@ -14,10 +14,16 @@
 //
 // REFERENCES:
 //   Imports   — `import module`, `import module, module2`, `from module import ...`
+//               `include file`
+//   Calls     — every `ident(` or `ident[...](...`  occurrence on any line
+//               (direct call, template/macro invocation, type construction)
+//   Calls     — method-call receiver: `obj.method(` → `method` ref
+//               `a.b.c(` → `c` ref (terminal segment only; `a` / `b` are
+//               field accesses whose type is unknown at line-scan time)
 //
-// This is a single-pass line scanner. Nim's indentation-based syntax makes
-// full block tracking impractical without a grammar, so we scan top-level
-// declarations only (zero indentation).
+// Single-pass line scanner.  Nim's indentation-based syntax makes full block
+// tracking impractical without a grammar, so declarations are detected only at
+// their syntactic start lines; call extraction runs over every non-comment byte.
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
@@ -47,8 +53,6 @@ pub fn extract(source: &str) -> ExtractionResult {
 
         // Detect leaving a type section when indentation resets to ≤ section start.
         if in_type_section && indent <= type_section_indent && !trimmed.is_empty() {
-            // Still inside if this line has more indent than the `type` keyword.
-            // `type` is at indent 0, so body is at indent > 0.
             if indent == 0 {
                 in_type_section = false;
             }
@@ -77,6 +81,12 @@ pub fn extract(source: &str) -> ExtractionResult {
                 let start = i as u32;
                 let end = find_block_end(&lines, i);
                 symbols.push(make_sym(name, kind, vis, start, end));
+                // Extract calls from the signature line and every body line.
+                // Body lines are not visited by the main loop (we jump past
+                // them with i = end + 1), so we scan them here explicitly.
+                for body_line_idx in i..=end as usize {
+                    extract_calls(lines[body_line_idx].trim(), body_line_idx as u32, &mut refs);
+                }
                 i = end as usize + 1;
                 continue;
             }
@@ -84,6 +94,13 @@ pub fn extract(source: &str) -> ExtractionResult {
             // import / from ... import
             if let Some(import_refs) = parse_import_line(trimmed, i as u32) {
                 refs.extend(import_refs);
+                i += 1;
+                continue;
+            }
+
+            // include file
+            if let Some(inc_ref) = parse_include_line(trimmed, i as u32) {
+                refs.push(inc_ref);
                 i += 1;
                 continue;
             }
@@ -106,10 +123,194 @@ pub fn extract(source: &str) -> ExtractionResult {
             }
         }
 
+        // Call-site extraction: run on every non-comment, non-import line
+        // regardless of indent level.  We skip lines that are pure declarations
+        // (already handled above) and pure comment lines (filtered at the top).
+        // `extract_calls` is additive — it emits nothing for lines without calls.
+        extract_calls(trimmed, i as u32, &mut refs);
+
         i += 1;
     }
 
     ExtractionResult::new(symbols, refs, false)
+}
+
+// ---------------------------------------------------------------------------
+// Call extraction
+// ---------------------------------------------------------------------------
+
+/// Scan one logical source line for call-site references.
+///
+/// Nim call forms handled:
+///   - `name(...)` or `name[params](...)` — direct call / type construction
+///   - `receiver.method(...)` — UFCS / method dispatch; emits `method` as target
+///   - `receiver.method[...](...)` — generic method call
+///
+/// Does NOT emit refs for:
+///   - Nim keywords that look like calls (`if`, `while`, `case`, …)
+///   - Single-letter identifiers (too noisy, rarely meaningful as call targets)
+///   - Comment text after `#`
+///   - String literal contents
+fn extract_calls(line: &str, line_num: u32, out: &mut Vec<ExtractedRef>) {
+    // Strip trailing comment.  Nim comments start with `#`.  String literals
+    // can contain `#`, so we do a simple left-to-right scan that respects
+    // balanced double-quoted strings (the most common case).  We do not handle
+    // multi-line strings (`"""…"""`) here — those span lines and the scanner
+    // already treats each line independently.
+    let effective = strip_comment(line);
+
+    let bytes = effective.as_bytes();
+    let n = bytes.len();
+    let mut pos = 0;
+
+    while pos < n {
+        // Skip whitespace and non-identifier starters.
+        let b = bytes[pos];
+        if b == b'"' {
+            // Skip double-quoted string literal to avoid false positives inside strings.
+            pos += 1;
+            while pos < n {
+                match bytes[pos] {
+                    b'\\' => pos += 2, // escape
+                    b'"' => { pos += 1; break; }
+                    _ => pos += 1,
+                }
+            }
+            continue;
+        }
+        if b == b'\'' {
+            // Skip char literal.
+            pos += 1;
+            while pos < n && bytes[pos] != b'\'' {
+                if bytes[pos] == b'\\' { pos += 1; }
+                pos += 1;
+            }
+            if pos < n { pos += 1; }
+            continue;
+        }
+
+        if !(b.is_ascii_alphabetic() || b == b'_') {
+            pos += 1;
+            continue;
+        }
+
+        // We are at the start of an identifier token.
+        let id_start = pos;
+        while pos < n && (bytes[pos].is_ascii_alphanumeric() || bytes[pos] == b'_') {
+            pos += 1;
+        }
+        let ident = &effective[id_start..pos];
+
+        // Skip past optional generic params `[...]` — they appear in
+        // `foo[T](args)` and `obj.method[T](args)`.
+        let after_generics = skip_generic_params(bytes, pos);
+
+        // Check whether the identifier is followed immediately (or after
+        // generic params) by `(`.
+        let has_call_paren = after_generics < n && bytes[after_generics] == b'(';
+
+        if has_call_paren && !is_nim_control_keyword(ident) && ident.len() > 1 {
+            // Determine whether this call is the terminal segment of a
+            // dot-chain.  Walk backward from id_start to see if the
+            // preceding non-space character is `.`.
+            let before = effective[..id_start].trim_end();
+            let is_method_call = before.ends_with('.');
+
+            // For a dot-chain call, `ident` is the method name — it is the
+            // directly callable symbol, so emit it.  (The object before the
+            // dot is a value expression whose type we don't track at scan time.)
+            //
+            // For a bare call `foo(...)`, `ident` is the callee directly.
+            let target = ident.to_string();
+
+            out.push(ExtractedRef {
+                source_symbol_index: 0,
+                target_name: target,
+                kind: if is_method_call { EdgeKind::Calls } else { EdgeKind::Calls },
+                line: line_num,
+                module: None,
+                chain: None,
+                byte_offset: id_start as u32,
+                namespace_segments: Vec::new(),
+            });
+        }
+
+        // Advance past the `(` we matched (or just continue scanning).
+        pos = after_generics;
+        if pos < n && bytes[pos] == b'(' {
+            pos += 1;
+        }
+    }
+}
+
+/// Returns the index just past any `[...]` generic params starting at `pos`.
+/// Returns `pos` unchanged if the next byte is not `[`.
+fn skip_generic_params(bytes: &[u8], mut pos: usize) -> usize {
+    let n = bytes.len();
+    if pos >= n || bytes[pos] != b'[' {
+        return pos;
+    }
+    let mut depth = 0i32;
+    while pos < n {
+        match bytes[pos] {
+            b'[' => { depth += 1; pos += 1; }
+            b']' => {
+                depth -= 1;
+                pos += 1;
+                if depth == 0 { break; }
+            }
+            _ => pos += 1,
+        }
+    }
+    pos
+}
+
+/// Strip everything from the first unquoted `#` onward.
+fn strip_comment(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let n = bytes.len();
+    let mut pos = 0;
+    while pos < n {
+        match bytes[pos] {
+            b'"' => {
+                pos += 1;
+                while pos < n {
+                    match bytes[pos] {
+                        b'\\' => pos += 2,
+                        b'"' => { pos += 1; break; }
+                        _ => pos += 1,
+                    }
+                }
+            }
+            b'\'' => {
+                pos += 1;
+                while pos < n && bytes[pos] != b'\'' {
+                    if bytes[pos] == b'\\' { pos += 1; }
+                    pos += 1;
+                }
+                if pos < n { pos += 1; }
+            }
+            b'#' => return &line[..pos],
+            _ => pos += 1,
+        }
+    }
+    line
+}
+
+/// Nim control-flow keywords that syntactically look like calls (they precede
+/// a parenthesised expression) but are never callable symbols.
+fn is_nim_control_keyword(s: &str) -> bool {
+    matches!(
+        s,
+        "if" | "when" | "while" | "for" | "case" | "of" | "elif" | "else"
+            | "try" | "except" | "finally" | "return" | "yield" | "break"
+            | "continue" | "discard" | "raise" | "await" | "defer"
+            | "and" | "or" | "not" | "in" | "notin" | "is" | "isnot"
+            | "let" | "var" | "const" | "type" | "proc" | "func" | "method"
+            | "template" | "macro" | "iterator" | "converter" | "import"
+            | "from" | "include" | "export" | "block" | "do" | "bind"
+            | "mixin" | "static"
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +480,27 @@ fn parse_import_line(line: &str, line_num: u32) -> Option<Vec<ExtractedRef>> {
     }
 
     None
+}
+
+/// Parse `include file` lines → single `Imports` ref per included path.
+///
+/// Nim `include` is textual inclusion; the included file's symbols become
+/// visible in the including module's scope.  We model it as an `Imports` edge
+/// so the resolver can walk it.
+fn parse_include_line(line: &str, line_num: u32) -> Option<ExtractedRef> {
+    let rest = line.strip_prefix("include ")?;
+    let name = rest.trim().split_whitespace().next()?.to_string();
+    if name.is_empty() { return None; }
+    Some(ExtractedRef {
+        source_symbol_index: 0,
+        target_name: name,
+        kind: EdgeKind::Imports,
+        line: line_num,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    })
 }
 
 /// Expand a Nim import RHS into individual module paths. Splits on commas at

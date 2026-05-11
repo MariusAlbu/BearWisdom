@@ -9,7 +9,7 @@
 //                   iterator_declaration, converter_declaration,
 //                   type_symbol_declaration
 // ref_node_kinds:    call, dot_generic_call, import_statement,
-//                   import_from_statement
+//                   import_from_statement, include_statement
 // =============================================================================
 
 use super::extract;
@@ -204,5 +204,106 @@ fn cov_import_from_statement_produces_imports() {
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "strutils"),
         "from-import should produce Imports ref with module name; got: {:?}",
         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+/// include_statement → Imports ref with file name as target
+#[test]
+fn cov_include_statement_produces_imports() {
+    let r = extract::extract("include sinkparameter_inference\n");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "sinkparameter_inference"),
+        "include statement should produce Imports ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// call ref_node_kinds
+// ---------------------------------------------------------------------------
+
+/// Direct function call: `name(args)` → Calls ref with `name` as target
+#[test]
+fn cov_direct_call_produces_calls_ref() {
+    let src = "proc foo() =\n  bar()\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "bar"),
+        "direct call should produce Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+/// Method-call / dot dispatch: `obj.method(args)` → Calls ref with `method` as target
+#[test]
+fn cov_dot_call_produces_calls_ref() {
+    let src = "proc go() =\n  s.close()\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "close"),
+        "dot call should produce Calls ref for method name; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+/// Generic call: `foo[T](args)` → Calls ref with `foo` as target
+#[test]
+fn cov_generic_call_produces_calls_ref() {
+    let src = "proc setup() =\n  newSeq[int](10)\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "newSeq"),
+        "generic call should produce Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+/// Multiple calls on same line both produce refs
+#[test]
+fn cov_multiple_calls_on_line_produce_multiple_refs() {
+    let src = "proc run() =\n  foo(bar())\n";
+    let r = extract::extract(src);
+    let calls: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"foo") && calls.contains(&"bar"),
+        "nested calls should each produce a Calls ref; got: {:?}", calls
+    );
+}
+
+/// Control keywords like `if`, `while` do NOT produce Calls refs even when
+/// followed by parentheses
+#[test]
+fn cov_control_keywords_not_emitted_as_calls() {
+    let src = "proc check(x: int) =\n  if (x > 0):\n    while (true):\n      break\n";
+    let r = extract::extract(src);
+    let bad: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && matches!(rf.target_name.as_str(), "if" | "while"))
+        .collect();
+    assert!(bad.is_empty(), "control keywords must not produce Calls refs; got: {:?}", bad);
+}
+
+/// Comments after `#` are not scanned for calls
+#[test]
+fn cov_comment_content_not_extracted_as_calls() {
+    let src = "proc dummy() =\n  discard # foo(bar)\n";
+    let r = extract::extract(src);
+    let bad: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "foo")
+        .collect();
+    assert!(bad.is_empty(), "comment content must not produce Calls refs; got: {:?}", bad);
+}
+
+/// Template invocation inside a body → Calls ref
+#[test]
+fn cov_template_invocation_produces_calls_ref() {
+    let src = "proc initDefines*(symbols: StringTableRef) =\n  template defineSymbol(s) = symbols.defineSymbol(s)\n  defineSymbol(\"nimhygiene\")\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "defineSymbol"),
+        "template invocation should produce Calls ref; got: {:?}",
+        r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls).map(|rf| &rf.target_name).collect::<Vec<_>>()
     );
 }
