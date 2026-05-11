@@ -62,8 +62,8 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | —  | Svelte              | —        | ~96.9%   | —          | 1,155      | 🟢     | svelte-realworld / svelte-shadcn |
 | —  | Nix                 | —        | ~95.6%   | —          | 3,059      | 🟢     | dream2nix's flake outputs lower the average; home-manager solid |
 | —  | Starlark            | —        | ~95.4%   | —          | 249        | 🟢     | bazel-skylib / rules-python |
-| —  | MDX                 | —        | ~87.9%   | —          | 1,808      | 🟡     | astro-starlight; React + Markdown polyglot needs JSX expression resolution |
-| —  | CMake               | —        | ~80.2%   | —          | 1,775      | 🟡     | function calls into project-internal CMakeLists with include() chains |
+| —  | MDX                 | —        | ~100%    | —          | 0          | ✅     | astro-starlight MDX-specific refs all resolved; SFC default-import name fallback (`.astro`/`.svelte`) + Fragment suppression closed 999 refs |
+| —  | CMake               | —        | ~82.3%   | —          | ~1,500     | 🟡     | examples + ttroy50 at 91.21% ✓; ARGC builtin + `::` imported targets externalised + `find_package()`/`string(REPLACE)` output vars extracted; cpm at 79% gated by CPM runtime-injected vars |
 | —  | Jinja               | —        | 65.45%   | 3,353      | 1,770      | 🔴     | template macros + Ansible variable namespace not resolved |
 
 *Rates marked `~` are weighted averages from projects where the language is ≥30% of files (per-language resolved-edge counts aren't tracked separately in `baseline-all.json`).*
