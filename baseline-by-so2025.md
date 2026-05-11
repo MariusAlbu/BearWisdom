@@ -42,7 +42,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 34 | Erlang              | 1.5%     | 95.46%   | 294,588    | 14,000     | 🟢     | spec false-positive suppression + ERTS C BIF arity-strip; cowboy 98.3%, emqx 97.2%, rabbitmq 93.5% (residual project-internal cross-file refs) |
 | 35 | Fortran             | 1.4%     | 88.44%   | 31,582     | 4,130      | 🟡     | re-export chain handler emitted synthetic alias symbols (fpm +9.3pp); remaining gap is `self%method()` derived-type method chains (type inference) + fypp preprocessor for stdlib |
 | 36 | Ada                 | 1.4%     | 95.30%   | 27,876     | 1,374      | 🟢     |       |
-| 37 | F#                  | 1.3%     | 94.56%   | 132,679    | 7,640      | 🟡     | corpus expanded with Fable/Saturn/Ionide/Giraffe; saturn 47.47% drags aggregate |
+| 37 | F#                  | 1.3%     | 95.67%   | 136,164    | 6,169      | 🟢     | Paket-project empty-PackageReference fallback fixed; saturn 47→79, ionide 75→94 |
 | 38 | OCaml               | 1.2%     | 93.64%   | 99,502     | 6,753      | 🟡     | dune-fresh 95.82% ✓; remaining gap is Cmdliner DSL operators (`$`, `&`, `case1`) + Ctypes FFI (`returning`, `unstage`) |
 | 39 | Gleam               | 1.1%     | 98.58%   | 24,364     | 351        | ✅     |       |
 | 40 | Prolog              | 1.1%     | 96.55%   | 97,436     | 3,478      | 🟢     |       |
