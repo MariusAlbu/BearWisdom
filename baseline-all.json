@@ -358,44 +358,43 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 87
+        "min_resolution_rate": 91
       },
-      "code_chunks": 24142,
-      "files": 831,
+      "code_chunks": 32143,
+      "files": 1067,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 8953,
-      "internal_unresolved": 1235,
+      "internal_edges": 15329,
+      "internal_unresolved": 1354,
       "languages": {
-        "astro": 88,
-        "css": 13,
+        "astro": 100,
+        "css": 20,
         "html": 17,
-        "javascript": 17,
-        "json": 71,
+        "javascript": 19,
+        "json": 74,
         "markdown": 83,
         "mdx": 297,
-        "typescript": 235,
+        "typescript": 447,
         "xml": 6,
         "yaml": 4
       },
       "path": "F:/Work/Projects/TestProjects/astro-starlight",
       "perf": {
-        "end_ws_mb": 131,
-        "files_per_sec": 123,
-        "index_duration_ms": 6744
+        "end_ws_mb": 87,
+        "files_per_sec": 112,
+        "index_duration_ms": 9500
       },
       "project": "astro-starlight",
-      "resolution_rate": 87.88,
+      "resolution_rate": 91.88,
       "routes": 0,
-      "symbols": 12383,
+      "symbols": 18040,
       "unresolved_by_lang_kind": {
-        "astro.calls": 28,
+        "astro.calls": 42,
         "astro.instantiates": 2,
-        "astro.type_ref": 1,
-        "mdx.calls": 993,
-        "typescript.calls": 92,
-        "typescript.instantiates": 6,
-        "typescript.type_ref": 113
+        "astro.type_ref": 41,
+        "typescript.calls": 306,
+        "typescript.instantiates": 62,
+        "typescript.type_ref": 901
       }
     },
     {

@@ -346,6 +346,30 @@ impl LanguageResolver for TypeScriptResolver {
                         });
                     }
                 }
+                // Single-default-export component files (.vue/.astro/.svelte):
+                // the importer uses its own local binding name, so the name check
+                // above never matches the file-stem class symbol. Accept the file's
+                // single class symbol as the default export.
+                const SFC_EXTS: &[&str] = &[".vue", ".astro", ".svelte"];
+                if SFC_EXTS.iter().any(|ext| module_path.ends_with(ext)) {
+                    for sym in lookup.in_module_from(&file_ctx.file_path, module_path) {
+                        if sym.kind == "class" && predicates::kind_compatible(edge_kind, &sym.kind)
+                        {
+                            debug!(
+                                strategy = "ts_sfc_default_import",
+                                module = %module_path,
+                                target = %target,
+                                "resolved via SFC class symbol"
+                            );
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 0.95,
+                                strategy: "ts_sfc_default_import",
+                                resolved_yield_type: None,
+                            });
+                        }
+                    }
+                }
                 let resolved_path = lookup
                     .resolve_module_from(&file_ctx.file_path, module_path)
                     .map(|s| s.to_string());
@@ -1007,19 +1031,18 @@ fn resolve_via_alias(
         }
     }
 
-    // Vue SFC default-import case: `import JetLabel from '@/Components/Label.vue'`
-    // binds the local name `JetLabel` to the file's default export, but the
-    // Vue extractor names the file's component class by its filename stem
-    // (`Label`). Looking for a symbol named `JetLabel` in `Label.vue` never
-    // hits. Since .vue files are single-default-export by convention, fall
-    // back to the single Class symbol in the file.
-    if rewritten.ends_with(".vue") {
+    // Single-default-export component files (.vue, .astro, .svelte): the
+    // importer chooses its own local binding name, so `sym.name == target`
+    // never matches the file-stem class symbol. Accept the single class
+    // symbol as the default export.
+    const DEFAULT_EXPORT_EXTS: &[&str] = &[".vue", ".astro", ".svelte"];
+    if DEFAULT_EXPORT_EXTS.iter().any(|ext| rewritten.ends_with(ext)) {
         for sym in lookup.in_file(rewritten) {
             if sym.kind == "class" && predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 0.95,
-                    strategy: "ts_vue_default_import",
+                    strategy: "ts_sfc_default_import",
                     resolved_yield_type: None,
                 });
             }
