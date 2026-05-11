@@ -386,3 +386,154 @@ fn inc_fragment_with_preprocessor_directives() {
         result.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// `class of` metaclass followed by the actual class declaration
+// ---------------------------------------------------------------------------
+
+#[test]
+fn class_of_metaclass_followed_by_class_both_extracted() {
+    // `TCastleBehaviorClass = class of TCastleBehavior;` must not prevent
+    // `TCastleBehavior = class(TCastleComponent)` from being extracted.
+    let source = r#"{$ifdef read_interface}
+  TCastleBehaviorClass = class of TCastleBehavior;
+
+  TCastleBehavior = class(TCastleComponent)
+  strict private
+    FParent: TCastleTransform;
+  public
+    procedure Update(const SecondsPassed: Single); virtual;
+  end;
+{$endif read_interface}
+"#;
+    let result = extract(source);
+    for expected in &["TCastleBehaviorClass", "TCastleBehavior"] {
+        assert!(
+            result.symbols.iter().any(|s| &s.name == expected && s.kind == SymbolKind::Class),
+            "expected class {} to be extracted", expected
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Live file: castletransform_behavior.inc — class extraction
+// ---------------------------------------------------------------------------
+
+#[test]
+fn castletransform_behavior_classes_extracted() {
+    use std::fs;
+    let path = r"F:\Work\Projects\TestProjects\pascal-castle-fresh\src\transform\castletransform_behavior.inc";
+    let src = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let result = extract(&src);
+    let missing: Vec<&str> = ["TCastleBehaviorClass", "TCastleBehavior"]
+        .iter()
+        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n && s.kind == SymbolKind::Class))
+        .copied()
+        .collect();
+    assert!(missing.is_empty(), "classes missing from castletransform_behavior.inc: {:?}", missing);
+}
+
+// ---------------------------------------------------------------------------
+// Generic-class pair: two sequential classes with `class(<generic>)` parent
+// ---------------------------------------------------------------------------
+
+#[test]
+fn inc_fragment_two_generic_classes_both_extracted() {
+    // When two sequential classes both use generic parent types with `<...>`,
+    // both must be extracted — a cascade failure from the first's error recovery
+    // must not consume the second class's name.
+    let source = r#"{$ifdef read_interface}
+  TMFMatrix3f = class({$ifdef FPC}specialize{$endif} TX3DSimpleMultField<
+    TMatrix3,
+    TSFMatrix3f,
+    TMatrix3List>)
+  strict protected
+    function RawItemToString(const ItemNum: Integer): String; override;
+    procedure AddToList(const ItemList: TMatrix3List; const Item: TSFMatrix3f); override;
+    function CreateItemBeforeParse: TSFMatrix3f; override;
+  public
+    procedure AssignLerp(const A: Double; Value1, Value2: TX3DField); override;
+    function CanAssignLerp: boolean; override;
+    class function X3DType: String; override;
+    class function CreateEvent(const AParentNode: TX3DFileItem; const AName: String; const AInEvent: boolean): TX3DEvent; override;
+  end;
+
+  TMFMatrix3d = class({$ifdef FPC}specialize{$endif} TX3DSimpleMultField<
+    TMatrix3Double,
+    TSFMatrix3d,
+    TMatrix3DoubleList>)
+  strict protected
+    function RawItemToString(const ItemNum: Integer): String; override;
+    procedure AddToList(const ItemList: TMatrix3DoubleList; const Item: TSFMatrix3d); override;
+    function CreateItemBeforeParse: TSFMatrix3d; override;
+  public
+    procedure AssignLerp(const A: Double; Value1, Value2: TX3DField); override;
+    function CanAssignLerp: boolean; override;
+    class function X3DType: String; override;
+    class function CreateEvent(const AParentNode: TX3DFileItem; const AName: String; const AInEvent: boolean): TX3DEvent; override;
+  end;
+{$endif read_interface}
+"#;
+    let result = extract(source);
+    for expected in &["TMFMatrix3f", "TMFMatrix3d"] {
+        assert!(
+            result.symbols.iter().any(|s| &s.name == expected && s.kind == SymbolKind::Class),
+            "expected class {} to be extracted", expected
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Live file: castlefields_x3dsimplemultfield_descendants.inc — class extraction
+// ---------------------------------------------------------------------------
+
+#[test]
+fn castlefields_simplemult_classes_extracted() {
+    use std::fs;
+    let path = r"F:\Work\Projects\TestProjects\pascal-castle-fresh\src\scene\x3d\castlefields_x3dsimplemultfield_descendants.inc";
+    let src = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let result = extract(&src);
+    let missing: Vec<&str> = ["TMFBool", "TMFLong", "TMFInt32", "TMFVec3f", "TMFFloat", "TMFString", "TMFTime", "TMFColor"]
+        .iter()
+        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n && s.kind == SymbolKind::Class))
+        .copied()
+        .collect();
+    assert!(missing.is_empty(), "classes missing from simplemultfield_descendants.inc: {:?}", missing);
+}
+
+// ---------------------------------------------------------------------------
+// Normalisation: FPC generic `{$ifdef FPC}specialize{$endif} Type<A,B,C>` forms
+// ---------------------------------------------------------------------------
+
+#[test]
+fn normalised_source_strips_specialize_and_generic_params() {
+    use super::normalise_source_for_test;
+    let source = r#"{$ifdef read_interface}
+  TMFMatrix3f = class({$ifdef FPC}specialize{$endif} TX3DSimpleMultField<
+    TMatrix3,
+    TSFMatrix3f,
+    TMatrix3List>)
+  strict protected
+    function RawItemToString(const ItemNum: Integer): String; override;
+  end;
+
+  TMFMatrix3d = class({$ifdef FPC}specialize{$endif} TX3DSimpleMultField<
+    TMatrix3Double,
+    TSFMatrix3d,
+    TMatrix3DoubleList>)
+  strict protected
+    function RawItemToString(const ItemNum: Integer): String; override;
+  end;
+{$endif read_interface}
+"#;
+    let normalised = normalise_source_for_test(source);
+    assert!(!normalised.contains('<'), "normalised source still contains '<'");
+    assert!(!normalised.contains('>'), "normalised source still contains '>'");
+    assert!(!normalised.contains("specialize"), "normalised source still contains 'specialize'");
+}

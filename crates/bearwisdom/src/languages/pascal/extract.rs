@@ -54,7 +54,7 @@ pub fn extract(source: &str) -> ExtractionResult {
     let normalised;
     let src = if source.contains("{$ifdef") || source.contains("{$if ")
         || source.contains("{$IF") || source.contains("bitpacked")
-        || source.contains("end;")
+        || source.contains("end;") || source.contains('<')
     {
         normalised = normalise_source(source);
         normalised.as_str()
@@ -86,6 +86,11 @@ pub fn extract(source: &str) -> ExtractionResult {
 ///   - Blank lines between `end;` and `);` inside variant record case arms
 ///     prevent the grammar from closing the anonymous nested record correctly.
 ///     The blank line is collapsed so `end;` and `);` are adjacent.
+#[cfg(test)]
+pub(crate) fn normalise_source_for_test(src: &str) -> String {
+    normalise_source(src)
+}
+
 fn normalise_source(src: &str) -> String {
     // Pass 1: collapse `bitpacked` → spaces.
     let after_bitpacked = if src.contains("bitpacked") {
@@ -108,7 +113,15 @@ fn normalise_source(src: &str) -> String {
     // A blank line between a nested record's `end;` and the closing `);` of the case
     // alternative prevents tree-sitter from recognising the variant record boundary.
     // Removing the blank line makes the grammar parse the structure correctly.
-    normalise_variant_record_end_paren(&after_ifdef)
+    let after_variant = normalise_variant_record_end_paren(&after_ifdef);
+
+    // Pass 4: strip generic type parameters from `specialize X<A,B,C>` forms.
+    // FPC's generic specialization syntax `class(specialize X<T1,T2>)` is not
+    // valid Delphi or standard Pascal; the grammar produces comparison-operator
+    // expressions from `X<T1` which cascade into parse errors that wipe out
+    // subsequent declarations.  Reduce `TypeName<…>` to `TypeName` (possibly
+    // multiline) so the grammar sees a plain parenthesized type name.
+    normalise_specialize_generics(&after_variant)
 }
 
 /// Normalise variant-record case arms that contain an anonymous nested record.
@@ -362,6 +375,178 @@ fn normalise_ifdef_type_keywords(src: &str) -> String {
     }
 }
 
+/// Neutralise FPC generic specialization syntax so the standard Pascal grammar
+/// does not mis-parse it as comparison operators.
+///
+/// FPC allows `class(specialize TypeName<T1, T2, T3>)` as a parent type,
+/// where the parameter list may span several lines.  The tree-sitter-pascal
+/// grammar parses `TypeName <` as a comparison expression, cascading into
+/// errors that wipe out subsequent type declarations.
+///
+/// Strategy: find each `Identifier<…>)` span (uppercase-starting identifier
+/// followed by `<`, first non-whitespace argument uppercase, matching `>` before
+/// a `)`).  Replace the entire `<…>` span with spaces, including embedded
+/// newlines, so the multi-line argument list collapses onto one logical line and
+/// tree-sitter sees `class(TypeName )`.  Line positions for symbols after the
+/// replaced span may shift; symbol names are the extraction goal.
+fn normalise_specialize_generics(src: &str) -> String {
+    if !src.contains('<') {
+        return src.to_string();
+    }
+
+    // Pre-step: strip `{$ifdef...}specialize{$endif}` conditional blocks so the
+    // bare `specialize` keyword does not appear in the token stream alongside
+    // the type name after the `<...>` replacement.  Preserves byte count by
+    // overwriting with spaces.
+    let src_owned;
+    let src = if src.contains("specialize") {
+        let mut out = src.as_bytes().to_vec();
+        let len = out.len();
+        let mut i = 0;
+        while i + 9 < len {
+            // Look for `{$` opening of any preprocessor directive.
+            if out[i] != b'{' || i + 1 >= len || out[i + 1] != b'$' {
+                i += 1;
+                continue;
+            }
+            // Find the closing `}`.
+            let pp1_end = match out[i..].iter().position(|&b| b == b'}') {
+                Some(p) => i + p + 1,
+                None => { i += 1; continue; }
+            };
+            // Check that this is an ifdef/ifndef opener.
+            let pp1_inner = std::str::from_utf8(&out[i + 2..pp1_end - 1])
+                .unwrap_or("").trim_start().to_ascii_lowercase();
+            if !pp1_inner.starts_with("ifdef") && !pp1_inner.starts_with("ifndef")
+                && !pp1_inner.starts_with("if ")
+            {
+                i = pp1_end;
+                continue;
+            }
+            // Skip whitespace after the opener.
+            let mut j = pp1_end;
+            while j < len && matches!(out[j], b' ' | b'\t' | b'\r' | b'\n') { j += 1; }
+            // Check for `specialize` keyword.
+            if !out[j..].starts_with(b"specialize") {
+                i = pp1_end;
+                continue;
+            }
+            let spec_end = j + b"specialize".len();
+            // Skip whitespace after `specialize`.
+            let mut k = spec_end;
+            while k < len && matches!(out[k], b' ' | b'\t' | b'\r' | b'\n') { k += 1; }
+            // Expect `{$endif}` or `{$ifend}`.
+            if k >= len || out[k] != b'{' { i = pp1_end; continue; }
+            let pp2_end = match out[k..].iter().position(|&b| b == b'}') {
+                Some(p) => k + p + 1,
+                None => { i = pp1_end; continue; }
+            };
+            let pp2_inner = std::str::from_utf8(&out[k + 2..pp2_end - 1])
+                .unwrap_or("").trim_start().to_ascii_lowercase();
+            if !pp2_inner.starts_with("endif") && !pp2_inner.starts_with("ifend") {
+                i = pp1_end;
+                continue;
+            }
+            // Replace the entire `{$ifdef...}specialize{$endif}` span with spaces.
+            for idx in i..pp2_end {
+                if out[idx] != b'\n' && out[idx] != b'\r' { out[idx] = b' '; }
+            }
+            i = pp2_end;
+        }
+        src_owned = String::from_utf8(out).unwrap_or_else(|_| src.to_string());
+        &src_owned
+    } else {
+        src
+    };
+
+    let bytes = src.as_bytes();
+    let len = bytes.len();
+    let mut out = src.to_string().into_bytes();
+
+    let mut i = 0;
+    while i < len {
+        if bytes[i] == b'<' && i > 0 {
+            // Only act on generics of the form `TypeName<` where:
+            //  - The char before `<` is the last char of an identifier.
+            //  - The identifier itself starts with an uppercase letter (Pascal
+            //    type names are PascalCase; comparison operands are usually
+            //    lowercase variables or numeric constants).
+            //  - The first non-whitespace char after `<` is also an uppercase
+            //    letter (the generic type argument is itself a Pascal type).
+            let prev_ok = {
+                let c = bytes[i - 1];
+                c.is_ascii_alphanumeric() || c == b'_'
+            };
+            // Walk back to find the start of the identifier before `<`.
+            let ident_starts_upper = if prev_ok {
+                let mut k = i;
+                while k > 0 && (bytes[k - 1].is_ascii_alphanumeric() || bytes[k - 1] == b'_') {
+                    k -= 1;
+                }
+                bytes[k].is_ascii_uppercase()
+            } else {
+                false
+            };
+            if prev_ok && ident_starts_upper {
+                // Require the first non-whitespace character after `<` to be an
+                // UPPERCASE letter (generic type argument is a Pascal type name).
+                let next_ident = ((i + 1)..len).find_map(|k| {
+                    let c = bytes[k];
+                    if matches!(c, b' ' | b'\t' | b'\r' | b'\n') { None }
+                    else if c.is_ascii_uppercase() || c == b'_' { Some(true) }
+                    else { Some(false) }
+                }).unwrap_or(false);
+
+                if next_ident {
+                    // Locate the matching `>` tracking nesting depth.
+                    let mut depth = 1usize;
+                    let mut j = i + 1;
+                    while j < len && depth > 0 {
+                        match bytes[j] {
+                            b'<' => depth += 1,
+                            b'>' => depth -= 1,
+                            _ => {}
+                        }
+                        j += 1;
+                    }
+                    if depth == 0 {
+                        // Only erase when the matching `>` is immediately
+                        // followed by `)` (possibly with intervening whitespace).
+                        // This distinguishes generic type argument lists
+                        // `TypeName<T1,T2>)` from comparison expressions where
+                        // `>` is followed by an identifier, operator, or `;`.
+                        let closes_paren = ((j)..len).find_map(|k| {
+                            let c = bytes[k];
+                            if matches!(c, b' ' | b'\t' | b'\r' | b'\n') { None }
+                            else if c == b')' { Some(true) }
+                            else { Some(false) }
+                        }).unwrap_or(false);
+                        if closes_paren {
+                            // Replace the entire `<…>` span (positions i..j)
+                            // with a single space at position i and fill the
+                            // rest with spaces.  Newlines are also replaced so
+                            // the multi-line type-argument list collapses onto
+                            // one line, preventing tree-sitter from closing
+                            // nodes prematurely at intermediate blank lines.
+                            // Line-number accuracy for symbols inside `.inc`
+                            // fragments is sacrificed deliberately: symbol
+                            // names are the primary extraction goal.
+                            for k in i..j {
+                                out[k] = b' ';
+                            }
+                            i = j;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+
+    String::from_utf8(out).unwrap_or_else(|_| src.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Root traversal
 // ---------------------------------------------------------------------------
@@ -429,7 +614,56 @@ fn dispatch(
             }
         }
         "declVar" => extract_var(node, src, symbols, refs, parent_index),
-        "declConst" => extract_const(node, src, symbols, refs, parent_index),
+        "declConst" => {
+            // Check whether error recovery folded a `TypeName = class(...)` declaration
+            // into this constant node (the `type(typeref(Name)) defaultValue(= class(...))`
+            // pattern produced when a generic class declaration follows an error-recovery
+            // constant boundary).  When found, extract the embedded type declaration and
+            // skip the spurious constant symbol.  Otherwise extract normally.
+            let mut cursor = node.walk();
+            let children: Vec<Node> = node.children(&mut cursor).collect();
+            let embedded_type = children.windows(2).find(|w| {
+                w[0].kind() == "type" && w[1].kind() == "defaultValue"
+            });
+            if let Some(w) = embedded_type {
+                let type_node = w[0];
+                let dv_node = w[1];
+                if let Some(sym_kind) = infer_type_kind_from_default_value(dv_node, src) {
+                    // Extract the name from the `type` node: it wraps a `typeref` which
+                    // contains an `identifier`.
+                    let name_opt = {
+                        let mut tc = type_node.walk();
+                        let type_children: Vec<Node> = type_node.children(&mut tc).collect();
+                        type_children.iter().find_map(|c| {
+                            if c.kind() == "typeref" {
+                                let mut rc = c.walk();
+                                let rc_ch: Vec<Node> = c.children(&mut rc).collect();
+                                rc_ch.into_iter().find(|n| n.kind() == "identifier")
+                            } else if c.kind() == "identifier" {
+                                Some(*c)
+                            } else {
+                                None
+                            }
+                        })
+                    };
+                    if let Some(name_node) = name_opt {
+                        let name = node_text(name_node, src);
+                        if !name.is_empty() {
+                            symbols.push(make_symbol(
+                                name.clone(),
+                                name,
+                                sym_kind,
+                                &type_node,
+                                None,
+                                parent_index,
+                            ));
+                            return;
+                        }
+                    }
+                }
+            }
+            extract_const(node, src, symbols, refs, parent_index);
+        }
         "exprCall" => {
             extract_call(node, src, refs, parent_index);
             // Recurse into arguments and nested sub-expressions so that
@@ -607,6 +841,40 @@ fn recover_type_decls_from_siblings(
 
         if matches!(sibling.kind(), "pp" | "comment") {
             continue;
+        }
+
+        // Top-level `identifier` + `kEq` pattern: a bare identifier followed by
+        // `=` in a flat sibling list (e.g. children of an ERROR node passed
+        // directly to this function).  The kind is inferred from the sibling
+        // after `kEq` (kClass/kInterface/kRecord or defaultValue).
+        if sibling.kind() == "identifier"
+            && si_outer < siblings.len()
+            && siblings[si_outer].kind() == "kEq"
+        {
+            // Look past the kEq to find the type keyword.
+            let kind_opt = if si_outer + 1 < siblings.len() {
+                let after_eq = siblings[si_outer + 1];
+                match after_eq.kind() {
+                    "kClass"     => Some(SymbolKind::Class),
+                    "kInterface" => Some(SymbolKind::Interface),
+                    "kRecord"    => Some(SymbolKind::Struct),
+                    "defaultValue" => infer_type_kind_from_default_value(after_eq, src),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some(sym_kind) = kind_opt {
+                emit_pending!(*sibling);
+                pending_name = Some(*sibling);
+                pending_kind = Some(sym_kind);
+                si_outer += 2; // skip kEq and the type keyword/defaultValue
+                for later in &siblings[si_outer..] {
+                    body_children.push(*later);
+                }
+                si_outer = siblings.len();
+                continue;
+            }
         }
 
         // Top-level `typeref` + `defaultValue` pattern: the type name was parsed as a
@@ -859,6 +1127,19 @@ fn recover_type_decls_from_siblings(
                 "pp" | "comment" => {} // skip preprocessor/comments in body
                 _ => {
                     if pending_name.is_some() {
+                        // When we have a name but no kind yet, try to infer the kind
+                        // from the node.  `declClass` and `declIntf` are produced when
+                        // tree-sitter successfully parses the class body after error
+                        // recovery strips the generic params from the parent type.
+                        if pending_kind.is_none() {
+                            if let Some(kd) = type_keyword_of_node(tok, src) {
+                                pending_kind = Some(kd);
+                            } else if tok.kind() == "declClass" {
+                                pending_kind = Some(SymbolKind::Class);
+                            } else if tok.kind() == "declIntf" {
+                                pending_kind = Some(SymbolKind::Interface);
+                            }
+                        }
                         body_children.push(tok);
                     }
                 }
@@ -1725,9 +2006,12 @@ fn dispatch_type_body(
                 pending_name_for_type = None;
                 dispatch(*child, src, symbols, refs, parent_index);
             }
-            // Structured children: dispatch normally
+            // Structured children (including ERROR): dispatch normally.
+            // ERROR nodes inside a type body may contain embedded type
+            // declarations (e.g. class-of metaclass bodies that fold in the
+            // following type declaration via error recovery).
             "declProc" | "defProc" | "declSection" | "declVars" | "declConsts"
-            | "declUses" | "exprCall" | "typeref" => {
+            | "declUses" | "exprCall" | "typeref" | "ERROR" => {
                 pending_proc_kw = false;
                 pending_name_for_type = None;
                 dispatch(*child, src, symbols, refs, parent_index);
