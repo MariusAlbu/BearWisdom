@@ -228,12 +228,24 @@ pub fn full_index(
     // end on a path separator (so `src-tauri` doesn't match a sibling
     // package rooted at `src`).
     let package_lookup: Vec<(String, i64)> = {
-        let mut v: Vec<(String, i64)> = written_packages
+        let mut v: Vec<(String, Option<String>, i64)> = written_packages
             .iter()
-            .filter_map(|p| p.id.map(|id| (p.path.replace('\\', "/"), id)))
+            .filter_map(|p| {
+                p.id.map(|id| (p.path.replace('\\', "/"), p.kind.clone(), id))
+            })
             .collect();
-        v.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
-        v
+        // Longest path first. When two packages share a path (e.g. a Tauri
+        // root with both Cargo.toml and package.json producing `("", "cargo")`
+        // and `("", "npm")`), break the tie by `kind` so the lookup order is
+        // deterministic across runs. Without this the empty-path winner
+        // depended on iteration order from `detect_packages`.
+        v.sort_by(|a, b| {
+            b.0.len()
+                .cmp(&a.0.len())
+                .then_with(|| a.1.cmp(&b.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        v.into_iter().map(|(p, _, id)| (p, id)).collect()
     };
     let package_id_for_path = |rel_path: &str| -> Option<i64> {
         let normalized = rel_path.replace('\\', "/");

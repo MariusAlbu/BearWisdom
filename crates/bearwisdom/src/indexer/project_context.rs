@@ -13,7 +13,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManifest};
 use crate::ecosystem::{
@@ -306,6 +306,13 @@ pub fn build_project_context_with_packages(
     // Workspace declared_name → package_id index. Only packages that actually
     // reported a name in their manifest participate — folder-derived `name`
     // is never used here because it doesn't match what imports will reference.
+    //
+    // Collisions: two packages can legitimately share a path with different
+    // kinds (a Tauri root has `("", "cargo")` and `("", "npm")`), but two
+    // packages should NEVER share the same declared_name within a single
+    // ecosystem because that's what import statements key on. When they do,
+    // the first wins (deterministic given the input ordering) and a warning
+    // is logged so the user sees why imports may be routing oddly.
     let mut workspace_pkg_by_declared_name: HashMap<String, i64> = HashMap::new();
     let mut workspace_pkg_paths: HashMap<i64, String> = HashMap::new();
     for pkg in packages {
@@ -313,6 +320,14 @@ pub fn build_project_context_with_packages(
         workspace_pkg_paths.insert(id, pkg.path.clone());
         let Some(declared) = &pkg.declared_name else { continue };
         if declared.is_empty() {
+            continue;
+        }
+        if let Some(existing) = workspace_pkg_by_declared_name.get(declared) {
+            warn!(
+                "Duplicate declared_name {:?} for packages id={} (kept) and id={} (path={:?}); \
+                 imports keyed on this name will route to the first.",
+                declared, existing, id, pkg.path,
+            );
             continue;
         }
         workspace_pkg_by_declared_name.insert(declared.clone(), id);
@@ -856,6 +871,11 @@ fn union_manifests(per_package: &[PackageManifest]) -> HashMap<ManifestKind, Man
         for alias in &pm.data.tsconfig_paths {
             if !entry.tsconfig_paths.contains(alias) {
                 entry.tsconfig_paths.push(alias.clone());
+            }
+        }
+        for t in &pm.data.tsconfig_types {
+            if !entry.tsconfig_types.contains(t) {
+                entry.tsconfig_types.push(t.clone());
             }
         }
     }

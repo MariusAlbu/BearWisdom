@@ -217,12 +217,21 @@ pub fn find_dead_code(
     let conn = db.conn();
 
     // --- Resolution health ---
-    let resolution_health = compute_resolution_health(conn)?;
+    // Scope resolution: turn the optional scope string into a set of file_ids
+    // covering matched paths AND packages whose declared_name / folder name /
+    // path matches the scope. `None` means whole-project. Used by both
+    // candidate filtering, unresolved-ref matching, and resolution-health
+    // computation so all three see the same scope.
+    let scope_file_ids = resolve_scope_file_ids(conn, options.scope.as_deref())?;
+
+    let resolution_health = compute_resolution_health(conn, scope_file_ids.as_ref())?;
 
     // --- Build unresolved ref targets for cross-referencing ---
     // Maps (target_name) → count of unresolved refs with that target.
-    // We also build a set of (target_name, file_id) pairs for same-file matching.
-    let unresolved_names = build_unresolved_name_counts(conn)?;
+    // Scope-aware: a name collision between two packages in a monorepo
+    // shouldn't keep a dead symbol alive just because another package's
+    // resolver missed something with the same name.
+    let unresolved_names = build_unresolved_name_counts(conn, scope_file_ids.as_ref())?;
 
     // Collect entry point symbol IDs for exclusion.
     let entry_point_ids = collect_entry_point_ids(conn)?;
@@ -271,12 +280,21 @@ pub fn find_dead_code(
         VisibilityFilter::All => {}
     }
 
-    // Scope filter.
-    if let Some(scope) = &options.scope {
-        sql.push_str(&format!(
-            " AND (f.path LIKE '{}%')",
-            scope.replace('\'', "''")
-        ));
+    // Scope filter: prefer the resolved file_id set if scope was provided.
+    // Falls back to a path LIKE for the edge case where scope produces zero
+    // matched files (an unrecognized name) — that yields no candidates
+    // rather than the whole-project list.
+    if let Some(ids) = &scope_file_ids {
+        if ids.is_empty() {
+            sql.push_str(" AND 0 = 1");
+        } else {
+            let csv = ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            sql.push_str(&format!(" AND f.id IN ({})", csv));
+        }
     }
 
     sql.push_str(" ORDER BY f.path, s.line");
@@ -558,7 +576,49 @@ pub fn find_entry_points(db: &Database) -> QueryResult<EntryPointsReport> {
         }
     }
 
-    // 4. Test functions (in test files or named test_*)
+    // 4. Exported library API — public-visibility symbols inside packages
+    //    that declare a manifest name. The presence of `declared_name` is
+    //    the signal that this package is reachable as a library (Cargo
+    //    crates with `[package].name`, npm packages, etc.), so its public
+    //    surface is reachable from outside the workspace even when nothing
+    //    inside the workspace calls it.
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
+                 FROM symbols s
+                 JOIN files f ON f.id = s.file_id
+                 JOIN packages p ON p.id = f.package_id
+                 WHERE s.visibility = 'public'
+                   AND s.origin = 'internal'
+                   AND p.declared_name IS NOT NULL
+                   AND p.declared_name != ''
+                   AND s.kind IN ('function','method','class','struct',
+                                  'interface','enum','type_alias','trait',
+                                  'protocol','module')",
+            )
+            .context("entry_points: prepare exported-api query")?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(EntryPoint {
+                    symbol_id: row.get(0)?,
+                    name: row.get(1)?,
+                    qualified_name: row.get(2)?,
+                    kind: row.get(3)?,
+                    file_path: row.get(4)?,
+                    line: row.get(5)?,
+                    entry_kind: EntryPointKind::ExportedApi,
+                })
+            })
+            .context("entry_points: execute exported-api query")?;
+
+        for row in rows.flatten() {
+            entry_points.push(row);
+        }
+    }
+
+    // 5. Test functions (in test files or named test_*)
     {
         let mut stmt = conn
             .prepare(
@@ -651,6 +711,27 @@ fn collect_entry_point_ids(
              WHERE fe.edge_type IN ('event_handler', 'di_binding')",
         )
         .context("entry_point_ids: flow_edges")?;
+    for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
+        ids.insert(row);
+    }
+
+    // Exported library API — public symbols in packages with a declared
+    // manifest name (mirror of EntryPointKind::ExportedApi emission in
+    // `find_entry_points`).
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id FROM symbols s
+             JOIN files f ON f.id = s.file_id
+             JOIN packages p ON p.id = f.package_id
+             WHERE s.visibility = 'public'
+               AND s.origin = 'internal'
+               AND p.declared_name IS NOT NULL
+               AND p.declared_name != ''
+               AND s.kind IN ('function','method','class','struct',
+                              'interface','enum','type_alias','trait',
+                              'protocol','module')",
+        )
+        .context("entry_point_ids: exported_api")?;
     for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
         ids.insert(row);
     }
@@ -809,26 +890,40 @@ fn is_noise_symbol(name: &str, kind: &str) -> bool {
     )
 }
 
-/// Compute overall resolution health for the project.
+/// Compute resolution health for the dead-code trust tier.
+///
+/// `scope_file_ids = None` returns project-wide health (the original
+/// behavior). `Some(ids)` scopes every count to refs originating in
+/// those files, so a single-package report inside a monorepo gets a
+/// trust tier reflecting that package's resolver coverage and not the
+/// workspace average.
 ///
 /// Uses the same metric the resolution-gate plan defines:
-/// `internal_edges / (internal_edges + internal_unresolved)` where both
-/// sides are restricted to first-party (`origin = 'internal'`) source.
-/// Doc-snippet refs are excluded via the same `CODE_REF_FILTER` the
-/// `resolution_breakdown` query uses, so the dead-code health number
-/// matches the gate metric exactly.
+/// `internal_edges / (internal_edges + internal_unresolved)`, restricted
+/// to first-party (`origin = 'internal'`) source. Doc-snippet refs are
+/// excluded via the same `CODE_REF_FILTER` the `resolution_breakdown`
+/// query uses, so the headline rate matches the gate metric exactly.
 fn compute_resolution_health(
     conn: &rusqlite::Connection,
+    scope_file_ids: Option<&std::collections::HashSet<i64>>,
 ) -> QueryResult<ResolutionHealth> {
+    let scope_clause = match scope_file_ids {
+        None => String::new(),
+        Some(ids) if ids.is_empty() => " AND 0 = 1".to_string(),
+        Some(ids) => format!(
+            " AND f.id IN ({})",
+            ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
+        ),
+    };
+
+    let edges_sql = format!(
+        "SELECT COUNT(*) FROM edges e
+         JOIN symbols s ON s.id = e.source_id
+         JOIN files   f ON f.id = s.file_id
+         WHERE f.origin = 'internal'{scope_clause}"
+    );
     let internal_edges: u64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM edges e
-             JOIN symbols s ON s.id = e.source_id
-             JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal'",
-            [],
-            |row| row.get(0),
-        )
+        .query_row(&edges_sql, [], |row| row.get(0))
         .unwrap_or(0);
 
     let internal_unresolved_sql = format!(
@@ -836,7 +931,7 @@ fn compute_resolution_health(
          FROM unresolved_refs u
          JOIN symbols s ON s.id = u.source_id
          JOIN files   f ON f.id = s.file_id
-         WHERE f.origin = 'internal' AND {filter}",
+         WHERE f.origin = 'internal' AND {filter}{scope_clause}",
         filter = crate::query::stats::CODE_REF_FILTER
     );
     let internal_unresolved: u64 = conn
@@ -844,16 +939,15 @@ fn compute_resolution_health(
         .unwrap_or(0);
 
     let low_conf_threshold = crate::query::diagnostics::LOW_CONFIDENCE_THRESHOLD;
+    let low_conf_sql = format!(
+        "SELECT COUNT(*)
+         FROM edges e
+         JOIN symbols s ON s.id = e.source_id
+         JOIN files   f ON f.id = s.file_id
+         WHERE f.origin = 'internal' AND e.confidence < ?1{scope_clause}"
+    );
     let low_confidence_edges: u64 = conn
-        .query_row(
-            "SELECT COUNT(*)
-             FROM edges e
-             JOIN symbols s ON s.id = e.source_id
-             JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal' AND e.confidence < ?1",
-            [low_conf_threshold],
-            |row| row.get(0),
-        )
+        .query_row(&low_conf_sql, [low_conf_threshold], |row| row.get(0))
         .unwrap_or(0);
 
     let total = internal_edges + internal_unresolved;
@@ -911,13 +1005,33 @@ fn compute_resolution_health(
 }
 
 /// Build a map of unresolved ref target names → count.
-/// Used to cross-reference dead code candidates.
+///
+/// `scope_file_ids = None` counts every unresolved ref in the project
+/// (original behavior). `Some(ids)` restricts the count to refs whose
+/// **source symbol** lives in one of those files — so a monorepo with
+/// two packages each containing a `handleClick` symbol won't keep
+/// `apps/web`'s dead `handleClick` alive because `apps/api` failed to
+/// resolve a different `handleClick`.
 fn build_unresolved_name_counts(
     conn: &rusqlite::Connection,
+    scope_file_ids: Option<&std::collections::HashSet<i64>>,
 ) -> QueryResult<std::collections::HashMap<String, u32>> {
     let mut map = std::collections::HashMap::new();
+    let sql = match scope_file_ids {
+        None => "SELECT target_name, COUNT(*) FROM unresolved_refs GROUP BY target_name"
+            .to_string(),
+        Some(ids) if ids.is_empty() => return Ok(map),
+        Some(ids) => format!(
+            "SELECT u.target_name, COUNT(*)
+             FROM unresolved_refs u
+             JOIN symbols s ON s.id = u.source_id
+             WHERE s.file_id IN ({})
+             GROUP BY u.target_name",
+            ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
+        ),
+    };
     let mut stmt = conn
-        .prepare("SELECT target_name, COUNT(*) FROM unresolved_refs GROUP BY target_name")
+        .prepare(&sql)
         .context("unresolved_names: prepare")?;
     let rows = stmt
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))
@@ -926,6 +1040,65 @@ fn build_unresolved_name_counts(
         map.insert(row.0, row.1);
     }
     Ok(map)
+}
+
+/// Resolve a scope string to the set of file_ids it covers.
+///
+/// Tried, in order:
+///   1. Path prefix: files whose `path` starts with the scope literal.
+///   2. Package match: files belonging to any package whose `declared_name`,
+///      folder `name`, or `path` equals the scope.
+///
+/// Returns `None` when no scope was provided (whole-project queries),
+/// `Some(empty)` when a scope was provided but matched nothing (callers
+/// should treat that as "no candidates"), or `Some(non-empty)` with the
+/// matching file ids.
+fn resolve_scope_file_ids(
+    conn: &rusqlite::Connection,
+    scope: Option<&str>,
+) -> QueryResult<Option<std::collections::HashSet<i64>>> {
+    let Some(scope) = scope else { return Ok(None) };
+    let mut file_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+    let prefix = format!("{scope}%");
+    let mut path_stmt = conn
+        .prepare("SELECT id FROM files WHERE path LIKE ?1")
+        .context("resolve_scope: file paths")?;
+    for fid in path_stmt
+        .query_map([&prefix], |r| r.get::<_, i64>(0))?
+        .flatten()
+    {
+        file_ids.insert(fid);
+    }
+
+    let mut pkg_stmt = conn
+        .prepare(
+            "SELECT id FROM packages
+             WHERE declared_name = ?1 OR name = ?1 OR path = ?1",
+        )
+        .context("resolve_scope: packages")?;
+    let package_ids: Vec<i64> = pkg_stmt
+        .query_map([scope], |r| r.get::<_, i64>(0))?
+        .flatten()
+        .collect();
+
+    if !package_ids.is_empty() {
+        let csv = package_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!("SELECT id FROM files WHERE package_id IN ({csv})");
+        let mut fstmt = conn.prepare(&sql).context("resolve_scope: pkg files")?;
+        for fid in fstmt
+            .query_map([], |r| r.get::<_, i64>(0))?
+            .flatten()
+        {
+            file_ids.insert(fid);
+        }
+    }
+
+    Ok(Some(file_ids))
 }
 
 /// Names that are too generic to use for unresolved ref matching.
@@ -953,152 +1126,5 @@ fn is_generic_name(name: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::db::Database;
-
-    fn setup_db() -> Database {
-        let db = Database::open_in_memory().unwrap();
-        let conn = db.conn();
-
-        // File
-        conn.execute(
-            "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/lib.rs', 'h1', 'rust', 0)",
-            [],
-        ).unwrap();
-        let file_id = conn.last_insert_rowid();
-
-        // Called function (has incoming edge)
-        conn.execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, incoming_edge_count)
-             VALUES (?1, 'used_fn', 'mod::used_fn', 'function', 10, 0, 'public', 3)",
-            [file_id],
-        ).unwrap();
-
-        // Uncalled private function (dead code candidate)
-        conn.execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, incoming_edge_count)
-             VALUES (?1, 'dead_fn', 'mod::dead_fn', 'function', 20, 0, 'private', 0)",
-            [file_id],
-        ).unwrap();
-
-        // Main function (entry point, should be excluded)
-        conn.execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, incoming_edge_count)
-             VALUES (?1, 'main', 'main', 'function', 1, 0, NULL, 0)",
-            [file_id],
-        ).unwrap();
-
-        // Test file — path must contain /tests/ or /test/ with a leading slash
-        // to match is_test_file(), which checks for "/tests/" substring.
-        conn.execute(
-            "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/tests/test_lib.rs', 'h2', 'rust', 0)",
-            [],
-        ).unwrap();
-        let test_file_id = conn.last_insert_rowid();
-
-        // Test function (should be excluded)
-        conn.execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, incoming_edge_count)
-             VALUES (?1, 'test_something', 'tests::test_something', 'function', 5, 0, NULL, 0)",
-            [test_file_id],
-        ).unwrap();
-
-        db
-    }
-
-    #[test]
-    fn dead_code_finds_uncalled_private_fn() {
-        let db = setup_db();
-        let report = find_dead_code(&db, &DeadCodeOptions::default()).unwrap();
-
-        assert_eq!(report.dead_candidates.len(), 1);
-        assert_eq!(report.dead_candidates[0].name, "dead_fn");
-        assert_eq!(report.dead_candidates[0].confidence, 1.0);
-    }
-
-    #[test]
-    fn dead_code_excludes_main() {
-        let db = setup_db();
-        let report = find_dead_code(&db, &DeadCodeOptions::default()).unwrap();
-
-        assert!(report.entry_points_excluded > 0);
-        assert!(!report
-            .dead_candidates
-            .iter()
-            .any(|c| c.name == "main"));
-    }
-
-    #[test]
-    fn dead_code_excludes_test_files() {
-        let db = setup_db();
-        let report = find_dead_code(&db, &DeadCodeOptions::default()).unwrap();
-
-        assert!(report.test_symbols_excluded > 0);
-        assert!(!report
-            .dead_candidates
-            .iter()
-            .any(|c| c.name == "test_something"));
-    }
-
-    #[test]
-    fn dead_code_includes_tests_when_asked() {
-        let db = setup_db();
-        let opts = DeadCodeOptions {
-            include_tests: true,
-            ..Default::default()
-        };
-        let report = find_dead_code(&db, &opts).unwrap();
-
-        assert!(report
-            .dead_candidates
-            .iter()
-            .any(|c| c.name == "test_something"));
-    }
-
-    #[test]
-    fn dead_code_respects_visibility_filter() {
-        let db = setup_db();
-
-        let opts = DeadCodeOptions {
-            visibility_filter: VisibilityFilter::PublicOnly,
-            ..Default::default()
-        };
-        let report = find_dead_code(&db, &opts).unwrap();
-        // dead_fn is private, should not appear
-        assert!(!report
-            .dead_candidates
-            .iter()
-            .any(|c| c.name == "dead_fn"));
-    }
-
-    #[test]
-    fn entry_points_finds_main() {
-        let db = setup_db();
-        let report = find_entry_points(&db).unwrap();
-
-        assert!(report
-            .entry_points
-            .iter()
-            .any(|ep| ep.name == "main" && matches!(ep.entry_kind, EntryPointKind::Main)));
-    }
-
-    #[test]
-    fn entry_points_finds_test_functions() {
-        let db = setup_db();
-        let report = find_entry_points(&db).unwrap();
-
-        assert!(report.entry_points.iter().any(
-            |ep| ep.name == "test_something"
-                && matches!(ep.entry_kind, EntryPointKind::TestFunction)
-        ));
-    }
-
-    #[test]
-    fn empty_db_returns_empty_report() {
-        let db = Database::open_in_memory().unwrap();
-        let report = find_dead_code(&db, &DeadCodeOptions::default()).unwrap();
-        assert!(report.dead_candidates.is_empty());
-        assert_eq!(report.total_symbols_checked, 0);
-    }
-}
+#[path = "dead_code_tests.rs"]
+mod tests;

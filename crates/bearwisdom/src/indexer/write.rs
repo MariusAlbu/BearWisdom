@@ -702,8 +702,18 @@ pub fn assign_package_ids(
         return;
     }
     // Sort packages by path length descending for longest-prefix-first matching.
+    // Tie-break by `kind` then `id` so two packages at the same path (Tauri
+    // root with both Cargo.toml and package.json, for example) win in a
+    // deterministic order. Without the tie-break the same root file could
+    // land on different packages across runs.
     let mut sorted: Vec<&crate::types::PackageInfo> = packages.iter().collect();
-    sorted.sort_by(|a, b| b.path.len().cmp(&a.path.len()));
+    sorted.sort_by(|a, b| {
+        b.path
+            .len()
+            .cmp(&a.path.len())
+            .then_with(|| a.kind.cmp(&b.kind))
+            .then_with(|| a.id.cmp(&b.id))
+    });
 
     for pf in parsed.iter_mut() {
         for pkg in &sorted {

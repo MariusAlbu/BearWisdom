@@ -49,10 +49,19 @@ pub struct WorkspaceOverview {
 }
 
 /// A directed dependency between two packages inferred from the edge graph.
+///
+/// `source_package` / `target_package` carry display names. `*_path` and
+/// `*_kind` disambiguate when two packages share a display name — e.g. a
+/// monorepo with `apps/core/package.json` and `crates/core/Cargo.toml` both
+/// named `core`. Consumers that key on identity should use `(path, kind)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageDependency {
     pub source_package: String,
     pub target_package: String,
+    pub source_package_path: String,
+    pub target_package_path: String,
+    pub source_package_kind: Option<String>,
+    pub target_package_kind: Option<String>,
     pub edge_count: u32,
 }
 
@@ -66,6 +75,16 @@ pub struct PackageDependency {
 pub struct WorkspaceGraphEdge {
     pub source_package: String,
     pub target_package: String,
+    /// Path of the source package, relative to the project root. Disambiguates
+    /// when two packages share `source_package`.
+    pub source_package_path: String,
+    /// Path of the target package, relative to the project root.
+    pub target_package_path: String,
+    /// Manifest kind of the source package (`"cargo"`, `"npm"`, ...). `None`
+    /// for unclassified packages.
+    pub source_package_kind: Option<String>,
+    /// Manifest kind of the target package.
+    pub target_package_kind: Option<String>,
     /// Symbol-level code edges (calls, type_ref, inherits, implements,
     /// instantiates, imports, lsp_resolved).
     pub code_edges: u32,
@@ -77,7 +96,10 @@ pub struct WorkspaceGraphEdge {
     pub flow_edges: u32,
     pub flow_by_kind: Vec<(String, u32)>,
     /// True when the source package's manifest declares the target package
-    /// (either by `declared_name` or by folder-derived `name`).
+    /// (either by `declared_name` or by folder-derived `name`) AND the
+    /// manifest's ecosystem agrees with the target package's kind. The
+    /// ecosystem check prevents a cross-language `shared` package from
+    /// matching every `shared` in the workspace.
     pub declared_dep: bool,
     /// Total = code_edges + flow_edges. A convenience field for sorting.
     pub total_edges: u32,
@@ -97,32 +119,45 @@ pub fn list_packages(db: &Database) -> QueryResult<Vec<PackageStats>> {
     // Use scalar subqueries to avoid fan-out from multi-table LEFT JOINs.
     // The edges table has no `id` column (composite PK), so we count via
     // a subquery that aggregates over symbols belonging to this package.
+    // Stats are scoped to `origin = 'internal'` so vendored / external
+    // sources written under `ext:` paths don't inflate per-package size
+    // and cross-package coupling counts. `resolved_refs` and
+    // `unresolved_refs` use the same edge-kind universe — only ref-like
+    // edges (`unresolved_refs` rows have kinds calls/type_ref/inherits/
+    // implements/instantiates/imports). Without the kind filter on
+    // `resolved_refs`, non-ref edges (lsp_resolved, http_call, db_entity)
+    // entered the numerator but never the denominator, so `resolved_pct`
+    // could exceed 100% or float above the real resolution rate.
     let mut stmt = conn
         .prepare_cached(
             "SELECT p.name,
                     p.path,
                     p.kind,
-                    (SELECT COUNT(*) FROM files f WHERE f.package_id = p.id)
+                    (SELECT COUNT(*) FROM files f
+                     WHERE f.package_id = p.id AND f.origin = 'internal')
                         AS file_count,
                     (SELECT COUNT(*) FROM symbols s
                      JOIN files f ON f.id = s.file_id
-                     WHERE f.package_id = p.id)
+                     WHERE f.package_id = p.id AND f.origin = 'internal')
                         AS symbol_count,
                     (SELECT COUNT(*) FROM edges e
                      JOIN symbols s ON s.id = e.source_id
                      JOIN files   f ON f.id = s.file_id
-                     WHERE f.package_id = p.id)
+                     WHERE f.package_id = p.id AND f.origin = 'internal')
                         AS edge_count,
                     (SELECT COUNT(*) FROM edges e
                      JOIN symbols s ON s.id = e.source_id
                      JOIN files   f ON f.id = s.file_id
                      WHERE f.package_id = p.id
-                       AND e.confidence >= 0.5)
+                       AND f.origin = 'internal'
+                       AND e.confidence >= 0.5
+                       AND e.kind IN ('calls','type_ref','inherits',
+                                      'implements','instantiates','imports'))
                         AS resolved_refs,
                     (SELECT COUNT(*) FROM unresolved_refs u
                      JOIN symbols s ON s.id = u.source_id
                      JOIN files   f ON f.id = s.file_id
-                     WHERE f.package_id = p.id)
+                     WHERE f.package_id = p.id AND f.origin = 'internal')
                         AS unresolved_refs
              FROM packages p
              ORDER BY file_count DESC, p.name",
@@ -193,7 +228,9 @@ pub fn workspace_overview(db: &Database) -> QueryResult<WorkspaceOverview> {
              JOIN files   f2 ON s2.file_id  = f2.id
              WHERE f1.package_id IS NOT NULL
                AND f2.package_id IS NOT NULL
-               AND f1.package_id != f2.package_id",
+               AND f1.package_id != f2.package_id
+               AND f1.origin = 'internal'
+               AND f2.origin = 'internal'",
             [],
             |r| r.get(0),
         )
@@ -218,6 +255,8 @@ pub fn workspace_overview(db: &Database) -> QueryResult<WorkspaceOverview> {
              WHERE f_src.package_id IS NOT NULL
                AND f_tgt.package_id IS NOT NULL
                AND f_src.package_id != f_tgt.package_id
+               AND f_src.origin = 'internal'
+               AND f_tgt.origin = 'internal'
              GROUP BY s.id, s.name, s.qualified_name, s.kind, f_tgt.path
              HAVING COUNT(DISTINCT f_src.package_id) >= 2
              ORDER BY caller_package_count DESC
@@ -262,6 +301,10 @@ pub fn package_dependencies(db: &Database) -> QueryResult<Vec<PackageDependency>
         .prepare_cached(
             "SELECT p_src.name,
                     p_tgt.name,
+                    p_src.path,
+                    p_tgt.path,
+                    p_src.kind,
+                    p_tgt.kind,
                     COUNT(*)          AS edge_count
              FROM edges e
              JOIN symbols s1  ON e.source_id   = s1.id
@@ -271,7 +314,9 @@ pub fn package_dependencies(db: &Database) -> QueryResult<Vec<PackageDependency>
              JOIN files   f2  ON s2.file_id    = f2.id
              JOIN packages p_tgt ON f2.package_id = p_tgt.id
              WHERE p_src.id != p_tgt.id
-             GROUP BY p_src.name, p_tgt.name
+               AND f1.origin = 'internal'
+               AND f2.origin = 'internal'
+             GROUP BY p_src.id, p_tgt.id
              ORDER BY edge_count DESC",
         )
         .context("Failed to prepare package_dependencies query")?;
@@ -279,9 +324,13 @@ pub fn package_dependencies(db: &Database) -> QueryResult<Vec<PackageDependency>
     let rows = stmt
         .query_map([], |row| {
             Ok(PackageDependency {
-                source_package: row.get(0)?,
-                target_package: row.get(1)?,
-                edge_count:     row.get(2)?,
+                source_package:      row.get(0)?,
+                target_package:      row.get(1)?,
+                source_package_path: row.get(2)?,
+                target_package_path: row.get(3)?,
+                source_package_kind: row.get(4)?,
+                target_package_kind: row.get(5)?,
+                edge_count:          row.get(6)?,
             })
         })
         .context("Failed to execute package_dependencies query")?;
@@ -323,8 +372,14 @@ pub fn workspace_graph(db: &Database) -> QueryResult<Vec<WorkspaceGraphEdge>> {
     // (src == tgt) are skipped for the same reason.
     let mut edge_stmt = conn
         .prepare_cached(
-            "SELECT p_src.name,
+            "SELECT p_src.id,
+                    p_tgt.id,
+                    p_src.name,
                     p_tgt.name,
+                    p_src.path,
+                    p_tgt.path,
+                    p_src.kind,
+                    p_tgt.kind,
                     e.kind,
                     COUNT(*) AS cnt
              FROM edges e
@@ -335,37 +390,50 @@ pub fn workspace_graph(db: &Database) -> QueryResult<Vec<WorkspaceGraphEdge>> {
              JOIN files    f2 ON f2.id = s2.file_id
              JOIN packages p_tgt ON p_tgt.id = f2.package_id
              WHERE p_src.id != p_tgt.id
-             GROUP BY p_src.name, p_tgt.name, e.kind",
+               AND f1.origin = 'internal'
+               AND f2.origin = 'internal'
+             GROUP BY p_src.id, p_tgt.id, e.kind",
         )
         .context("Failed to prepare workspace_graph edges query")?;
 
     let edge_rows = edge_stmt
         .query_map([], |row| {
             Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
                 row.get::<_, String>(2)?,
-                row.get::<_, u32>(3)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, u32>(9)?,
             ))
         })
         .context("Failed to execute workspace_graph edges query")?;
 
-    // Aggregate into a map keyed by (src, tgt).
-    let mut acc: HashMap<(String, String), WorkspaceGraphEdge> = HashMap::new();
+    // Aggregate into a map keyed by (src_id, tgt_id). Identity is the
+    // package row, not the display name — two packages can legitimately
+    // share `name` (e.g. polyglot `core` in apps/ and crates/).
+    let mut acc: HashMap<(i64, i64), WorkspaceGraphEdge> = HashMap::new();
     for row in edge_rows {
-        let (src, tgt, kind, cnt) = row.context("row fetch failed")?;
-        let entry = acc
-            .entry((src.clone(), tgt.clone()))
-            .or_insert_with(|| WorkspaceGraphEdge {
-                source_package: src,
-                target_package: tgt,
-                code_edges: 0,
-                code_by_kind: Vec::new(),
-                flow_edges: 0,
-                flow_by_kind: Vec::new(),
-                declared_dep: false,
-                total_edges: 0,
-            });
+        let (src_id, tgt_id, src_name, tgt_name, src_path, tgt_path, src_kind, tgt_kind, kind, cnt) =
+            row.context("row fetch failed")?;
+        let entry = acc.entry((src_id, tgt_id)).or_insert_with(|| WorkspaceGraphEdge {
+            source_package: src_name,
+            target_package: tgt_name,
+            source_package_path: src_path,
+            target_package_path: tgt_path,
+            source_package_kind: src_kind,
+            target_package_kind: tgt_kind,
+            code_edges: 0,
+            code_by_kind: Vec::new(),
+            flow_edges: 0,
+            flow_by_kind: Vec::new(),
+            declared_dep: false,
+            total_edges: 0,
+        });
         if is_flow(&kind) {
             entry.flow_edges += cnt;
             entry.flow_by_kind.push((kind, cnt));
@@ -378,42 +446,75 @@ pub fn workspace_graph(db: &Database) -> QueryResult<Vec<WorkspaceGraphEdge>> {
 
     // --- Declared deps (manifest-level) ---
     //
-    // `package_deps.dep_name` is whatever the manifest wrote. Match against
-    // both `declared_name` and `name` on the target package so that workspaces
-    // using folder-name references (Cargo path-deps without a manifest name)
-    // and workspaces using declared names both land here.
+    // Match `package_deps.dep_name` against both `declared_name` and `name`
+    // on the target package (so workspaces using folder names and ones using
+    // declared names both land). The ecosystem clause prevents a TS package
+    // declaring `shared` from binding to a Cargo `shared` crate in the same
+    // workspace — distinct ecosystems shouldn't fuse on a name collision.
     let mut dep_stmt = conn
         .prepare_cached(
-            "SELECT DISTINCT p_src.name, p_tgt.name
+            "SELECT DISTINCT
+                    p_src.id, p_tgt.id,
+                    p_src.name, p_tgt.name,
+                    p_src.path, p_tgt.path,
+                    p_src.kind, p_tgt.kind
              FROM package_deps pd
              JOIN packages p_src ON p_src.id = pd.package_id
              JOIN packages p_tgt
-                 ON p_tgt.declared_name = pd.dep_name
-                 OR p_tgt.name          = pd.dep_name
+                 ON (p_tgt.declared_name = pd.dep_name OR p_tgt.name = pd.dep_name)
+                AND pd.ecosystem = CASE p_tgt.kind
+                        WHEN 'npm'     THEN 'typescript'
+                        WHEN 'cargo'   THEN 'rust'
+                        WHEN 'go'      THEN 'go'
+                        WHEN 'python'  THEN 'python'
+                        WHEN 'java'    THEN 'java'
+                        WHEN 'ruby'    THEN 'ruby'
+                        WHEN 'php'     THEN 'php'
+                        WHEN 'swift'   THEN 'swift'
+                        WHEN 'dart'    THEN 'dart'
+                        WHEN 'elixir'  THEN 'elixir'
+                        WHEN 'dotnet'  THEN 'dotnet'
+                        WHEN 'r'       THEN 'r'
+                        WHEN 'scala'   THEN 'scala'
+                        WHEN 'ocaml'   THEN 'ocaml'
+                        ELSE pd.ecosystem
+                    END
              WHERE p_src.id != p_tgt.id",
         )
         .context("Failed to prepare workspace_graph deps query")?;
 
     let dep_rows = dep_stmt
         .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+            ))
         })
         .context("Failed to execute workspace_graph deps query")?;
 
     for row in dep_rows {
-        let (src, tgt) = row.context("dep row fetch failed")?;
-        let entry = acc
-            .entry((src.clone(), tgt.clone()))
-            .or_insert_with(|| WorkspaceGraphEdge {
-                source_package: src,
-                target_package: tgt,
-                code_edges: 0,
-                code_by_kind: Vec::new(),
-                flow_edges: 0,
-                flow_by_kind: Vec::new(),
-                declared_dep: false,
-                total_edges: 0,
-            });
+        let (src_id, tgt_id, src_name, tgt_name, src_path, tgt_path, src_kind, tgt_kind) =
+            row.context("dep row fetch failed")?;
+        let entry = acc.entry((src_id, tgt_id)).or_insert_with(|| WorkspaceGraphEdge {
+            source_package: src_name,
+            target_package: tgt_name,
+            source_package_path: src_path,
+            target_package_path: tgt_path,
+            source_package_kind: src_kind,
+            target_package_kind: tgt_kind,
+            code_edges: 0,
+            code_by_kind: Vec::new(),
+            flow_edges: 0,
+            flow_by_kind: Vec::new(),
+            declared_dep: false,
+            total_edges: 0,
+        });
         entry.declared_dep = true;
     }
 
@@ -438,260 +539,6 @@ pub fn workspace_graph(db: &Database) -> QueryResult<Vec<WorkspaceGraphEdge>> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::db::Database;
+#[path = "workspace_tests.rs"]
+mod tests;
 
-    fn setup_two_packages(db: &Database) {
-        let conn = db.conn();
-
-        // Two packages
-        conn.execute(
-            "INSERT INTO packages (name, path, kind) VALUES ('pkg-a', 'packages/a', 'cargo')",
-            [],
-        )
-        .unwrap();
-        let pkg_a = conn.last_insert_rowid();
-
-        conn.execute(
-            "INSERT INTO packages (name, path, kind) VALUES ('pkg-b', 'packages/b', 'cargo')",
-            [],
-        )
-        .unwrap();
-        let pkg_b = conn.last_insert_rowid();
-
-        // One file per package
-        conn.execute(
-            "INSERT INTO files (path, hash, language, last_indexed, package_id) VALUES ('packages/a/lib.rs', 'h1', 'rust', 0, ?1)",
-            rusqlite::params![pkg_a],
-        )
-        .unwrap();
-        let file_a = conn.last_insert_rowid();
-
-        conn.execute(
-            "INSERT INTO files (path, hash, language, last_indexed, package_id) VALUES ('packages/b/lib.rs', 'h2', 'rust', 0, ?1)",
-            rusqlite::params![pkg_b],
-        )
-        .unwrap();
-        let file_b = conn.last_insert_rowid();
-
-        // One symbol per file
-        conn.execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) VALUES (?1, 'fn_a', 'a::fn_a', 'function', 1, 0)",
-            rusqlite::params![file_a],
-        )
-        .unwrap();
-        let sym_a = conn.last_insert_rowid();
-
-        conn.execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) VALUES (?1, 'fn_b', 'b::fn_b', 'function', 1, 0)",
-            rusqlite::params![file_b],
-        )
-        .unwrap();
-        let sym_b = conn.last_insert_rowid();
-
-        // pkg-a calls pkg-b (cross-package edge)
-        conn.execute(
-            "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, 'calls', 1.0)",
-            rusqlite::params![sym_a, sym_b],
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn list_packages_returns_both_packages() {
-        let db = Database::open_in_memory().unwrap();
-        setup_two_packages(&db);
-
-        let pkgs = list_packages(&db).unwrap();
-        assert_eq!(pkgs.len(), 2);
-
-        let names: Vec<&str> = pkgs.iter().map(|p| p.name.as_str()).collect();
-        assert!(names.contains(&"pkg-a"));
-        assert!(names.contains(&"pkg-b"));
-    }
-
-    #[test]
-    fn list_packages_empty_for_single_project() {
-        let db = Database::open_in_memory().unwrap();
-        let pkgs = list_packages(&db).unwrap();
-        assert!(pkgs.is_empty());
-    }
-
-    #[test]
-    fn workspace_overview_counts_cross_package_edge() {
-        let db = Database::open_in_memory().unwrap();
-        setup_two_packages(&db);
-
-        let overview = workspace_overview(&db).unwrap();
-        assert_eq!(overview.total_cross_package_edges, 1);
-        assert_eq!(overview.packages.len(), 2);
-    }
-
-    #[test]
-    fn workspace_overview_empty_for_single_project() {
-        let db = Database::open_in_memory().unwrap();
-        let overview = workspace_overview(&db).unwrap();
-        assert_eq!(overview.total_cross_package_edges, 0);
-        assert!(overview.packages.is_empty());
-        assert!(overview.shared_hotspots.is_empty());
-    }
-
-    #[test]
-    fn package_dependencies_detects_direction() {
-        let db = Database::open_in_memory().unwrap();
-        setup_two_packages(&db);
-
-        let deps = package_dependencies(&db).unwrap();
-        assert_eq!(deps.len(), 1);
-        assert_eq!(deps[0].source_package, "pkg-a");
-        assert_eq!(deps[0].target_package, "pkg-b");
-        assert_eq!(deps[0].edge_count, 1);
-    }
-
-    #[test]
-    fn package_dependencies_empty_for_single_project() {
-        let db = Database::open_in_memory().unwrap();
-        let deps = package_dependencies(&db).unwrap();
-        assert!(deps.is_empty());
-    }
-
-    /// Extended fixture: two packages, one calls edge + one http_call edge +
-    /// a manifest-declared dependency. Exercises the workspace_graph merge.
-    fn setup_graph_fixture(db: &Database) {
-        let conn = db.conn();
-        conn.execute(
-            "INSERT INTO packages (name, path, kind, declared_name) VALUES ('pkg-a', 'packages/a', 'npm', '@myorg/a')",
-            [],
-        ).unwrap();
-        let pkg_a = conn.last_insert_rowid();
-        conn.execute(
-            "INSERT INTO packages (name, path, kind, declared_name) VALUES ('pkg-b', 'packages/b', 'npm', '@myorg/b')",
-            [],
-        ).unwrap();
-        let pkg_b = conn.last_insert_rowid();
-
-        conn.execute(
-            "INSERT INTO files (path, hash, language, last_indexed, package_id) VALUES ('packages/a/src/a.ts', 'h1', 'typescript', 0, ?1)",
-            rusqlite::params![pkg_a],
-        ).unwrap();
-        let file_a = conn.last_insert_rowid();
-        conn.execute(
-            "INSERT INTO files (path, hash, language, last_indexed, package_id) VALUES ('packages/b/src/b.ts', 'h2', 'typescript', 0, ?1)",
-            rusqlite::params![pkg_b],
-        ).unwrap();
-        let file_b = conn.last_insert_rowid();
-
-        conn.execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) VALUES (?1, 'fn_a', 'a.fn_a', 'function', 1, 0)",
-            rusqlite::params![file_a],
-        ).unwrap();
-        let sym_a = conn.last_insert_rowid();
-        conn.execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) VALUES (?1, 'fn_b', 'b.fn_b', 'function', 1, 0)",
-            rusqlite::params![file_b],
-        ).unwrap();
-        let sym_b = conn.last_insert_rowid();
-
-        // Two calls edges + one http_call edge from A → B.
-        conn.execute(
-            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'calls', 1, 1.0)",
-            rusqlite::params![sym_a, sym_b],
-        ).unwrap();
-        conn.execute(
-            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'calls', 2, 1.0)",
-            rusqlite::params![sym_a, sym_b],
-        ).unwrap();
-        conn.execute(
-            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'http_call', 3, 0.9)",
-            rusqlite::params![sym_a, sym_b],
-        ).unwrap();
-
-        // Manifest-declared dep: pkg-a's package.json lists @myorg/b.
-        conn.execute(
-            "INSERT INTO package_deps (package_id, ecosystem, dep_name, version, kind)
-             VALUES (?1, 'typescript', '@myorg/b', '^1.0.0', 'runtime')",
-            rusqlite::params![pkg_a],
-        ).unwrap();
-    }
-
-    #[test]
-    fn workspace_graph_aggregates_code_flow_and_declared() {
-        let db = Database::open_in_memory().unwrap();
-        setup_graph_fixture(&db);
-
-        let edges = workspace_graph(&db).unwrap();
-        assert_eq!(edges.len(), 1);
-        let e = &edges[0];
-        assert_eq!(e.source_package, "pkg-a");
-        assert_eq!(e.target_package, "pkg-b");
-        assert_eq!(e.code_edges, 2);
-        assert_eq!(e.flow_edges, 1);
-        assert_eq!(e.total_edges, 3);
-        assert!(e.declared_dep);
-        assert_eq!(e.code_by_kind, vec![("calls".to_string(), 2)]);
-        assert_eq!(e.flow_by_kind, vec![("http_call".to_string(), 1)]);
-    }
-
-    #[test]
-    fn workspace_graph_surfaces_declared_dep_with_zero_edges() {
-        let db = Database::open_in_memory().unwrap();
-        let conn = db.conn();
-        conn.execute(
-            "INSERT INTO packages (name, path, kind, declared_name) VALUES ('x', 'x', 'npm', '@acme/x')",
-            [],
-        ).unwrap();
-        let x = conn.last_insert_rowid();
-        conn.execute(
-            "INSERT INTO packages (name, path, kind, declared_name) VALUES ('y', 'y', 'npm', '@acme/y')",
-            [],
-        ).unwrap();
-        conn.execute(
-            "INSERT INTO package_deps (package_id, ecosystem, dep_name, version, kind)
-             VALUES (?1, 'typescript', '@acme/y', '1', 'runtime')",
-            rusqlite::params![x],
-        ).unwrap();
-
-        let edges = workspace_graph(&db).unwrap();
-        assert_eq!(edges.len(), 1);
-        assert!(edges[0].declared_dep);
-        assert_eq!(edges[0].total_edges, 0);
-        assert_eq!(edges[0].source_package, "x");
-        assert_eq!(edges[0].target_package, "y");
-    }
-
-    #[test]
-    fn workspace_graph_empty_for_single_project() {
-        let db = Database::open_in_memory().unwrap();
-        let edges = workspace_graph(&db).unwrap();
-        assert!(edges.is_empty());
-    }
-
-    #[test]
-    fn workspace_graph_matches_dep_name_by_folder_fallback() {
-        // Cargo path-deps sometimes list the folder name rather than a
-        // separate declared_name. Verify the fallback match still fires.
-        let db = Database::open_in_memory().unwrap();
-        let conn = db.conn();
-        conn.execute(
-            "INSERT INTO packages (name, path, kind) VALUES ('core', 'crates/core', 'cargo')",
-            [],
-        ).unwrap();
-        let core = conn.last_insert_rowid();
-        conn.execute(
-            "INSERT INTO packages (name, path, kind) VALUES ('cli', 'crates/cli', 'cargo')",
-            [],
-        ).unwrap();
-        conn.execute(
-            "INSERT INTO package_deps (package_id, ecosystem, dep_name, version, kind)
-             VALUES (?1, 'rust', 'cli', NULL, 'runtime')",
-            rusqlite::params![core],
-        ).unwrap();
-
-        let edges = workspace_graph(&db).unwrap();
-        assert_eq!(edges.len(), 1);
-        assert!(edges[0].declared_dep);
-        assert_eq!(edges[0].source_package, "core");
-        assert_eq!(edges[0].target_package, "cli");
-    }
-}

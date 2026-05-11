@@ -275,6 +275,11 @@ pub fn read_all_manifests(project_root: &Path) -> HashMap<ManifestKind, Manifest
                 entry.tsconfig_paths.push(alias);
             }
         }
+        for t in pm.data.tsconfig_types {
+            if !entry.tsconfig_types.contains(&t) {
+                entry.tsconfig_types.push(t);
+            }
+        }
         for pr in pm.data.project_refs {
             if !entry.project_refs.contains(&pr) {
                 entry.project_refs.push(pr);
