@@ -62,27 +62,39 @@ fn symbol_behaviour_attribute() {
 // Ref node kinds
 // ---------------------------------------------------------------------------
 
-/// ref_node_kind: `call`  →  Calls edge (local call)
+/// ref_node_kind: `call`  →  Calls edge (local call); target emitted as "name/arity"
 #[test]
 fn ref_call_local() {
     let src = "-module(mymod).\n-export([foo/1]).\nfoo(X) -> bar(X).";
     let r = extract(src);
+    // bar is called with 1 argument → target_name is "bar/1"
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "bar" && rf.kind == EdgeKind::Calls),
-        "expected Calls bar; got {:?}",
+        r.refs.iter().any(|rf| rf.target_name == "bar/1" && rf.kind == EdgeKind::Calls),
+        "expected Calls bar/1; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
 
-/// ref_node_kind: `import_attribute`  →  Imports edge
+/// ref_node_kind: `import_attribute`  →  Imports edge per imported function
 #[test]
 fn ref_import_attribute() {
     let src = "-module(mymod).\n-import(lists, [map/2, filter/2]).\nfoo() -> ok.";
     let r = extract(src);
+    // Each imported function emits its own Imports ref with "fun/arity" as
+    // target_name and the source module in the `module` field.
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "lists"),
-        "expected Imports lists from import_attribute; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports
+            && rf.target_name == "map/2"
+            && rf.module.as_deref() == Some("lists")),
+        "expected Imports map/2 from lists; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, &rf.module, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports
+            && rf.target_name == "filter/2"
+            && rf.module.as_deref() == Some("lists")),
+        "expected Imports filter/2 from lists; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, &rf.module, rf.kind)).collect::<Vec<_>>()
     );
 }
 
@@ -183,33 +195,36 @@ fn symbol_wild_attribute() {
 fn ref_call_remote() {
     let src = "-module(mymod).\n-export([foo/0]).\nfoo() -> lists:map(fun(X) -> X end, []).";
     let r = extract(src);
+    // Remote call lists:map(F, L) has 2 args → target_name emitted as "map/2".
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
-        "expected Calls map from remote call lists:map/2; got {:?}",
+        r.refs.iter().any(|rf| rf.target_name == "map/2" && rf.kind == EdgeKind::Calls),
+        "expected Calls map/2 from remote call lists:map/2; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
 
-/// ref_node_kind: `internal_fun`  →  Calls edge (`fun foo/2` reference)
+/// ref_node_kind: `internal_fun`  →  Calls edge (`fun foo/2` reference); arity explicit
 #[test]
 fn ref_internal_fun() {
     let src = "-module(m).\nfoo() -> fun bar/2.\n";
     let r = extract(src);
+    // Explicit arity in the fa AST node → target_name emitted as "bar/2".
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "bar" && rf.kind == EdgeKind::Calls),
-        "expected Calls bar from internal_fun; got {:?}",
+        r.refs.iter().any(|rf| rf.target_name == "bar/2" && rf.kind == EdgeKind::Calls),
+        "expected Calls bar/2 from internal_fun; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
 
-/// ref_node_kind: `external_fun`  →  Calls edge (`fun mod:foo/2` reference)
+/// ref_node_kind: `external_fun`  →  Calls edge (`fun mod:foo/2` reference); arity explicit
 #[test]
 fn ref_external_fun() {
     let src = "-module(m).\nfoo() -> fun lists:map/2.\n";
     let r = extract(src);
+    // Explicit arity in the fa AST node → target_name emitted as "map/2".
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
-        "expected Calls map from external_fun; got {:?}",
+        r.refs.iter().any(|rf| rf.target_name == "map/2" && rf.kind == EdgeKind::Calls),
+        "expected Calls map/2 from external_fun; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }

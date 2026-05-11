@@ -110,12 +110,14 @@ fn collect_fa_list(node: &Node, src: &str, set: &mut std::collections::HashSet<S
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "fa" {
-            // fa has fun (atom) and arity (integer) fields
-            let fun_name = child.child_by_field_name("fun")
+            // fa has `fun` (atom) and `arity` (arity node) fields.
+            let fun_name = child
+                .child_by_field_name("fun")
                 .map(|n| node_text(&n, src).to_string())
                 .unwrap_or_default();
-            let arity = child.child_by_field_name("arity")
-                .map(|n| node_text(&n, src).to_string())
+            let arity = child
+                .child_by_field_name("arity")
+                .map(|n| arity_value(&n, src).to_string())
                 .unwrap_or_default();
             if !fun_name.is_empty() && !arity.is_empty() {
                 set.insert(format!("{}/{}", fun_name, arity));
@@ -312,22 +314,64 @@ fn extract_import_attr(
     refs: &mut Vec<ExtractedRef>,
 ) {
     // -import(module, [fun/1, ...]).
-    // Extract module name
-    let text = node_text(node, src);
-    let module = extract_attr_value(&text, "import");
-    if module.is_empty() {
+    // Use structured tree-sitter fields: `module` and `funs` (list of `fa` nodes).
+    // Emit one Imports ref per imported function so the resolver can do exact
+    // `name/arity → source_module` lookup at resolution time.
+    let module_node = match node.child_by_field_name("module") {
+        Some(n) => n,
+        None => return,
+    };
+    let module_name = node_text(&module_node, src).trim_matches('\'').to_string();
+    if module_name.is_empty() {
         return;
     }
-    refs.push(ExtractedRef {
-        source_symbol_index,
-        target_name: module.clone(),
-        kind: EdgeKind::Imports,
-        line: node.start_position().row as u32,
-        module: Some(module),
-        chain: None,
-        byte_offset: 0,
+
+    let line = node.start_position().row as u32;
+    let mut cursor = node.walk();
+    let mut emitted = false;
+    for child in node.children(&mut cursor) {
+        if child.kind() != "fa" {
+            continue;
+        }
+        let fun_name = child
+            .child_by_field_name("fun")
+            .map(|n| node_text(&n, src).to_string())
+            .unwrap_or_default();
+        let arity_str = child
+            .child_by_field_name("arity")
+            .map(|n| arity_value(&n, src).to_string())
+            .unwrap_or_default();
+        if fun_name.is_empty() || arity_str.is_empty() {
+            continue;
+        }
+        let target = format!("{}/{}", fun_name, arity_str);
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: target,
+            kind: EdgeKind::Imports,
+            line,
+            module: Some(module_name.clone()),
+            chain: None,
+            byte_offset: 0,
             namespace_segments: Vec::new(),
-});
+        });
+        emitted = true;
+    }
+
+    // When the `funs` list is empty or not structured (parse error), fall back
+    // to a single module-level import so the resolver can still wildcard-match.
+    if !emitted {
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: module_name.clone(),
+            kind: EdgeKind::Imports,
+            line,
+            module: Some(module_name),
+            chain: None,
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -481,40 +525,73 @@ const ATTR_CALL_SKIP: &[&str] = &[
     "nifs", "on_load", "compile", "vsn", "author",
 ];
 
+/// Count the number of arguments in an `expr_args` node.
+///
+/// `expr_args` holds a `multiple: true` `args` field whose entries are the
+/// individual argument expressions. tree-sitter represents multiple-field
+/// nodes as direct named children of `expr_args`; they are mixed with
+/// comma/paren grammar tokens that are anonymous (not named). Count only
+/// named children — each one is exactly one argument.
+fn count_expr_args(expr_args: &Node) -> u32 {
+    let mut c = expr_args.walk();
+    expr_args
+        .children(&mut c)
+        .filter(|n| n.is_named())
+        .count() as u32
+}
+
+/// Extract the integer text from an `arity` node.
+///
+/// An `arity` node in the grammar has the form `/N` where the leading slash
+/// is anonymous punctuation. Its `value` field holds the integer node alone.
+fn arity_value<'a>(arity_node: &Node, src: &'a str) -> &'a str {
+    if let Some(v) = arity_node.child_by_field_name("value") {
+        node_text(&v, src)
+    } else {
+        // Fallback: strip leading slash if present in the raw text.
+        node_text(arity_node, src).trim_start_matches('/')
+    }
+}
+
 fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "call" => {
-                // call.expr is the function expression
-                // Always emit at least one ref per `call` node so the coverage
-                // budget is satisfied. Prefer a structured name (atom/remote) when
-                // available, fall back to the raw expression text for other callable
-                // forms (variable calls, fun expressions, etc.).
+                // call.expr — function expression; call.args — expr_args with arguments.
+                // Always emit at least one ref per `call` node so the coverage budget
+                // is satisfied. For named calls (atom or remote), emit `name/arity` as
+                // the target_name so the resolver can do exact arity-aware lookup.
                 let call_line = child.start_position().row as u32;
+                let arg_count = child
+                    .child_by_field_name("args")
+                    .map(|a| count_expr_args(&a))
+                    .unwrap_or(0);
+
                 let target = if let Some(expr) = child.child_by_field_name("expr") {
                     match expr.kind() {
-                        "atom" => node_text(&expr, src).to_string(),
+                        "atom" => {
+                            let name = node_text(&expr, src);
+                            format!("{}/{}", name, arg_count)
+                        }
                         "remote" => {
-                            // Module:function call — prefer the function name field.
+                            // Module:function call.
                             if let Some(fun_node) = expr.child_by_field_name("fun") {
                                 let fun_name = node_text(&fun_node, src).to_string();
                                 let module = expr.child_by_field_name("module")
                                     .map(|n| node_text(&n, src).to_string());
-                                // Emit the remote call
                                 if !fun_name.is_empty() {
                                     refs.push(ExtractedRef {
                                         source_symbol_index: source_idx,
-                                        target_name: fun_name,
+                                        target_name: format!("{}/{}", fun_name, arg_count),
                                         kind: EdgeKind::Calls,
                                         line: call_line,
                                         module,
                                         chain: None,
                                         byte_offset: 0,
-                                                                            namespace_segments: Vec::new(),
-});
+                                        namespace_segments: Vec::new(),
+                                    });
                                 }
-                                // Skip the fallback push below
                                 String::new()
                             } else {
                                 node_text(&expr, src).to_string()
@@ -523,7 +600,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                         _ => node_text(&expr, src).to_string(),
                     }
                 } else {
-                    // No `expr` field — use first named child as fallback
+                    // No `expr` field — use first named child as fallback (no arity suffix).
                     let mut fallback = String::new();
                     for ci in 0..child.child_count() {
                         if let Some(c) = child.child(ci) {
@@ -535,57 +612,81 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                     }
                     fallback
                 };
-                if !target.is_empty() && !ATTR_CALL_SKIP.contains(&target.as_str()) {
-                    refs.push(ExtractedRef {
-                        source_symbol_index: source_idx,
-                        target_name: target,
-                        kind: EdgeKind::Calls,
-                        line: call_line,
-                        module: None,
-                        chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                if !target.is_empty() {
+                    // Strip arity suffix for the ATTR_CALL_SKIP check so that
+                    // `doc/0` is still recognised as the `doc` directive.
+                    let bare = target.split('/').next().unwrap_or(&target);
+                    if !ATTR_CALL_SKIP.contains(&bare) {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: source_idx,
+                            target_name: target,
+                            kind: EdgeKind::Calls,
+                            line: call_line,
+                            module: None,
+                            chain: None,
+                            byte_offset: 0,
+                            namespace_segments: Vec::new(),
+                        });
+                    }
                 }
                 collect_calls(&child, src, source_idx, refs);
             }
             "internal_fun" => {
-                // fun foo/2 — function reference; `fun` field holds the name
+                // fun foo/2 — explicit arity in `arity` field; emit "name/N".
                 let line = child.start_position().row as u32;
                 if let Some(fun_node) = child.child_by_field_name("fun") {
                     let name = node_text(&fun_node, src).to_string();
+                    let arity = child
+                        .child_by_field_name("arity")
+                        .map(|n| arity_value(&n, src).to_string())
+                        .unwrap_or_default();
                     if !name.is_empty() {
+                        let target = if arity.is_empty() {
+                            name
+                        } else {
+                            format!("{}/{}", name, arity)
+                        };
                         refs.push(ExtractedRef {
                             source_symbol_index: source_idx,
-                            target_name: name,
+                            target_name: target,
                             kind: EdgeKind::Calls,
                             line,
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                        });
                     }
                 }
             }
             "external_fun" => {
-                // fun mod:foo/2 — remote function reference
+                // fun mod:foo/2 — explicit arity in `arity` field; emit "name/N".
                 let line = child.start_position().row as u32;
                 if let Some(fun_node) = child.child_by_field_name("fun") {
                     let fun_name = node_text(&fun_node, src).to_string();
-                    let module = child.child_by_field_name("module")
+                    let arity = child
+                        .child_by_field_name("arity")
+                        .map(|n| arity_value(&n, src).to_string())
+                        .unwrap_or_default();
+                    let module = child
+                        .child_by_field_name("module")
                         .map(|n| node_text(&n, src).to_string());
                     if !fun_name.is_empty() {
+                        let target = if arity.is_empty() {
+                            fun_name
+                        } else {
+                            format!("{}/{}", fun_name, arity)
+                        };
                         refs.push(ExtractedRef {
                             source_symbol_index: source_idx,
-                            target_name: fun_name,
+                            target_name: target,
                             kind: EdgeKind::Calls,
                             line,
                             module,
                             chain: None,
                             byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                        });
                     }
                 }
             }
