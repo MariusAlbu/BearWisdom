@@ -228,7 +228,7 @@ fn extract_normal_command(
         }
         "project" => extract_project_command(node, src, symbols),
         "include" => extract_include_command(node, src, refs),
-        "find_package" => extract_find_package_command(node, src, refs),
+        "find_package" => extract_find_package_command(node, src, symbols, refs),
         "add_subdirectory" => extract_add_subdirectory_command(node, src, refs),
         "target_link_libraries" => extract_target_link_libraries(node, src, symbols, refs),
         "string" => extract_string_output_var(node, src, symbols),
@@ -239,6 +239,7 @@ fn extract_normal_command(
         "find_program" | "find_library" | "find_path" | "find_file" => {
             extract_first_arg_output_var(node, src, symbols, &cmd_lower)
         }
+        "separate_arguments" => extract_first_arg_output_var(node, src, symbols, &cmd_lower),
         "file" => extract_file_output_var(node, src, symbols),
         "cmake_parse_arguments" => extract_cmake_parse_arguments(node, src, symbols),
         "execute_process" => extract_execute_process_outputs(node, src, symbols),
@@ -292,9 +293,26 @@ fn extract_string_output_var(
         "TOLOWER" | "TOUPPER" | "LENGTH" | "STRIP" | "ASCII" | "HEX" | "TIMESTAMP" => {
             args.get(2).into_iter().collect()
         }
-        // input is arg 1, output is the last arg: string(MODE input ... output)
-        "SUBSTRING" | "FIND" | "REPLACE" | "REGEX" | "CONCAT" | "JOIN" | "REPEAT"
-        | "GENEX_STRIP" | "PREPEND" | "APPEND" => {
+        // string(APPEND <var> ...) and string(PREPEND <var> ...) modify <var> in-place;
+        // the variable name is always the second arg (index 1 after mode).
+        "APPEND" | "PREPEND" => {
+            args.get(1).into_iter().collect()
+        }
+        // string(REPLACE <match> <replace> <out_var> <input...>) — out_var at index 3
+        // string(FIND <str> <sub> <out_var> [REVERSE]) — out_var at index 3
+        "REPLACE" | "FIND" => {
+            args.get(3).into_iter().collect()
+        }
+        // string(CONCAT <out_var> [<input>...]) — out_var at index 1
+        "CONCAT" => {
+            args.get(1).into_iter().collect()
+        }
+        // string(JOIN <glue> <out_var> <input...>) — out_var at index 2
+        "JOIN" => {
+            args.get(2).into_iter().collect()
+        }
+        // string(SUBSTRING/REPEAT/REGEX/GENEX_STRIP ...) — out_var is the last arg
+        "SUBSTRING" | "REPEAT" | "REGEX" | "GENEX_STRIP" => {
             args.last().into_iter().collect()
         }
         _ => return,
@@ -645,12 +663,18 @@ fn extract_include_command(
 }
 
 // ---------------------------------------------------------------------------
-// find_package(<pkg> ...) → Imports
+// find_package(<pkg> ...) → Imports + conventional output variable symbols
+//
+// CMake Find modules follow a naming convention: find_package(Foo) sets
+// Foo_FOUND, FOO_FOUND, FOO_LIBRARIES, FOO_INCLUDE_DIRS, FOO_EXECUTABLE,
+// FOO_VERSION, and FOO_DIRS. Emitting these as Variable symbols lets variable
+// refs to these names resolve within the project that called find_package.
 // ---------------------------------------------------------------------------
 
 fn extract_find_package_command(
     node: &Node,
     src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
     let pkg = match nth_argument(node, src, 0) {
@@ -662,11 +686,52 @@ fn extract_find_package_command(
         target_name: pkg.clone(),
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
-        module: Some(pkg),
+        module: Some(pkg.clone()),
         chain: None,
         byte_offset: 0,
-            namespace_segments: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+    });
+    emit_find_package_vars(node, &pkg, symbols);
+}
+
+/// Emit conventional Find-module output variable symbols for `find_package(<pkg>)`.
+///
+/// Covers both the original-case form (Protobuf_FOUND, Git_EXECUTABLE) and
+/// the all-uppercase form (PROTOBUF_FOUND, GIT_EXECUTABLE) used by older CMake
+/// Find modules.
+fn emit_find_package_vars(
+    node: &Node,
+    pkg: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let upper = pkg.to_ascii_uppercase();
+    let suffixes = [
+        "_FOUND", "_LIBRARIES", "_LIBRARY", "_INCLUDE_DIRS", "_INCLUDE_DIR",
+        "_EXECUTABLE", "_VERSION", "_DIRS", "_DIR",
+    ];
+    for &suffix in &suffixes {
+        let mixed_name = format!("{pkg}{suffix}");
+        symbols.push(make_symbol(
+            mixed_name.clone(),
+            mixed_name,
+            SymbolKind::Variable,
+            node,
+            Some(format!("find_package({pkg}) output")),
+            None,
+        ));
+        // Uppercase form only when pkg is not already uppercase
+        if upper != pkg {
+            let upper_name = format!("{upper}{suffix}");
+            symbols.push(make_symbol(
+                upper_name.clone(),
+                upper_name,
+                SymbolKind::Variable,
+                node,
+                Some(format!("find_package({pkg}) output")),
+                None,
+            ));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -981,6 +1046,9 @@ fn collect_all_normal_commands(
                 "find_program" | "find_library" | "find_path" | "find_file" => {
                     extract_first_arg_output_var(&node, src, symbols, &cmd_lower);
                 }
+                "separate_arguments" => {
+                    extract_first_arg_output_var(&node, src, symbols, &cmd_lower);
+                }
                 "file" => {
                     extract_file_output_var(&node, src, symbols);
                 }
@@ -989,6 +1057,11 @@ fn collect_all_normal_commands(
                 }
                 "execute_process" => {
                     extract_execute_process_outputs(&node, src, symbols);
+                }
+                "find_package" => {
+                    if let Some(pkg) = nth_argument(&node, src, 0) {
+                        emit_find_package_vars(&node, &pkg, symbols);
+                    }
                 }
                 "list" => {
                     // list(APPEND|PREPEND|INSERT|REMOVE_DUPLICATES NAME ...) — index NAME

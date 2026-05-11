@@ -10,6 +10,7 @@
 // =============================================================================
 
 use super::extract;
+use super::resolve::is_cmake_builtin;
 use crate::types::{EdgeKind, SymbolKind};
 
 fn lang() -> tree_sitter::Language {
@@ -373,6 +374,40 @@ fn cov_string_substring_output_var_produces_variable() {
 }
 
 // ---------------------------------------------------------------------------
+// string(REPLACE/APPEND/PREPEND) — output variable position
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_string_replace_output_var_is_third_arg() {
+    // string(REPLACE <match> <replace> <out_var> <input...>)
+    let src = r#"string(REPLACE " " ";" EXTRA_ARGS "${ARGN}")"#;
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"EXTRA_ARGS"),
+        "string(REPLACE) output should be at index 3; got: {var_names:?}",
+    );
+}
+
+#[test]
+fn cov_string_append_output_var_is_first_arg() {
+    // string(APPEND <string_var> ...) — string_var is index 1
+    let src = r##"string(APPEND PRETTY_OUT_VAR "#")"##;
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"PRETTY_OUT_VAR"),
+        "string(APPEND) target var should be extracted; got: {var_names:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // math(EXPR <out> ...) → Variable
 // ---------------------------------------------------------------------------
 
@@ -504,4 +539,99 @@ fn cov_execute_process_output_variables_produce_variables() {
         var_names.contains(&"GIT_SHA") && var_names.contains(&"GIT_RES"),
         "execute_process should emit GIT_SHA and GIT_RES; got: {var_names:?}",
     );
+}
+
+// ---------------------------------------------------------------------------
+// find_package(<pkg>) → conventional output variable symbols
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_find_package_emits_found_variable() {
+    let src = "find_package(OpenSSL REQUIRED)";
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"OpenSSL_FOUND") || var_names.contains(&"OPENSSL_FOUND"),
+        "find_package(OpenSSL) should emit OpenSSL_FOUND / OPENSSL_FOUND; got: {var_names:?}",
+    );
+}
+
+#[test]
+fn cov_find_package_emits_libraries_and_include_dirs() {
+    let src = "find_package(Protobuf REQUIRED)";
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"PROTOBUF_LIBRARIES"),
+        "find_package(Protobuf) should emit PROTOBUF_LIBRARIES; got: {var_names:?}",
+    );
+    assert!(
+        var_names.contains(&"PROTOBUF_INCLUDE_DIRS"),
+        "find_package(Protobuf) should emit PROTOBUF_INCLUDE_DIRS; got: {var_names:?}",
+    );
+}
+
+#[test]
+fn cov_find_package_git_emits_executable() {
+    let src = "find_package(Git REQUIRED)";
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"GIT_EXECUTABLE"),
+        "find_package(Git) should emit GIT_EXECUTABLE; got: {var_names:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// separate_arguments(<out> ...) → Variable from first arg
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_separate_arguments_output_var_produces_variable() {
+    let src = "separate_arguments(tmp_args UNIX_COMMAND ${CPPCHECK_ARG})";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "tmp_args"),
+        "separate_arguments output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// is_cmake_builtin — ARGC / ARGN / ARGV special variables
+// ---------------------------------------------------------------------------
+
+#[test]
+fn builtin_argc_is_recognized() {
+    assert!(is_cmake_builtin("ARGC"), "ARGC must be a builtin");
+    assert!(is_cmake_builtin("argc"), "argc (lowercase) must be a builtin");
+}
+
+#[test]
+fn builtin_argn_argv_are_recognized() {
+    assert!(is_cmake_builtin("ARGN"), "ARGN must be a builtin");
+    assert!(is_cmake_builtin("ARGV"), "ARGV must be a builtin");
+    assert!(is_cmake_builtin("ARGV0"), "ARGV0 must be a builtin");
+    assert!(is_cmake_builtin("ARGV9"), "ARGV9 must be a builtin");
+}
+
+#[test]
+fn builtin_cmake_prefix_is_recognized() {
+    assert!(is_cmake_builtin("CMAKE_CURRENT_SOURCE_DIR"), "cmake_ prefix must be builtin");
+    assert!(is_cmake_builtin("FETCHCONTENT_BASE_DIR"), "fetchcontent_ prefix must be builtin");
+}
+
+#[test]
+fn non_builtin_user_var_not_recognized() {
+    assert!(!is_cmake_builtin("MY_PROJECT_DIR"), "user variable must not be builtin");
+    assert!(!is_cmake_builtin("adder"), "project target must not be builtin");
 }

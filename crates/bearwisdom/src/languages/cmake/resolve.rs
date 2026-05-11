@@ -84,6 +84,15 @@ impl LanguageResolver for CMakeResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
+        let target = &ref_ctx.extracted_ref.target_name;
+
+        // Imported targets use `Pkg::Component` syntax, which is never valid
+        // for user-defined CMake functions or project-local targets.
+        if target.contains("::") {
+            let pkg = target.split("::").next().unwrap_or(target);
+            return Some(pkg.to_string());
+        }
+
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_cmake_builtin)
     }
 }
@@ -116,8 +125,10 @@ pub(super) fn is_cmake_builtin(name: &str) -> bool {
         return true;
     }
 
-    // CMake special function argument variables
-    if s == "argn" || s == "argv" || s.starts_with("argv") && s[4..].parse::<u8>().is_ok() {
+    // CMake special function argument variables — ARGC, ARGN, ARGV, ARGV0..ARGV9
+    if matches!(s, "argc" | "argn" | "argv")
+        || (s.starts_with("argv") && s[4..].parse::<u8>().is_ok())
+    {
         return true;
     }
 
