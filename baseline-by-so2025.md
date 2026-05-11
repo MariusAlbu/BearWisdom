@@ -48,7 +48,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 40 | Prolog              | 1.1%     | 96.55%   | 97,436     | 3,478      | 🟢     |       |
 | 41 | COBOL               | 1.0%     | 100.00%  | 5,719      | 0          | ✅     |       |
 | 42 | Mojo                | 0.4%     | —        | —          | —          | —      | not bucketed |
-| —  | Pascal (FreePascal) | —        | 92.99%   | 412,063    | 31,069     | 🟡     | castle-fresh's cross-unit refs through Castle Game Engine include-file splitting |
+| —  | Pascal (FreePascal) | —        | 94.56%   | 422,495    | 24,303     | 🟡     | castle-fresh Pascal-only 95.4% ✓; project-level 94.68% capped by ~3,900 C++ FFI refs (Qt/PulseAudio/OpenSSL no external C++ index); heidisql 89.82 still needs Win32 work |
 | —  | Odin                | —        | 97.77%   | 107,348    | 2,453      | 🟢     |       |
 | —  | Vue                 | —        | 98.75%   | 57,764     | 731        | ✅     |       |
 | —  | Haskell             | —        | 95.46%   | 118,625    | 5,644      | 🟢     |       |
