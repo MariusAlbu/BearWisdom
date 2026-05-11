@@ -307,3 +307,57 @@ fn cov_template_invocation_produces_calls_ref() {
         r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls).map(|rf| &rf.target_name).collect::<Vec<_>>()
     );
 }
+
+/// Multi-line import block: bare `import` keyword followed by indented module list
+#[test]
+fn cov_multiline_import_produces_all_modules() {
+    let src = "import\n  blscurve,\n  stew/byteutils,\n  results\n";
+    let r = extract::extract(src);
+    let imports: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        imports.contains(&"blscurve") && imports.contains(&"stew/byteutils") && imports.contains(&"results"),
+        "multi-line import should produce one Imports ref per module; got: {:?}", imports
+    );
+}
+
+/// Multi-line bracketed import: `import std/[\n  sequtils,\n  strutils\n]`
+#[test]
+fn cov_multiline_bracketed_import_produces_all_modules() {
+    let src = "import std/[\n  sequtils,\n  strutils,\n  options\n]\n";
+    let r = extract::extract(src);
+    let imports: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        imports.contains(&"std/sequtils") && imports.contains(&"std/strutils") && imports.contains(&"std/options"),
+        "multi-line bracketed import should expand into prefixed modules; got: {:?}", imports
+    );
+}
+
+/// Exported type in a type section: `Slot* = distinct uint64` → TypeAlias symbol named `Slot`
+#[test]
+fn cov_exported_type_section_entry_produces_symbol() {
+    let src = "type\n  Slot* = distinct uint64\n  Epoch* = distinct uint64\n";
+    let r = extract::extract(src);
+    let names: Vec<_> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.contains(&"Slot") && names.contains(&"Epoch"),
+        "exported type section entries (Name* = ...) should produce symbols; got: {:?}", names
+    );
+}
+
+/// Exported object type in section: `BatchVerifier* = object` → Struct symbol
+#[test]
+fn cov_exported_object_type_produces_struct() {
+    let src = "type\n  BatchVerifier* = object\n    field: int\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "BatchVerifier" && s.kind == SymbolKind::Struct),
+        "exported object type should produce Struct; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}

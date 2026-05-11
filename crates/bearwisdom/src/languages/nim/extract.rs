@@ -91,10 +91,13 @@ pub fn extract(source: &str) -> ExtractionResult {
                 continue;
             }
 
-            // import / from ... import
-            if let Some(import_refs) = parse_import_line(trimmed, i as u32) {
+            // import / from ... import — may span multiple lines when the list
+            // is indented under a bare `import` keyword.  Consume continuation
+            // lines before advancing.
+            if trimmed == "import" || trimmed.starts_with("import ") || trimmed.starts_with("from ") {
+                let (import_refs, consumed) = parse_import_block(&lines, i);
                 refs.extend(import_refs);
-                i += 1;
+                i += consumed;
                 continue;
             }
 
@@ -372,6 +375,8 @@ fn parse_type_section_entry(trimmed: &str) -> Option<(String, SymbolKind)> {
 }
 
 /// Parse `Name = rhs` → (name, kind).
+///
+/// Also accepts `Name* = rhs` where `*` is Nim's export marker.
 fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
     // Name may have generic params: `Name[T]` or `Name`
     let name: String = s
@@ -381,8 +386,9 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
     if name.is_empty() {
         return None;
     }
-    // Skip optional generic params, then look for `=`
+    // Strip optional export marker `*` then optional generic params `[...]`.
     let after_name = s[name.len()..].trim_start();
+    let after_name = after_name.strip_prefix('*').unwrap_or(after_name).trim_start();
     let after_name = if after_name.starts_with('[') {
         // Skip to matching `]`
         let mut depth = 0usize;
@@ -404,6 +410,8 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
     } else {
         after_name
     };
+    // Strip another optional `*` that can follow generic params: `Name[T]* = ...`
+    let after_name = after_name.strip_prefix('*').unwrap_or(after_name).trim_start();
 
     let rhs = after_name.strip_prefix('=')?.trim_start();
 
@@ -422,64 +430,109 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
     Some((name, kind))
 }
 
-/// Parse `import` and `from ... import` lines.
-/// Returns a list of `ExtractedRef` with `EdgeKind::Imports`.
+/// Parse an `import` or `from ... import` block that may span multiple lines.
 ///
-/// Handled forms:
+/// Returns the list of import refs and the number of source lines consumed.
+///
+/// Handled forms (single- and multi-line):
 ///   `import os, strformat`
 ///   `import std/sequtils`
-///   `import std/[sequtils, strutils, options]`     ← bracketed group
-///   `import pkg/foo/[bar, baz]`                    ← prefixed bracketed group
+///   `import std/[sequtils, strutils, options]`  ← bracketed group
+///   `import pkg/foo/[bar, baz]`                 ← prefixed bracketed group
 ///   `from std/strformat import fmt`
 ///   `import other as O`
-fn parse_import_line(line: &str, line_num: u32) -> Option<Vec<ExtractedRef>> {
-    if let Some(rest) = line.strip_prefix("import ") {
-        let names = expand_nim_imports(rest);
-        if names.is_empty() { return None; }
-        let modules: Vec<ExtractedRef> = names
-            .into_iter()
-            .map(|n| ExtractedRef {
-                source_symbol_index: 0,
-                target_name: n,
-                kind: EdgeKind::Imports,
-                line: line_num,
-                module: None,
-                chain: None,
-                byte_offset: 0,
-                namespace_segments: Vec::new(),
-            })
-            .collect();
-        return Some(modules);
+///   `import\n  blscurve,\n  stew/byteutils`     ← bare keyword + indented list
+///   `import foo/[\n  bar,\n  baz\n]`            ← bracket spanning lines
+fn parse_import_block(lines: &[&str], start: usize) -> (Vec<ExtractedRef>, usize) {
+    let line_num = start as u32;
+    let (raw_text, consumed) = collect_import_block(lines, start);
+    let refs = parse_collected_import(&raw_text, line_num);
+    (refs, consumed)
+}
+
+/// Gather the raw text of an import statement that may span multiple indented lines.
+/// Returns (joined_text, lines_consumed).
+///
+/// Continuation is consumed while any of these hold:
+///   - bracket depth is positive (open `[` not yet closed)
+///   - a trailing `,` on the assembled text
+///   - the buffer is still the bare keyword (no content yet)
+///
+/// An unindented line that consists solely of `]` is consumed when bracket
+/// depth is positive, since Nim commonly closes a bracket group at column 0.
+fn collect_import_block(lines: &[&str], start: usize) -> (String, usize) {
+    let first = lines[start].trim();
+    let mut buf = first.to_string();
+    let mut consumed = 1usize;
+
+    loop {
+        let depth: i32 = buf.chars().map(|c| match c { '[' => 1, ']' => -1, _ => 0 }).sum();
+        let trailing_comma = buf.trim_end_matches(|c: char| c == ' ' || c == '\t').ends_with(',');
+        let is_bare_keyword = buf == "import" || buf == "from";
+        if !is_bare_keyword && depth <= 0 && !trailing_comma {
+            break;
+        }
+        if start + consumed >= lines.len() { break; }
+        let next = lines[start + consumed];
+        let next_t = next.trim();
+        // Skip blank lines and comment lines inside the block.
+        if next_t.is_empty() || next_t.starts_with('#') {
+            consumed += 1;
+            continue;
+        }
+        // An unindented line ends the block — UNLESS bracket depth is open
+        // and the line is a closing `]` (common Nim style for multi-line bracket groups).
+        if leading_spaces(next) == 0 {
+            if depth > 0 && next_t == "]" {
+                buf.push(' ');
+                buf.push_str(next_t);
+                consumed += 1;
+            }
+            break;
+        }
+        buf.push(' ');
+        buf.push_str(next_t);
+        consumed += 1;
     }
 
-    if let Some(rest) = line.strip_prefix("from ") {
-        // `from module import symbol, symbol2` — `module` is typically a single
-        // module path (`std/strformat`) but the bracketed group form is also
-        // legal as the source. Reuse the same expander.
+    (buf, consumed)
+}
+
+/// Parse a fully-collected import statement string into ExtractedRefs.
+fn parse_collected_import(text: &str, line_num: u32) -> Vec<ExtractedRef> {
+    let make_ref = |name: String| ExtractedRef {
+        source_symbol_index: 0,
+        target_name: name,
+        kind: EdgeKind::Imports,
+        line: line_num,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    if let Some(rest) = text.strip_prefix("import ") {
+        let names = expand_nim_imports(rest.trim());
+        return names.into_iter().map(make_ref).collect();
+    }
+
+    if text == "import" {
+        // Bare `import` with nothing — ignore.
+        return Vec::new();
+    }
+
+    if let Some(rest) = text.strip_prefix("from ") {
+        // `from module import symbol` — extract the module part only.
         let module_part = match rest.find("import") {
             Some(idx) => rest[..idx].trim(),
             None => rest.split_whitespace().next().unwrap_or(""),
         };
-        if module_part.is_empty() { return None; }
+        if module_part.is_empty() { return Vec::new(); }
         let names = expand_nim_imports(module_part);
-        if names.is_empty() { return None; }
-        let modules: Vec<ExtractedRef> = names
-            .into_iter()
-            .map(|n| ExtractedRef {
-                source_symbol_index: 0,
-                target_name: n,
-                kind: EdgeKind::Imports,
-                line: line_num,
-                module: None,
-                chain: None,
-                byte_offset: 0,
-                namespace_segments: Vec::new(),
-            })
-            .collect();
-        return Some(modules);
+        return names.into_iter().map(make_ref).collect();
     }
 
-    None
+    Vec::new()
 }
 
 /// Parse `include file` lines → single `Imports` ref per included path.
