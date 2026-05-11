@@ -53,7 +53,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | —  | Vue                 | —        | 98.75%   | 57,764     | 731        | ✅     |       |
 | —  | Haskell             | —        | 95.46%   | 118,625    | 5,644      | 🟢     |       |
 | —  | Bicep               | —        | 97.21%   | 124,011    | 3,565      | 🟢     |       |
-| —  | Nim                 | —        | 83.73%   | 172,371    | 33,485     | 🟡     | extractor density fixed (31× edge growth), stdlib pre-pull, implicit `system` import; stew/chronos/results/bearssl/httputils installed but rate didn't move on libp2p/nimbus — needs `eth`/`chronicles`/`nimcrypto`/`metrics`/`secp256k1` which fail to install (nimble pins 32-bit Nim that clashes with 64-bit gcc) |
+| —  | Nim                 | —        | 85.23%   | 172,949    | 29,983     | 🟡     | module-to-file-stem resolver (mirror of OCaml's), full-tree pre-pull, virtual_path_for_pulled Nim arm; libp2p 87.9% ✓; nimbus 74% — still needs status-im consensus-layer types (`Slot`, `Epoch`, `ColumnIndex`, `eth/*`) pinned to GitHub commits |
 | —  | Clojure             | —        | ~98.6%   | —          | 611        | ✅     | rate from 3 dominant projects (babashka/datascript/ring) |
 | —  | Razor               | —        | ~100%    | —          | 55         | ✅     | dotnet-fluentui-blazor at 100% |
 | —  | Astro               | —        | ~98.9%   | —          | 69         | ✅     | astro-awesome-privacy dominant |
