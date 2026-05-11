@@ -23,7 +23,8 @@
 // =============================================================================
 
 use super::extract::extract;
-use crate::types::{EdgeKind, SymbolKind};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, LanguageResolver, RefContext};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 // ---------------------------------------------------------------------------
 // Module-qname propagation (regression: pre-fix every symbol got an unprefixed
@@ -374,6 +375,137 @@ fn symbol_exception_definition() {
         r.symbols.iter().any(|s| s.name == "MyError" && s.kind == SymbolKind::Struct),
         "expected Struct 'MyError' from exception_definition; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #r directive extraction (F# script files)
+// ---------------------------------------------------------------------------
+
+/// `open` statements after `#if`/`#endif` conditional blocks may not be
+/// recognized by tree-sitter-fsharp. The `#r` directive pre-pass handles
+/// DLL imports from the header section to ensure external namespaces can still
+/// be inferred for refs in such files.
+#[test]
+fn ref_import_decl_after_conditional_block_may_not_parse() {
+    // The tree-sitter-fsharp grammar does not parse preprocessor conditionals
+    // (#if/#endif). After such a block, `open` declarations may not be
+    // emitted as import_decl nodes. This test documents the known behavior
+    // and the `#r` directive pre-pass is the mitigation for such files.
+    let src = "#if !FORNAX\n#load \"./foo.fsx\"\n#endif\n\nopen System\nlet x = 1";
+    let r = extract(src);
+    // Either zero or one Imports ref for System — both are acceptable outcomes
+    // depending on the tree-sitter-fsharp version's handling of #if blocks.
+    let _ = r; // document-only test
+}
+
+/// `#r "path/Fornax.Core.dll"` → Imports ref with target `Fornax.Core`.
+#[test]
+fn hash_r_directive_emits_imports_ref() {
+    let src = "#r \"../../packages/Fornax.Core.dll\"\n#r \"Giraffe.dll\"\n\nopen Html\n\nlet x = 1";
+    let r = extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Fornax.Core"),
+        "expected Imports Fornax.Core from #r directive; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Giraffe"),
+        "expected Imports Giraffe from #r directive; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `#r`-derived imports in `file_ctx` cause bare-name Calls refs from the
+/// same file to be classified as external by `infer_external_namespace`.
+#[test]
+fn infer_external_namespace_from_hash_r_import() {
+    use super::resolve::FSharpResolver;
+    use crate::types::ExtractedRef;
+
+    let resolver = FSharpResolver;
+
+    // Simulate a ParsedFile that has a #r-derived Imports ref for Fornax.Core.
+    // build_file_context converts this to a FileContext with one import entry.
+    let fornax_import = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "Fornax.Core".to_string(),
+        kind: EdgeKind::Imports,
+        line: 0,
+        module: Some("Fornax.Core".to_string()),
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+    let file_ctx = FileContext {
+        file_path: "docs/generators/apiref.fsx".to_string(),
+        language: "fsharp".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "Fornax.Core".to_string(),
+            module_path: Some("Fornax.Core".to_string()),
+            alias: None,
+            is_wildcard: true,
+        }],
+        file_namespace: None,
+    };
+
+    let div_ref = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "div".to_string(),
+        kind: EdgeKind::Calls,
+        line: 20,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+    let dummy_symbol = ExtractedSymbol {
+        name: "generate".to_string(),
+        qualified_name: "generate".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 10,
+        end_line: 30,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &div_ref,
+        source_symbol: &dummy_symbol,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    assert!(
+        ns.is_some(),
+        "expected Some namespace for 'div' with Fornax.Core import; got None"
+    );
+    assert_eq!(ns.as_deref(), Some("Fornax"),
+        "expected 'Fornax' namespace; got {:?}", ns
+    );
+}
+
+/// `#r` directives before a `let` binding are extracted; scanning stops after
+/// the first non-header line to avoid false positives in the file body.
+#[test]
+fn hash_r_directive_stops_at_first_non_header_line() {
+    // The `#r` after the `let` binding must NOT be extracted — it's in the body.
+    let src = "#r \"Giraffe.dll\"\n\nlet x = 1\n#r \"Saturn.dll\"\n";
+    let r = extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Giraffe"),
+        "expected Imports Giraffe; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Saturn"),
+        "Saturn #r after let binding must not be extracted; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
 

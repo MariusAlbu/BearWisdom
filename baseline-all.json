@@ -2444,8 +2444,8 @@
       "files": 1281,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 128815,
-      "internal_unresolved": 6275,
+      "internal_edges": 127403,
+      "internal_unresolved": 5653,
       "languages": {
         "dart": 8,
         "erlang": 38,
@@ -2464,23 +2464,23 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-fable",
       "perf": {
-        "end_ws_mb": 136,
-        "files_per_sec": 14,
-        "index_duration_ms": 89705
+        "end_ws_mb": 253,
+        "files_per_sec": 16,
+        "index_duration_ms": 78613
       },
       "project": "fsharp-fable",
-      "resolution_rate": 95.35,
+      "resolution_rate": 95.75,
       "routes": 0,
       "symbols": 103566,
       "unresolved_by_lang_kind": {
         "dart.calls": 3,
-        "erlang.calls": 775,
+        "erlang.calls": 152,
         "fsharp.calls": 3459,
         "javascript.calls": 16,
         "php.calls": 61,
         "php.instantiates": 1,
         "php.type_ref": 17,
-        "python.calls": 352,
+        "python.calls": 354,
         "python.type_ref": 112,
         "rust.calls": 180,
         "rust.implements": 41,
@@ -2489,15 +2489,15 @@
         "shell.calls": 1,
         "typescript.calls": 294,
         "typescript.instantiates": 2,
-        "typescript.type_ref": 422
+        "typescript.type_ref": 421
       }
     },
     {
       "assertions": {
         "min_resolution_rate": 95
       },
-      "code_chunks": 29082,
-      "files": 546,
+      "code_chunks": 29083,
+      "files": 547,
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 5140,
@@ -2505,15 +2505,15 @@
       "languages": {
         "fsharp": 161,
         "html": 11,
-        "json": 3,
+        "json": 4,
         "markdown": 370,
         "shell": 1
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-fstoolkit",
       "perf": {
-        "end_ws_mb": 131,
-        "files_per_sec": 41,
-        "index_duration_ms": 13269
+        "end_ws_mb": 127,
+        "files_per_sec": 47,
+        "index_duration_ms": 11755
       },
       "project": "fsharp-fstoolkit",
       "resolution_rate": 95.08,
@@ -2544,9 +2544,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-giraffe",
       "perf": {
-        "end_ws_mb": 121,
-        "files_per_sec": 5,
-        "index_duration_ms": 11365
+        "end_ws_mb": 115,
+        "files_per_sec": 6,
+        "index_duration_ms": 10296
       },
       "project": "fsharp-giraffe",
       "resolution_rate": 98.14,
@@ -2558,14 +2558,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 75
+        "min_resolution_rate": 94
       },
       "code_chunks": 9312,
       "files": 107,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1267,
-      "internal_unresolved": 415,
+      "internal_edges": 1226,
+      "internal_unresolved": 70,
       "languages": {
         "fsharp": 34,
         "json": 7,
@@ -2575,16 +2575,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-ionide",
       "perf": {
-        "end_ws_mb": 85,
-        "files_per_sec": 15,
-        "index_duration_ms": 7134
+        "end_ws_mb": 104,
+        "files_per_sec": 16,
+        "index_duration_ms": 6714
       },
       "project": "fsharp-ionide",
-      "resolution_rate": 75.33,
+      "resolution_rate": 94.6,
       "routes": 0,
       "symbols": 3188,
       "unresolved_by_lang_kind": {
-        "fsharp.calls": 415
+        "fsharp.calls": 70
       }
     },
     {
@@ -2595,7 +2595,7 @@
       "files": 75,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 444,
+      "internal_edges": 469,
       "internal_unresolved": 0,
       "languages": {
         "css": 10,
@@ -2608,9 +2608,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-miniscaffold",
       "perf": {
-        "end_ws_mb": 130,
-        "files_per_sec": 7,
-        "index_duration_ms": 10294
+        "end_ws_mb": 121,
+        "files_per_sec": 8,
+        "index_duration_ms": 9435
       },
       "project": "fsharp-miniscaffold",
       "resolution_rate": 100.0,
@@ -2620,14 +2620,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 47
+        "min_resolution_rate": 79
       },
       "code_chunks": 4135,
       "files": 111,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 836,
-      "internal_unresolved": 925,
+      "internal_edges": 609,
+      "internal_unresolved": 155,
       "languages": {
         "css": 8,
         "fsharp": 75,
@@ -2640,16 +2640,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-saturn",
       "perf": {
-        "end_ws_mb": 92,
+        "end_ws_mb": 109,
         "files_per_sec": 8,
-        "index_duration_ms": 14565
+        "index_duration_ms": 14473
       },
       "project": "fsharp-saturn",
-      "resolution_rate": 47.47,
+      "resolution_rate": 79.71,
       "routes": 0,
       "symbols": 1516,
       "unresolved_by_lang_kind": {
-        "fsharp.calls": 772,
+        "fsharp.calls": 2,
         "html.calls": 2,
         "javascript.calls": 147,
         "javascript.type_ref": 1,

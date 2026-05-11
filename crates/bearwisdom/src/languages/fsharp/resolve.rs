@@ -154,31 +154,43 @@ impl LanguageResolver for FSharpResolver {
 
 /// Check whether a .NET namespace is external, using the NuGet manifest directly.
 ///
-/// Mirrors the C# resolver's logic: System/Microsoft are always external; NuGet
-/// package names are checked as namespace prefixes and root-segment matches.
+/// When a NuGet manifest is present with declared dependencies, the namespace is
+/// matched against them. When no manifest is found, or when the manifest exists
+/// but has no declared dependencies (e.g. Paket projects where `.fsproj` files
+/// use `Paket.Restore.targets` instead of `PackageReference`), falls back to the
+/// well-known F# ecosystem root list.
 fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> bool {
     let root = ns.split('.').next().unwrap_or(ns);
     if matches!(root, "System" | "Microsoft") {
         return true;
     }
     if let Some(m) = ctx.manifest(ManifestKind::NuGet) {
-        if m.dependencies.contains(ns) {
-            return true;
-        }
-        for dep in &m.dependencies {
-            if ns.starts_with(dep.as_str())
-                && ns.len() > dep.len()
-                && ns.as_bytes()[dep.len()] == b'.'
-            {
+        // If the manifest was found but has no declared deps, the project uses an
+        // alternative package manager (Paket, .NET SDK implicit refs). Treat the
+        // manifest as absent and fall through to the ecosystem-root list.
+        if !m.dependencies.is_empty() {
+            if m.dependencies.contains(ns) {
                 return true;
             }
-            if let Some(dep_root) = dep.split('.').next() {
-                if root == dep_root {
+            for dep in &m.dependencies {
+                if ns.starts_with(dep.as_str())
+                    && ns.len() > dep.len()
+                    && ns.as_bytes()[dep.len()] == b'.'
+                {
                     return true;
                 }
+                if let Some(dep_root) = dep.split('.').next() {
+                    if root == dep_root {
+                        return true;
+                    }
+                }
             }
+            return false;
         }
-        return false;
     }
-    false
+    // No NuGet manifest, or manifest with no PackageReference entries (Paket /
+    // standalone script). Fall back to the well-known ecosystem root list so
+    // `open Giraffe.ViewEngine`, `open Saturn`, `open Expecto`, etc. are
+    // classified as external without needing an explicit manifest entry.
+    predicates::is_external_namespace_fallback(ns)
 }

@@ -58,6 +58,14 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
+    // Extract `#r "path/to/Assembly.dll"` directives from F# script files.
+    // These are not in the tree-sitter AST but they declare external DLL
+    // dependencies, so we emit an Imports ref whose target is the assembly's
+    // base name (e.g., `Fornax.Core.dll` → `Fornax.Core`). The resolver's
+    // wildcard-open check then classifies any bare-name ref from a file that
+    // has such an import as external, identical to how `open Namespace` works.
+    extract_hash_r_directives(source, &mut refs);
+
     visit(tree.root_node(), source, &mut symbols, &mut refs, None);
 
     ExtractionResult::new(symbols, refs, has_errors)
@@ -244,6 +252,74 @@ fn is_module_alias(node: &Node, src: &str) -> bool {
         }
     }
     false
+}
+
+// ---------------------------------------------------------------------------
+// #r directive → Imports  (F# script files only)
+// ---------------------------------------------------------------------------
+
+/// Scan source text for `#r "..."` directives and emit one Imports ref per
+/// directive whose path contains a recognizable assembly name.
+///
+/// The DLL base name (without `.dll` extension) becomes the target, so
+/// `#r "../../packages/Fornax.Core.dll"` → target `Fornax.Core`. The resolver
+/// then applies `is_external_namespace_fallback` against the root segment
+/// (`Fornax`), matching the same path that `open Fornax.*` would follow.
+fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
+    for (line_idx, line) in src.lines().enumerate() {
+        let trimmed = line.trim();
+        // Only process `#r "..."` lines; stop at the first non-directive,
+        // non-blank line that is not a `#load` or `#if`/`#endif` to avoid
+        // scanning the full file body.
+        if !trimmed.starts_with("#r ") && !trimmed.starts_with("#r\"") {
+            // Allow blank lines, comments, #load, #if, #endif, #else to
+            // continue scanning; anything else ends the header section.
+            let is_header_line = trimmed.is_empty()
+                || trimmed.starts_with("//")
+                || trimmed.starts_with("(*")
+                || trimmed.starts_with("#load")
+                || trimmed.starts_with("#if")
+                || trimmed.starts_with("#else")
+                || trimmed.starts_with("#endif")
+                || trimmed.starts_with("#nowarn")
+                || trimmed.starts_with("#I ");
+            if !is_header_line {
+                break;
+            }
+            continue;
+        }
+
+        // Extract the quoted path from `#r "path"`.
+        let after_r = trimmed.trim_start_matches("#r").trim();
+        let path = after_r.trim_matches('"');
+        if path.is_empty() {
+            continue;
+        }
+
+        // Derive the assembly name from the last path component.
+        let filename = path.rsplit(['/', '\\']).next().unwrap_or(path);
+        // Strip `.dll` (case-insensitive) to get the bare assembly name.
+        let assembly = if filename.to_ascii_lowercase().ends_with(".dll") {
+            &filename[..filename.len() - 4]
+        } else {
+            filename
+        };
+
+        if assembly.is_empty() {
+            continue;
+        }
+
+        refs.push(ExtractedRef {
+            source_symbol_index: 0,
+            target_name: assembly.to_string(),
+            kind: EdgeKind::Imports,
+            line: line_idx as u32,
+            module: Some(assembly.to_string()),
+            chain: None,
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------

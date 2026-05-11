@@ -30,5 +30,7 @@ pub(super) fn is_external_namespace_fallback(ns: &str) -> bool {
             | "NSubstitute" | "Moq" | "FakeItEasy" | "Xunit" | "NUnit"
             | "Giraffe" | "Saturn" | "Suave" | "Fable" | "Elmish"
             | "FSharp" | "FsToolkit" | "Thoth" | "Fantomas"
+            | "Expecto" | "Fake" | "BenchmarkDotNet" | "Fornax"
+            | "Argu" | "FParsec" | "FsCheck"
     )
 }
