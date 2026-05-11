@@ -225,6 +225,33 @@ fn ref_subroutine_call_target_name() {
     );
 }
 
+/// Module with `use M, only: local => source` + `public :: local` emits a
+/// synthetic Function symbol for `local` so callers importing `local` from
+/// this module can resolve it via the normal import-based path.
+#[test]
+fn symbol_public_reexport_alias_synthetic() {
+    let src = concat!(
+        "module testsuite\n",
+        "  use fpm_error, only : error_t, test_failed => fatal_error\n",
+        "  implicit none\n",
+        "  private\n",
+        "  public :: run_testsuite, test_failed\n",
+        "end module\n",
+    );
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "test_failed" && s.kind == SymbolKind::Function),
+        "expected synthetic Function 'test_failed' from public re-export of alias; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    // run_testsuite is not a rename alias — no spurious synthetic for it.
+    let run_count = r.symbols.iter().filter(|s| s.name == "run_testsuite").count();
+    assert_eq!(
+        run_count, 0,
+        "expected no synthetic for non-alias public name 'run_testsuite'"
+    );
+}
+
 /// derived_type_definition with EXTENDS → Struct symbol + Inherits edge.
 #[test]
 fn symbol_derived_type_with_extends() {

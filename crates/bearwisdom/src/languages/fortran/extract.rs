@@ -165,6 +165,12 @@ fn walk_node(
             if !name.is_empty() {
                 let idx = push_sym(node, name, SymbolKind::Namespace, symbols, parent_idx);
                 walk_children(node, src, symbols, refs, Some(idx), locals);
+                // Emit synthetic Function symbols for names that are re-exported
+                // publicly via `public :: local_name` where `local_name` arrived
+                // as a rename alias (`use M, only: local => source`).  Without
+                // these synthetics, callers that import the re-exported name from
+                // this module find no symbol in the index and fail resolution.
+                emit_reexport_synthetics(node, src, idx, symbols);
             } else {
                 walk_children(node, src, symbols, refs, parent_idx, locals);
             }
@@ -653,6 +659,119 @@ fn extract_variable_declaration(
             parent_index: parent_idx,
         });
         let _ = source_symbol_index; // used for scope association via parent_idx
+    }
+}
+
+/// Collect all `local_name => source_name` rename aliases declared by
+/// `use_statement` children of `module_node`.  Returns a map from the
+/// local (call-site) name to the canonical source name.
+fn collect_module_rename_aliases(module_node: Node, src: &[u8]) -> std::collections::HashMap<String, String> {
+    let mut aliases: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut cursor = module_node.walk();
+    for child in module_node.children(&mut cursor) {
+        if child.kind() != "use_statement" {
+            continue;
+        }
+        let mut cc = child.walk();
+        for item in child.children(&mut cc) {
+            if item.kind() != "included_items" {
+                continue;
+            }
+            let mut ic = item.walk();
+            for entry in item.children(&mut ic) {
+                if entry.kind() != "use_alias" {
+                    continue;
+                }
+                let mut local = String::new();
+                let mut source = String::new();
+                let mut ac = entry.walk();
+                for part in entry.children(&mut ac) {
+                    match part.kind() {
+                        "local_name" | "identifier" if local.is_empty() => {
+                            local = text(part, src);
+                        }
+                        "identifier" if !local.is_empty() && source.is_empty() => {
+                            source = text(part, src);
+                        }
+                        _ => {}
+                    }
+                }
+                if !local.is_empty() && !source.is_empty() {
+                    aliases.insert(local, source);
+                }
+            }
+        }
+    }
+    aliases
+}
+
+/// Collect identifiers listed in any `public_statement` children of `module_node`.
+fn collect_public_names(module_node: Node, src: &[u8]) -> std::collections::HashSet<String> {
+    let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut cursor = module_node.walk();
+    for child in module_node.children(&mut cursor) {
+        if child.kind() != "public_statement" {
+            continue;
+        }
+        let mut cc = child.walk();
+        for item in child.children(&mut cc) {
+            if item.kind() == "identifier" {
+                let n = text(item, src);
+                if !n.is_empty() {
+                    names.insert(n);
+                }
+            }
+        }
+    }
+    names
+}
+
+/// For each name that appears in a `public_statement` AND originated from a
+/// rename alias (`use M, only: local => source`), emit a synthetic Function
+/// symbol in the module scope.  This makes the re-exported alias visible as
+/// a first-class symbol so that callers importing it by the local name can
+/// resolve to it via the normal import-based resolution path.
+fn emit_reexport_synthetics(
+    module_node: Node,
+    src: &[u8],
+    module_sym_idx: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let aliases = collect_module_rename_aliases(module_node, src);
+    if aliases.is_empty() {
+        return;
+    }
+    let public_names = collect_public_names(module_node, src);
+    for (local_name, _source_name) in &aliases {
+        // Only emit when explicitly declared public — implicit public modules
+        // re-export everything, but that case is handled by wildcard import
+        // resolution in resolve_common already.  The gap we're closing is the
+        // explicit `public :: local_name` re-export of an aliased import.
+        if !public_names.contains(local_name) {
+            continue;
+        }
+        // Skip if already defined as a real symbol (e.g. a subroutine with the
+        // same name appears in the module — no duplicate needed).
+        let already_defined = symbols
+            .iter()
+            .any(|s| &s.name == local_name && s.parent_index == Some(module_sym_idx));
+        if already_defined {
+            continue;
+        }
+        symbols.push(ExtractedSymbol {
+            qualified_name: local_name.clone(),
+            name: local_name.clone(),
+            kind: SymbolKind::Function,
+            visibility: Some(Visibility::Public),
+            start_line: module_node.start_position().row as u32,
+            end_line: module_node.end_position().row as u32,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: Some(module_sym_idx),
+        });
     }
 }
 
