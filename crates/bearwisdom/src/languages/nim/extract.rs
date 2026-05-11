@@ -530,10 +530,14 @@ fn expand_one_import(item: &str, out: &mut Vec<String>) {
     if item.is_empty() { return; }
     // Strip `as alias` suffix.
     let item = item.split(" as ").next().unwrap_or(item).trim();
-    // Bracket-group form: `prefix/[a, b]`.
+    // Bracket-group form: `prefix/[a, b]` — also handles `prefix / [a, b]`
+    // where Nim allows spaces around the `/` separator.
     if let (Some(open), Some(close)) = (item.find('['), item.rfind(']')) {
         if open < close {
-            let prefix = item[..open].trim().trim_end_matches('/');
+            // Normalize spaces around `/` inside the prefix, then strip the
+            // trailing `/` that remains after the bracket.
+            let prefix_raw = item[..open].trim().trim_end_matches('/').trim();
+            let prefix = normalize_nim_path(prefix_raw);
             let inside = &item[open + 1..close];
             for sub in inside.split(',') {
                 let sub = sub.trim();
@@ -548,8 +552,16 @@ fn expand_one_import(item: &str, out: &mut Vec<String>) {
             return;
         }
     }
-    // Plain `name` or `prefix/name`.
-    out.push(item.to_string());
+    // Plain `name` or `prefix/name`. Nim allows `std / times` with spaces.
+    out.push(normalize_nim_path(item));
+}
+
+/// Collapse `a / b / c` → `a/b/c` by stripping whitespace around `/`.
+fn normalize_nim_path(s: &str) -> String {
+    if !s.contains(" /") && !s.contains("/ ") {
+        return s.to_string();
+    }
+    s.split('/').map(str::trim).filter(|p| !p.is_empty()).collect::<Vec<_>>().join("/")
 }
 
 // ---------------------------------------------------------------------------

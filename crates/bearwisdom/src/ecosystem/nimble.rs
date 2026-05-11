@@ -78,6 +78,13 @@ impl Ecosystem for NimbleEcosystem {
     }
 
     fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> Vec<WalkedFile> {
+        nim_stdlib_pre_pull(dep_roots)
+    }
 }
 
 impl ExternalSourceLocator for NimbleEcosystem {
@@ -527,6 +534,45 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
 }
 
 // ---------------------------------------------------------------------------
+// Stdlib pre-pull (demand-driven pipeline)
+// ---------------------------------------------------------------------------
+
+/// Subdirectories of the Nim stdlib pre-pulled unconditionally for every
+/// Nim project. These contain the modules most commonly imported (`strutils`,
+/// `sequtils`, `tables`, `math`, `os`, `json`, …). Relative to `<lib>/`.
+const STDLIB_PRE_PULL_SUBDIRS: &[&str] = &[
+    "system",
+    "pure",
+    "core",
+    "std",
+];
+
+/// Walk the stdlib root's pre-pull subdirs plus the top-level `system.nim`
+/// and return them as WalkedFiles for eager parsing. Called by the demand-
+/// driven pipeline before symbol-index queries begin so that stdlib symbols
+/// are written to the DB and reachable via the normal resolve pass.
+fn nim_stdlib_pre_pull(dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    for dep in dep_roots {
+        if dep.module_path != "nim-stdlib" { continue; }
+        let root = &dep.root;
+        // Top-level system.nim is the auto-imported prelude.
+        let sys = root.join("system.nim");
+        if sys.is_file() {
+            let rel = format!("ext:nim:{}/system.nim", dep.module_path);
+            out.push(WalkedFile { relative_path: rel, absolute_path: sys, language: "nim" });
+        }
+        for sub in STDLIB_PRE_PULL_SUBDIRS {
+            let dir = root.join(sub);
+            if dir.is_dir() {
+                walk_dir_bounded(&dir, root, dep, &mut out, 0);
+            }
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Symbol-location index (demand-driven pipeline entry)
 // ---------------------------------------------------------------------------
 //
@@ -539,7 +585,19 @@ fn build_nim_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex 
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
     for dep in dep_roots {
         for wf in walk_nim_root(dep) {
-            work.push((dep.module_path.clone(), wf));
+            // For the stdlib root, key by file stem so locate("sequtils",
+            // "toSeq") matches the entry built from `pure/collections/sequtils.nim`.
+            // For Nimble package roots, key by dep.module_path (package name).
+            let module_key = if dep.module_path == "nim-stdlib" {
+                wf.absolute_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| dep.module_path.clone())
+            } else {
+                dep.module_path.clone()
+            };
+            work.push((module_key, wf));
         }
     }
     if work.is_empty() {

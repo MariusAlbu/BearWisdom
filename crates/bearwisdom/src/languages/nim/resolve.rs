@@ -38,6 +38,17 @@ impl LanguageResolver for NimResolver {
     ) -> FileContext {
         let mut imports = Vec::new();
 
+        // Every Nim module implicitly imports `system`. Adding it as a
+        // wildcard entry here lets the common resolver find builtins like
+        // `newException`, `echo`, `cast`, and `GC_*` without requiring an
+        // explicit `import system` in the source file.
+        imports.push(ImportEntry {
+            imported_name: "system".to_string(),
+            module_path: Some("system".to_string()),
+            alias: None,
+            is_wildcard: true,
+        });
+
         for r in &file.refs {
             if r.kind != EdgeKind::Imports {
                 continue;
