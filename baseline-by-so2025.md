@@ -43,7 +43,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 35 | Fortran             | 1.4%     | 88.44%   | 31,582     | 4,130      | 🟡     | re-export chain handler emitted synthetic alias symbols (fpm +9.3pp); remaining gap is `self%method()` derived-type method chains (type inference) + fypp preprocessor for stdlib |
 | 36 | Ada                 | 1.4%     | 95.30%   | 27,876     | 1,374      | 🟢     |       |
 | 37 | F#                  | 1.3%     | 95.67%   | 136,164    | 6,169      | 🟢     | Paket-project empty-PackageReference fallback fixed; saturn 47→79, ionide 75→94 |
-| 38 | OCaml               | 1.2%     | 93.64%   | 99,502     | 6,753      | 🟡     | dune-fresh 95.82% ✓; remaining gap is Cmdliner DSL operators (`$`, `&`, `case1`) + Ctypes FFI (`returning`, `unstage`) |
+| 38 | OCaml               | 1.2%     | 95.09%   | 101,834    | 5,256      | 🟢     | multi-`.opam` union, `local_open` ctx propagation, attribute suppression, `file_stem_matches` ext: prefix fix |
 | 39 | Gleam               | 1.1%     | 98.58%   | 24,364     | 351        | ✅     |       |
 | 40 | Prolog              | 1.1%     | 96.55%   | 97,436     | 3,478      | 🟢     |       |
 | 41 | COBOL               | 1.0%     | 100.00%  | 5,719      | 0          | ✅     |       |
