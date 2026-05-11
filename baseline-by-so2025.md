@@ -27,7 +27,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 19 | Dart                | 5.9%     | 96.86%   | 235,700    | 7,644      | 🟢     |       |
 | 20 | Swift               | 5.4%     | 97.82%   | 57,170     | 1,272      | 🟢     |       |
 | 21 | R                   | 4.9%     | 100.00%  | 9,481      | 0          | ✅     |       |
-| 22 | Groovy              | 4.8%     | 94.24%   | 101,491    | 6,206      | 🟡     | gradle-plugin 73.51% (was 72.56) parse-error indent recovery + groovy_bare_name; full type inference still pending |
+| 22 | Groovy              | 4.8%     | 96.08%   | 100,340    | 4,098      | 🟢     | type inference for chained instance calls landed (`endsWith`, `matching`, GradleRunner fluent API); gradle-plugin 82.09% (Gradle API methods need sources jars) |
 | 23 | VB.NET              | 4.4%     | 97.22%   | 455        | 13         | ✅     | sparse OSS — large VB.NET projects rarely on GitHub |
 | 24 | VBA                 | 4.2%     | 99.39%   | 92,928     | 573        | ✅     | aggregate dominated by rubberduck 99.5%; stdvba 92.2%, vbaweb 86.7% remain on Office Object Model gap |
 | 25 | MATLAB              | 3.9%     | 67.55%   | 10,284     | 4,938      | 🔴     | walker wired but install-gated (no MathWorks license on dev box) |
