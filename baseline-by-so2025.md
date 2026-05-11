@@ -40,7 +40,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | 32 | MicroPython         | 2.3%     | —        | —          | —          | —      | folds into Python |
 | 33 | Zig                 | 2.1%     | 97.38%   | 2,462,498  | 65,711     | 🟢     |       |
 | 34 | Erlang              | 1.5%     | 95.46%   | 294,588    | 14,000     | 🟢     | spec false-positive suppression + ERTS C BIF arity-strip; cowboy 98.3%, emqx 97.2%, rabbitmq 93.5% (residual project-internal cross-file refs) |
-| 35 | Fortran             | 1.4%     | 88.44%   | 31,582     | 4,130      | 🟡     | re-export chain handler emitted synthetic alias symbols (fpm +9.3pp); remaining gap is `self%method()` derived-type method chains (type inference) + fypp preprocessor for stdlib |
+| 35 | Fortran             | 1.4%     | 94.20%   | 27,231     | 1,676      | 🟡     | fpm 97.2% ✓, json 95.5% ✓, stdlib 93.4% — derived-type method chains + fypp `#:`-line blanking + artifact filtering land; stdlib's residual gap is fypp polymorphic template instantiations |
 | 36 | Ada                 | 1.4%     | 95.30%   | 27,876     | 1,374      | 🟢     |       |
 | 37 | F#                  | 1.3%     | 95.67%   | 136,164    | 6,169      | 🟢     | Paket-project empty-PackageReference fallback fixed; saturn 47→79, ionide 75→94 |
 | 38 | OCaml               | 1.2%     | 95.09%   | 101,834    | 5,256      | 🟢     | multi-`.opam` union, `local_open` ctx propagation, attribute suppression, `file_stem_matches` ext: prefix fix |
