@@ -6,6 +6,264 @@ use super::extract;
 use crate::types::SymbolKind;
 
 // ---------------------------------------------------------------------------
+// Conditional type-keyword normalisation
+//
+// `{$ifdef FPC}object{$else}record{$endif}` leaves both `object` and `record`
+// in tree-sitter's token stream, causing cascading parse errors that wipe out
+// earlier type declarations.  The pre-parser normaliser collapses such spans to
+// a single keyword before handing the source to tree-sitter.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ifdef_type_keyword_both_branches_normalised() {
+    // Pattern from kraft.pas / castleinternalglib2.pas:
+    // type keyword is entirely inside a conditional — both branches contain a
+    // valid Pascal type keyword (object or record).
+    let src = r#"unit kraft;
+interface
+type TKraftForceMode=(kfmForce,kfmAcceleration);
+     PKraftForceMode=^TKraftForceMode;
+
+     TKraftInt32={$if declared(Int32)}Int32{$else}LongInt{$ifend};
+     PKraftInt32=^TKraftInt32;
+
+     TKraftVector3=record
+      case integer of
+       0:(x,y,z:single);
+       1:(xyz:array[0..2] of single);
+     end;
+     PKraftVector3=^TKraftVector3;
+
+     TQuickHullFaceList={$ifdef FPC}object{$else}record{$endif}
+      Head: pointer;
+      Tail: pointer;
+     end;
+     PQuickHullFaceList=^TQuickHullFaceList;
+
+implementation
+end.
+"#;
+    let result = extract(src);
+    let names: Vec<(&str, SymbolKind)> = result.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
+    // The {$ifdef FPC}object{$else}record{$endif} must not cascade-wipe earlier types.
+    for expected in &["TKraftForceMode", "TKraftInt32", "TKraftVector3", "TQuickHullFaceList"] {
+        assert!(
+            result.symbols.iter().any(|s| &s.name == expected),
+            "expected {} to be extracted after ifdef-type-kw normalisation; got: {:?}",
+            expected, names
+        );
+    }
+}
+
+#[test]
+fn conditional_type_alias_extracted() {
+    // `TypeName = {$if COND}Type1{$else}Type2{$ifend}` — conditional alias value.
+    let src = r#"unit TestUnit;
+interface
+type
+  TKraftInt32={$if declared(Int32)}Int32{$else}LongInt{$ifend};
+  TKraftScalar={$ifdef KraftUseDouble}double{$else}single{$endif};
+  TKraftVector3=record
+   case integer of
+    0:(x,y,z:single);
+    1:(xyz:array[0..2] of single);
+  end;
+  PKraftVector3=^TKraftVector3;
+implementation
+end.
+"#;
+    let result = extract(src);
+    let names: Vec<(&str, SymbolKind)> = result.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
+    assert!(
+        result.symbols.iter().any(|s| s.name == "TKraftVector3"),
+        "TKraftVector3 record not extracted; got: {:?}", names
+    );
+    assert!(
+        result.symbols.iter().any(|s| s.name == "TKraftInt32"),
+        "TKraftInt32 type alias not extracted; got: {:?}", names
+    );
+    assert!(
+        result.symbols.iter().any(|s| s.name == "TKraftScalar"),
+        "TKraftScalar type alias not extracted; got: {:?}", names
+    );
+}
+
+#[test]
+fn kraft_pas_fundamental_types_extracted() {
+    // Regression: the full kraft.pas file uses {$ifdef FPC}object{$else}record{$endif}
+    // at line ~1317 which previously cascaded a parse error that wiped all type
+    // declarations before it (TKraftVector3, TKraftInt32, TKraftScalar, etc.).
+    use std::fs;
+    let path = r"F:\Work\Projects\TestProjects\pascal-castle-fresh\src\physics\kraft\kraft.pas";
+    let src = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return, // skip if test project not present
+    };
+    let result = extract(&src);
+    let missing: Vec<&str> = ["TKraftVector3", "TKraftInt32", "TKraftScalar", "TKraftForceMode"]
+        .iter()
+        .filter(|&&name| !result.symbols.iter().any(|s| s.name == name))
+        .copied()
+        .collect();
+    assert!(missing.is_empty(), "fundamental types missing from kraft.pas: {:?}", missing);
+}
+
+// ---------------------------------------------------------------------------
+// Variant record with nested anonymous record (glib2 cascade pattern)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn variant_record_nested_anonymous_record_does_not_cascade() {
+    // `TGDoubleIEEE754 = record case longint of 1 : (mpn : record ... end; );`
+    // The anonymous record inside a case variant, plus the `)` on a separate line,
+    // was causing a parse cascade that wiped all preceding type declarations.
+    let src = r#"unit TestUnit;
+interface
+type
+  PGSList = ^TGSList;
+  TGSList = record
+    data: gpointer;
+  end;
+
+  PPGDoubleIEEE754 = ^PGDoubleIEEE754;
+  PGDoubleIEEE754 = ^TGDoubleIEEE754;
+  TGDoubleIEEE754 = record
+    case longint of
+      0 : (v_double: gdouble);
+      1 : (
+        mpn : record
+          mantissa_low: guint32;
+          mantissa_high: guint20;
+          biased_exponent: guint11;
+          sign: guint1;
+        end;
+
+  );
+  end;
+
+  TGDir = object
+    data: gpointer;
+  end;
+
+implementation
+end.
+"#;
+    let result = extract(src);
+    let names: Vec<&str> = result.symbols.iter().map(|s| s.name.as_str()).collect();
+    for expected in &["PGSList", "TGSList", "TGDoubleIEEE754", "TGDir"] {
+        assert!(
+            result.symbols.iter().any(|s| &s.name == expected),
+            "expected {} to be extracted; got: {:?}", expected, names
+        );
+    }
+}
+
+#[test]
+fn glib2_fundamental_types_extracted() {
+    use std::fs;
+    let path = r"F:\Work\Projects\TestProjects\pascal-castle-fresh\src\window\gtk\gtk3\gtk3bindings\castleinternalglib2.pas";
+    let src = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let result = extract(&src);
+    let missing: Vec<&str> = ["PGSList", "TGSList", "PGVariant", "PGString", "PGNode", "TGArray", "TGDir"]
+        .iter()
+        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n))
+        .copied()
+        .collect();
+    assert!(missing.is_empty(), "glib2 types missing after cascade fix: {:?}", missing);
+}
+
+// ---------------------------------------------------------------------------
+// Live file: x3dnodes_standard_core.inc — class extraction
+// ---------------------------------------------------------------------------
+
+#[test]
+fn x3dnodes_standard_core_classes_extracted() {
+    use std::fs;
+    let path = r"F:\Work\Projects\TestProjects\pascal-castle-fresh\src\scene\x3d\x3dnodes_standard_core.inc";
+    let src = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let result = extract(&src);
+    let missing: Vec<&str> = ["TAbstractNode", "TAbstractMetadataNode", "TAbstractChildNode", "TAbstractBindableNode"]
+        .iter()
+        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n && s.kind == SymbolKind::Class))
+        .copied()
+        .collect();
+    assert!(missing.is_empty(), "class symbols missing from x3dnodes_standard_core.inc: {:?}", missing);
+}
+
+// ---------------------------------------------------------------------------
+// Live file: castlefields_x3dsinglefield_descendants.inc — class extraction
+// ---------------------------------------------------------------------------
+
+#[test]
+fn castlefields_x3dsingle_classes_extracted() {
+    use std::fs;
+    let path = r"F:\Work\Projects\TestProjects\pascal-castle-fresh\src\scene\x3d\castlefields_x3dsinglefield_descendants.inc";
+    let src = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let result = extract(&src);
+    let missing: Vec<&str> = ["TSFBitMask", "TSFBool", "TSFFloat"]
+        .iter()
+        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n && s.kind == SymbolKind::Class))
+        .copied()
+        .collect();
+    assert!(missing.is_empty(), "class symbols missing from castlefields inc: {:?}", missing);
+}
+
+// ---------------------------------------------------------------------------
+// Multiple sequential full class definitions in .inc fragment
+// ---------------------------------------------------------------------------
+
+#[test]
+fn inc_fragment_multiple_full_class_definitions_extracted() {
+    // .inc file containing multiple full class bodies inside {$ifdef read_interface}.
+    // Each class must be extracted; later classes must not be lost when earlier
+    // class bodies contain complex field declarations (subrange set types, etc.).
+    let source = r#"{$ifdef read_interface}
+
+  { Doc comment for first class. }
+  TSFBitMask = class(TX3DSingleField)
+  strict private
+    fFlags: set of 0..31;
+    function GetFlags(i: integer): boolean;
+  public
+    procedure ParseValue(Lexer: TX3DLexer); override;
+    destructor Destroy; override;
+  end;
+
+  { Doc comment for second class. }
+  TSFBool = class(TX3DSingleField)
+  public
+    Value: boolean;
+    constructor Create(const AName: String);
+    procedure Assign(Source: TPersistent); override;
+  end;
+
+  TSFFloat = class(TX3DSingleField)
+  public
+    Value: single;
+  end;
+
+{$endif read_interface}
+"#;
+    let result = extract(source);
+    let names: Vec<&str> = result.symbols.iter().map(|s| s.name.as_str()).collect();
+    for expected in &["TSFBitMask", "TSFBool", "TSFFloat"] {
+        assert!(
+            result.symbols.iter().any(|s| &s.name == expected && s.kind == SymbolKind::Class),
+            "expected class {} to be extracted; got: {:?}", expected, names
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Multiple sequential forward declarations (castle-fresh x3dnodes pattern)
 // ---------------------------------------------------------------------------
 

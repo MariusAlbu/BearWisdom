@@ -5796,14 +5796,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 92
+        "min_resolution_rate": 94
       },
-      "code_chunks": 449223,
+      "code_chunks": 454214,
       "files": 3857,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 277888,
-      "internal_unresolved": 22971,
+      "internal_edges": 287535,
+      "internal_unresolved": 16069,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -5831,19 +5831,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 273,
-        "files_per_sec": 10,
-        "index_duration_ms": 376116
+        "end_ws_mb": 263,
+        "files_per_sec": 11,
+        "index_duration_ms": 339797
       },
       "project": "pascal-castle-fresh",
-      "resolution_rate": 92.36,
+      "resolution_rate": 94.71,
       "routes": 0,
-      "symbols": 258437,
+      "symbols": 260720,
       "unresolved_by_lang_kind": {
         "c.calls": 23,
         "c.type_ref": 750,
         "cmake.type_ref": 92,
-        "cpp.calls": 715,
+        "cpp.calls": 711,
         "cpp.inherits": 4,
         "cpp.instantiates": 16,
         "cpp.type_ref": 2936,
@@ -5851,8 +5851,8 @@
         "java.instantiates": 6,
         "java.type_ref": 140,
         "matlab.calls": 59,
-        "pascal.calls": 18109,
-        "pascal.inherits": 45,
+        "pascal.calls": 11213,
+        "pascal.inherits": 43,
         "php.calls": 1,
         "scss.calls": 1,
         "shell.calls": 34

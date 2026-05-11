@@ -38,7 +38,31 @@ pub fn extract(source: &str) -> ExtractionResult {
         .set_language(&tree_sitter_pascal::LANGUAGE.into())
         .expect("Failed to load Pascal grammar");
 
-    let tree = match parser.parse(source, None) {
+    // Normalise source before parsing to prevent cascading parse errors.
+    //
+    // Known patterns that produce token sequences the tree-sitter-pascal grammar
+    // cannot handle, causing it to wipe out all preceding declarations:
+    //
+    //   1. `{$ifdef FPC}object{$else}record{$endif}` — after pp stripping both
+    //      `object` and `record` appear in the token stream. Collapsed to `record`.
+    //
+    //   2. `bitpacked record` — FPC extension not in grammar; tree-sitter sees
+    //      an unknown identifier followed by `record`. Collapsed to `record`.
+    //
+    //   3. Blank line between `end;` and `);` in variant-record case arms —
+    //      prevents tree-sitter from closing the anonymous nested record boundary.
+    let normalised;
+    let src = if source.contains("{$ifdef") || source.contains("{$if ")
+        || source.contains("{$IF") || source.contains("bitpacked")
+        || source.contains("end;")
+    {
+        normalised = normalise_source(source);
+        normalised.as_str()
+    } else {
+        source
+    };
+
+    let tree = match parser.parse(src, None) {
         Some(t) => t,
         None => return ExtractionResult::new(vec![], vec![], true),
     };
@@ -47,9 +71,295 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    visit_root(tree.root_node(), source, &mut symbols, &mut refs);
+    visit_root(tree.root_node(), src, &mut symbols, &mut refs);
 
     ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Normalise Pascal source before handing to tree-sitter to prevent cascading
+/// parse errors caused by constructs the grammar cannot represent:
+///
+///   - `{$ifdef COND}object{$else}record{$endif}`: pp stripping leaves both
+///     `object` and `record` in the stream; collapsed to the else-branch keyword.
+///   - `bitpacked record`: FPC extension; grammar only knows `packed`. The
+///     `bitpacked` prefix is replaced by spaces so `record` stands alone.
+///   - Blank lines between `end;` and `);` inside variant record case arms
+///     prevent the grammar from closing the anonymous nested record correctly.
+///     The blank line is collapsed so `end;` and `);` are adjacent.
+fn normalise_source(src: &str) -> String {
+    // Pass 1: collapse `bitpacked` → spaces.
+    let after_bitpacked = if src.contains("bitpacked") {
+        let mut s = src.to_string();
+        // Replace case-insensitively.  Only the lowercase form appears in CGE
+        // binding files, but guard against BITPACKED/Bitpacked as well.
+        while let Some(pos) = s.to_ascii_lowercase().find("bitpacked") {
+            // Replace with equal-length spaces to preserve byte offsets.
+            s.replace_range(pos..pos + "bitpacked".len(), "         ");
+        }
+        s
+    } else {
+        src.to_string()
+    };
+
+    // Pass 2: collapse {$ifdef COND}TYPE_KW{$else}TYPE_KW{$endif} patterns.
+    let after_ifdef = normalise_ifdef_type_keywords(&after_bitpacked);
+
+    // Pass 3: collapse blank lines between `end;` and `);` in variant record case arms.
+    // A blank line between a nested record's `end;` and the closing `);` of the case
+    // alternative prevents tree-sitter from recognising the variant record boundary.
+    // Removing the blank line makes the grammar parse the structure correctly.
+    normalise_variant_record_end_paren(&after_ifdef)
+}
+
+/// Normalise variant-record case arms that contain an anonymous nested record.
+///
+/// The Pascal grammar cannot parse `N : ( fieldname : record ... end; );` when
+/// the closing `);` is on a separate line from `end;`, even with no blank lines
+/// between them.  Replace the entire body of such case arms with a simple
+/// `(fieldname : Pointer)` so the variant record structure is preserved for the
+/// type declaration parser while the problematic nested body is elided.
+///
+/// Matched pattern (case-insensitive for keywords):
+///   `<N> : (\n  <name> : record\n  ...\n  end;\n[blanks]\n);`
+///
+/// The replacement is:
+///   `<N> : (<name>: Pointer);`
+fn normalise_variant_record_end_paren(src: &str) -> String {
+    // Quick exit: no anonymous records inside case arms.
+    if !src.contains(": record") && !src.contains(":record") && !src.contains(": RECORD") {
+        return src.to_string();
+    }
+
+    let lines: Vec<&str> = src.lines().collect();
+    let n = lines.len();
+    let mut out: Vec<String> = Vec::with_capacity(n);
+    let mut i = 0;
+
+    while i < n {
+        let line = lines[i];
+        // Detect a case arm opening: `<N> : (` at end of line (after trimming).
+        // The line must contain `: (` and nothing after the `(` (only whitespace).
+        let trimmed = line.trim();
+        if trimmed.ends_with('(') && trimmed.contains(": (") {
+            // Look ahead for `<name> : record` on the next non-blank line.
+            let mut j = i + 1;
+            while j < n && lines[j].trim().is_empty() { j += 1; }
+
+            if j < n {
+                let inner = lines[j].trim().to_ascii_lowercase();
+                // Pattern: `fieldname : record` (with optional spaces around colon)
+                let is_anon_record = inner.contains(": record") || inner.contains(":record");
+                // Extract field name (everything before the `: record` part).
+                let field_name = if let Some(pos) = inner.find(": record") {
+                    inner[..pos].trim().to_string()
+                } else if let Some(pos) = inner.find(":record") {
+                    inner[..pos].trim().to_string()
+                } else {
+                    String::new()
+                };
+
+                if is_anon_record && !field_name.is_empty() {
+                    // Find the closing `end;` for this anonymous record,
+                    // then the `)` or `);` that closes the case arm.
+                    let mut k = j + 1;
+                    let mut depth = 1usize; // depth of nested record/begin/case
+                    while k < n {
+                        let tl = lines[k].trim().to_ascii_lowercase();
+                        // Crude depth tracking: `record`, `begin`, `case` open; `end` closes.
+                        if tl.starts_with("record") || tl.starts_with("begin") { depth += 1; }
+                        if tl == "end;" || tl == "end" { depth -= 1; }
+                        if depth == 0 { break; }
+                        k += 1;
+                    }
+                    // k now points to the `end;` line of the anonymous record.
+                    // Skip past blank lines and the closing `)` or `);`.
+                    let mut m = k + 1;
+                    while m < n && lines[m].trim().is_empty() { m += 1; }
+                    if m < n && (lines[m].trim() == ");" || lines[m].trim() == ")") {
+                        // Replacement: keep the case arm prefix up to `(`, replace body.
+                        let prefix_end = line.rfind('(').unwrap_or(line.len());
+                        let prefix = &line[..prefix_end];
+                        // Preserve the field name from the original (not lowercased).
+                        let orig_inner = lines[j].trim();
+                        let orig_field = if let Some(pos) = orig_inner.find(": record").or_else(|| orig_inner.find(": RECORD")).or_else(|| orig_inner.find(":record")) {
+                            orig_inner[..pos].trim()
+                        } else {
+                            &field_name
+                        };
+                        out.push(format!("{prefix}({orig_field}: Pointer);"));
+                        i = m + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        out.push(line.to_string());
+        i += 1;
+    }
+
+    let mut result = out.join("\n");
+    if src.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
+/// Collapse `{$ifdef COND}object{$else}record{$endif}` (and permutations) to a
+/// single keyword so tree-sitter never sees two competing type keywords in the
+/// same token position.
+///
+/// The pattern: `{$if[def] COND}KW1{$else}KW2{$endif}` where KW1/KW2 are any
+/// pair drawn from {object, record, class}. We always keep the else-branch
+/// keyword and replace the whole span (including the pp tokens) with `KW2`
+/// padded with spaces to preserve byte offsets as closely as possible.
+///
+/// We also handle `{$if[def] COND}KW1{$ifend}` (no else) by collapsing to KW1.
+fn normalise_ifdef_type_keywords(src: &str) -> String {
+    // Type keywords that can appear as the sole token in a conditional branch.
+    const TYPE_KWS: &[&str] = &["object", "record", "class"];
+
+    let fallback = src.to_string();
+    // Single forward scan replacing in-place on a byte vec.  Replacements
+    // pad with spaces to preserve byte offsets.
+    let mut out = src.as_bytes().to_vec();
+    let src_len = out.len();
+
+    // Locate `{$ifdef ...}` or `{$if ...}` openings and try to match the
+    // pattern `{$if[def] COND}KW1{$else}KW2{$end[if|ifend]}`.
+    let mut i = 0;
+    while i < src_len {
+        // Quick scan: look for `{$`
+        if out[i] != b'{' || i + 1 >= src_len || out[i + 1] != b'$' {
+            i += 1;
+            continue;
+        }
+
+        // Find the closing `}` of the opening pp token.
+        let pp_start = i;
+        let pp_end = match out[i..].iter().position(|&b| b == b'}') {
+            Some(p) => i + p + 1,
+            None => { i += 1; continue; }
+        };
+
+        // Extract the pp keyword (e.g. "ifdef", "if ", "ifndef", "ifopt")
+        let pp_inner = std::str::from_utf8(&out[pp_start + 2..pp_end - 1])
+            .unwrap_or("")
+            .trim_start()
+            .to_ascii_lowercase();
+        let is_open = pp_inner.starts_with("ifdef")
+            || pp_inner.starts_with("ifndef")
+            || pp_inner.starts_with("if ");
+
+        if !is_open {
+            i = pp_end;
+            continue;
+        }
+
+        // After the opening `{$ifdef COND}`, consume whitespace/newlines, then check
+        // for a type keyword immediately followed by either `{$else}` or `{$ifend}`.
+        let mut j = pp_end;
+        while j < src_len && (out[j] == b' ' || out[j] == b'\t' || out[j] == b'\r' || out[j] == b'\n') {
+            j += 1;
+        }
+
+        // Check if a type keyword starts here.
+        let kw1 = TYPE_KWS.iter().find(|&&kw| {
+            out[j..].starts_with(kw.as_bytes())
+            && (j + kw.len() >= src_len
+                || !out[j + kw.len()].is_ascii_alphanumeric())
+        });
+
+        let kw1 = match kw1 {
+            Some(k) => k,
+            None => { i = pp_end; continue; }
+        };
+
+        let kw1_end = j + kw1.len();
+
+        // After kw1, consume whitespace, then expect `{$else}` or `{$ifend}`/`{$endif}`.
+        let mut k = kw1_end;
+        while k < src_len && (out[k] == b' ' || out[k] == b'\t' || out[k] == b'\r' || out[k] == b'\n') {
+            k += 1;
+        }
+
+        if k >= src_len || out[k] != b'{' { i = pp_end; continue; }
+        let pp2_start = k;
+        let pp2_end = match out[k..].iter().position(|&b| b == b'}') {
+            Some(p) => k + p + 1,
+            None => { i = pp_end; continue; }
+        };
+        let pp2_inner = std::str::from_utf8(&out[pp2_start + 2..pp2_end - 1])
+            .unwrap_or("")
+            .trim_start()
+            .to_ascii_lowercase();
+
+        // Case 1: `{$else}` — has an else branch
+        if pp2_inner.starts_with("else") {
+            let mut m = pp2_end;
+            while m < src_len && (out[m] == b' ' || out[m] == b'\t' || out[m] == b'\r' || out[m] == b'\n') {
+                m += 1;
+            }
+            let kw2 = TYPE_KWS.iter().find(|&&kw| {
+                out[m..].starts_with(kw.as_bytes())
+                && (m + kw.len() >= src_len
+                    || !out[m + kw.len()].is_ascii_alphanumeric())
+            });
+            let kw2 = match kw2 {
+                Some(k) => k,
+                None => { i = pp_end; continue; }
+            };
+            let kw2_end = m + kw2.len();
+
+            // After kw2, expect `{$endif}` or `{$ifend}`
+            let mut n = kw2_end;
+            while n < src_len && (out[n] == b' ' || out[n] == b'\t' || out[n] == b'\r' || out[n] == b'\n') {
+                n += 1;
+            }
+            if n >= src_len || out[n] != b'{' { i = pp_end; continue; }
+            let pp3_end = match out[n..].iter().position(|&b| b == b'}') {
+                Some(p) => n + p + 1,
+                None => { i = pp_end; continue; }
+            };
+            let pp3_inner = std::str::from_utf8(&out[n + 2..pp3_end - 1])
+                .unwrap_or("")
+                .trim_start()
+                .to_ascii_lowercase();
+            if !pp3_inner.starts_with("endif") && !pp3_inner.starts_with("ifend") {
+                i = pp_end; continue;
+            }
+
+            // Replace the span [pp_start..pp3_end] with kw2 + spaces.
+            let span_len = pp3_end - pp_start;
+            let replacement: Vec<u8> = {
+                let mut v: Vec<u8> = kw2.bytes().collect();
+                while v.len() < span_len { v.push(b' '); }
+                v.truncate(span_len);
+                v
+            };
+            out[pp_start..pp3_end].copy_from_slice(&replacement);
+            // Don't advance i — the replacement is safe to skip over
+            i = pp_start + kw2.len();
+        } else if pp2_inner.starts_with("ifend") || pp2_inner.starts_with("endif") {
+            // Case 2: `{$if...}KW1{$ifend}` — no else branch, keep kw1.
+            let span_len = pp2_end - pp_start;
+            let replacement: Vec<u8> = {
+                let mut v: Vec<u8> = kw1.bytes().collect();
+                while v.len() < span_len { v.push(b' '); }
+                v.truncate(span_len);
+                v
+            };
+            out[pp_start..pp2_end].copy_from_slice(&replacement);
+            i = pp_start + kw1.len();
+        } else {
+            i = pp_end;
+        }
+    }
+
+    match String::from_utf8(out) {
+        Ok(s) => s,
+        Err(_) => fallback, // fallback to original on encoding error
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -262,8 +572,27 @@ fn recover_type_decls_from_siblings(
                     let idx = symbols.len();
                     symbols.push(make_symbol(name.clone(), name, kd, &$anchor, Some(sig), parent_index));
                     count += 1;
-                    for bc in body_children.drain(..) {
-                        dispatch_type_body(bc, src, symbols, refs, Some(idx));
+                    let drained: Vec<Node> = body_children.drain(..).collect();
+                    // First pass: dispatch any nodes that are class/record/interface bodies.
+                    // Second pass: run recover_type_decls_from_siblings on the collected body
+                    // to pick up further type declarations embedded in the body (e.g. a class
+                    // declaration whose name is a typeref followed by a defaultValue node).
+                    let has_embedded = drained.iter().any(|n| {
+                        n.kind() == "typeref" || n.kind() == "identifier"
+                    });
+                    if has_embedded {
+                        // Try sibling-scan first so nested type declarations are picked up.
+                        let extra = recover_type_decls_from_siblings(&drained, src, symbols, refs, Some(idx));
+                        if extra == 0 {
+                            // No nested declarations found; dispatch bodies individually.
+                            for bc in &drained {
+                                dispatch_type_body(*bc, src, symbols, refs, Some(idx));
+                            }
+                        }
+                    } else {
+                        for bc in &drained {
+                            dispatch_type_body(*bc, src, symbols, refs, Some(idx));
+                        }
                     }
                 }
             }
@@ -271,12 +600,82 @@ fn recover_type_decls_from_siblings(
         }};
     }
 
-    for sibling in siblings {
+    let mut si_outer = 0;
+    while si_outer < siblings.len() {
+        let sibling = &siblings[si_outer];
+        si_outer += 1;
+
         if matches!(sibling.kind(), "pp" | "comment") {
             continue;
         }
 
+        // Top-level `typeref` + `defaultValue` pattern: the type name was parsed as a
+        // typeref node in the sibling list itself (not embedded inside another node).
+        if sibling.kind() == "typeref" && si_outer < siblings.len()
+            && siblings[si_outer].kind() == "defaultValue"
+        {
+            if let Some(sym_kind) = infer_type_kind_from_default_value(siblings[si_outer], src) {
+                let mut tc = sibling.walk();
+                let tc_ch: Vec<Node> = sibling.children(&mut tc).collect();
+                if let Some(name_node) = tc_ch.iter().find(|n| n.kind() == "identifier") {
+                    emit_pending!(*sibling);
+                    pending_name = Some(*name_node);
+                    pending_kind = Some(sym_kind);
+                    let dv_node = siblings[si_outer];
+                    // The defaultValue was consumed; skip it.
+                    si_outer += 1;
+                    // Push the interior of the defaultValue (non-kEq children) into
+                    // body_children so any nested type declarations inside it are
+                    // processed (e.g. an exprBinary representing a new type decl
+                    // that was folded into the defaultValue by error recovery).
+                    let mut dvc = dv_node.walk();
+                    for dv_child in dv_node.children(&mut dvc) {
+                        if dv_child.kind() != "kEq" {
+                            body_children.push(dv_child);
+                        }
+                    }
+                    // Remaining siblings become body_children.
+                    for later in &siblings[si_outer..] {
+                        body_children.push(*later);
+                    }
+                    si_outer = siblings.len(); // consume all remaining
+                    continue;
+                }
+            }
+        }
+
         if sibling.kind() != "ERROR" {
+            // `exprBinary` produced by error recovery for `TypeName = class(...)`.
+            // Children: identifier, operator(=), then the class/interface/record body.
+            if sibling.kind() == "exprBinary" {
+                let mut eb = sibling.walk();
+                let eb_ch: Vec<Node> = sibling.children(&mut eb).collect();
+                if eb_ch.len() >= 3 {
+                    let name_ident = eb_ch.iter().find(|n| n.kind() == "identifier").copied();
+                    let has_eq = eb_ch.iter().any(|n| {
+                        n.kind() == "kEq"
+                            || (n.kind() == "operator" && node_text(*n, src) == "=")
+                    });
+                    let kind_opt = eb_ch.iter().find_map(|n| {
+                        match n.kind() {
+                            "kClass"     => Some(SymbolKind::Class),
+                            "kInterface" => Some(SymbolKind::Interface),
+                            "kRecord"    => Some(SymbolKind::Struct),
+                            "exprCall" | "ERROR" => infer_type_kind_from_default_value(*n, src),
+                            _ => None,
+                        }
+                    });
+                    if has_eq {
+                        if let (Some(sym_kind), Some(name_node)) = (kind_opt, name_ident) {
+                            emit_pending!(*sibling);
+                            pending_name = Some(name_node);
+                            pending_kind = Some(sym_kind);
+                            continue;
+                        }
+                    }
+                }
+            }
+
             // Non-ERROR siblings: check if this is a type-body node (declProc/declSection
             // starting with kClass/kInterface/kRecord) when we have a pending name.
             // tree-sitter wraps the body of `TypeName = class ... end;` in a declProc
@@ -292,6 +691,104 @@ fn recover_type_decls_from_siblings(
                     continue;
                 }
             }
+
+            // Scan the direct children of this non-ERROR sibling for the pattern:
+            //   `identifier("TypeName")  defaultValue(kEq exprCall("class"/"record"/...))`
+            //
+            // This is how tree-sitter's error recovery represents a new type declaration
+            // embedded inside a `declProc` node belonging to the previous type's body.
+            // When found: flush the current pending declaration and start a new one.
+            {
+                let mut sc = sibling.walk();
+                let sib_children: Vec<Node> = sibling.children(&mut sc).collect();
+                let mut found_embedded = false;
+                for (si, sc_node) in sib_children.iter().enumerate() {
+                    // Resolve the name node: either a plain `identifier` or a `typeref`
+                    // wrapping a single identifier (tree-sitter may parse the class name
+                    // as a type reference when it appears after a method signature tail).
+                    let name_ident: Option<Node> = if sc_node.kind() == "identifier" {
+                        Some(*sc_node)
+                    } else if sc_node.kind() == "typeref" {
+                        let mut tc = sc_node.walk();
+                        let tc_children: Vec<Node> = sc_node.children(&mut tc).collect();
+                        tc_children.into_iter().find(|n| n.kind() == "identifier")
+                    } else {
+                        None
+                    };
+
+                    if let Some(name_node) = name_ident {
+                        if si + 1 < sib_children.len() {
+                            let next = sib_children[si + 1];
+                            // Look for `defaultValue` sibling that represents `= class(...)`.
+                            if next.kind() == "defaultValue" {
+                                if let Some(sym_kind) = infer_type_kind_from_default_value(next, src) {
+                                    emit_pending!(*sibling);
+                                    pending_name = Some(name_node);
+                                    pending_kind = Some(sym_kind);
+                                    for later in sib_children.iter().skip(si + 2) {
+                                        body_children.push(*later);
+                                    }
+                                    found_embedded = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    // When a child is an ERROR, its LAST identifier may be the name of the
+                    // next type declaration.  Two sub-patterns:
+                    //
+                    //  a) ERROR + defaultValue: the `= class(...)` form.
+                    //  b) ERROR + kClass/kInterface/kRecord: the bare `class(ParentType)`
+                    //     form, where the type keyword stands alone as the next token.
+                    if sc_node.kind() == "ERROR" && si + 1 < sib_children.len() {
+                        let next = sib_children[si + 1];
+                        let sym_kind_opt: Option<SymbolKind> = if next.kind() == "defaultValue" {
+                            infer_type_kind_from_default_value(next, src)
+                        } else {
+                            match next.kind() {
+                                "kClass" => Some(SymbolKind::Class),
+                                "kInterface" => Some(SymbolKind::Interface),
+                                "kRecord" => Some(SymbolKind::Struct),
+                                _ => None,
+                            }
+                        };
+                        if let Some(sym_kind) = sym_kind_opt {
+                            // Grab the last identifier child of the ERROR as the type name.
+                            let mut ec = sc_node.walk();
+                            let err_ch: Vec<Node> = sc_node.children(&mut ec).collect();
+                            let last_ident = err_ch.iter().rev()
+                                .find(|n| n.kind() == "identifier");
+                            if let Some(name_node) = last_ident {
+                                emit_pending!(*sibling);
+                                pending_name = Some(*name_node);
+                                pending_kind = Some(sym_kind);
+                                // Skip past the ERROR and the type keyword/defaultValue;
+                                // subsequent children are the body of this new type.
+                                let skip = if next.kind() == "defaultValue" { si + 2 } else { si + 2 };
+                                for later in sib_children.iter().skip(skip) {
+                                    body_children.push(*later);
+                                }
+                                found_embedded = true;
+                                break;
+                            }
+                        }
+                    }
+                    // Skip `kClass`/`kInterface`/`kRecord` when it is a method modifier
+                    // (`class function`/`class procedure` etc.).  Otherwise stop scanning —
+                    // we've reached a type body that belongs to a pending declaration and
+                    // no further embedded names follow (they'd have been handled above).
+                    if matches!(sc_node.kind(), "kClass" | "kInterface" | "kRecord") {
+                        let next_is_method_kw = sib_children.get(si + 1)
+                            .map(|n| matches!(n.kind(), "kFunction" | "kProcedure" | "kConstructor" | "kDestructor"))
+                            .unwrap_or(false);
+                        if !next_is_method_kw {
+                            break;
+                        }
+                    }
+                }
+                if found_embedded { continue; }
+            }
+
             // No pending name, or not a type-body node → dispatch generically.
             if pending_name.is_some() && pending_kind.is_some() {
                 body_children.push(*sibling);
@@ -314,8 +811,24 @@ fn recover_type_decls_from_siblings(
                         // Flush any pending declaration first.
                         emit_pending!(*sibling);
                         pending_name = Some(tok);
+                        // Check if the type kind is embedded in kEq's children.
+                        let keq_node = err_children[j + 1];
+                        if let Some(kind) = infer_type_kind_from_eq_sibling(keq_node, src) {
+                            pending_kind = Some(kind);
+                        }
                         j += 2; // skip identifier and kEq
                         continue;
+                    }
+                    // If followed by a `defaultValue` node (alternative error-recovery form),
+                    // check if it represents `= class(...)`.
+                    if j + 1 < err_children.len() && err_children[j + 1].kind() == "defaultValue" {
+                        if let Some(sym_kind) = infer_type_kind_from_default_value(err_children[j + 1], src) {
+                            emit_pending!(*sibling);
+                            pending_name = Some(tok);
+                            pending_kind = Some(sym_kind);
+                            j += 2; // skip identifier and defaultValue
+                            continue;
+                        }
                     }
                     // Not a name → body content.
                     if pending_name.is_some() {
@@ -1130,21 +1643,108 @@ fn dispatch_type_body(
     let children: Vec<Node> = node.children(&mut cursor).collect();
 
     let mut saw_type_keyword = false;
-    let mut pending_proc_kw = false; // true after kProcedure/kFunction
+    let mut pending_proc_kw = false; // set after kProcedure/kFunction/etc.
+    // Tracks whether the previous two tokens were `identifier kEq`, indicating
+    // the start of a `TypeName = class/record` declaration embedded in the body
+    // ERROR node by tree-sitter's error recovery.
+    let mut pending_name_for_type: Option<Node> = None; // the identifier before kEq
 
-    for child in &children {
+    for (ci, child) in children.iter().enumerate() {
         match child.kind() {
             "kClass" | "kInterface" | "kRecord" if !saw_type_keyword => {
                 saw_type_keyword = true; // skip the leading type keyword
+                pending_name_for_type = None;
+            }
+            // When we see `kClass/kInterface/kRecord` after `identifier kEq`,
+            // a new type declaration has been embedded in this body ERROR node.
+            // Emit it as a Class/Interface/Struct and recurse for the rest.
+            "kClass" | "kInterface" | "kRecord" if pending_name_for_type.is_some() => {
+                let sym_kind = match child.kind() {
+                    "kClass"     => SymbolKind::Class,
+                    "kInterface" => SymbolKind::Interface,
+                    _            => SymbolKind::Struct,
+                };
+                if let Some(name_node) = pending_name_for_type.take() {
+                    let name = node_text(name_node, src);
+                    if !name.is_empty() {
+                        let new_idx = symbols.len();
+                        symbols.push(make_symbol(
+                            name.clone(),
+                            name,
+                            sym_kind,
+                            child,
+                            None,
+                            parent_index,
+                        ));
+                        // Remaining children (from the type keyword onwards)
+                        // belong to this new declaration.
+                        recover_type_decls_from_siblings(
+                            &children[ci..],
+                            src,
+                            symbols,
+                            refs,
+                            Some(new_idx),
+                        );
+                    }
+                }
+                return; // rest of children consumed by recover_type_decls_from_siblings
+            }
+            // `typeref` may be the name of a new type declaration when followed
+            // by `defaultValue` (e.g. `TSFBool = class(TX3DSingleField)`).
+            // In that case, intercept it here instead of dispatching as a ref.
+            "typeref" if ci + 1 < children.len() && children[ci + 1].kind() == "defaultValue" => {
+                if let Some(sym_kind) = infer_type_kind_from_default_value(children[ci + 1], src) {
+                    let mut tc = child.walk();
+                    let tc_ch: Vec<Node> = child.children(&mut tc).collect();
+                    if let Some(name_node) = tc_ch.iter().find(|n| n.kind() == "identifier") {
+                        let name = node_text(*name_node, src);
+                        if !name.is_empty() {
+                            let new_idx = symbols.len();
+                            symbols.push(make_symbol(
+                                name.clone(),
+                                name,
+                                sym_kind,
+                                child,
+                                None,
+                                parent_index,
+                            ));
+                            // Remaining children from [ci+2] belong to this new declaration.
+                            recover_type_decls_from_siblings(
+                                &children[ci + 2..],
+                                src,
+                                symbols,
+                                refs,
+                                Some(new_idx),
+                            );
+                            return;
+                        }
+                    }
+                }
+                // Fallback: dispatch as a normal typeref.
+                pending_proc_kw = false;
+                pending_name_for_type = None;
+                dispatch(*child, src, symbols, refs, parent_index);
             }
             // Structured children: dispatch normally
             "declProc" | "defProc" | "declSection" | "declVars" | "declConsts"
             | "declUses" | "exprCall" | "typeref" => {
                 pending_proc_kw = false;
+                pending_name_for_type = None;
                 dispatch(*child, src, symbols, refs, parent_index);
             }
             "kProcedure" | "kFunction" | "kConstructor" | "kDestructor" | "kOperator" => {
                 pending_proc_kw = true;
+                pending_name_for_type = None;
+            }
+            "kEq" => {
+                // `=` — if the previous child was an identifier, track it as
+                // a potential type name (for `Name = class/record/interface`).
+                if ci > 0 && children[ci - 1].kind() == "identifier" {
+                    pending_name_for_type = Some(children[ci - 1]);
+                } else {
+                    pending_name_for_type = None;
+                }
+                pending_proc_kw = false;
             }
             "identifier" if pending_proc_kw => {
                 // Bare `kProcedure identifier ;` inside the error-recovery body.
@@ -1160,9 +1760,11 @@ fn dispatch_type_body(
                     ));
                 }
                 pending_proc_kw = false;
+                pending_name_for_type = None;
             }
             _ => {
                 pending_proc_kw = false;
+                pending_name_for_type = None;
             }
         }
     }
@@ -1176,16 +1778,75 @@ fn dispatch_type_body(
 /// keyword into a `declProc` whose first non-pp child is `kClass`.
 fn type_keyword_of_node(node: Node, _src: &str) -> Option<SymbolKind> {
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
+    let children: Vec<Node> = node.children(&mut cursor).collect();
+    let mut iter = children.iter().peekable();
+    while let Some(child) = iter.next() {
         match child.kind() {
             "pp" | "comment" => continue,
-            "kClass" => return Some(SymbolKind::Class),
+            "kClass" => {
+                // `class function`/`class procedure`/`class constructor`/`class destructor`
+                // is a method modifier, not a type body opener.
+                let next_is_method = iter.peek()
+                    .map(|n| matches!(n.kind(), "kFunction" | "kProcedure" | "kConstructor" | "kDestructor"))
+                    .unwrap_or(false);
+                if next_is_method {
+                    return None;
+                }
+                return Some(SymbolKind::Class);
+            }
             "kInterface" => return Some(SymbolKind::Interface),
             "kRecord" => return Some(SymbolKind::Struct),
             _ => return None,
         }
     }
     None
+}
+
+/// Infer the SymbolKind from a `defaultValue` node that represents `= class(...)`.
+///
+/// Tree-sitter's error recovery for `.inc` fragments sometimes produces:
+///
+///   `identifier("TypeName")  defaultValue(kEq  exprCall(identifier("class") ...))`
+///
+/// or the equivalent with "record", "object", "interface" as the first identifier
+/// in the `exprCall` child of `defaultValue`.
+fn infer_type_kind_from_default_value(node: Node, src: &str) -> Option<SymbolKind> {
+    // node must be `defaultValue` or `kEq` — search for an identifier child
+    // whose text is a Pascal type keyword.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "kClass"     => return Some(SymbolKind::Class),
+            "kInterface" => return Some(SymbolKind::Interface),
+            "kRecord"    => return Some(SymbolKind::Struct),
+            "identifier" => {
+                let text = node_text(child, src).to_ascii_lowercase();
+                match text.as_str() {
+                    "class" | "object" => return Some(SymbolKind::Class),
+                    "interface"        => return Some(SymbolKind::Interface),
+                    "record"           => return Some(SymbolKind::Struct),
+                    _ => {}
+                }
+            }
+            // Recurse into kEq, exprCall, and ERROR children.
+            // ERROR wraps the class/record/interface keyword when tree-sitter's
+            // error recovery groups the type opener with the surrounding context.
+            "kEq" | "exprCall" | "ERROR" => {
+                if let Some(k) = infer_type_kind_from_default_value(child, src) {
+                    return Some(k);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Infer the SymbolKind from a `kEq` node or an ERROR child whose first identifier
+/// is a Pascal type keyword (for the case where `kEq` appears as a sibling in an
+/// ERROR node's children: `ERROR { identifier "Name", kEq { identifier "class" } }`).
+fn infer_type_kind_from_eq_sibling(keq_node: Node, src: &str) -> Option<SymbolKind> {
+    infer_type_kind_from_default_value(keq_node, src)
 }
 
 fn has_keyword_child(node: Node, kind: &str) -> bool {
