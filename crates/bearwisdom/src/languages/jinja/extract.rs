@@ -5,21 +5,14 @@
 //! Python-like attribute access) diverge from Nunjucks once you go beyond
 //! `{% block %}` / `{% extends %}` / `{% include %}`.
 //!
-//! Extraction surface (PR-1 — foundation):
+//! Extraction surface:
 //!   * file-stem `Class` symbol
 //!   * `{% block <name> %}`           → Field symbol
 //!   * `{% extends "..." %}`          → Imports ref
 //!   * `{% include "..." %}`          → Imports ref
 //!   * `{% import/from "..." %}`      → Imports ref
 //!   * `{{ <expr> }}` payload         → identifier-chain TypeRefs via expr.rs
-//!
-//! Deferred to follow-up sessions:
-//!   * Filter calls (`{{ x | indent }}` → `indent` as a Calls ref against a
-//!     synthetic Jinja2 stdlib module)
-//!   * Function calls inside expressions (`lookup(...)`, `range(...)`)
-//!   * Ansible-specific globals (`ansible_facts`, `inventory_hostname`)
-//!   * `{% set var = expr %}` symbol declarations
-//!   * `{% for loop_var in expr %}` scope-introducing symbols
+//!   * `{% raw %}...{% endraw %}`     → skipped entirely (non-Jinja content)
 
 use crate::languages::jinja::expr;
 use crate::types::{
@@ -79,6 +72,36 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             };
             if let Some(body) = source.get(body_start..close) {
                 let consumed_lines = body.matches('\n').count() as u32;
+                let directive_trimmed = body
+                    .trim()
+                    .trim_start_matches('-')
+                    .trim_end_matches('-')
+                    .trim();
+                // `{% raw %}...{% endraw %}` — skip content wholesale. The
+                // body between these tags is non-Jinja (Go templates, shell,
+                // etc.) and scanning it emits false refs.
+                if directive_trimmed == "raw" {
+                    let after_open = close + 2;
+                    if let Some(endraw_pos) = find_endraw(bytes, after_open) {
+                        let skipped = source
+                            .get(after_open..endraw_pos)
+                            .unwrap_or("")
+                            .matches('\n')
+                            .count() as u32;
+                        line += consumed_lines + skipped;
+                        // Advance past `{% endraw %}`: endraw_pos points at
+                        // `{`, skip past the closing `%}` of `{% endraw %}`.
+                        let endraw_tag_close =
+                            find_close(bytes, endraw_pos + 2, b'%', b'}')
+                                .map(|c| c + 2)
+                                .unwrap_or(endraw_pos + 2);
+                        i = endraw_tag_close;
+                    } else {
+                        line += consumed_lines;
+                        i = close + 2;
+                    }
+                    continue;
+                }
                 handle_directive(body, host_index, line, &mut symbols, &mut refs, &file_name);
                 line += consumed_lines;
             }
@@ -376,6 +399,33 @@ fn find_close(bytes: &[u8], from: usize, a: u8, b: u8) -> Option<usize> {
     while i + 1 < bytes.len() {
         if bytes[i] == a && bytes[i + 1] == b {
             return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Locate the `{%` that opens the `{% endraw %}` tag, searching forward from
+/// `from`. Returns the byte index of the `{` of `{%`.
+fn find_endraw(bytes: &[u8], from: usize) -> Option<usize> {
+    let mut i = from;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'{' && bytes[i + 1] == b'%' {
+            // Check if the body of this tag is `endraw` (possibly with `-`
+            // trim markers and surrounding whitespace).
+            let body_start = i + 2;
+            if let Some(close) = find_close(bytes, body_start, b'%', b'}') {
+                if let Ok(body) = std::str::from_utf8(&bytes[body_start..close]) {
+                    let trimmed = body
+                        .trim()
+                        .trim_start_matches('-')
+                        .trim_end_matches('-')
+                        .trim();
+                    if trimmed == "endraw" {
+                        return Some(i);
+                    }
+                }
+            }
         }
         i += 1;
     }

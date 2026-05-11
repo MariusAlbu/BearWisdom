@@ -4017,8 +4017,8 @@
       "files": 1124,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 4150,
-      "internal_unresolved": 451,
+      "internal_edges": 4118,
+      "internal_unresolved": 434,
       "languages": {
         "c": 2,
         "dockerfile": 3,
@@ -4039,17 +4039,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/jinja-kubespray",
       "perf": {
-        "end_ws_mb": 90,
-        "files_per_sec": 62,
-        "index_duration_ms": 18133
+        "end_ws_mb": 97,
+        "files_per_sec": 134,
+        "index_duration_ms": 8363
       },
       "project": "jinja-kubespray",
-      "resolution_rate": 90.2,
+      "resolution_rate": 90.47,
       "routes": 0,
       "symbols": 9669,
       "unresolved_by_lang_kind": {
         "hcl.calls": 5,
-        "jinja.type_ref": 402,
+        "jinja.type_ref": 385,
         "python.calls": 30,
         "python.type_ref": 6,
         "shell.calls": 8
@@ -4057,14 +4057,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 81
+        "min_resolution_rate": 85
       },
       "code_chunks": 20087,
       "files": 835,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 6072,
-      "internal_unresolved": 1361,
+      "internal_edges": 6071,
+      "internal_unresolved": 1067,
       "languages": {
         "c": 1,
         "jinja": 224,
@@ -4078,17 +4078,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/jinja-matrix-ansible",
       "perf": {
-        "end_ws_mb": 77,
-        "files_per_sec": 70,
-        "index_duration_ms": 11986
+        "end_ws_mb": 75,
+        "files_per_sec": 106,
+        "index_duration_ms": 7888
       },
       "project": "jinja-matrix-ansible",
-      "resolution_rate": 81.69,
+      "resolution_rate": 85.05,
       "routes": 0,
       "symbols": 10756,
       "unresolved_by_lang_kind": {
         "c.type_ref": 2,
-        "jinja.type_ref": 1356,
+        "jinja.type_ref": 1062,
         "nix.calls": 3
       }
     },

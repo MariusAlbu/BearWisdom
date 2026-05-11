@@ -21,10 +21,15 @@ use crate::types::{EdgeKind, ExtractedRef};
 /// identifier-chain head it discovers. The `body` is the trimmed payload
 /// inside `{{ ... }}` or the RHS of a `{% set/if/for ... %}` directive.
 ///
-/// Pipe-filter chains (`x | upper | replace('a','b')`) are intentionally
-/// truncated at the first top-level `|` — only the leading expression is
-/// scanned. This matches the post-PR behavior of strip_pipe_filters in
-/// the nunjucks embed module.
+/// Pipe-filter chains are handled at two levels:
+/// - Top-level pipes are cut by `trim_at_top_level_pipe`, so `x | upper`
+///   only scans `x`.
+/// - Nested pipes inside parens/brackets (`(x | filter)`) are tracked via
+///   `after_pipe` — the first identifier after any `|` is a filter name and
+///   is suppressed from TypeRef emission.
+///
+/// Subscript chains (`arr[0].field`) are consumed in full by
+/// `skip_chain_continuation` so only the root variable is emitted.
 pub fn scan_expression(
     body: &str,
     source_symbol_index: usize,
@@ -40,6 +45,10 @@ pub fn scan_expression(
     let mut i = 0;
     let mut in_str: Option<u8> = None;
     let mut prev_ident: Option<&str> = None;
+    // True when the most recent non-whitespace, non-identifier token was `|`
+    // at any paren depth. The identifier that follows is a filter name, not a
+    // value reference.
+    let mut after_pipe = false;
 
     while i < bytes.len() {
         let b = bytes[i];
@@ -58,18 +67,37 @@ pub fn scan_expression(
         }
         if b == b'"' || b == b'\'' {
             in_str = Some(b);
+            after_pipe = false;
             i += 1;
             continue;
         }
 
-        // Identifier head: ASCII letter or underscore. Numeric prefixes
-        // are not identifiers.
+        // Track pipe at any depth to suppress the following filter name.
+        if b == b'|' {
+            // `||` is not a Jinja filter separator.
+            if i + 1 < bytes.len() && bytes[i + 1] == b'|' {
+                after_pipe = false;
+                i += 2;
+            } else {
+                after_pipe = true;
+                i += 1;
+            }
+            continue;
+        }
+
+        // Non-identifier, non-pipe byte: clear pipe state on structural chars.
         if !(b.is_ascii_alphabetic() || b == b'_') {
+            if !b.is_ascii_whitespace() {
+                // Any structural token other than whitespace ends filter
+                // position — e.g. `(x | f)(y)` — the `(` after `f` means `f`
+                // was already consumed; the next ident starts fresh.
+                after_pipe = false;
+            }
             i += 1;
             continue;
         }
 
-        // Walk identifier chars, then optional `.<ident>` continuations.
+        // Walk identifier chars.
         let start = i;
         while i < bytes.len() {
             let c = bytes[i];
@@ -86,29 +114,31 @@ pub fn scan_expression(
         // otherwise emit refs to `if`, `else`, `not`, etc.
         if is_jinja_keyword(head) {
             prev_ident = Some(head);
-            i = skip_dotted_continuation(bytes, i);
+            after_pipe = false;
+            i = skip_chain_continuation(bytes, i);
             continue;
         }
 
         // `is <test>` and `is not <test>`: the identifier after `is` (or
-        // `is not`) is a Jinja test name, not a value reference. Common
-        // tests: defined, undefined, none, sameas, divisibleby, equalto,
-        // mapping, sequence, string, number, iterable. Skip emitting.
+        // `is not`) is a Jinja test name, not a value reference.
         if prev_ident == Some("is") || prev_ident == Some("not") {
-            // Look at the prior 1-2 idents to confirm `is <head>` or
-            // `is not <head>`. We only tracked one prior, but the most
-            // common forms are covered.
             prev_ident = Some(head);
-            i = skip_dotted_continuation(bytes, i);
+            after_pipe = false;
+            i = skip_chain_continuation(bytes, i);
             continue;
         }
 
-        // Don't filter Jinja2/Ansible runtime globals here — emission
-        // happens unconditionally and the resolver routes them to the
-        // synthetic `jinja-runtime` ecosystem (see
-        // `crates/bearwisdom/src/ecosystem/runtime_grammars.rs`). Any
-        // hand-list at this layer would shadow the data-file index and
-        // drift from upstream.
+        // Suppress filter names: identifiers that appear immediately after a
+        // `|` token (at any paren depth) are filter names, not variable refs.
+        // This covers both top-level `x | upper` (already truncated by
+        // trim_at_top_level_pipe) and nested `(x | filter)` forms.
+        if after_pipe {
+            prev_ident = Some(head);
+            after_pipe = false;
+            i = skip_chain_continuation(bytes, i);
+            continue;
+        }
+
         refs.push(ExtractedRef {
             source_symbol_index,
             target_name: head.to_string(),
@@ -121,29 +151,74 @@ pub fn scan_expression(
         });
 
         prev_ident = Some(head);
-        // Consume `.<ident>` continuations so we don't re-emit the tail.
-        i = skip_dotted_continuation(bytes, i);
+        after_pipe = false;
+        // Consume `.<ident>` and `[...].<ident>` continuations so we don't
+        // re-emit tail segments as new refs.
+        i = skip_chain_continuation(bytes, i);
     }
 }
 
-fn skip_dotted_continuation(bytes: &[u8], mut i: usize) -> usize {
-    while i < bytes.len() && bytes[i] == b'.' {
-        let after_dot = i + 1;
-        if after_dot >= bytes.len() {
+/// Consume `.ident` and `[...].ident` chain continuations after a chain
+/// head so that property accesses and subscript accesses don't get emitted
+/// as independent variable references.
+///
+/// Handles: `a.b.c`, `a[0].b`, `a[k].b[j].c`, `a["key"].b`.
+/// Stops at any non-continuation token (`(`, `|`, operator, etc.).
+fn skip_chain_continuation(bytes: &[u8], mut i: usize) -> usize {
+    loop {
+        if i >= bytes.len() {
             break;
         }
-        let c = bytes[after_dot];
-        if !(c.is_ascii_alphabetic() || c == b'_') {
-            break;
-        }
-        i = after_dot + 1;
-        while i < bytes.len() {
-            let c = bytes[i];
-            if c.is_ascii_alphanumeric() || c == b'_' {
-                i += 1;
-            } else {
-                break;
+        match bytes[i] {
+            // `.ident` — attribute access.
+            b'.' => {
+                let after_dot = i + 1;
+                if after_dot >= bytes.len() {
+                    break;
+                }
+                let c = bytes[after_dot];
+                if !(c.is_ascii_alphabetic() || c == b'_') {
+                    break;
+                }
+                i = after_dot + 1;
+                while i < bytes.len() {
+                    let c = bytes[i];
+                    if c.is_ascii_alphanumeric() || c == b'_' {
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
             }
+            // `[...]` — subscript access: consume until matching `]` then
+            // loop to pick up any `.ident` that follows.
+            b'[' => {
+                i += 1;
+                let mut depth: i32 = 1;
+                let mut in_str: Option<u8> = None;
+                while i < bytes.len() && depth > 0 {
+                    let b = bytes[i];
+                    if let Some(q) = in_str {
+                        if b == b'\\' && i + 1 < bytes.len() {
+                            i += 2;
+                            continue;
+                        }
+                        if b == q {
+                            in_str = None;
+                        }
+                    } else {
+                        match b {
+                            b'"' | b'\'' => in_str = Some(b),
+                            b'[' => depth += 1,
+                            b']' => depth -= 1,
+                            _ => {}
+                        }
+                    }
+                    i += 1;
+                }
+                // After the closing `]`, loop back — a `.ident` may follow.
+            }
+            _ => break,
         }
     }
     i
