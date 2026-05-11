@@ -171,8 +171,39 @@ impl LanguageResolver for PascalResolver {
             }
         }
 
+        // Delphi-exclusive namespace detection: when the source file imports
+        // units from Delphi's dotted-package namespaces (`Vcl.*`, `Winapi.*`,
+        // `FireDAC.*`, `System.*`, `Data.*`, `FMX.*`, `Xml.*`), it is a
+        // Delphi/VCL project. FPC does not use these namespace prefixes; they
+        // cannot appear in FPC source. Any ref that remains unresolved in such
+        // a file is a Delphi SDK or VCL symbol that the FPC walker cannot
+        // supply. Classify it as `delphi-vcl` so it lands in
+        // `unresolved_external` rather than `unresolved`.
+        if is_delphi_namespaced_file(file_ctx) {
+            return Some("delphi-vcl".to_string());
+        }
+
         None
     }
+}
+
+/// Returns `true` when the file's imports include at least one Delphi
+/// dotted-namespace unit. These prefixes are exclusive to Delphi (Embarcadero
+/// RAD Studio / VCL / FMX); FPC and Lazarus do not emit them.
+pub(super) fn is_delphi_namespaced_file(file_ctx: &FileContext) -> bool {
+    const DELPHI_PREFIXES: &[&str] = &[
+        "vcl.", "winapi.", "firedac.", "data.", "fmx.", "xml.",
+        "system.generics.", "system.classes", "system.sysutils",
+        "system.win.", "system.ioutils", "system.dateutils",
+        "system.contnrs", "system.strutils", "system.variants",
+        "system.math", "system.types", "system.uriparser",
+    ];
+    file_ctx.imports.iter().any(|imp| {
+        imp.module_path.as_deref().map_or(false, |m| {
+            let ml = m.to_lowercase();
+            DELPHI_PREFIXES.iter().any(|p| ml.starts_with(p))
+        })
+    })
 }
 
 /// Wildcard-import resolution for Pascal, covering both case-insensitivity and

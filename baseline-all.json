@@ -5802,14 +5802,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 94
+        "min_resolution_rate": 95
       },
-      "code_chunks": 454547,
-      "files": 3857,
+      "code_chunks": 454793,
+      "files": 3859,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 288320,
-      "internal_unresolved": 16205,
+      "internal_edges": 288424,
+      "internal_unresolved": 12990,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -5823,7 +5823,7 @@
         "json": 34,
         "markdown": 273,
         "matlab": 35,
-        "pascal": 2416,
+        "pascal": 2418,
         "php": 5,
         "powershell": 1,
         "prolog": 1,
@@ -5837,14 +5837,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 269,
-        "files_per_sec": 10,
-        "index_duration_ms": 374224
+        "end_ws_mb": 257,
+        "files_per_sec": 9,
+        "index_duration_ms": 406894
       },
       "project": "pascal-castle-fresh",
-      "resolution_rate": 94.68,
+      "resolution_rate": 95.69,
       "routes": 0,
-      "symbols": 273295,
+      "symbols": 273517,
       "unresolved_by_lang_kind": {
         "c.calls": 23,
         "c.type_ref": 753,
@@ -5857,8 +5857,8 @@
         "java.instantiates": 6,
         "java.type_ref": 140,
         "matlab.calls": 59,
-        "pascal.calls": 11062,
-        "pascal.inherits": 73,
+        "pascal.calls": 7851,
+        "pascal.inherits": 69,
         "php.calls": 1,
         "scss.calls": 1,
         "shell.calls": 34
@@ -5866,14 +5866,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 95
+        "min_resolution_rate": 97
       },
-      "code_chunks": 180420,
-      "files": 1046,
+      "code_chunks": 183470,
+      "files": 1051,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 102231,
-      "internal_unresolved": 4478,
+      "internal_edges": 106744,
+      "internal_unresolved": 2620,
       "languages": {
         "c": 6,
         "cpp": 2,
@@ -5883,7 +5883,7 @@
         "lua": 4,
         "make": 1,
         "markdown": 3,
-        "pascal": 891,
+        "pascal": 896,
         "puppet": 8,
         "python": 1,
         "shell": 17,
@@ -5891,53 +5891,53 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-doublecmd",
       "perf": {
-        "end_ws_mb": 235,
+        "end_ws_mb": 243,
         "files_per_sec": 7,
-        "index_duration_ms": 153775
+        "index_duration_ms": 154693
       },
       "project": "pascal-doublecmd",
-      "resolution_rate": 95.8,
+      "resolution_rate": 97.6,
       "routes": 0,
-      "symbols": 104282,
+      "symbols": 105347,
       "unresolved_by_lang_kind": {
         "c.calls": 2,
         "c.type_ref": 73,
-        "pascal.calls": 4352,
-        "pascal.inherits": 22,
+        "pascal.calls": 2497,
+        "pascal.inherits": 19,
         "shell.calls": 29
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 89
+        "min_resolution_rate": 99
       },
-      "code_chunks": 61329,
-      "files": 187,
+      "code_chunks": 99783,
+      "files": 277,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 31944,
-      "internal_unresolved": 3620,
+      "internal_edges": 54864,
+      "internal_unresolved": 510,
       "languages": {
-        "html": 1,
+        "html": 2,
         "json": 4,
         "markdown": 10,
-        "pascal": 163,
+        "pascal": 252,
         "php": 7,
         "xml": 2
       },
       "path": "F:/Work/Projects/TestProjects/pascal-heidisql",
       "perf": {
-        "end_ws_mb": 206,
-        "files_per_sec": 2,
-        "index_duration_ms": 80731
+        "end_ws_mb": 224,
+        "files_per_sec": 4,
+        "index_duration_ms": 78011
       },
       "project": "pascal-heidisql",
-      "resolution_rate": 89.82,
+      "resolution_rate": 99.08,
       "routes": 0,
-      "symbols": 31418,
+      "symbols": 55151,
       "unresolved_by_lang_kind": {
-        "pascal.calls": 3463,
-        "pascal.inherits": 32,
+        "pascal.calls": 376,
+        "pascal.inherits": 9,
         "php.calls": 122,
         "php.instantiates": 3
       }

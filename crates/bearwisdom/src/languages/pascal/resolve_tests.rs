@@ -2,7 +2,7 @@
 // pascal/resolve_tests.rs — unit tests for pascal/resolve.rs
 // =============================================================================
 
-use super::{pascal_stem_matches, resolve_pascal_wildcard};
+use super::{is_delphi_namespaced_file, pascal_stem_matches, resolve_pascal_wildcard};
 use crate::indexer::resolve::engine::{FileContext, ImportEntry, SymbolInfo, SymbolLookup};
 use crate::types::EdgeKind;
 use std::sync::Arc;
@@ -129,6 +129,51 @@ fn file_ctx_with_imports(imports: Vec<ImportEntry>) -> FileContext {
         imports,
         file_namespace: None,
     }
+}
+
+// ---------------------------------------------------------------------------
+// is_delphi_namespaced_file
+// ---------------------------------------------------------------------------
+
+#[test]
+fn delphi_file_detected_by_vcl_prefix() {
+    let ctx = file_ctx_with_imports(vec![
+        wildcard_import("Vcl.Forms"),
+        wildcard_import("Vcl.Controls"),
+    ]);
+    assert!(is_delphi_namespaced_file(&ctx));
+}
+
+#[test]
+fn delphi_file_detected_by_winapi_prefix() {
+    let ctx = file_ctx_with_imports(vec![wildcard_import("Winapi.Windows")]);
+    assert!(is_delphi_namespaced_file(&ctx));
+}
+
+#[test]
+fn delphi_file_detected_by_firedac_prefix() {
+    let ctx = file_ctx_with_imports(vec![wildcard_import("FireDAC.Comp.Client")]);
+    assert!(is_delphi_namespaced_file(&ctx));
+}
+
+#[test]
+fn fpc_file_not_classified_as_delphi() {
+    // FPC / Lazarus files import with unqualified unit names.
+    let ctx = file_ctx_with_imports(vec![
+        wildcard_import("SysUtils"),
+        wildcard_import("Classes"),
+        wildcard_import("LCLType"),
+    ]);
+    assert!(!is_delphi_namespaced_file(&ctx));
+}
+
+#[test]
+fn mixed_imports_classified_as_delphi_when_any_prefix_matches() {
+    let ctx = file_ctx_with_imports(vec![
+        wildcard_import("SysUtils"),
+        wildcard_import("Winapi.Messages"),
+    ]);
+    assert!(is_delphi_namespaced_file(&ctx));
 }
 
 /// Case-sensitive lookup: only returns symbols whose stored name exactly matches

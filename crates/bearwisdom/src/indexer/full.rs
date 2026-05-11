@@ -1010,8 +1010,20 @@ pub(crate) fn parse_file_with_demand(
         format!("{:x}", hasher.finalize())
     };
 
-    let content = String::from_utf8(bytes)
-        .with_context(|| format!("Non-UTF-8 content in {}", walked.relative_path))?;
+    // Fast path: valid UTF-8 avoids an allocation. Lossy fallback handles
+    // legacy Windows-1252 / Latin-1 source files (Delphi, older C/Fortran);
+    // invalid byte sequences become U+FFFD, which does not appear in any
+    // identifier, so parsing and resolution are unaffected.
+    let content = match String::from_utf8(bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            debug!(
+                "Non-UTF-8 bytes in {} — using lossy decode",
+                walked.relative_path
+            );
+            String::from_utf8_lossy(e.as_bytes()).into_owned()
+        }
+    };
 
     let size = content.len() as u64;
     let line_count = content.lines().count() as u32;
