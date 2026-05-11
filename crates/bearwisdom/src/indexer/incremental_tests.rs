@@ -431,3 +431,61 @@ fn blast_radius_zero_when_no_dependents() {
         "No files should be re-resolved when there are no dependents"
     );
 }
+
+/// When a workspace manifest changes between full and incremental runs, the
+/// `packages` table must be refreshed in-place. Earlier behavior only logged
+/// a warning, leaving the resolver and `assign_package_ids` blind to the
+/// new package until the next full reindex.
+#[test]
+fn incremental_rewrites_packages_when_manifest_added() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{"name":"root","workspaces":["packages/*"]}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("packages/web/src")).unwrap();
+    fs::write(dir.path().join("packages/web/src/index.ts"), "export const x = 1;").unwrap();
+
+    let mut db = Database::open_in_memory().unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
+
+    let initial: u32 = db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM packages", [], |r| r.get(0))
+        .unwrap();
+
+    // Drop a new package's package.json on disk — this is the manifest change.
+    fs::create_dir_all(dir.path().join("packages/api/src")).unwrap();
+    fs::write(
+        dir.path().join("packages/api/package.json"),
+        r#"{"name":"@org/api","version":"0.1.0"}"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("packages/api/src/server.ts"),
+        "export function listen() {}",
+    )
+    .unwrap();
+
+    incremental_index(&mut db, dir.path(), None).unwrap();
+
+    let after: u32 = db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM packages", [], |r| r.get(0))
+        .unwrap();
+    assert!(
+        after > initial,
+        "manifest change should grow packages table: was {initial}, now {after}",
+    );
+
+    let api_present: u32 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM packages WHERE declared_name = '@org/api'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(api_present, 1, "newly added package should be in the table");
+}

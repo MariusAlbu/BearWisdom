@@ -710,6 +710,14 @@ pub fn assign_package_ids(
             // Normalize separators for comparison.
             let file_path = pf.path.replace('\\', "/");
             let pkg_path = pkg.path.replace('\\', "/");
+            if pkg_path.is_empty() {
+                // Root package: any file inside the project belongs to it.
+                // Sort order (length desc) ensures this only fires when no
+                // proper-prefix package matched first. Mirrors
+                // `package_id_for_path` in `full.rs`.
+                pf.package_id = pkg.id;
+                break;
+            }
             if file_path.starts_with(&pkg_path)
                 && (file_path.len() == pkg_path.len()
                     || file_path.as_bytes()[pkg_path.len()] == b'/')
@@ -814,57 +822,5 @@ pub fn load_symbol_id_map(db: &Database) -> Result<SymbolIdMap> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::PackageInfo;
-
-    #[test]
-    fn declared_name_round_trips_through_db() {
-        let db = Database::open_in_memory().unwrap();
-        let packages = vec![
-            PackageInfo {
-                id: None,
-                name: "web".into(),
-                path: "web".into(),
-                kind: Some("npm".into()),
-                manifest: Some("web/package.json".into()),
-                declared_name: Some("@myorg/web".into()),
-            },
-            PackageInfo {
-                id: None,
-                name: "shared".into(),
-                path: "shared".into(),
-                kind: Some("npm".into()),
-                manifest: Some("shared/package.json".into()),
-                declared_name: Some("@myorg/shared".into()),
-            },
-        ];
-
-        let written = write_packages(&db, &packages).unwrap();
-        assert_eq!(written.len(), 2);
-
-        // Load back via the incremental loader — declared_name must survive.
-        let loaded = load_packages_from_db(&db).unwrap();
-        let web = loaded.iter().find(|p| p.name == "web").expect("web");
-        let shared = loaded.iter().find(|p| p.name == "shared").expect("shared");
-        assert_eq!(web.declared_name.as_deref(), Some("@myorg/web"));
-        assert_eq!(shared.declared_name.as_deref(), Some("@myorg/shared"));
-    }
-
-    #[test]
-    fn declared_name_nullable_when_absent() {
-        let db = Database::open_in_memory().unwrap();
-        let packages = vec![PackageInfo {
-            id: None,
-            name: "legacy".into(),
-            path: "legacy".into(),
-            kind: None,
-            manifest: None,
-            declared_name: None,
-        }];
-        write_packages(&db, &packages).unwrap();
-        let loaded = load_packages_from_db(&db).unwrap();
-        assert_eq!(loaded.len(), 1);
-        assert!(loaded[0].declared_name.is_none());
-    }
-}
+#[path = "write_tests.rs"]
+mod tests;

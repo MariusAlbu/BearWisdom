@@ -172,9 +172,11 @@ fn run_incremental_pipeline(
         .collect();
 
     // --- Step 1: Manifest change check (5b) ---
-    // If any changed file is a package manifest, package detection may be stale.
-    // Full re-detection incrementally is not yet supported; warn and let the
-    // caller decide whether to trigger a full reindex.
+    // If any changed file is a package manifest, package detection is stale.
+    // Re-run filesystem-only detection and rewrite the `packages` table so
+    // downstream `package_id` assignment, resolver `ProjectContext`, and
+    // workspace graph queries all see the new layout. This is the same
+    // detection pass `full_index` runs at step 3b.
     const MANIFEST_NAMES: &[&str] = &[
         "package.json", "Cargo.toml", "go.mod", "pyproject.toml",
         "pubspec.yaml", "mix.exs", "Package.swift", "composer.json",
@@ -186,12 +188,56 @@ fn run_incremental_pipeline(
             .map(|n| MANIFEST_NAMES.contains(&n))
             .unwrap_or(false)
     });
-    if manifest_changed {
-        warn!(
-            "A package manifest file changed. Package membership may be stale. \
-             Run a full reindex to update package assignments."
-        );
-    }
+
+    // Load packages once and reuse for `assign_package_ids` AND the resolver's
+    // `ProjectContext::initialize`. The full pipeline detects packages first,
+    // writes them, then threads the vec through both writes and resolution;
+    // incremental was previously dropping it on the floor at the resolver
+    // step, which silently degraded monorepo-aware resolution after any
+    // incremental save.
+    let packages: Vec<crate::types::PackageInfo> = if manifest_changed {
+        let (fresh, workspace_kind) =
+            crate::indexer::stage_discover::detect_packages(project_root);
+        let written = if fresh.is_empty() {
+            // Manifest removed: clear the table so stale packages don't bleed
+            // through. Stamping `package_id` to NULL for orphaned files is
+            // out of scope for this branch — they'll re-stamp on the next
+            // full reindex.
+            warn!("Manifest change yielded zero packages; package rows not rewritten.");
+            match write::load_packages_from_db(db) {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!("Failed to reload packages after empty detection: {e}");
+                    Vec::new()
+                }
+            }
+        } else {
+            match write::write_packages(db, &fresh) {
+                Ok(w) => {
+                    info!("Manifest changed; rewrote {} workspace package(s)", w.len());
+                    if let Some(kind) = workspace_kind {
+                        if let Err(e) = changeset::set_meta(db, "workspace_kind", &kind) {
+                            warn!("Failed to store workspace_kind: {e}");
+                        }
+                    }
+                    w
+                }
+                Err(e) => {
+                    warn!("Failed to rewrite packages after manifest change: {e}");
+                    write::load_packages_from_db(db).unwrap_or_default()
+                }
+            }
+        };
+        written
+    } else {
+        match write::load_packages_from_db(db) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!("Failed to load packages from DB: {e}");
+                Vec::new()
+            }
+        }
+    };
 
     // --- Step 2: Blast radius (find dependents before CASCADE deletes edges) ---
     let dependent_paths = find_dependent_files(db, &changed_paths)?;
@@ -235,13 +281,10 @@ fn run_incremental_pipeline(
     }
 
     // --- Step 6: Assign package_id (5a) ---
-    // Load existing packages from DB and assign to parsed files before writing.
-    // This ensures new/modified files always have the correct package_id.
-    if !parsed.is_empty() {
-        match write::load_packages_from_db(db) {
-            Ok(packages) => write::assign_package_ids(&mut parsed, &packages),
-            Err(e) => warn!("Failed to load packages for package_id assignment: {e}"),
-        }
+    // Use the package list hoisted above (re-detected if a manifest changed,
+    // else loaded fresh from DB) to stamp `package_id` on parsed files.
+    if !parsed.is_empty() && !packages.is_empty() {
+        write::assign_package_ids(&mut parsed, &packages);
     }
 
     if parsed.is_empty() && cs.deleted.is_empty() {
@@ -371,17 +414,16 @@ fn run_incremental_pipeline(
     }
 
     // --- Step 11: Cross-file resolution ---
-    // Phase 4: construct the ProjectContext through the ecosystem-aware
-    // initializer so incremental resolution sees the same `active_ecosystems`
-    // set the full index pipeline sees. Language presence is taken from the
-    // current parsed batch; that's adequate for resolver filtering since
-    // refs in the unchanged file slice were already resolved against an
-    // earlier ctx and only the parsed slice is re-resolved here.
+    // Construct ProjectContext with the same `packages` vec used to stamp
+    // `package_id` above. Resolution-time consumers (per-package manifest
+    // lookup, declared-name workspace map, alias resolution) need this to
+    // produce the same answers as the full pipeline; passing an empty slice
+    // silently strips sibling-package resolution.
     let distinct_langs: HashSet<String> =
         parsed.iter().map(|pf| pf.language.clone()).collect();
     let project_ctx = super::project_context::ProjectContext::initialize(
         project_root,
-        &[], // incremental path doesn't re-detect workspace packages
+        &packages,
         distinct_langs,
         crate::ecosystem::default_registry(),
     );
