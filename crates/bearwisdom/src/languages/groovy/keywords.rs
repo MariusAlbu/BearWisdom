@@ -21,9 +21,10 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "String", "Object", "List", "Map", "GString", "BigDecimal", "BigInteger",
     // DGM — collection / Iterable mixins
     "each", "eachWithIndex", "collect", "collectEntries", "collectMany",
-    "find", "findAll", "findResult", "any", "every", "inject",
+    "find", "findAll", "findResult", "findResults", "any", "every", "inject",
     "sort", "unique", "groupBy", "flatten", "sum", "min", "max", "count", "size",
     "first", "last", "head", "tail", "take", "drop",
+    "takeRight", "dropRight", "takeWhile", "dropWhile",
     "toList", "toSet", "toSorted", "addAll", "join",
     "push", "pop", "combinations", "subsequences", "permutations",
     "transpose", "intersect", "disjoint", "containsAll",
@@ -35,7 +36,13 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "isInteger", "isLong", "isFloat", "isDouble", "isBigInteger",
     "isBigDecimal", "isNumber",
     "toBigInteger", "toBigDecimal", "toInteger", "toLong", "toFloat", "toDouble",
-    "reverse", "format",
+    "reverse", "format", "tokenize",
+    // DGM — File / GDK DefaultGroovyMethods on File
+    "eachFile", "eachFileRecurse", "eachDir", "eachDirRecurse",
+    "eachFileMatch", "eachDirMatch",
+    "deleteDir",
+    "getText", "readBytes", "readLines", "withReader", "withInputStream",
+    "withOutputStream", "withWriter", "withPrintWriter",
     // DGM — Object (mixed onto everything)
     "with", "tap", "asType", "asBoolean",
     "getClass", "toString", "hashCode", "equals",

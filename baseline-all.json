@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-05-10T00:00:00Z",
+  "captured_at": "2026-05-11T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -3224,14 +3224,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 94
+        "min_resolution_rate": 96
       },
-      "code_chunks": 28004,
+      "code_chunks": 27929,
       "files": 1177,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 10829,
-      "internal_unresolved": 685,
+      "internal_edges": 11160,
+      "internal_unresolved": 348,
       "languages": {
         "css": 3,
         "dockerfile": 2,
@@ -3247,35 +3247,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/groovy-codenarc",
       "perf": {
-        "end_ws_mb": 80,
-        "files_per_sec": 90,
-        "index_duration_ms": 13011
+        "end_ws_mb": 79,
+        "files_per_sec": 97,
+        "index_duration_ms": 12196
       },
       "project": "groovy-codenarc",
-      "resolution_rate": 94.05,
+      "resolution_rate": 96.98,
       "routes": 0,
-      "symbols": 12246,
+      "symbols": 12150,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 561,
+        "groovy.calls": 280,
         "groovy.implements": 1,
         "groovy.inherits": 15,
         "html.calls": 8,
-        "java.calls": 10,
+        "java.calls": 9,
         "java.instantiates": 4,
-        "java.type_ref": 78,
+        "java.type_ref": 23,
         "javascript.calls": 8
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 73
+        "min_resolution_rate": 82
       },
-      "code_chunks": 2398,
+      "code_chunks": 2437,
       "files": 163,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1479,
-      "internal_unresolved": 533,
+      "internal_edges": 1636,
+      "internal_unresolved": 357,
       "languages": {
         "groovy": 40,
         "java": 27,
@@ -3289,31 +3289,31 @@
       "perf": {
         "end_ws_mb": 72,
         "files_per_sec": 3,
-        "index_duration_ms": 58397
+        "index_duration_ms": 59228
       },
       "project": "groovy-gradle-plugin",
-      "resolution_rate": 73.51,
+      "resolution_rate": 82.09,
       "routes": 0,
-      "symbols": 1076,
+      "symbols": 1110,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 185,
+        "groovy.calls": 58,
         "java.calls": 15,
         "java.instantiates": 3,
-        "java.type_ref": 178,
-        "kotlin.calls": 111,
-        "kotlin.type_ref": 41
+        "java.type_ref": 162,
+        "kotlin.calls": 98,
+        "kotlin.type_ref": 21
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 93
+        "min_resolution_rate": 95
       },
-      "code_chunks": 79505,
+      "code_chunks": 79360,
       "files": 1872,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 51150,
-      "internal_unresolved": 3588,
+      "internal_edges": 49982,
+      "internal_unresolved": 2509,
       "languages": {
         "c": 3,
         "css": 1,
@@ -3335,23 +3335,23 @@
       },
       "path": "F:/Work/Projects/TestProjects/groovy-nextflow",
       "perf": {
-        "end_ws_mb": 212,
-        "files_per_sec": 18,
-        "index_duration_ms": 106496
+        "end_ws_mb": 203,
+        "files_per_sec": 17,
+        "index_duration_ms": 109052
       },
       "project": "groovy-nextflow",
-      "resolution_rate": 93.45,
+      "resolution_rate": 95.22,
       "routes": 0,
-      "symbols": 20570,
+      "symbols": 19906,
       "unresolved_by_lang_kind": {
         "c.type_ref": 16,
-        "groovy.calls": 3112,
+        "groovy.calls": 2039,
         "groovy.implements": 10,
         "groovy.inherits": 14,
         "html.calls": 1,
-        "java.calls": 102,
-        "java.instantiates": 52,
-        "java.type_ref": 227,
+        "java.calls": 101,
+        "java.instantiates": 50,
+        "java.type_ref": 224,
         "javascript.calls": 42,
         "javascript.type_ref": 9,
         "python.calls": 2,
@@ -3360,14 +3360,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 96
+        "min_resolution_rate": 97
       },
-      "code_chunks": 30314,
+      "code_chunks": 30344,
       "files": 1291,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 38033,
-      "internal_unresolved": 1400,
+      "internal_edges": 37562,
+      "internal_unresolved": 884,
       "languages": {
         "groovy": 606,
         "html": 1,
@@ -3380,16 +3380,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/groovy-spock",
       "perf": {
-        "end_ws_mb": 373,
-        "files_per_sec": 82,
-        "index_duration_ms": 15756
+        "end_ws_mb": 95,
+        "files_per_sec": 85,
+        "index_duration_ms": 15206
       },
       "project": "groovy-spock",
-      "resolution_rate": 96.45,
+      "resolution_rate": 97.7,
       "routes": 2,
-      "symbols": 12889,
+      "symbols": 12899,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 898,
+        "groovy.calls": 382,
         "groovy.implements": 14,
         "groovy.inherits": 10,
         "java.calls": 147,
