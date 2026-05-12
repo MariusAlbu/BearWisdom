@@ -75,7 +75,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | Plugin           | Category | Unresolved | Status | Note |
 |------------------|----------|-----------:|:------:|------|
 | nunjucks         | template | 0   | ✅ | stale baseline resolved; imports refs now classified correctly in full-index path; remaining 28 unresolved are in `.js` files inside nunjucks projects (browser builtins), not nunjucks language itself |
-| scss             | markup   | 73  | 🟡 | `.sass` indented-syntax recovery + `@use ... as alias` round-trip landed; residual is `@include alias.mixin()` patterns where the alias targets an unindexed npm package |
+| scss             | markup   | 3   | ✅ | sass-true externals via `package_ships_scss` npm gate; multi-selector / pseudo-selector / compound-selector extraction; class text-scan fallback for parse-error files; `.css`-extension SCSS partials promoted via content sniff |
 | hcl              | config   | 0   | ✅ | 100% resolved: `compact`/`regex_replace` added to built-in keywords; provider alias refs (`aws.remote`) resolved to underlying provider symbol |
 | heex             | template | 1   | ✅ | HeexResolver: bare `<.component>` calls now resolve via ext:/internal symbol lookup; residual is a JS array method in an embedded `<script>` block |
 | make             | config   | 29  | 🟢 | special-target / pattern-stem / file-extension prereq suppression landed; residual is Erlang-define-inside-Makefile parse artifacts |
