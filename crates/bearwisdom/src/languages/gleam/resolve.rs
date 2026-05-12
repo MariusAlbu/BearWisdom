@@ -103,6 +103,7 @@ impl LanguageResolver for GleamResolver {
                     confidence: 1.0,
                     strategy: "gleam_import_qualified",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
 
@@ -114,6 +115,7 @@ impl LanguageResolver for GleamResolver {
                         confidence: 1.0,
                         strategy: "gleam_import_file",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

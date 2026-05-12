@@ -108,6 +108,7 @@ impl LanguageResolver for OdinResolver {
                         confidence: 0.95,
                         strategy: "odin_same_package",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

@@ -86,6 +86,7 @@ impl LanguageResolver for YamlResolver {
                         confidence: 1.0,
                         strategy: "yaml_uses",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

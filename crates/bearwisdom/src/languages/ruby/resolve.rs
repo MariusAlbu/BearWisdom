@@ -150,6 +150,7 @@ impl LanguageResolver for RubyResolver {
                         confidence: 1.0,
                         strategy: "ruby_require_file",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -184,6 +185,7 @@ impl LanguageResolver for RubyResolver {
                     confidence: 0.95,
                     strategy: "ruby_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -203,6 +205,7 @@ impl LanguageResolver for RubyResolver {
                         confidence: 1.0,
                         strategy: "ruby_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -217,6 +220,7 @@ impl LanguageResolver for RubyResolver {
                     confidence: 1.0,
                     strategy: "ruby_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -232,6 +236,7 @@ impl LanguageResolver for RubyResolver {
                         confidence: 1.0,
                         strategy: "ruby_same_module",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -248,6 +253,7 @@ impl LanguageResolver for RubyResolver {
                         confidence: 1.0,
                         strategy: "ruby_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -258,6 +264,7 @@ impl LanguageResolver for RubyResolver {
                         confidence: 1.0,
                         strategy: "ruby_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -310,6 +317,7 @@ impl LanguageResolver for RubyResolver {
                         confidence: 0.8,
                         strategy: "ruby_external_gem",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -342,6 +350,7 @@ impl LanguageResolver for RubyResolver {
                     confidence: 0.80,
                     strategy: "ruby_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

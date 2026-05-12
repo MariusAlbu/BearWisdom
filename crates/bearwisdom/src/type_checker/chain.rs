@@ -323,6 +323,7 @@ pub fn resolve_via_chain(
                 confidence: 1.0,
                 strategy: chain_strategy(strategy),
                 resolved_yield_type: yield_type,
+                flow_emit: None,
             });
         }
     }
@@ -366,6 +367,7 @@ pub fn resolve_via_chain(
                 confidence: 1.0,
                 strategy: chain_strategy_unique(strategy),
                 resolved_yield_type: yield_type,
+                flow_emit: None,
             });
         }
         _ => {
@@ -652,6 +654,7 @@ fn resolve_final_via_namespace(
                     confidence: 0.95,
                     strategy: chain_strategy(config.strategy_prefix),
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

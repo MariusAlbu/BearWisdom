@@ -106,6 +106,7 @@ impl LanguageResolver for DartResolver {
                     confidence: 0.95,
                     strategy: "dart_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -142,6 +143,7 @@ impl LanguageResolver for DartResolver {
                         confidence: 1.0,
                         strategy: "dart_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -155,6 +157,7 @@ impl LanguageResolver for DartResolver {
                     confidence: 1.0,
                     strategy: "dart_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -167,6 +170,7 @@ impl LanguageResolver for DartResolver {
                     confidence: 0.85,
                     strategy: "dart_by_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -195,6 +199,7 @@ impl LanguageResolver for DartResolver {
                     confidence: 0.80,
                     strategy: "dart_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

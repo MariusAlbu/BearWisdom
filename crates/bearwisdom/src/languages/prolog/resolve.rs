@@ -91,6 +91,7 @@ impl LanguageResolver for PrologResolver {
                             confidence: 1.0,
                             strategy: "prolog_scope_chain",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -102,6 +103,7 @@ impl LanguageResolver for PrologResolver {
                         confidence: 1.0,
                         strategy: "prolog_same_file",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -151,6 +153,7 @@ impl LanguageResolver for PrologResolver {
                 confidence: 0.85,
                 strategy: "prolog_runtime_fallback",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
         if let Some(sym) = internal_hit {
@@ -159,6 +162,7 @@ impl LanguageResolver for PrologResolver {
                 confidence: 0.80,
                 strategy: "prolog_project_by_name",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
 

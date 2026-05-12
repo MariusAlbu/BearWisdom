@@ -9091,11 +9091,13 @@
       "assertions": {
         "min_resolution_rate": 98
       },
-      "code_chunks": 19365,
+      "code_chunks": 18862,
       "files": 1255,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "internal_edges": 16709,
+      "flow_edge_types": {
+        "http_call": 28
+      },
+      "flow_edges": 28,
+      "internal_edges": 16700,
       "internal_unresolved": 250,
       "languages": {
         "css": 4,
@@ -9114,9 +9116,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 113,
+        "end_ws_mb": 118,
         "files_per_sec": 39,
-        "index_duration_ms": 31779
+        "index_duration_ms": 32122
       },
       "project": "ts-rallly",
       "resolution_rate": 98.53,
@@ -9468,19 +9470,21 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 89
+        "min_resolution_rate": 58
       },
-      "code_chunks": 4412,
-      "files": 288,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "internal_edges": 1345,
-      "internal_unresolved": 165,
+      "code_chunks": 4346,
+      "files": 294,
+      "flow_edge_types": {
+        "http_call": 2
+      },
+      "flow_edges": 2,
+      "internal_edges": 940,
+      "internal_unresolved": 664,
       "languages": {
         "css": 2,
         "handlebars": 3,
         "html": 1,
-        "javascript": 88,
+        "javascript": 94,
         "json": 2,
         "markdown": 5,
         "scss": 9,
@@ -9490,17 +9494,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "perf": {
-        "end_ws_mb": 414,
-        "files_per_sec": 83,
-        "index_duration_ms": 3450
+        "end_ws_mb": 49,
+        "files_per_sec": 195,
+        "index_duration_ms": 1505
       },
       "project": "vue-element-admin",
-      "resolution_rate": 89.07,
+      "resolution_rate": 58.6,
       "routes": 0,
-      "symbols": 2387,
+      "symbols": 2366,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 109,
-        "javascript.imports": 2,
+        "javascript.calls": 610,
         "javascript.type_ref": 7,
         "vue.calls": 47
       }

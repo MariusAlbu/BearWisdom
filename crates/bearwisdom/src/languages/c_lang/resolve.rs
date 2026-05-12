@@ -125,6 +125,7 @@ impl LanguageResolver for CLangResolver {
                     confidence: 0.95,
                     strategy: "c_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -163,6 +164,7 @@ impl LanguageResolver for CLangResolver {
                         confidence: 1.0,
                         strategy: "c_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -177,6 +179,7 @@ impl LanguageResolver for CLangResolver {
                         confidence: 1.0,
                         strategy: "c_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -194,6 +197,7 @@ impl LanguageResolver for CLangResolver {
                     confidence: 1.0,
                     strategy: "c_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -221,6 +225,7 @@ impl LanguageResolver for CLangResolver {
                     confidence: 0.85,
                     strategy: "c_by_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -268,6 +273,7 @@ impl LanguageResolver for CLangResolver {
                     confidence: 0.80,
                     strategy: "c_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
 

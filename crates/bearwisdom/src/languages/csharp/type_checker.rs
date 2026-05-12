@@ -175,6 +175,7 @@ impl TypeChecker for CSharpChecker {
                     confidence: 1.0,
                     strategy: "csharp_chain_resolution",
                     resolved_yield_type: csharp_yield_type(sym, &last.type_args, lookup, &mut env),
+                    flow_emit: None,
                 });
             }
         }
@@ -192,6 +193,7 @@ impl TypeChecker for CSharpChecker {
                                 resolved_yield_type: csharp_yield_type(
                                     sym, &last.type_args, lookup, &mut env,
                                 ),
+                                flow_emit: None,
                             });
                         }
                     }
@@ -206,6 +208,7 @@ impl TypeChecker for CSharpChecker {
                     confidence: 0.90,
                     strategy: "csharp_chain_resolution",
                     resolved_yield_type: csharp_yield_type(sym, &last.type_args, lookup, &mut env),
+                    flow_emit: None,
                 });
             }
         }

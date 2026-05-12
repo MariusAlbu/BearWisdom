@@ -199,6 +199,12 @@ pub struct Resolution {
     /// per-file local-type cache for forward flow inference — see
     /// `LocalTypeCache` and `SymbolLookup::record_local_type`.
     pub resolved_yield_type: Option<String>,
+    /// Optionally emitted when the resolved ref's shape matches a cross-tier
+    /// flow-edge pattern. Accumulated by the resolve loop and bulk-written to
+    /// `flow_edges` after the main edge transaction commits.
+    ///
+    /// `None` for the vast majority of refs. Opt-in per resolver.
+    pub flow_emit: Option<crate::indexer::resolve::flow_emit::FlowEmission>,
 }
 
 /// Flattened symbol info used during resolution lookups.
@@ -2688,6 +2694,21 @@ pub trait LanguageResolver: Send + Sync {
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution>;
 
+    /// Detect a cross-tier flow-edge pattern for a ref, independent of
+    /// whether `resolve` succeeded.
+    ///
+    /// Called for every `Calls`-kind ref before the heuristic fallback.
+    /// The default returns `None` (no emission). Language resolvers that
+    /// recognize HTTP-client chains, IPC calls, WebSocket emits, etc. override
+    /// this to emit a `FlowEmission` without needing a resolved target symbol.
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+    ) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+        None
+    }
+
     /// Check whether a target symbol is visible from the reference site.
     /// Default: always visible (no filtering).
     fn is_visible(
@@ -2794,6 +2815,7 @@ pub fn resolve_common(
                         confidence: 1.0,
                         strategy: concat_strategy(lang_prefix, "module_qualified"),
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -2813,6 +2835,7 @@ pub fn resolve_common(
                     confidence: 0.95,
                     strategy: concat_strategy(lang_prefix, "module_file"),
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -2844,6 +2867,7 @@ pub fn resolve_common(
                         confidence: 0.95,
                         strategy: concat_strategy(lang_prefix, "import"),
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -2873,6 +2897,7 @@ pub fn resolve_common(
                         confidence: 0.95,
                         strategy: concat_strategy(lang_prefix, "import"),
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -2889,6 +2914,7 @@ pub fn resolve_common(
                     confidence: 1.0,
                     strategy: concat_strategy(lang_prefix, "scope_chain"),
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -2902,6 +2928,7 @@ pub fn resolve_common(
                 confidence: 1.0,
                 strategy: concat_strategy(lang_prefix, "same_file"),
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
     }
@@ -2915,6 +2942,7 @@ pub fn resolve_common(
                     confidence: 1.0,
                     strategy: concat_strategy(lang_prefix, "qualified_name"),
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

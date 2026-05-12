@@ -185,6 +185,7 @@ impl LanguageResolver for ScssResolver {
                 confidence: 0.85,
                 strategy: "scss_bare_name",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
         None

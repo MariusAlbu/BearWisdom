@@ -121,6 +121,7 @@ impl LanguageResolver for MarkdownResolver {
                         confidence: 1.0,
                         strategy: "markdown_relative_link",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

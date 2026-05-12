@@ -131,6 +131,7 @@ impl LanguageResolver for CSharpResolver {
                         confidence: 1.0,
                         strategy: "csharp_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -149,6 +150,7 @@ impl LanguageResolver for CSharpResolver {
                         confidence: 1.0,
                         strategy: "csharp_same_namespace",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -169,6 +171,7 @@ impl LanguageResolver for CSharpResolver {
                                 confidence: 1.0,
                                 strategy: "csharp_using_directive",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -185,6 +188,7 @@ impl LanguageResolver for CSharpResolver {
                         confidence: 1.0,
                         strategy: "csharp_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -208,6 +212,7 @@ impl LanguageResolver for CSharpResolver {
                                     confidence: 0.95,
                                     strategy: "csharp_field_type_chain",
                                     resolved_yield_type: None,
+                                    flow_emit: None,
                                 });
                             }
                         }
@@ -223,6 +228,7 @@ impl LanguageResolver for CSharpResolver {
                                                 confidence: 0.90,
                                                 strategy: "csharp_field_type_chain",
                                                 resolved_yield_type: None,
+                                                flow_emit: None,
                                             });
                                         }
                                     }

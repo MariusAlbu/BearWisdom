@@ -82,6 +82,7 @@ impl LanguageResolver for EjsResolver {
                             confidence: 1.0,
                             strategy: "ejs_partial",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }

@@ -87,6 +87,7 @@ impl LanguageResolver for HeexResolver {
                 confidence: 0.90,
                 strategy: "heex_ext_component",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
 
@@ -103,6 +104,7 @@ impl LanguageResolver for HeexResolver {
                 confidence: 0.80,
                 strategy: "heex_internal_component",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
 

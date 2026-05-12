@@ -71,6 +71,7 @@ impl LanguageResolver for SqlResolver {
                     confidence: 1.0,
                     strategy: "sql_name_lookup",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

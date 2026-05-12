@@ -186,6 +186,7 @@ impl LanguageResolver for PowerShellResolver {
                         confidence: 0.80,
                         strategy: "powershell_bare_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
 
@@ -204,6 +205,7 @@ impl LanguageResolver for PowerShellResolver {
                         confidence: 0.85,
                         strategy: "powershell_dotnet_bare_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

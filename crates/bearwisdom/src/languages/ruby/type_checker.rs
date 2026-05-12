@@ -120,6 +120,7 @@ impl TypeChecker for RubyChecker {
                     confidence: 1.0,
                     strategy: "ruby_chain_resolution",
                     resolved_yield_type: simple_yield_type(sym, lookup),
+                    flow_emit: None,
                 });
             }
         }
@@ -131,6 +132,7 @@ impl TypeChecker for RubyChecker {
                     confidence: 0.90,
                     strategy: "ruby_chain_resolution",
                     resolved_yield_type: simple_yield_type(sym, lookup),
+                    flow_emit: None,
                 });
             }
         }

@@ -86,6 +86,7 @@ impl LanguageResolver for HandlebarsResolver {
                         confidence: 1.0,
                         strategy: "handlebars_partial",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

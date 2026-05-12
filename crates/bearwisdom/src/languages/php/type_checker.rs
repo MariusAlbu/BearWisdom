@@ -157,6 +157,7 @@ impl TypeChecker for PhpChecker {
                     confidence: 1.0,
                     strategy: "php_chain_resolution",
                     resolved_yield_type: simple_yield_type(sym, lookup),
+                    flow_emit: None,
                 });
             }
         }
@@ -171,6 +172,7 @@ impl TypeChecker for PhpChecker {
                             confidence: 0.95,
                             strategy: "php_chain_resolution",
                             resolved_yield_type: simple_yield_type(sym, lookup),
+                            flow_emit: None,
                         });
                     }
                 }
@@ -184,6 +186,7 @@ impl TypeChecker for PhpChecker {
                     confidence: 0.90,
                     strategy: "php_chain_resolution",
                     resolved_yield_type: simple_yield_type(sym, lookup),
+                    flow_emit: None,
                 });
             }
         }
@@ -202,6 +205,7 @@ impl TypeChecker for PhpChecker {
                                 confidence: 0.85,
                                 strategy: "php_chain_inherited",
                                 resolved_yield_type: simple_yield_type(sym, lookup),
+                                flow_emit: None,
                             });
                         }
                     }
@@ -212,6 +216,7 @@ impl TypeChecker for PhpChecker {
                                 confidence: 0.80,
                                 strategy: "php_chain_inherited",
                                 resolved_yield_type: simple_yield_type(sym, lookup),
+                                flow_emit: None,
                             });
                         }
                     }

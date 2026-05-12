@@ -92,6 +92,7 @@ impl LanguageResolver for LuaResolver {
                     confidence: 0.95,
                     strategy: "lua_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -127,6 +128,7 @@ impl LanguageResolver for LuaResolver {
                     confidence: 0.80,
                     strategy: "lua_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

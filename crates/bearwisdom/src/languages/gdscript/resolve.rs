@@ -115,6 +115,7 @@ impl LanguageResolver for GDScriptResolver {
                     confidence: if strategy == "gdscript_synthetic_global" { 0.95 } else { 0.9 },
                     strategy,
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

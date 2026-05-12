@@ -92,6 +92,7 @@ impl LanguageResolver for VbaResolver {
                     confidence: 0.95,
                     strategy: "vba_case_insensitive",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

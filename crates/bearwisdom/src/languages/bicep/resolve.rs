@@ -179,6 +179,7 @@ fn resolve_against_bicep_runtime(
             confidence: 0.9,
             strategy: "bicep_runtime_grammar",
             resolved_yield_type: None,
+            flow_emit: None,
         });
     }
     None

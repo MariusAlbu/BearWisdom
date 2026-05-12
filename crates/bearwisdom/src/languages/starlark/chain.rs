@@ -81,6 +81,7 @@ pub(super) fn resolve_ctx_chain_direct(
                 confidence: 1.0,
                 strategy: "starlark_ctx_chain",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
     }

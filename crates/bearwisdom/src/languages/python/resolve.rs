@@ -124,6 +124,7 @@ impl LanguageResolver for PythonResolver {
                     confidence: 0.95,
                     strategy: "python_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -161,6 +162,7 @@ impl LanguageResolver for PythonResolver {
                             confidence: 1.0,
                             strategy: "python_import_file",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -173,6 +175,7 @@ impl LanguageResolver for PythonResolver {
                             confidence: 1.0,
                             strategy: "python_import",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -216,6 +219,7 @@ impl LanguageResolver for PythonResolver {
                             confidence: 1.0,
                             strategy: "python_ref_module",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -240,6 +244,7 @@ impl LanguageResolver for PythonResolver {
                             confidence: 0.95,
                             strategy: "python_ref_module_path",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -266,6 +271,7 @@ impl LanguageResolver for PythonResolver {
                                 confidence: 0.90,
                                 strategy: "python_ref_module_via_import",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -299,6 +305,7 @@ impl LanguageResolver for PythonResolver {
                         confidence: 1.0,
                         strategy: "python_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -317,6 +324,7 @@ impl LanguageResolver for PythonResolver {
                     confidence: 1.0,
                     strategy: "python_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -330,6 +338,7 @@ impl LanguageResolver for PythonResolver {
                         confidence: 1.0,
                         strategy: "python_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -356,6 +365,7 @@ impl LanguageResolver for PythonResolver {
                                 confidence: 1.0,
                                 strategy: "python_module_qualified",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -376,6 +386,7 @@ impl LanguageResolver for PythonResolver {
                                 confidence: 0.90,
                                 strategy: "python_module_qualified_by_name",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -399,6 +410,7 @@ impl LanguageResolver for PythonResolver {
                                 confidence: 0.90,
                                 strategy: "python_wildcard_import",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -427,6 +439,7 @@ impl LanguageResolver for PythonResolver {
                         confidence: 1.0,
                         strategy: "python_from_import",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -450,6 +463,7 @@ impl LanguageResolver for PythonResolver {
                         confidence: 0.95,
                         strategy: "python_from_import_prefix",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -500,6 +514,7 @@ impl LanguageResolver for PythonResolver {
                     confidence: 0.80,
                     strategy: "python_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

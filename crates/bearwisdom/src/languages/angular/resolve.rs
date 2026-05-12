@@ -108,6 +108,7 @@ impl LanguageResolver for AngularResolver {
                             confidence: 1.0,
                             strategy: "angular_selector_map",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                     // The class is indexed by qname — also try by_name as fallback.
@@ -119,6 +120,7 @@ impl LanguageResolver for AngularResolver {
                                 confidence: 1.0,
                                 strategy: "angular_selector_map",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }

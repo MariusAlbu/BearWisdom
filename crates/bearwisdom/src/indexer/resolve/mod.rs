@@ -10,6 +10,7 @@
 // =============================================================================
 
 pub mod engine;
+pub mod flow_emit;
 mod heuristic;
 pub mod rules;
 
@@ -24,6 +25,8 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
+use flow_emit::FlowEmission;
+
 // Per-file output buffer. Each rayon worker fills its own; the main thread
 // merges + bulk-writes after the parallel section. Avoids sharing the
 // rusqlite Transaction across workers (it isn't `Sync`).
@@ -35,6 +38,10 @@ struct FileWriteBuf {
     externals: Vec<(i64, String, &'static str, u32, String, Option<i64>)>,
     /// (source_id, target_name, kind, source_line, module, package_id, from_snippet)
     unresolved: Vec<(i64, String, &'static str, u32, Option<String>, Option<i64>, bool)>,
+    /// Flow-edge emissions from resolver-detected patterns.
+    /// Each entry: (file_path, source_line, emission).
+    /// The file_path is resolved to a DB file_id during flush.
+    flow_emissions: Vec<(String, u32, FlowEmission)>,
 }
 
 impl FileWriteBuf {
@@ -42,6 +49,7 @@ impl FileWriteBuf {
         self.edges.append(&mut other.edges);
         self.externals.append(&mut other.externals);
         self.unresolved.append(&mut other.unresolved);
+        self.flow_emissions.append(&mut other.flow_emissions);
     }
 }
 
@@ -194,6 +202,89 @@ fn flush_resolve_buf(
     }
 
     Ok(())
+}
+
+/// Write resolver-emitted flow edges to the `flow_edges` table.
+///
+/// Each emission carries a file path (not a DB id — the file may not have
+/// been inserted yet when the parallel section ran). This function batches
+/// a `SELECT id FROM files WHERE path IN (...)` to resolve the ids, then
+/// inserts the flow_edges rows for well-known emissions.
+///
+/// Single-ended entries (no target_file_id) record call sites so the
+/// architecture query and quality-check counter can see resolver-detected
+/// HTTP calls, IPC commands, etc., even when no handler side has been
+/// indexed yet.
+fn flush_flow_emissions(
+    conn: &rusqlite::Connection,
+    emissions: &[(String, u32, FlowEmission)],
+) -> Result<u32> {
+    if emissions.is_empty() {
+        return Ok(0);
+    }
+
+    // Batch-look up file_ids for all distinct paths.
+    let mut path_to_id: HashMap<&str, i64> = HashMap::new();
+    {
+        // SELECT in batches of 256 to avoid SQLITE_MAX_VARIABLE_NUMBER.
+        let paths: Vec<&str> = {
+            let mut seen = std::collections::HashSet::new();
+            emissions.iter()
+                .map(|(p, _, _)| p.as_str())
+                .filter(|p| seen.insert(*p))
+                .collect()
+        };
+        for chunk in paths.chunks(256) {
+            let placeholders: String = (0..chunk.len())
+                .map(|i| format!("?{}", i + 1))
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!("SELECT id, path FROM files WHERE path IN ({placeholders})");
+            let mut stmt = conn.prepare_cached(&sql)
+                .context("Failed to prepare file_id lookup for flow emissions")?;
+            let params: Vec<_> = chunk.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+            let mut rows = stmt.query(rusqlite::params_from_iter(params.iter()))
+                .context("Failed to query file_ids for flow emissions")?;
+            while let Some(row) = rows.next()? {
+                let id: i64 = row.get(0)?;
+                let path: String = row.get(1)?;
+                path_to_id.entry(
+                    // SAFETY: the key lifetime must be tied to `emissions`, not to
+                    // the local `path` String. Use the original slice entry.
+                    emissions.iter()
+                        .find(|(p, _, _)| p == &path)
+                        .map(|(p, _, _)| p.as_str())
+                        .unwrap_or_default(),
+                ).or_insert(id);
+            }
+        }
+    }
+
+    let mut stmt = conn
+        .prepare_cached(
+            "INSERT OR IGNORE INTO flow_edges
+                (source_file_id, source_line, edge_type, protocol, http_method, url_pattern, confidence)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        )
+        .context("Failed to prepare resolver flow_edges INSERT")?;
+
+    let mut written = 0u32;
+    for (path, line, emission) in emissions {
+        let Some(&file_id) = path_to_id.get(path.as_str()) else { continue };
+
+        let n = stmt.execute(rusqlite::params![
+            file_id,
+            *line,
+            emission.edge_type(),
+            emission.protocol(),
+            emission.http_method_str(),
+            emission.url_pattern(),
+            0.9_f64,
+        ]).context("Failed to insert resolver flow_edge")?;
+        written += n as u32;
+    }
+
+    Ok(written)
 }
 
 /// Stats returned by `resolve_and_write` / `resolve_iteration`.
@@ -595,7 +686,15 @@ fn resolve_iteration_body(
                     file_package_id: pf.package_id,
                 };
 
-                if let Some(resolution) = resolver.resolve(&file_ctx, &ref_ctx, index) {
+                // Flow-emission detection runs regardless of whether resolution
+                // succeeds — HTTP client calls, IPC, WebSocket emits, etc. are
+                // identifiable from import context alone, even when the chain
+                // walker can't resolve the external symbol to a DB id.
+                if let Some(emission) = resolver.detect_flow_emission(file_ctx, &ref_ctx) {
+                    buf.flow_emissions.push((pf.path.clone(), r.line, emission));
+                }
+
+                if let Some(resolution) = resolver.resolve(file_ctx, &ref_ctx, index) {
                     // R5: if this ref is the RHS of `<lhs> = <expr>`, record
                     // the target's yield type (return type for a method call,
                     // declared type for a field) against the named LHS. The
@@ -639,6 +738,13 @@ fn resolve_iteration_body(
                         resolution.confidence,
                         resolution.strategy,
                     ));
+                    // When both detect_flow_emission and resolution.flow_emit are
+                    // set, prefer the resolution-attached one (it may carry richer
+                    // data from the chain walker). The detect_flow_emission path
+                    // already pushed its entry above; avoid double-emitting.
+                    if let Some(emission) = resolution.flow_emit {
+                        buf.flow_emissions.push((pf.path.clone(), r.line, emission));
+                    }
                     local_stats.resolved += 1;
                     local_stats.engine_resolved += 1;
                     resolved_by_engine = true;
@@ -969,6 +1075,15 @@ fn resolve_iteration_body(
 
     tx.commit()
         .context("Failed to commit resolution transaction")?;
+
+    // Flush resolver-emitted flow edges. Runs after the main transaction
+    // so it can use the committed file rows for the file_id lookup.
+    if !combined_buf.flow_emissions.is_empty() {
+        let n = flush_flow_emissions(conn, &combined_buf.flow_emissions)?;
+        if n > 0 {
+            info!("Resolver-emitted flow edges: {n}");
+        }
+    }
 
     // Drain chain walker bail-outs for the orchestrator's R3 reload pass.
     // Deduped on (current_type, target_name) — the second pass cares about

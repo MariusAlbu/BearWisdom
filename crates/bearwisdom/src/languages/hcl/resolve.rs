@@ -84,6 +84,7 @@ impl LanguageResolver for HclResolver {
                 confidence: 1.0,
                 strategy: "hcl_qname_direct",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
 
@@ -110,6 +111,7 @@ impl LanguageResolver for HclResolver {
                             confidence: 0.95,
                             strategy: "hcl_provider_alias",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -120,6 +122,7 @@ impl LanguageResolver for HclResolver {
                             confidence: 0.85,
                             strategy: "hcl_provider_alias_cross_file",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -144,6 +147,7 @@ impl LanguageResolver for HclResolver {
                         confidence: 1.0,
                         strategy: "hcl_same_file_bare",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -154,6 +158,7 @@ impl LanguageResolver for HclResolver {
                     confidence: 0.9,
                     strategy: "hcl_cross_file_bare",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

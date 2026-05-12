@@ -89,6 +89,7 @@ impl LanguageResolver for PascalResolver {
                     confidence: 1.0,
                     strategy: "pascal_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -264,6 +265,7 @@ pub(super) fn resolve_pascal_wildcard(
                         confidence: 0.95,
                         strategy: "pascal_wildcard_import",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

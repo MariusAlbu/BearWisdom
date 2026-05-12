@@ -81,6 +81,7 @@ impl LanguageResolver for PugResolver {
                         confidence: 1.0,
                         strategy: "pug_template_include",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

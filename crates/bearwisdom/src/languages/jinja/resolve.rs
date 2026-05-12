@@ -145,6 +145,7 @@ fn resolve_template_path(
                 confidence: 0.95,
                 strategy: "jinja_template_path",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
     }

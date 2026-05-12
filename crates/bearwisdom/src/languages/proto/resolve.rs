@@ -105,6 +105,7 @@ impl LanguageResolver for ProtoResolver {
                 confidence: 1.0,
                 strategy: "proto_qualified",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
         if let Some(pkg) = &file_ctx.file_namespace {
@@ -115,6 +116,7 @@ impl LanguageResolver for ProtoResolver {
                     confidence: 1.0,
                     strategy: "proto_package_qualified",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

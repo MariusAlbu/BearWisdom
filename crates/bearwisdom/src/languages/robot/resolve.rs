@@ -355,6 +355,7 @@ impl LanguageResolver for RobotResolver {
                         confidence: 1.0,
                         strategy: "robot_variable_same_file",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
                 // Resource-imported file variables.
@@ -369,6 +370,7 @@ impl LanguageResolver for RobotResolver {
                             confidence: 0.95,
                             strategy: "robot_variable_resource",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -391,6 +393,7 @@ impl LanguageResolver for RobotResolver {
                     confidence: 1.0,
                     strategy: "robot_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -413,6 +416,7 @@ impl LanguageResolver for RobotResolver {
                         confidence: 1.0,
                         strategy: "robot_resource_import",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -461,6 +465,7 @@ impl LanguageResolver for RobotResolver {
                         confidence: 0.95,
                         strategy: "robot_python_library",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -510,6 +515,7 @@ impl LanguageResolver for RobotResolver {
                             confidence: 0.95,
                             strategy: "robot_dynamic_library_method",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -524,6 +530,7 @@ impl LanguageResolver for RobotResolver {
                             confidence: 0.85,
                             strategy: "robot_dynamic_library",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -540,6 +547,7 @@ impl LanguageResolver for RobotResolver {
                         confidence: 0.75,
                         strategy: "robot_dynamic_library_fallback",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -573,6 +581,7 @@ impl LanguageResolver for RobotResolver {
                     confidence,
                     strategy,
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
             if !has_library_imports {
@@ -586,6 +595,7 @@ impl LanguageResolver for RobotResolver {
                         confidence,
                         strategy,
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

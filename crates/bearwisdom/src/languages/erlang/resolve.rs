@@ -96,6 +96,7 @@ impl LanguageResolver for ErlangResolver {
                     confidence: 0.95,
                     strategy: "erlang_otp_arity",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -133,6 +134,7 @@ impl LanguageResolver for ErlangResolver {
                         confidence: 0.9,
                         strategy: "erlang_same_file_arity",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -150,6 +152,7 @@ impl LanguageResolver for ErlangResolver {
                             confidence: 0.8,
                             strategy: "erlang_same_file_base",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -179,6 +182,7 @@ impl LanguageResolver for ErlangResolver {
                     confidence: 0.85,
                     strategy: "erlang_cross_file_arity",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -251,6 +255,7 @@ impl ErlangResolver {
                         confidence: 0.92,
                         strategy: "erlang_import_arity",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

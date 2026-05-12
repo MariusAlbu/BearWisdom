@@ -244,6 +244,7 @@ fn nim_module_file_stem_resolve(
                     confidence: 0.85,
                     strategy: "nim_module_file_stem",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -267,6 +268,7 @@ fn nim_module_file_stem_resolve(
                     confidence: 0.75,
                     strategy: "nim_package_level",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -287,6 +289,7 @@ fn nim_module_file_stem_resolve(
                     confidence: 0.70,
                     strategy: "nim_stdlib_any",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

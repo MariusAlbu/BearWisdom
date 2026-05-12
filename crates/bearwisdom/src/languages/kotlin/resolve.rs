@@ -119,6 +119,7 @@ impl LanguageResolver for KotlinResolver {
                     confidence: 0.95,
                     strategy: "kotlin_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -157,6 +158,7 @@ impl LanguageResolver for KotlinResolver {
                         confidence: 1.0,
                         strategy: "kotlin_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -174,6 +176,7 @@ impl LanguageResolver for KotlinResolver {
                         confidence: 1.0,
                         strategy: "kotlin_same_package",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -198,6 +201,7 @@ impl LanguageResolver for KotlinResolver {
                             confidence: 1.0,
                             strategy: "kotlin_import",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -218,6 +222,7 @@ impl LanguageResolver for KotlinResolver {
                             confidence: 1.0,
                             strategy: "kotlin_wildcard_import",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -233,6 +238,7 @@ impl LanguageResolver for KotlinResolver {
                         confidence: 1.0,
                         strategy: "kotlin_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -291,6 +297,7 @@ impl LanguageResolver for KotlinResolver {
                         confidence: 0.85,
                         strategy: "kotlin_by_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -322,6 +329,7 @@ impl LanguageResolver for KotlinResolver {
                     confidence: 0.80,
                     strategy: "kotlin_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

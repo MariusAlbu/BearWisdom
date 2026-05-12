@@ -98,6 +98,7 @@ impl LanguageResolver for HaskellResolver {
                     confidence: 0.95,
                     strategy: "haskell_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

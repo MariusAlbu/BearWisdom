@@ -89,6 +89,7 @@ impl LanguageResolver for PerlResolver {
                     confidence: 0.95,
                     strategy: "perl_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

@@ -196,6 +196,7 @@ impl LanguageResolver for BashResolver {
                     confidence: 0.85,
                     strategy: "bash_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -260,6 +261,7 @@ impl BashResolver {
                         confidence: 0.90,
                         strategy: "bash_shell_source",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

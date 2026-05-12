@@ -122,6 +122,7 @@ impl LanguageResolver for StarlarkResolver {
                         confidence: 0.95,
                         strategy: "starlark_bazel_synthetic",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -141,6 +142,7 @@ impl LanguageResolver for StarlarkResolver {
                     confidence: 1.0,
                     strategy: "starlark_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -186,6 +188,7 @@ impl LanguageResolver for StarlarkResolver {
                         confidence: 1.0,
                         strategy: "starlark_load_import",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -198,6 +201,7 @@ impl LanguageResolver for StarlarkResolver {
                         confidence: 0.9,
                         strategy: "starlark_load_global",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -210,6 +214,7 @@ impl LanguageResolver for StarlarkResolver {
                 confidence: 0.75,
                 strategy: "starlark_global_fallback",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
 

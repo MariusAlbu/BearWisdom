@@ -3847,3 +3847,184 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         .expect("Builder.setB must be indexed");
     assert_eq!(result.unwrap().target_symbol_id, *set_b_id);
 }
+
+// ---------------------------------------------------------------------------
+// detect_chain_flow_emission tests
+// ---------------------------------------------------------------------------
+
+fn make_chain_segs(segments: &[(&str, crate::types::SegmentKind)]) -> crate::types::MemberChain {
+    crate::types::MemberChain {
+        segments: segments
+            .iter()
+            .map(|(name, kind)| crate::types::ChainSegment {
+                name: name.to_string(),
+                node_kind: String::new(),
+                kind: *kind,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            })
+            .collect(),
+    }
+}
+
+fn make_ctx_with_import(
+    import_name: &str,
+    from_module: &str,
+) -> crate::indexer::resolve::engine::FileContext {
+    crate::indexer::resolve::engine::FileContext {
+        file_path: "src/app.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+            imported_name: import_name.to_string(),
+            module_path: Some(from_module.to_string()),
+            alias: None,
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    }
+}
+
+#[test]
+fn http_call_axios_get_emits_with_method() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::SegmentKind;
+
+    let chain = make_chain_segs(&[
+        ("axios", SegmentKind::Identifier),
+        ("get", SegmentKind::Property),
+    ]);
+    let file_ctx = make_ctx_with_import("axios", "axios");
+    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    assert!(result.is_some(), "axios.get should emit a flow edge");
+    match result.unwrap() {
+        FlowEmission::NamedChannel { kind, method, role, .. } => {
+            assert_eq!(kind, NamedChannelKind::HttpCall);
+            assert_eq!(method, Some(HttpMethod::Get));
+            assert_eq!(role, ChannelRole::Producer);
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+#[test]
+fn http_call_axios_post_emits_post_method() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod, NamedChannelKind};
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::SegmentKind;
+
+    let chain = make_chain_segs(&[
+        ("axios", SegmentKind::Identifier),
+        ("post", SegmentKind::Property),
+    ]);
+    let file_ctx = make_ctx_with_import("axios", "axios");
+    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    assert!(result.is_some());
+    match result.unwrap() {
+        FlowEmission::NamedChannel { kind, method, .. } => {
+            assert_eq!(kind, NamedChannelKind::HttpCall);
+            assert_eq!(method, Some(HttpMethod::Post));
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+#[test]
+fn http_call_global_fetch_emits_without_import() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::SegmentKind;
+
+    let chain = make_chain_segs(&[("fetch", SegmentKind::Identifier)]);
+    let file_ctx = crate::indexer::resolve::engine::FileContext {
+        file_path: "src/app.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    assert!(result.is_some(), "global fetch should emit without import");
+    match result.unwrap() {
+        FlowEmission::NamedChannel { kind, .. } => {
+            assert_eq!(kind, NamedChannelKind::HttpCall);
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+#[test]
+fn websocket_emit_producer_on_emit() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::SegmentKind;
+
+    let chain = make_chain_segs(&[
+        ("socket", SegmentKind::Identifier),
+        ("emit", SegmentKind::Property),
+    ]);
+    let file_ctx = make_ctx_with_import("socket", "socket.io-client");
+    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    assert!(result.is_some());
+    match result.unwrap() {
+        FlowEmission::NamedChannel { kind, role, .. } => {
+            assert_eq!(kind, NamedChannelKind::WebSocket);
+            assert_eq!(role, ChannelRole::Producer);
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+#[test]
+fn websocket_on_handler_emits_consumer_role() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::SegmentKind;
+
+    let chain = make_chain_segs(&[
+        ("socket", SegmentKind::Identifier),
+        ("on", SegmentKind::Property),
+    ]);
+    let file_ctx = make_ctx_with_import("socket", "socket.io-client");
+    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    assert!(result.is_some());
+    match result.unwrap() {
+        FlowEmission::NamedChannel { kind, role, .. } => {
+            assert_eq!(kind, NamedChannelKind::WebSocket);
+            assert_eq!(role, ChannelRole::Consumer);
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+#[test]
+fn ipc_call_tauri_invoke_emits_ipc_call() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::SegmentKind;
+
+    let chain = make_chain_segs(&[("invoke", SegmentKind::Identifier)]);
+    let file_ctx = make_ctx_with_import("invoke", "@tauri-apps/api/tauri");
+    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    assert!(result.is_some());
+    match result.unwrap() {
+        FlowEmission::NamedChannel { kind, .. } => {
+            assert_eq!(kind, NamedChannelKind::IpcCall);
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+#[test]
+fn non_http_package_does_not_emit() {
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::SegmentKind;
+
+    let chain = make_chain_segs(&[
+        ("_", SegmentKind::Identifier),
+        ("get", SegmentKind::Property),
+    ]);
+    let file_ctx = make_ctx_with_import("_", "lodash");
+    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    assert!(result.is_none(), "lodash.get should NOT emit a flow edge");
+}

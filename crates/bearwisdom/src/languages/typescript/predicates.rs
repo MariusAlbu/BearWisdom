@@ -60,6 +60,66 @@ pub(crate) fn is_react_namespace_type(target: &str) -> bool {
     target.starts_with("React.")
 }
 
+/// Widely-deployed HTTP client npm packages.
+///
+/// A call whose chain root imports from one of these packages is classified
+/// as an outbound HTTP call. The list intentionally covers only packages with
+/// a consistent fetch-style API (`fn(url, opts?)`) — it excludes wrappers
+/// (superagent, request) whose API shape is too divergent for generic method
+/// extraction.
+const HTTP_CLIENT_PACKAGES: &[&str] = &[
+    "axios",
+    "ofetch",
+    "ky",
+    "node-fetch",
+    "@vueuse/integrations",  // useAxios wrapper re-exports axios
+];
+
+/// Returns `true` when `pkg` is a well-known HTTP-client npm package.
+///
+/// The check strips any sub-path (`axios/lib/...` → `axios`) before matching.
+pub(crate) fn is_http_client_module(pkg: &str) -> bool {
+    // Strip sub-path for deep imports.
+    let root = if pkg.starts_with('@') {
+        // Scoped: @scope/name[/rest]
+        let mut parts = pkg.splitn(3, '/');
+        match (parts.next(), parts.next()) {
+            (Some(scope), Some(name)) => {
+                let end = scope.len() + 1 + name.len();
+                &pkg[..end]
+            }
+            _ => pkg,
+        }
+    } else {
+        pkg.split('/').next().unwrap_or(pkg)
+    };
+    HTTP_CLIENT_PACKAGES.contains(&root)
+}
+
+/// Returns `true` when `pkg` is a Socket.IO client package.
+pub(crate) fn is_socketio_client_module(pkg: &str) -> bool {
+    let root = pkg.split('/').next().unwrap_or(pkg);
+    matches!(root, "socket.io-client" | "socket.io")
+}
+
+/// Returns `true` when `pkg` is a Tauri IPC client package.
+pub(crate) fn is_tauri_invoke_module(pkg: &str) -> bool {
+    pkg == "@tauri-apps/api"
+        || pkg.starts_with("@tauri-apps/api/")
+        || pkg == "tauri"
+        || pkg.starts_with("tauri/")
+}
+
+/// Returns `true` when `callee_name` is the Electron `ipcRenderer` identifier.
+pub(crate) fn is_electron_ipc_renderer(callee_name: &str) -> bool {
+    callee_name == "ipcRenderer"
+}
+
+/// Returns `true` when `callee_name` is a native global fetch identifier.
+pub(crate) fn is_global_fetch(callee_name: &str) -> bool {
+    matches!(callee_name, "fetch" | "$fetch" | "ofetch" | "useFetch")
+}
+
 /// Check that the edge kind is compatible with the symbol kind.
 ///
 /// TypeScript is structurally typed and more permissive than C# — we allow

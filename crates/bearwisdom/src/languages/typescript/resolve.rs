@@ -106,8 +106,7 @@ impl LanguageResolver for TypeScriptResolver {
         }
 
         // Chain-aware resolution: if we have a structured MemberChain, walk it
-        // step-by-step following field types. Dispatch to the TypeChecker —
-        // PR 3 of decision-2026-04-27-e75 routed TS chain logic onto this seam.
+        // step-by-step following field types. Dispatch to the TypeChecker.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = TypeScriptChecker.resolve_chain(
                 chain_ref, edge_kind, Some(file_ctx), ref_ctx, lookup,
@@ -197,6 +196,7 @@ impl LanguageResolver for TypeScriptResolver {
                         confidence: 1.0,
                         strategy: "ts_import_file",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -218,6 +218,7 @@ impl LanguageResolver for TypeScriptResolver {
                         confidence: 1.0,
                         strategy: "ts_import",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -244,6 +245,7 @@ impl LanguageResolver for TypeScriptResolver {
                                 confidence: 1.0,
                                 strategy: "ts_import_definitely_typed",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -276,6 +278,7 @@ impl LanguageResolver for TypeScriptResolver {
                                 confidence: 1.0,
                                 strategy: "ts_import_deep",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -343,6 +346,7 @@ impl LanguageResolver for TypeScriptResolver {
                             confidence: 1.0,
                             strategy: "ts_relative_import",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -366,6 +370,7 @@ impl LanguageResolver for TypeScriptResolver {
                                 confidence: 0.95,
                                 strategy: "ts_sfc_default_import",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -413,6 +418,7 @@ impl LanguageResolver for TypeScriptResolver {
                         confidence: 1.0,
                         strategy: "ts_bare_import_qname",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -448,6 +454,7 @@ impl LanguageResolver for TypeScriptResolver {
                                 confidence: 1.0,
                                 strategy: "ts_bare_import_deep",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -495,6 +502,7 @@ impl LanguageResolver for TypeScriptResolver {
                         confidence: 1.0,
                         strategy: "ts_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -514,6 +522,7 @@ impl LanguageResolver for TypeScriptResolver {
                     confidence: 1.0,
                     strategy: "ts_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -532,6 +541,7 @@ impl LanguageResolver for TypeScriptResolver {
                         confidence: 1.0,
                         strategy: "ts_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -557,6 +567,7 @@ impl LanguageResolver for TypeScriptResolver {
                                 confidence: 0.95,
                                 strategy: "ts_field_type_chain",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -572,6 +583,7 @@ impl LanguageResolver for TypeScriptResolver {
                                 confidence: 0.90,
                                 strategy: "ts_field_type_chain",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -609,6 +621,7 @@ impl LanguageResolver for TypeScriptResolver {
                         confidence: 0.85,
                         strategy: "ts_npm_globals",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -652,12 +665,26 @@ impl LanguageResolver for TypeScriptResolver {
                     confidence: 0.85,
                     strategy: "ts_lib_globals",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
 
         // Could not resolve deterministically — fall back to heuristic.
         None
+    }
+
+    fn detect_flow_emission(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+        // Only inspect call-kind refs that carry a chain.
+        if ref_ctx.extracted_ref.kind != EdgeKind::Calls {
+            return None;
+        }
+        let chain_ref = ref_ctx.extracted_ref.chain.as_ref()?;
+        detect_chain_flow_emission(chain_ref, file_ctx)
     }
 
     fn infer_external_namespace(
@@ -988,6 +1015,7 @@ fn resolve_via_alias(
                 confidence: 1.0,
                 strategy: "ts_tsconfig_alias",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
     }
@@ -1017,6 +1045,7 @@ fn resolve_via_alias(
                     confidence: 1.0,
                     strategy: "ts_tsconfig_alias",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -1044,6 +1073,7 @@ fn resolve_via_alias(
                     confidence: 0.95,
                     strategy: "ts_sfc_default_import",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -1097,6 +1127,7 @@ fn resolve_workspace_package(
                     confidence: 1.0,
                     strategy: "ts_workspace_pkg",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -1117,6 +1148,7 @@ fn resolve_workspace_package(
             confidence: 1.0,
             strategy: "ts_workspace_pkg",
             resolved_yield_type: None,
+            flow_emit: None,
         }
     })
 }
@@ -1209,6 +1241,7 @@ fn follow_reexports(
                     confidence: 1.0,
                     strategy: "ts_reexport_chain",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -1242,6 +1275,7 @@ fn follow_reexports(
                     confidence: 0.95,
                     strategy: "ts_reexport_star",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -1312,6 +1346,106 @@ fn is_npm_package_match(
         }
     }
     false
+}
+
+// ---------------------------------------------------------------------------
+// Resolver-emitted flow edge detection
+// ---------------------------------------------------------------------------
+
+use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+
+/// Inspect `chain_ref` and `file_ctx` to detect whether the chain root resolves
+/// to an HTTP-client module, a Socket.IO client, or a Tauri/Electron IPC call.
+///
+/// Returns a `FlowEmission::NamedChannel` when the shape matches. The
+/// `name` field is always empty — `ExtractedRef` doesn't carry call arguments,
+/// so no URL string is available at resolution time. Future extractors that
+/// capture first-arg literals can enrich this via a follow-up UPDATE.
+///
+/// Recognition is chain-root-import–based, not symbol-name–based:
+/// 1. Look at the first chain segment's name.
+/// 2. Find the import entry in `file_ctx` that binds that name.
+/// 3. Check whether the import source is a well-known HTTP-client / WebSocket /
+///    IPC package, using `is_http_client_module` et al.
+///
+/// This avoids naming the packages' internal symbol names (Axios.get,
+/// AxiosInstance, etc.) — only the npm package name is checked.
+pub(crate) fn detect_chain_flow_emission(
+    chain_ref: &crate::types::MemberChain,
+    file_ctx: &FileContext,
+) -> Option<FlowEmission> {
+    let root_seg = chain_ref.segments.first()?;
+    let root_name = &root_seg.name;
+
+    // Global `fetch` / `$fetch` — no import required, detected by name alone.
+    if predicates::is_global_fetch(root_name.as_str()) {
+        // The HTTP method for bare `fetch` is GET unless we can read the
+        // second argument's `method` property — not available here.
+        return Some(FlowEmission::NamedChannel {
+            kind: NamedChannelKind::HttpCall,
+            name: String::new(),
+            role: ChannelRole::Producer,
+            method: Some(HttpMethod::Any),
+        });
+    }
+
+    // Electron ipcRenderer — bare identifier, no import lookup needed.
+    if predicates::is_electron_ipc_renderer(root_name.as_str()) {
+        if let Some(leaf) = chain_ref.segments.last() {
+            let role = if leaf.name == "on" { ChannelRole::Consumer } else { ChannelRole::Producer };
+            return Some(FlowEmission::NamedChannel {
+                kind: NamedChannelKind::IpcCall,
+                name: String::new(),
+                role,
+                method: None,
+            });
+        }
+    }
+
+    // Import-based: look up the package the root name was imported from.
+    let import_source = file_ctx.imports.iter()
+        .find(|imp| {
+            imp.imported_name == *root_name
+                || imp.alias.as_deref() == Some(root_name.as_str())
+        })
+        .and_then(|imp| imp.module_path.as_deref())?;
+
+    if predicates::is_http_client_module(import_source) {
+        // Derive HTTP method from the chained method name, e.g. `axios.get` → GET.
+        let method_seg = chain_ref.segments.get(1);
+        let method = method_seg
+            .map(|s| HttpMethod::from_method_name(&s.name))
+            .unwrap_or(HttpMethod::Any);
+        return Some(FlowEmission::NamedChannel {
+            kind: NamedChannelKind::HttpCall,
+            name: String::new(),
+            role: ChannelRole::Producer,
+            method: Some(method),
+        });
+    }
+
+    if predicates::is_socketio_client_module(import_source) {
+        if let Some(leaf) = chain_ref.segments.last() {
+            let role = if leaf.name == "on" { ChannelRole::Consumer } else { ChannelRole::Producer };
+            return Some(FlowEmission::NamedChannel {
+                kind: NamedChannelKind::WebSocket,
+                name: String::new(),
+                role,
+                method: None,
+            });
+        }
+    }
+
+    if predicates::is_tauri_invoke_module(import_source) {
+        return Some(FlowEmission::NamedChannel {
+            kind: NamedChannelKind::IpcCall,
+            name: String::new(),
+            role: ChannelRole::Producer,
+            method: None,
+        });
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------

@@ -164,6 +164,7 @@ impl LanguageResolver for GoResolver {
                         confidence: 1.0,
                         strategy: "go_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -183,6 +184,7 @@ impl LanguageResolver for GoResolver {
                         confidence: 1.0,
                         strategy: "go_same_package",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -202,6 +204,7 @@ impl LanguageResolver for GoResolver {
                         confidence: 1.0,
                         strategy: "go_same_package_by_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -229,6 +232,7 @@ impl LanguageResolver for GoResolver {
                             confidence: 1.0,
                             strategy: "go_dot_import",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -255,6 +259,7 @@ impl LanguageResolver for GoResolver {
                         confidence: 1.0,
                         strategy: "go_import",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -271,6 +276,7 @@ impl LanguageResolver for GoResolver {
                             confidence: 1.0,
                             strategy: "go_import_alias",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -286,6 +292,7 @@ impl LanguageResolver for GoResolver {
                         confidence: 1.0,
                         strategy: "go_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -346,6 +353,7 @@ impl LanguageResolver for GoResolver {
                     confidence: 0.80,
                     strategy: "go_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -483,6 +491,7 @@ impl GoResolver {
                         confidence: 1.0,
                         strategy: "go_chain_import",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -497,6 +506,7 @@ impl GoResolver {
                             confidence: 1.0,
                             strategy: "go_chain_import",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }

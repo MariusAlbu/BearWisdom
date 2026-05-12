@@ -140,6 +140,7 @@ impl LanguageResolver for AdaResolver {
                     confidence: 1.0,
                     strategy: "ada_same_file_ci",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -162,6 +163,7 @@ impl LanguageResolver for AdaResolver {
                         confidence: 0.85,
                         strategy: "ada_modular_primitive",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -200,6 +202,7 @@ impl LanguageResolver for AdaResolver {
                             confidence: if import.is_wildcard { 0.95 } else { 0.85 },
                             strategy,
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -228,6 +231,7 @@ impl LanguageResolver for AdaResolver {
                                 confidence: 0.9,
                                 strategy: "ada_parent_pkg_visibility",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                         // Apply rename: `package Trace renames Simple_Logging;`
@@ -245,6 +249,7 @@ impl LanguageResolver for AdaResolver {
                                                 confidence: 0.88,
                                                 strategy: "ada_parent_pkg_rename",
                                                 resolved_yield_type: None,
+                                                flow_emit: None,
                                             });
                                         }
                                     }
@@ -433,6 +438,7 @@ impl LanguageResolver for AdaResolver {
                             confidence: 0.9,
                             strategy: "ada_local_instantiation",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -487,6 +493,7 @@ impl LanguageResolver for AdaResolver {
                                         confidence: 0.88,
                                         strategy: "ada_local_instantiation",
                                         resolved_yield_type: None,
+                                        flow_emit: None,
                                     });
                                 }
                             }
@@ -653,6 +660,7 @@ impl LanguageResolver for AdaResolver {
                                 confidence: 0.82,
                                 strategy: "ada_var_pkg_method",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -686,6 +694,7 @@ impl LanguageResolver for AdaResolver {
                             confidence: 0.95,
                             strategy: "ada_qualified_ci",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -1047,6 +1056,7 @@ fn probe_package_of_type(
                 confidence: 0.88,
                 strategy: "ada_pkg_of_type",
                 resolved_yield_type: None,
+                flow_emit: None,
             });
         }
     }
@@ -1159,6 +1169,7 @@ fn walk_field_chain(
                         confidence: 0.85,
                         strategy: "ada_field_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -1196,6 +1207,7 @@ fn probe_dotted_qname(
                     confidence: 0.92,
                     strategy: "ada_alias_substitution",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

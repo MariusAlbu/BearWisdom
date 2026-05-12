@@ -128,6 +128,7 @@ impl LanguageResolver for FortranResolver {
                     confidence: 1.0,
                     strategy: "fortran_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -159,6 +160,7 @@ impl LanguageResolver for FortranResolver {
                                     confidence: 0.9,
                                     strategy: "fortran_type_member",
                                     resolved_yield_type: None,
+                                    flow_emit: None,
                                 });
                             }
                         }
@@ -167,6 +169,7 @@ impl LanguageResolver for FortranResolver {
                             confidence: 0.85,
                             strategy: "fortran_type_member_direct",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }

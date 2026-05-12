@@ -102,6 +102,7 @@ impl LanguageResolver for OcamlResolver {
                             confidence: 0.90,
                             strategy: "ocaml_stem_stripped",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -120,6 +121,7 @@ impl LanguageResolver for OcamlResolver {
                         confidence: 0.88,
                         strategy: "ocaml_stem_stripped_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             } else {
@@ -141,6 +143,7 @@ impl LanguageResolver for OcamlResolver {
                         confidence: 0.92,
                         strategy: "ocaml_module_to_file_stem",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }

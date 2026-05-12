@@ -152,6 +152,7 @@ impl TypeChecker for CChecker {
                     confidence: 1.0,
                     strategy: "c_chain_resolution",
                     resolved_yield_type: simple_yield_type(sym, lookup).map(|t| normalize_type(&t)),
+                    flow_emit: None,
                 });
             }
         }
@@ -176,12 +177,14 @@ impl TypeChecker for CChecker {
                 confidence: 1.0,
                 strategy: "c_chain_resolution_unique",
                 resolved_yield_type: simple_yield_type(&matches[0], lookup).map(|t| normalize_type(&t)),
+                flow_emit: None,
             }),
             _ => Some(Resolution {
                 target_symbol_id: matches[0].id,
                 confidence: 0.95,
                 strategy: "c_chain_resolution",
                 resolved_yield_type: simple_yield_type(&matches[0], lookup).map(|t| normalize_type(&t)),
+                flow_emit: None,
             }),
         }
     }

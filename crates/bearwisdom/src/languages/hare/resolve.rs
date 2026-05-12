@@ -100,6 +100,7 @@ impl LanguageResolver for HareResolver {
                     confidence: 1.0,
                     strategy: "hare_import_qualified",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
 
@@ -111,6 +112,7 @@ impl LanguageResolver for HareResolver {
                     confidence: 1.0,
                     strategy: "hare_import_local",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

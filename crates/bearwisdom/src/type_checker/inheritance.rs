@@ -63,6 +63,7 @@ where
                             confidence: 0.85,
                             strategy,
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }

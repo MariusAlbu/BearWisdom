@@ -101,6 +101,7 @@ impl LanguageResolver for SwiftResolver {
                     confidence: 0.95,
                     strategy: "swift_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -139,6 +140,7 @@ impl LanguageResolver for SwiftResolver {
                         confidence: 1.0,
                         strategy: "swift_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -152,6 +154,7 @@ impl LanguageResolver for SwiftResolver {
                     confidence: 1.0,
                     strategy: "swift_same_file",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -165,6 +168,7 @@ impl LanguageResolver for SwiftResolver {
                         confidence: 1.0,
                         strategy: "swift_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -178,6 +182,7 @@ impl LanguageResolver for SwiftResolver {
                     confidence: 0.85,
                     strategy: "swift_by_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -205,6 +210,7 @@ impl LanguageResolver for SwiftResolver {
                     confidence: 0.80,
                     strategy: "swift_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

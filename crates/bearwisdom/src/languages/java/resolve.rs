@@ -132,6 +132,7 @@ impl LanguageResolver for JavaResolver {
                     confidence: 0.95,
                     strategy: "java_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -162,6 +163,7 @@ impl LanguageResolver for JavaResolver {
                         confidence: 1.0,
                         strategy: "java_scope_chain",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -180,6 +182,7 @@ impl LanguageResolver for JavaResolver {
                         confidence: 1.0,
                         strategy: "java_same_package",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -200,6 +203,7 @@ impl LanguageResolver for JavaResolver {
                                 confidence: 1.0,
                                 strategy: "java_import",
                                 resolved_yield_type: None,
+                                flow_emit: None,
                             });
                         }
                     }
@@ -222,6 +226,7 @@ impl LanguageResolver for JavaResolver {
                             confidence: 1.0,
                             strategy: "java_wildcard_import",
                             resolved_yield_type: None,
+                            flow_emit: None,
                         });
                     }
                 }
@@ -237,6 +242,7 @@ impl LanguageResolver for JavaResolver {
                         confidence: 1.0,
                         strategy: "java_qualified_name",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -312,6 +318,7 @@ impl LanguageResolver for JavaResolver {
                     confidence: 0.80,
                     strategy: "java_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

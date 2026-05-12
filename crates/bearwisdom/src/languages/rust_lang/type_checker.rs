@@ -133,6 +133,7 @@ impl TypeChecker for RustChecker {
                     confidence: 1.0,
                     strategy: "rust_chain_resolution",
                     resolved_yield_type: simple_yield_type(sym, lookup).map(|t| normalize_path(&t)),
+                    flow_emit: None,
                 });
             }
         }
@@ -144,6 +145,7 @@ impl TypeChecker for RustChecker {
                     confidence: 0.95,
                     strategy: "rust_chain_resolution",
                     resolved_yield_type: simple_yield_type(sym, lookup).map(|t| normalize_path(&t)),
+                    flow_emit: None,
                 });
             }
         }

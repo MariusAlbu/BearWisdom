@@ -134,6 +134,7 @@ impl LanguageResolver for RResolver {
                     confidence: 0.95,
                     strategy: "r_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

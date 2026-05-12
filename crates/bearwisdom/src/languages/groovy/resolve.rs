@@ -83,6 +83,7 @@ impl LanguageResolver for GroovyResolver {
                     confidence: 0.80,
                     strategy: "groovy_bare_name",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

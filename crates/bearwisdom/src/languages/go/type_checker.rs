@@ -166,6 +166,7 @@ impl TypeChecker for GoChecker {
                     confidence: 1.0,
                     strategy: "go_chain_resolution",
                     resolved_yield_type: generic_yield_type(sym, &last.type_args, lookup, &mut env),
+                    flow_emit: None,
                 });
             }
         }
@@ -177,6 +178,7 @@ impl TypeChecker for GoChecker {
                     confidence: 0.95,
                     strategy: "go_chain_resolution",
                     resolved_yield_type: generic_yield_type(sym, &last.type_args, lookup, &mut env),
+                    flow_emit: None,
                 });
             }
         }

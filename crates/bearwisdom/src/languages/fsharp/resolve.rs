@@ -89,6 +89,7 @@ impl LanguageResolver for FSharpResolver {
                     confidence: 0.95,
                     strategy: "fsharp_synthetic_global",
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }

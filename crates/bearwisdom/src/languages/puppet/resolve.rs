@@ -132,6 +132,7 @@ impl LanguageResolver for PuppetResolver {
                     confidence: if strategy == "puppet_synthetic_global" { 0.95 } else { 0.9 },
                     strategy,
                     resolved_yield_type: None,
+                    flow_emit: None,
                 });
             }
         }
@@ -169,6 +170,7 @@ impl LanguageResolver for PuppetResolver {
                         confidence: 1.0,
                         strategy: "puppet_qualified_same_file",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -182,6 +184,7 @@ impl LanguageResolver for PuppetResolver {
                         confidence: 1.0,
                         strategy: "puppet_qualified_global",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
@@ -192,6 +195,7 @@ impl LanguageResolver for PuppetResolver {
                         confidence: 0.9,
                         strategy: "puppet_unqualified_fallback",
                         resolved_yield_type: None,
+                        flow_emit: None,
                     });
                 }
             }
