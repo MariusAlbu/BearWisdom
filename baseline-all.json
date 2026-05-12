@@ -2096,12 +2096,12 @@
       "assertions": {
         "min_resolution_rate": 98
       },
-      "code_chunks": 6934,
+      "code_chunks": 6938,
       "files": 221,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 9644,
-      "internal_unresolved": 169,
+      "internal_edges": 9614,
+      "internal_unresolved": 139,
       "languages": {
         "c": 16,
         "erlang": 186,
@@ -2113,14 +2113,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/erlang-cowboy",
       "perf": {
-        "end_ws_mb": 58,
-        "files_per_sec": 65,
-        "index_duration_ms": 3419
+        "end_ws_mb": 57,
+        "files_per_sec": 85,
+        "index_duration_ms": 2612
       },
       "project": "erlang-cowboy",
-      "resolution_rate": 98.28,
+      "resolution_rate": 98.57,
       "routes": 0,
-      "symbols": 4606,
+      "symbols": 4585,
       "unresolved_by_lang_kind": {
         "c.calls": 3,
         "c.type_ref": 43,
@@ -2128,7 +2128,7 @@
         "erlang.implements": 35,
         "erlang.instantiates": 6,
         "javascript.calls": 6,
-        "make.calls": 44
+        "make.calls": 14
       }
     },
     {
@@ -2187,12 +2187,12 @@
       "assertions": {
         "min_resolution_rate": 93
       },
-      "code_chunks": 94553,
+      "code_chunks": 94556,
       "files": 2762,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 138531,
-      "internal_unresolved": 9675,
+      "internal_edges": 138026,
+      "internal_unresolved": 9630,
       "languages": {
         "c": 4,
         "csharp": 13,
@@ -2221,14 +2221,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/erlang-rabbitmq",
       "perf": {
-        "end_ws_mb": 258,
-        "files_per_sec": 25,
-        "index_duration_ms": 110980
+        "end_ws_mb": 279,
+        "files_per_sec": 30,
+        "index_duration_ms": 91975
       },
       "project": "erlang-rabbitmq",
-      "resolution_rate": 93.47,
+      "resolution_rate": 93.48,
       "routes": 39,
-      "symbols": 59399,
+      "symbols": 59377,
       "unresolved_by_lang_kind": {
         "c.calls": 65,
         "c.type_ref": 32,
@@ -2238,12 +2238,12 @@
         "erlang.implements": 211,
         "erlang.instantiates": 5128,
         "java.calls": 257,
-        "java.instantiates": 8,
-        "java.type_ref": 65,
+        "java.instantiates": 5,
+        "java.type_ref": 61,
         "javascript.calls": 2441,
         "javascript.type_ref": 14,
         "kotlin.calls": 1,
-        "make.calls": 42,
+        "make.calls": 4,
         "python.calls": 39,
         "python.type_ref": 1,
         "shell.calls": 14
@@ -4546,14 +4546,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 86
+        "min_resolution_rate": 90
       },
-      "code_chunks": 235878,
-      "files": 1841,
+      "code_chunks": 235965,
+      "files": 1843,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 205415,
-      "internal_unresolved": 31299,
+      "internal_edges": 211060,
+      "internal_unresolved": 22414,
       "languages": {
         "c": 162,
         "cmake": 122,
@@ -4566,8 +4566,9 @@
         "kotlin": 47,
         "lua": 665,
         "make": 26,
-        "markdown": 31,
+        "markdown": 32,
         "nix": 1,
+        "pascal": 1,
         "prolog": 3,
         "python": 9,
         "shell": 39,
@@ -4578,36 +4579,31 @@
       },
       "path": "F:/Work/Projects/TestProjects/lua-koreader",
       "perf": {
-        "end_ws_mb": 192,
-        "files_per_sec": 26,
-        "index_duration_ms": 69618
+        "end_ws_mb": 489,
+        "files_per_sec": 16,
+        "index_duration_ms": 112737
       },
       "project": "lua-koreader",
-      "resolution_rate": 86.78,
+      "resolution_rate": 90.4,
       "routes": 0,
-      "symbols": 359903,
+      "symbols": 360308,
       "unresolved_by_lang_kind": {
-        "c.calls": 1183,
-        "c.imports": 1,
-        "c.type_ref": 961,
-        "cmake.calls": 27,
-        "cmake.type_ref": 412,
-        "cpp.calls": 8629,
-        "cpp.imports": 5,
+        "c.calls": 1028,
+        "c.type_ref": 906,
+        "cmake.calls": 1,
+        "cmake.type_ref": 378,
+        "cpp.calls": 4623,
         "cpp.inherits": 40,
         "cpp.instantiates": 88,
-        "cpp.type_ref": 13656,
+        "cpp.type_ref": 11704,
         "java.calls": 11,
-        "java.implements": 2,
-        "java.inherits": 5,
-        "java.instantiates": 89,
-        "java.type_ref": 550,
-        "kotlin.calls": 53,
+        "java.instantiates": 32,
+        "java.type_ref": 131,
+        "kotlin.calls": 50,
         "kotlin.implements": 1,
-        "kotlin.type_ref": 185,
-        "lua.calls": 3703,
-        "lua.imports": 1488,
-        "make.calls": 10,
+        "kotlin.type_ref": 50,
+        "lua.calls": 3169,
+        "make.calls": 2,
         "nix.calls": 4,
         "python.calls": 51,
         "python.type_ref": 2,
@@ -4646,14 +4642,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 86
+        "min_resolution_rate": 91
       },
-      "code_chunks": 439288,
-      "files": 4672,
+      "code_chunks": 440537,
+      "files": 4706,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 335039,
-      "internal_unresolved": 51571,
+      "internal_edges": 347448,
+      "internal_unresolved": 33190,
       "languages": {
         "c": 439,
         "cmake": 23,
@@ -4661,8 +4657,8 @@
         "css": 4,
         "dockerfile": 1,
         "html": 7,
-        "json": 330,
-        "lua": 2408,
+        "json": 358,
+        "lua": 2414,
         "make": 1,
         "markdown": 101,
         "python": 30,
@@ -4674,31 +4670,26 @@
       },
       "path": "F:/Work/Projects/TestProjects/lua-luals",
       "perf": {
-        "end_ws_mb": 190,
-        "files_per_sec": 81,
-        "index_duration_ms": 57914
+        "end_ws_mb": 484,
+        "files_per_sec": 41,
+        "index_duration_ms": 114887
       },
       "project": "lua-luals",
-      "resolution_rate": 86.66,
+      "resolution_rate": 91.28,
       "routes": 0,
-      "symbols": 267932,
+      "symbols": 269520,
       "unresolved_by_lang_kind": {
-        "c.calls": 1982,
-        "c.imports": 1,
-        "c.type_ref": 1336,
-        "cmake.calls": 5,
-        "cmake.type_ref": 105,
-        "cpp.calls": 12471,
-        "cpp.imports": 889,
-        "cpp.inherits": 94,
-        "cpp.instantiates": 20,
-        "cpp.type_ref": 33172,
+        "c.calls": 196,
+        "c.type_ref": 757,
+        "cmake.calls": 4,
+        "cmake.type_ref": 11,
+        "cpp.calls": 5979,
+        "cpp.inherits": 28,
+        "cpp.instantiates": 12,
+        "cpp.type_ref": 25035,
         "javascript.calls": 8,
-        "lua.calls": 1122,
-        "lua.imports": 295,
-        "make.calls": 33,
+        "lua.calls": 1123,
         "python.calls": 34,
-        "python.imports": 1,
         "shell.calls": 3
       }
     },
@@ -4931,14 +4922,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 97
       },
-      "code_chunks": 86718,
+      "code_chunks": 86709,
       "files": 417,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 72831,
-      "internal_unresolved": 1056,
+      "internal_edges": 78480,
+      "internal_unresolved": 1689,
       "languages": {
         "c": 395,
         "cpp": 1,
@@ -4952,18 +4943,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/nginx-nginx",
       "perf": {
-        "end_ws_mb": 171,
-        "files_per_sec": 50,
-        "index_duration_ms": 8421
+        "end_ws_mb": 405,
+        "files_per_sec": 7,
+        "index_duration_ms": 63233
       },
       "project": "nginx-nginx",
-      "resolution_rate": 98.57,
+      "resolution_rate": 97.89,
       "routes": 0,
-      "symbols": 29932,
+      "symbols": 29925,
       "unresolved_by_lang_kind": {
-        "c.calls": 696,
-        "c.type_ref": 348,
-        "make.calls": 10,
+        "c.calls": 1303,
+        "c.type_ref": 384,
         "shell.calls": 2
       }
     },
