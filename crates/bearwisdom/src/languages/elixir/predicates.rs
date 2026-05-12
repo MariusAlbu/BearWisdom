@@ -5,7 +5,7 @@
 use crate::types::EdgeKind;
 
 /// Check that the edge kind is compatible with the symbol kind.
-pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
+pub(crate) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     match edge_kind {
         EdgeKind::Calls => matches!(
             sym_kind,
@@ -207,7 +207,7 @@ const ALWAYS_EXTERNAL: &[&str] = &[
 ];
 
 /// Check whether an Elixir module alias is external (stdlib, OTP, or hex package).
-pub(super) fn is_external_elixir_module(module: &str) -> bool {
+pub(crate) fn is_external_elixir_module(module: &str) -> bool {
     // The root segment of the module (before the first `.`).
     let root = module.split('.').next().unwrap_or(module);
     for &ext in ALWAYS_EXTERNAL {

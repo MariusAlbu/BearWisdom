@@ -55,13 +55,5 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dot_component_becomes_calls_ref() {
-        let src = "<div>\n<.button label=\"go\" />\n</div>";
-        let r = extract(src, "form.heex");
-        assert!(r.refs.iter().any(|r| r.target_name == "button"));
-    }
-}
+#[path = "extract_tests.rs"]
+mod tests;

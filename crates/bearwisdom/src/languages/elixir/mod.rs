@@ -6,7 +6,7 @@ pub(crate) mod phoenix_routes;
 pub(crate) mod keywords;
 pub mod extract;
 
-mod predicates;
+pub(crate) mod predicates;
 pub(crate) mod type_checker;
 pub mod resolve;
 

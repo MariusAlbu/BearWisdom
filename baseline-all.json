@@ -2047,8 +2047,8 @@
       "files": 2035,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 118766,
-      "internal_unresolved": 6104,
+      "internal_edges": 118889,
+      "internal_unresolved": 6059,
       "languages": {
         "c": 1,
         "css": 6,
@@ -2070,25 +2070,23 @@
       },
       "path": "F:/Work/Projects/TestProjects/elixir-plausible",
       "perf": {
-        "end_ws_mb": 141,
-        "files_per_sec": 67,
-        "index_duration_ms": 30375
+        "end_ws_mb": 154,
+        "files_per_sec": 21,
+        "index_duration_ms": 96883
       },
       "project": "elixir-plausible",
-      "resolution_rate": 95.11,
+      "resolution_rate": 95.15,
       "routes": 0,
       "symbols": 25354,
       "unresolved_by_lang_kind": {
         "c.type_ref": 15,
-        "elixir.calls": 2594,
-        "elixir.imports": 3,
+        "elixir.calls": 2590,
         "elixir.type_ref": 130,
-        "heex.calls": 42,
         "javascript.calls": 390,
         "javascript.type_ref": 2,
         "shell.calls": 1,
         "sql.type_ref": 76,
-        "typescript.calls": 877,
+        "typescript.calls": 881,
         "typescript.type_ref": 1974
       }
     },
