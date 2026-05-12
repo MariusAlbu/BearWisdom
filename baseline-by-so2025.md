@@ -74,7 +74,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 
 | Plugin           | Category | Unresolved | Status | Note |
 |------------------|----------|-----------:|:------:|------|
-| gsp              | template | 216 | 🟡 | tail of Groovy refs not yet attributed via `origin_language` |
+| gsp              | template | 0   | ✅ | `<g:render>` import refs handled by resolve engine; stale index carried pre-fix counts |
 | make             | config   | 148 | 🟡 | Makefile target refs (`$(MAKE) -C dir target`) |
 | scss             | markup   | 114 | 🟡 | `@import` / `@use` chain resolution with `_partial` convention |
 | nunjucks         | template | 75  | 🟡 | tail of JS-expression refs |
@@ -89,6 +89,6 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | graphql          | config   | 2   | 🟢 | |
 | proto            | config   | 2   | 🟢 | |
 
-Zero-unresolved plugins (✅) — parsed and indexed, with all refs either resolved or attributed to their actual sub-language: `angular`, `angular_template`, `crontab`, `eex`, `ejs`, `erb`, `gotemplate`, `haml`, `hare`, `html`, `jsp`, `julius`, `liquid`, `mako`, `markdown`, `nginx`, `pug`, `puppet`, `rmarkdown`, `shakespeare`, `slim`, `smarty`, `systemd`, `templ`, `thymeleaf`, `velocity`, `yaml`. Plus the meta dispatchers `generic` and `polyglot_nb`.
+Zero-unresolved plugins (✅) — parsed and indexed, with all refs either resolved or attributed to their actual sub-language: `angular`, `angular_template`, `crontab`, `eex`, `ejs`, `erb`, `gotemplate`, `gsp`, `haml`, `hare`, `html`, `jsp`, `julius`, `liquid`, `mako`, `markdown`, `nginx`, `pug`, `puppet`, `rmarkdown`, `shakespeare`, `slim`, `smarty`, `systemd`, `templ`, `thymeleaf`, `velocity`, `yaml`. Plus the meta dispatchers `generic` and `polyglot_nb`.
 
 **Total:** 94 directories under `crates/bearwisdom/src/languages/` (93 language plugins + 1 fallback dispatcher).
