@@ -1035,6 +1035,8 @@ fn is_user_source_file(name: &str) -> bool {
         || name.ends_with(".vue")
         || name.ends_with(".svelte")
         || name.ends_with(".astro")
+        || name.ends_with(".scss")
+        || name.ends_with(".sass")
 }
 
 /// Tolerant scan for bare-specifier imports in user source. Recognized
@@ -1066,6 +1068,21 @@ fn extract_user_imports_from_source(
                 push_user_import(spec, out);
             } else if let Some(spec) = extract_bare_import_spec(t) {
                 push_user_import(spec, out);
+            }
+        }
+        // SCSS `@use`, `@import`, and `@forward` — line-oriented scan.
+        // Sass built-in modules (`sass:*`) and relative paths are filtered
+        // by `push_user_import` (starts with `.`) or the explicit sass: check.
+        if t.starts_with("@use ") || t.starts_with("@import ") || t.starts_with("@forward ") {
+            let after_keyword = t
+                .splitn(2, ' ')
+                .nth(1)
+                .unwrap_or("")
+                .trim_start();
+            if let Some(spec) = extract_first_quoted(after_keyword) {
+                if !spec.starts_with("sass:") {
+                    push_user_import(spec, out);
+                }
             }
         }
     }
