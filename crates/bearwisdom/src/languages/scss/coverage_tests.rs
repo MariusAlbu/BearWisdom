@@ -182,6 +182,60 @@ fn cov_rule_set_placeholder() {
     assert!(sym.is_some(), "expected symbol 'base-button' from %placeholder; got: {:?}", r.symbols);
 }
 
+// Multi-selector and pseudo-selector extraction
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_multi_selector_comma_emits_all_classes() {
+    // `.a, .b { }` should produce two Class symbols: "a" and "b".
+    let r = extract::extract(".container, .container-fluid { display: block; }", "");
+    let has_container = r.symbols.iter().any(|s| s.name == "container" && s.kind == SymbolKind::Class);
+    let has_fluid = r.symbols.iter().any(|s| s.name == "container-fluid" && s.kind == SymbolKind::Class);
+    assert!(has_container, "expected 'container'; got: {:?}", r.symbols);
+    assert!(has_fluid, "expected 'container-fluid'; got: {:?}", r.symbols);
+}
+
+#[test]
+fn cov_pseudo_selector_emits_base_name() {
+    // `.clearfix:before, .clearfix:after { }` — both pseudo rules should
+    // emit the base class name "clearfix" so that `@extend .clearfix` resolves.
+    let r = extract::extract(".clearfix:before, .clearfix:after { content: ''; }", "");
+    let matches: Vec<_> = r.symbols.iter().filter(|s| s.name == "clearfix").collect();
+    assert!(!matches.is_empty(), "expected 'clearfix' from pseudo rules; got: {:?}", r.symbols);
+}
+
+#[test]
+fn cov_class_text_fallback_recovers_class_rules_from_error_file() {
+    // Files that produce root ERROR nodes (e.g. containing `--#{$prefix}prop`
+    // interpolated CSS custom properties) cause the grammar-driven path to miss
+    // class rules defined elsewhere in the same file. The text-scan fallback
+    // must recover `.class-name {` top-level rules so that `@extend` refs can
+    // resolve against them.
+    let src = ".btn {\n\
+               --prefix-btn-padding-x: #{$btn-padding-x};\n\
+               display: inline-block;\n\
+               }\n\
+               .btn-lg {\n\
+               padding: 0.5rem 1rem;\n\
+               }\n\
+               .btn-sm {\n\
+               padding: 0.25rem 0.5rem;\n\
+               }\n";
+    let r = extract::extract(src, "_buttons.scss");
+    assert!(r.has_errors, "interpolated custom props should trigger parse errors");
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.contains(&"btn-lg"),
+        "expected 'btn-lg' from class text fallback; names: {names:?}"
+    );
+    assert!(
+        names.contains(&"btn-sm"),
+        "expected 'btn-sm' from class text fallback; names: {names:?}"
+    );
+    let sm = r.symbols.iter().find(|s| s.name == "btn-sm").unwrap();
+    assert_eq!(sm.kind, SymbolKind::Class, "recovered class symbol must have Class kind");
+}
+
 // ---------------------------------------------------------------------------
 // ref_node_kinds: include_statement
 // ---------------------------------------------------------------------------

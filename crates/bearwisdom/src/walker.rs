@@ -35,11 +35,21 @@ impl From<&ScannedFile> for WalkedFile {
 
 /// Walk `project_root` and return all indexable source files.
 ///
-/// Delegates to `bearwisdom_profile::walk_files` for all discovery logic.
-/// Files are sorted by relative path for deterministic output across OSes.
+/// Delegates to `bearwisdom_profile::walk_files` for discovery, then applies
+/// the same content-sniff overrides as `detect_language` so that, e.g.,
+/// misnamed SCSS partials with a `.css` extension are tagged "scss" rather
+/// than "css" before they reach the indexer.
 pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
     let scanned = bearwisdom_profile::walk_files(project_root);
-    Ok(scanned.iter().map(WalkedFile::from).collect())
+    Ok(scanned.iter().map(|sf| {
+        let language = detect_language(&sf.absolute_path)
+            .unwrap_or(sf.language_id);
+        WalkedFile {
+            relative_path: sf.relative_path.clone(),
+            absolute_path: sf.absolute_path.clone(),
+            language,
+        }
+    }).collect())
 }
 
 /// Map a file path to a language identifier.
@@ -62,6 +72,10 @@ pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
 ///   C++-only constructs (templates, namespaces, `class` declarations,
 ///   `nullptr`, `extern "C"`, etc.). The C plugin handles both grammars,
 ///   but the language tag drives which tree-sitter grammar is used.
+/// - `.css` is normally CSS, but SCSS projects occasionally ship partials
+///   with a `.css` extension. When the file contains `@mixin ` or
+///   `@include ` the profile's "css" verdict is upgraded to "scss" so
+///   the SCSS extractor runs and emits mixin/function symbols.
 pub fn detect_language(path: &Path) -> Option<&'static str> {
     let lang = profile_detect_language(path).map(|desc| desc.id);
     if lang == Some("puppet") && is_likely_pascal(path) {
@@ -73,6 +87,9 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
     if lang == Some("c") && is_dot_h(path) && bearwisdom_profile::file_looks_like_cpp(path) {
         return Some("cpp");
     }
+    if lang == Some("css") && is_dot_css(path) && file_looks_like_scss(path) {
+        return Some("scss");
+    }
     lang
 }
 
@@ -81,6 +98,28 @@ fn is_dot_h(path: &Path) -> bool {
         .and_then(|e| e.to_str())
         .map(|e| e.eq_ignore_ascii_case("h"))
         .unwrap_or(false)
+}
+
+fn is_dot_css(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("css"))
+        .unwrap_or(false)
+}
+
+/// Read the first 2048 bytes of a `.css` file and return true when the content
+/// contains SCSS-specific syntax (`@mixin ` or `@include `). Plain CSS has no
+/// such at-rules; their presence unambiguously indicates a misnamed SCSS partial.
+fn file_looks_like_scss(path: &Path) -> bool {
+    let Ok(file) = std::fs::File::open(path) else { return false };
+    use std::io::Read;
+    let mut head = [0u8; 2048];
+    let n = match (&file).take(2048).read(&mut head) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    let text = String::from_utf8_lossy(&head[..n]);
+    text.contains("@mixin ") || text.contains("@include ")
 }
 
 /// Read the first 512 bytes of a `.pp` file and look for Pascal-source

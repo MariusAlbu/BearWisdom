@@ -170,7 +170,14 @@ impl LanguageResolver for ScssResolver {
             // Only resolve to SCSS-defined symbols. Cross-language
             // collisions (a Python `assert_equal` shadowing the SCSS
             // mixin) would otherwise leak through the bare-name path.
-            if !sym.file_path.ends_with(".scss") && !sym.file_path.ends_with(".sass") {
+            // `.css` is included because some projects rename SCSS
+            // partials with a `.css` extension (the extractor tags them
+            // as css, but the text-scan fallback still lifts @mixin/@function
+            // declarations — they are structurally SCSS symbols).
+            if !sym.file_path.ends_with(".scss")
+                && !sym.file_path.ends_with(".sass")
+                && !sym.file_path.ends_with(".css")
+            {
                 continue;
             }
             return Some(Resolution {

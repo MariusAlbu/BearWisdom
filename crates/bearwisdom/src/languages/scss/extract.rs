@@ -65,6 +65,7 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
     // symbol the grammar-driven path already found.
     if has_errors {
         recover_mixin_symbols_from_text(source, &mut symbols);
+        recover_class_symbols_from_text(source, &mut symbols);
     }
 
     super::ExtractionResult::new(symbols, refs, has_errors)
@@ -151,6 +152,67 @@ fn recover_mixin_symbols_from_text(source: &str, symbols: &mut Vec<ExtractedSymb
                 continue;
             }
             i += 1;
+        }
+    }
+}
+
+/// Byte-level scan for top-level `.class-name {` rule definitions.
+///
+/// Called alongside `recover_mixin_symbols_from_text` when the tree has
+/// parse errors — typically files that mix CSS custom property declarations
+/// using `#{$variable}` interpolation inside the first rule block, which
+/// causes the grammar to produce a root ERROR node that swallows subsequent
+/// clean rules. Only matches lines where the dot is the first non-whitespace
+/// character and the identifier contains no interpolation, so nested rules
+/// (`&.modifier`) and dynamic selectors are not captured.
+fn recover_class_symbols_from_text(source: &str, symbols: &mut Vec<ExtractedSymbol>) {
+    for (line_no, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        // Only lines that start a clean `.class-name {` or `.class-name{` rule.
+        if !trimmed.starts_with('.') {
+            continue;
+        }
+        let rest = &trimmed[1..];
+        // Name runs until `{`, `,`, `:`, whitespace, or end-of-line.
+        let name: &str = rest.split(|c: char| {
+            c == '{' || c == ',' || c == ':' || c == ' ' || c == '\t' || c == '\r'
+        }).next().unwrap_or("");
+        if name.is_empty() {
+            continue;
+        }
+        // Reject names that contain SCSS interpolation or look like property
+        // values, pseudo-elements, or other non-identifier fragments.
+        if name.contains('#') || name.contains('$') || name.contains('(')
+            || name.contains(')') || name.contains('[') || name.contains('/')
+            || name.contains('\\')
+        {
+            continue;
+        }
+        // The line must end (after the name and optional whitespace) with `{`
+        // or a comma to be a selector, not a CSS property value that starts
+        // with a dot by coincidence.
+        let after_name = &rest[name.len()..];
+        let after_trimmed = after_name.trim_start();
+        if !after_trimmed.starts_with('{') && !after_trimmed.starts_with(',') {
+            continue;
+        }
+        let already = symbols.iter().any(|s| s.name == name);
+        if !already {
+            let col = line.len() - trimmed.len();
+            symbols.push(ExtractedSymbol {
+                name: name.to_string(),
+                qualified_name: name.to_string(),
+                kind: SymbolKind::Class,
+                visibility: Some(Visibility::Public),
+                start_line: line_no as u32,
+                end_line: line_no as u32,
+                start_col: col as u32,
+                end_col: (col + 1 + name.len()) as u32,
+                signature: Some(format!(".{name}")),
+                doc_comment: None,
+                scope_path: None,
+                parent_index: None,
+            });
         }
     }
 }
@@ -522,7 +584,16 @@ fn handle_keyframes(
 }
 
 // ---------------------------------------------------------------------------
-// rule_set { selectors { block } }  =>  Class symbol per rule set
+// rule_set { selectors { block } }  =>  Class symbol per selector
+//
+// A single rule_set can have multiple comma-separated selectors
+// (`.container, .container-fluid { ... }`) — emit one Class symbol per
+// distinct base name so that `@extend` and `Inherits` refs can resolve
+// to any of them. Compound selectors (`.button.button-assertive`) contribute
+// each chained class individually. Pseudo-element / pseudo-class suffixes
+// (`:before`, `:after`, `:hover`) are stripped so `.clearfix:before` and
+// `.clearfix:after` both produce the base name `clearfix`, which matches
+// an `@extend .clearfix` that would otherwise be unresolvable.
 // ---------------------------------------------------------------------------
 
 fn handle_rule_set(
@@ -532,46 +603,53 @@ fn handle_rule_set(
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
 ) {
-    let name = find_child_of_kind(node, "selectors")
-        .and_then(|sel| extract_first_selector_name(&sel, src))
-        .or_else(|| {
-            let row = node.start_position().row;
-            src.lines().nth(row).and_then(|line| {
-                let trimmed = line.trim();
-                let name = trimmed
-                    .split(|c: char| c == '{' || c == ',' || c == ' ')
-                    .next()
-                    .unwrap_or("")
-                    .trim_start_matches('.')
-                    .trim_start_matches('#')
-                    .trim_start_matches('%')
-                    .trim_start_matches('&');
-                if name.is_empty() {
-                    None
-                } else {
-                    Some(name.to_string())
-                }
-            })
-        });
-
-    let idx = symbols.len();
-    if let Some(name) = name {
-        let clean = name
-            .trim_start_matches('.')
-            .trim_start_matches('#')
-            .trim_start_matches('%')
-            .trim_start_matches('&')
-            .to_string();
-        let display = if clean.is_empty() { name } else { clean };
-        symbols.push(make_sym(display, SymbolKind::Class, node, parent_idx, None));
+    // Collect all distinct base names from the selector list.
+    let names: Vec<String> = if let Some(sel_node) = find_child_of_kind(node, "selectors") {
+        extract_all_selector_names(&sel_node, src)
     } else {
+        // Fallback: parse the raw source line when the grammar didn't produce
+        // a `selectors` node (e.g. after a parse error or for unusual rules).
+        let row = node.start_position().row;
+        src.lines()
+            .nth(row)
+            .into_iter()
+            .flat_map(|line| {
+                let trimmed = line.trim();
+                trimmed
+                    .split(|c: char| c == '{' || c == ',' || c == ' ')
+                    .map(|seg| {
+                        seg.trim_start_matches('.')
+                            .trim_start_matches('#')
+                            .trim_start_matches('%')
+                            .trim_start_matches('&')
+                            .to_string()
+                    })
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+
+    if names.is_empty() {
         visit_children(node, src, symbols, refs, parent_idx);
         return;
     }
 
+    // Emit one symbol per unique base name. The first emitted symbol owns
+    // the parent-index slot used by child rule_sets.
+    let first_idx = symbols.len();
+    let mut emitted_names: Vec<String> = Vec::new();
+    for name in names {
+        if emitted_names.contains(&name) {
+            continue;
+        }
+        emitted_names.push(name.clone());
+        symbols.push(make_sym(name, SymbolKind::Class, node, parent_idx, None));
+    }
+
     // Recurse into all children (selectors may contain pseudo-class call_expressions,
     // block contains nested rules and declarations)
-    visit_children(node, src, symbols, refs, Some(idx));
+    visit_children(node, src, symbols, refs, Some(first_idx));
 }
 
 // ---------------------------------------------------------------------------
@@ -819,50 +897,144 @@ fn path_to_target(module: &str) -> String {
         .to_string()
 }
 
-fn extract_first_selector_name(node: &Node, src: &str) -> Option<String> {
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            match child.kind() {
-                "class_selector" => {
-                    let name = child
-                        .child_by_field_name("class_name")
-                        .or_else(|| child.child(1))
-                        .map(|n| node_text(n, src))?;
-                    if !name.is_empty() {
-                        return Some(format!(".{name}"));
-                    }
-                }
-                "id_selector" => {
-                    let name = child
-                        .child_by_field_name("id_name")
-                        .or_else(|| child.child(1))
-                        .map(|n| node_text(n, src))?;
-                    if !name.is_empty() {
-                        return Some(format!("#{name}"));
-                    }
-                }
-                "placeholder" => {
-                    let name = child.child(1).map(|n| node_text(n, src))?;
-                    if !name.is_empty() {
-                        return Some(format!("%{name}"));
-                    }
-                }
-                "tag_name" | "nesting_selector" | "universal_selector" => {
-                    let t = node_text(child, src);
-                    if !t.is_empty() {
-                        return Some(t);
-                    }
-                }
-                "pseudo_class_selector" | "pseudo_element_selector" => {
-                    let t = node_text(child, src);
-                    if !t.is_empty() && !t.contains('{') {
-                        return Some(t);
-                    }
-                }
-                _ => {}
+/// Extract the base name from a single selector node, stripping pseudo-elements
+/// and pseudo-classes. Returns the canonical form (`.name`, `#name`, `%name`,
+/// or bare tag name) or `None` when the node has no extractable name.
+///
+/// Pseudo suffixes (`:before`, `:after`, `:hover`, `::placeholder`) are
+/// intentionally dropped so `.clearfix:before` and `.clearfix:after` both
+/// produce `clearfix`. This lets an `@extend .clearfix` resolve to either
+/// pseudo rule definition where no standalone `.clearfix {}` rule exists.
+fn extract_selector_base_name(child: &Node, src: &str) -> Option<String> {
+    match child.kind() {
+        "class_selector" => {
+            // Strip any leading chained classes — for `.button.button-assertive`
+            // the grammar nests the second class inside the first as a child.
+            // We collect all chained classes and return them via the caller.
+            let name = child
+                .child_by_field_name("class_name")
+                .or_else(|| child.child(1))
+                .map(|n| node_text(n, src))?;
+            if !name.is_empty() {
+                Some(name)
+            } else {
+                None
             }
         }
+        "id_selector" => {
+            let name = child
+                .child_by_field_name("id_name")
+                .or_else(|| child.child(1))
+                .map(|n| node_text(n, src))?;
+            if !name.is_empty() { Some(name) } else { None }
+        }
+        "placeholder" => {
+            let name = child.child(1).map(|n| node_text(n, src))?;
+            if !name.is_empty() { Some(name) } else { None }
+        }
+        "tag_name" | "nesting_selector" | "universal_selector" => {
+            let t = node_text(*child, src);
+            if !t.is_empty() { Some(t) } else { None }
+        }
+        // Pseudo-class / pseudo-element selectors that appear as standalone
+        // rule starters (`:root`, `::before` at the top level) are kept.
+        // Pseudo annotations on class selectors are stripped by the class_selector
+        // arm — they appear as sibling nodes in the grammar, not children.
+        "pseudo_class_selector" | "pseudo_element_selector" => {
+            let t = node_text(*child, src);
+            if !t.is_empty() && !t.contains('{') { Some(t) } else { None }
+        }
+        _ => None,
     }
-    None
 }
+
+/// Collect all distinct base class names from a `selectors` node.
+///
+/// Handles three patterns:
+/// 1. Comma list: `.a, .b { }` — walk all top-level selector children.
+/// 2. Compound: `.button.button-assertive { }` — the grammar nests the second
+///    `class_selector` inside the first. Walk inner children of each
+///    `class_selector` to pick up chained classes.
+/// 3. Pseudo suffix: `.clearfix:before, .clearfix:after { }` — pseudo children
+///    that follow a class name are silently skipped; only the class name is
+///    emitted. Two pseudo rules for the same base class produce one name
+///    (deduplication is in the caller).
+fn extract_all_selector_names(node: &Node, src: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+
+    for i in 0..node.child_count() {
+        let Some(child) = node.child(i) else { continue };
+        match child.kind() {
+            "class_selector" => {
+                // The primary class name.
+                if let Some(name) = child
+                    .child_by_field_name("class_name")
+                    .or_else(|| child.child(1))
+                    .map(|n| node_text(n, src))
+                    .filter(|s| !s.is_empty())
+                {
+                    if !out.contains(&name) { out.push(name); }
+                }
+                // Chained classes inside the same class_selector node
+                // (`.button.button-assertive` produces a nested class_selector
+                // for `.button-assertive` as a child of the outer one).
+                for j in 0..child.child_count() {
+                    let Some(inner) = child.child(j) else { continue };
+                    if inner.kind() == "class_selector" {
+                        if let Some(inner_name) = inner
+                            .child_by_field_name("class_name")
+                            .or_else(|| inner.child(1))
+                            .map(|n| node_text(n, src))
+                            .filter(|s| !s.is_empty())
+                        {
+                            if !out.contains(&inner_name) { out.push(inner_name); }
+                        }
+                    }
+                }
+            }
+            "id_selector" | "placeholder" | "tag_name"
+            | "nesting_selector" | "universal_selector" => {
+                if let Some(name) = extract_selector_base_name(&child, src) {
+                    if !out.contains(&name) { out.push(name); }
+                }
+            }
+            // Pseudo selectors can appear in two ways:
+            // (a) `.clearfix:before` — the grammar wraps the class selector
+            //     inside a pseudo_class_selector; look for the inner
+            //     class_selector and extract its name to get "clearfix".
+            // (b) `:root` — a standalone pseudo with no inner class; extract
+            //     its text verbatim as the selector name.
+            "pseudo_class_selector" | "pseudo_element_selector" => {
+                // Probe for a nested class_selector (case a).
+                let mut found_inner = false;
+                for j in 0..child.child_count() {
+                    let Some(inner) = child.child(j) else { continue };
+                    if inner.kind() == "class_selector" {
+                        if let Some(name) = inner
+                            .child_by_field_name("class_name")
+                            .or_else(|| inner.child(1))
+                            .map(|n| node_text(n, src))
+                            .filter(|s| !s.is_empty())
+                        {
+                            if !out.contains(&name) { out.push(name); }
+                            found_inner = true;
+                        }
+                    }
+                }
+                // Case (b): standalone pseudo like `:root`.
+                if !found_inner {
+                    let t = node_text(child, src);
+                    if !t.is_empty() && !t.contains('{') && !out.contains(&t) {
+                        out.push(t);
+                    }
+                }
+            }
+            // Commas and whitespace — skip.
+            _ => {}
+        }
+    }
+
+    out
+}
+
 

@@ -187,6 +187,44 @@ pub(crate) fn package_declares_globals(pkg_root: &Path) -> bool {
     false
 }
 
+/// True when `pkg_root` contains at least one `.scss` source file within
+/// the first two directory levels (excluding `node_modules`, test dirs, and
+/// dot dirs). Used as a gate condition to retain SCSS mixin packages in the
+/// dep-root list even when user SCSS source never writes `@use 'pkg-name'`
+/// — a pattern common to SCSS test frameworks that are runner-injected.
+pub(crate) fn package_ships_scss(pkg_root: &Path) -> bool {
+    package_ships_scss_bounded(pkg_root, 0)
+}
+
+fn package_ships_scss_bounded(dir: &Path, depth: u32) -> bool {
+    if depth >= 2 { return false }
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name == "node_modules" || name.starts_with('.')
+                    || matches!(name, "test" | "tests" | "__tests__" | "docs" | "examples")
+                {
+                    continue;
+                }
+            }
+            if package_ships_scss_bounded(&path, depth + 1) {
+                return true;
+            }
+        } else if ft.is_file() {
+            if path.extension().and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("scss"))
+                .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Resolve the candidate `.d.ts` files we should probe for declare-global
 /// content. Reads `package.json`'s `types`/`typings` field if present;
 /// otherwise probes standard entry filenames at the package root.
@@ -670,6 +708,14 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
+    // When the project has SCSS source, retain any dep that ships `.scss`
+    // files even if the user never writes `@use 'dep-name'`. SCSS test
+    // frameworks (e.g. sass-true) and mixin libraries are loaded by the
+    // build tool or test runner — not via an explicit SCSS `@use` in user
+    // source — so the user-import gate would otherwise silently discard
+    // them, leaving their mixins unresolvable.
+    let project_has_scss = scan_for_scss_bounded(project_root, 0);
+
     for dep in &data.dependencies {
         if builtins.contains(dep.as_str()) { continue }
         if !is_valid_npm_module_path(dep) {
@@ -681,7 +727,10 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         //       package, OR
         //   (b) its entry .d.ts declares globals (declare-global probe;
         //       see `package_declares_globals`), OR
-        //   (c) the project has no scannable source (manifest-only
+        //   (c) the project uses SCSS and the dep ships `.scss` source
+        //       (SCSS test frameworks + mixin libraries are runner-injected,
+        //       not imported in user source), OR
+        //   (d) the project has no scannable source (manifest-only
         //       checkouts, generators) — fall back to "keep all".
         if !user_imports.is_empty() {
             let companion = dep.strip_prefix("@types/");
@@ -712,7 +761,13 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 }
                 false
             });
-            if !user_imports_dep && !user_imports_companion && !any_install_declares_globals {
+            let any_install_ships_scss = project_has_scss && node_modules_roots.iter().any(|nm| {
+                let primary = nm.join(dep);
+                primary.is_dir() && package_ships_scss(&primary)
+            });
+            if !user_imports_dep && !user_imports_companion
+                && !any_install_declares_globals && !any_install_ships_scss
+            {
                 continue;
             }
         }
@@ -1207,6 +1262,12 @@ fn discover_ts_externals_scoped(
     // doesn't make React relevant here.
     let user_imports = collect_ts_user_imports(package_abs_path);
 
+    // SCSS dep survival: when workspace root (or the package itself) has SCSS
+    // source, any dep that ships .scss files is kept. Mirrors the logic in
+    // discover_ts_externals for the per-package path.
+    let project_has_scss = scan_for_scss_bounded(workspace_root, 0)
+        || (package_abs_path != workspace_root && scan_for_scss_bounded(package_abs_path, 0));
+
     let builtins = node_builtins();
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
@@ -1246,7 +1307,13 @@ fn discover_ts_externals_scoped(
                 }
                 false
             });
-            if !user_imports_dep && !user_imports_companion && !any_install_declares_globals {
+            let any_install_ships_scss = project_has_scss && node_modules_roots.iter().any(|nm| {
+                let primary = nm.join(dep);
+                primary.is_dir() && package_ships_scss(&primary)
+            });
+            if !user_imports_dep && !user_imports_companion
+                && !any_install_declares_globals && !any_install_ships_scss
+            {
                 continue;
             }
         }
@@ -4615,5 +4682,99 @@ declare global {
         // declares Baz — both excluded.
         assert_eq!(paths.len(), 1, "expected only the file declaring Foo: {paths:?}");
         assert!(paths[0].ends_with("foo.d.ts"));
+    }
+
+    #[test]
+    fn package_ships_scss_returns_true_when_scss_at_root() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pkg = tmp.path();
+        std::fs::write(pkg.join("_index.scss"), "@mixin assert() {}\n").unwrap();
+        assert!(package_ships_scss(pkg), "package with .scss at root should return true");
+    }
+
+    #[test]
+    fn package_ships_scss_returns_true_when_scss_in_subdir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pkg = tmp.path();
+        std::fs::create_dir_all(pkg.join("sass")).unwrap();
+        std::fs::write(pkg.join("sass/_output.scss"), "@mixin output() {}\n").unwrap();
+        assert!(package_ships_scss(pkg), "package with .scss in sass/ subdir should return true");
+    }
+
+    #[test]
+    fn package_ships_scss_returns_false_when_no_scss() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pkg = tmp.path();
+        std::fs::write(pkg.join("index.d.ts"), "export const x: number;\n").unwrap();
+        assert!(!package_ships_scss(pkg), "TS-only package should return false");
+    }
+
+    #[test]
+    fn discover_ts_externals_keeps_scss_shipping_packages_in_scss_project() {
+        // A dep that ships .scss files should survive the user-import gate
+        // when the project has .scss user source, even if no user .scss file
+        // writes `@use 'sass-test-pkg'`.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{
+              "name": "x",
+              "dependencies": {
+                "imported-ts-pkg": "1.0.0",
+                "sass-test-pkg": "1.0.0",
+                "unused-pkg": "2.0.0"
+              }
+            }"#,
+        )
+        .unwrap();
+
+        // imported-ts-pkg — user imports it via TS.
+        std::fs::create_dir_all(root.join("node_modules/imported-ts-pkg")).unwrap();
+        std::fs::write(
+            root.join("node_modules/imported-ts-pkg/package.json"),
+            r#"{"name":"imported-ts-pkg","version":"1.0.0"}"#,
+        )
+        .unwrap();
+
+        // sass-test-pkg — ships .scss files; not imported by user .scss source.
+        std::fs::create_dir_all(root.join("node_modules/sass-test-pkg/sass")).unwrap();
+        std::fs::write(
+            root.join("node_modules/sass-test-pkg/package.json"),
+            r#"{"name":"sass-test-pkg","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("node_modules/sass-test-pkg/sass/_assert.scss"),
+            "@mixin assert() {}\n",
+        )
+        .unwrap();
+
+        // unused-pkg — no .scss, not imported.
+        std::fs::create_dir_all(root.join("node_modules/unused-pkg")).unwrap();
+        std::fs::write(
+            root.join("node_modules/unused-pkg/package.json"),
+            r#"{"name":"unused-pkg","version":"2.0.0"}"#,
+        )
+        .unwrap();
+
+        // User source: a .ts file importing imported-ts-pkg and a .scss file.
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/index.ts"),
+            "import x from 'imported-ts-pkg';\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("src/styles.scss"),
+            ".button { color: red; }\n",
+        )
+        .unwrap();
+
+        let roots = discover_ts_externals(root);
+        let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+        assert!(ids.contains(&"imported-ts-pkg"), "imported TS pkg expected: {ids:?}");
+        assert!(ids.contains(&"sass-test-pkg"), "scss-shipping pkg expected even without @use: {ids:?}");
+        assert!(!ids.contains(&"unused-pkg"), "unused non-scss pkg should be gated out: {ids:?}");
     }
 }

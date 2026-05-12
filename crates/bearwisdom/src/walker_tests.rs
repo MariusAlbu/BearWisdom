@@ -202,6 +202,30 @@ fn detect_pl_clause_only_promotes_prolog() {
 }
 
 #[test]
+fn detect_css_with_mixin_promotes_scss() {
+    let dir = TempDir::new().unwrap();
+    let css = dir.path().join("_mixins.css");
+    fs::write(&css, "@mixin panel($width) {\n  max-width: $width;\n}\n").unwrap();
+    assert_eq!(detect_language(&css), Some("scss"));
+}
+
+#[test]
+fn detect_css_with_include_promotes_scss() {
+    let dir = TempDir::new().unwrap();
+    let css = dir.path().join("styles.css");
+    fs::write(&css, ".btn {\n  @include rounded(4px);\n}\n").unwrap();
+    assert_eq!(detect_language(&css), Some("scss"));
+}
+
+#[test]
+fn detect_plain_css_stays_css() {
+    let dir = TempDir::new().unwrap();
+    let css = dir.path().join("styles.css");
+    fs::write(&css, ".btn {\n  color: red;\n  display: inline-block;\n}\n").unwrap();
+    assert_eq!(detect_language(&css), Some("css"));
+}
+
+#[test]
 fn detect_unsupported() {
     assert_eq!(detect_language(Path::new("image.png")), None);
     assert_eq!(detect_language(Path::new("file.lock")), None);
