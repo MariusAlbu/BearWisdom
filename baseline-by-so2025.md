@@ -77,7 +77,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | nunjucks         | template | 0   | ✅ | stale baseline resolved; imports refs now classified correctly in full-index path; remaining 28 unresolved are in `.js` files inside nunjucks projects (browser builtins), not nunjucks language itself |
 | scss             | markup   | 73  | 🟡 | `.sass` indented-syntax recovery + `@use ... as alias` round-trip landed; residual is `@include alias.mixin()` patterns where the alias targets an unindexed npm package |
 | hcl              | config   | 58  | 🟡 | Terraform / Nomad data-model traversal (`var.x`, `module.y.output.z`) |
-| heex             | template | 42  | 🟡 | tail of Elixir refs |
+| heex             | template | 1   | ✅ | HeexResolver: bare `<.component>` calls now resolve via ext:/internal symbol lookup; residual is a JS array method in an embedded `<script>` block |
 | make             | config   | 29  | 🟢 | special-target / pattern-stem / file-extension prereq suppression landed; residual is Erlang-define-inside-Makefile parse artifacts |
 | twig             | template | 26  | 🟢 | |
 | blade            | template | 11  | 🟢 | |
