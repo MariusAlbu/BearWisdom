@@ -53,7 +53,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | —  | Vue                 | —        | 98.75%   | 57,764     | 731        | ✅     |       |
 | —  | Haskell             | —        | 95.46%   | 118,625    | 5,644      | 🟢     |       |
 | —  | Bicep               | —        | 97.21%   | 124,011    | 3,565      | 🟢     |       |
-| —  | Nim                 | —        | 89.48%   | 189,755    | 22,303     | 🟡     | multi-line `import\n  a,\n  b` block parsing (single-line-only walk previously dropped most nimbus imports) + `Name* =` exported type-section RHS; nimbus 74 → 86.3% (`Slot`/`Epoch`/`ValidatorIndex` now indexed), libp2p 91.9%, compiler 91.7%, arraymancer 91.5%, nimble 90.7%; pixie 67% (was 100% / 0-edge measurement artifact — real call edges now extracted) |
+| —  | Nim                 | —        | 95.71%   | 205,180    | 9,200      | ✅     | when-block proc extraction (2-space indent), pragma-annotated type extraction, enum member extraction, pkgcache fallback for build-failed packages, package-level + stdlib-any resolver passes; compiler 96.0%, nimbus 96.2%, libp2p 96.1%, nimble 96.9%, arraymancer 95.8%, nitter 88.8%, pixie 92.8% |
 | —  | Clojure             | —        | ~98.6%   | ~43,000    | 611        | ✅     | rate from 3 dominant projects (babashka/datascript/ring) |
 | —  | Razor               | —        | ~100%    | ~10,500    | 55         | ✅     | dotnet-fluentui-blazor at 100% |
 | —  | Astro               | —        | ~98.9%   | ~6,200     | 69         | ✅     | astro-awesome-privacy dominant |
