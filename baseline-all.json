@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-05-11T00:00:00Z",
+  "captured_at": "2026-05-12T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -903,14 +903,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 78
+        "min_resolution_rate": 79
       },
       "code_chunks": 2280,
       "files": 104,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1538,
-      "internal_unresolved": 410,
+      "internal_edges": 1187,
+      "internal_unresolved": 299,
       "languages": {
         "c": 1,
         "cmake": 53,
@@ -922,17 +922,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/cmake-cpm",
       "perf": {
-        "end_ws_mb": 116,
+        "end_ws_mb": 112,
         "files_per_sec": 2,
-        "index_duration_ms": 59494
+        "index_duration_ms": 50804
       },
       "project": "cmake-cpm",
-      "resolution_rate": 78.95,
+      "resolution_rate": 79.88,
       "routes": 0,
       "symbols": 2019,
       "unresolved_by_lang_kind": {
-        "cmake.calls": 21,
-        "cmake.type_ref": 111,
+        "cmake.calls": 3,
+        "cmake.type_ref": 18,
         "cpp.calls": 64,
         "cpp.type_ref": 25,
         "python.calls": 3,
@@ -961,9 +961,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/cmake-examples",
       "perf": {
-        "end_ws_mb": 114,
-        "files_per_sec": 2,
-        "index_duration_ms": 54965
+        "end_ws_mb": 106,
+        "files_per_sec": 3,
+        "index_duration_ms": 48987
       },
       "project": "cmake-examples",
       "resolution_rate": 91.21,
@@ -996,9 +996,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/cmake-ttroy50",
       "perf": {
-        "end_ws_mb": 242,
-        "files_per_sec": 2,
-        "index_duration_ms": 56797
+        "end_ws_mb": 105,
+        "files_per_sec": 3,
+        "index_duration_ms": 49174
       },
       "project": "cmake-ttroy50",
       "resolution_rate": 91.21,

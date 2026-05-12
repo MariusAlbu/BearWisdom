@@ -93,8 +93,43 @@ impl LanguageResolver for CMakeResolver {
             return Some(pkg.to_string());
         }
 
+        // Variables suffixed with `_SOURCE_DIR` or `_BINARY_DIR` are populated at
+        // configure time by CMake's FetchContent / CPM / ExternalProject mechanisms.
+        // They are not declared in any project source file and are structurally
+        // unresolvable from the static index.
+        if ref_ctx.extracted_ref.kind == crate::types::EdgeKind::TypeRef
+            && (target.ends_with("_SOURCE_DIR") || target.ends_with("_BINARY_DIR"))
+        {
+            return Some("cmake:fetched".to_string());
+        }
+
+        // When a file includes CPM.cmake, bare unresolved Calls targets from
+        // target_link_libraries are CPM-downloaded packages — their add_library
+        // declarations only exist in CMake's build-time fetch cache, not in the
+        // project source tree.  Classify them as external so they don't appear
+        // in unresolved_refs.
+        if ref_ctx.extracted_ref.kind == crate::types::EdgeKind::Calls
+            && file_uses_cpm(file_ctx)
+        {
+            return Some("cmake:cpm-package".to_string());
+        }
+
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_cmake_builtin)
     }
+}
+
+/// Returns true when the file's imports indicate that CPM.cmake is active.
+///
+/// CPM.cmake is included via `include(<path>/CPM.cmake)`.  Any import whose
+/// module path contains `CPM` (case-sensitive, matching CPM's documented file
+/// name) is treated as a CPM activation signal.
+fn file_uses_cpm(file_ctx: &FileContext) -> bool {
+    file_ctx.imports.iter().any(|imp| {
+        imp.module_path
+            .as_deref()
+            .map(|p| p.contains("CPM"))
+            .unwrap_or(false)
+    })
 }
 
 /// Edge kind / symbol kind compatibility for CMake.
@@ -115,13 +150,21 @@ pub(super) fn is_cmake_builtin(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     let s = lower.as_str();
 
-    // CMake standard variable prefixes — these are never user-defined symbols
+    // CMake standard variable prefixes — these are never user-defined symbols.
     if s.starts_with("cmake_")
         || s.starts_with("project_")
         || s.starts_with("cpack_")
         || s.starts_with("ctest_")
         || s.starts_with("fetchcontent_")
     {
+        return true;
+    }
+
+    // CPM.cmake injects cache variables under the `CPM_` prefix at configure
+    // time (e.g. CPM_PATH, CPM_ARGS_*, CPM_DECLARATION_*, CPM_DOWNLOAD_*).
+    // These are populated by CPMAddPackage / CPMFindPackage macro expansion,
+    // not declared in any project source file.
+    if s.starts_with("cpm_") {
         return true;
     }
 

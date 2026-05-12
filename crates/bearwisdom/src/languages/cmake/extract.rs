@@ -1143,7 +1143,11 @@ fn collect_variable_refs(
         } else {
             name
         };
-        if !target.is_empty() {
+        // Names containing `}` are extraction artifacts of nested variable
+        // references like `${${OUTER}_SUFFIX}` — the inner identifier plus the
+        // unparsed tail leaks into the name.  They cannot be resolved and
+        // add noise to unresolved-ref counts.
+        if !target.is_empty() && !target.contains('}') {
             refs.push(ExtractedRef {
                 source_symbol_index: 0,
                 target_name: target,

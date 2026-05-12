@@ -635,3 +635,69 @@ fn non_builtin_user_var_not_recognized() {
     assert!(!is_cmake_builtin("MY_PROJECT_DIR"), "user variable must not be builtin");
     assert!(!is_cmake_builtin("adder"), "project target must not be builtin");
 }
+
+// ---------------------------------------------------------------------------
+// CPM_ prefix — cache variables injected at configure time, not in source
+// ---------------------------------------------------------------------------
+
+#[test]
+fn builtin_cpm_prefix_is_recognized() {
+    assert!(is_cmake_builtin("CPM_PATH"), "CPM_PATH must be a builtin");
+    assert!(is_cmake_builtin("CPM_ARGS_SOURCE_DIR"), "CPM_ARGS_SOURCE_DIR must be a builtin");
+    assert!(is_cmake_builtin("CPM_DECLARATION_foo"), "CPM_DECLARATION_foo must be a builtin");
+    assert!(is_cmake_builtin("CPM_DOWNLOAD_mylib"), "CPM_DOWNLOAD_mylib must be a builtin");
+    assert!(is_cmake_builtin("cpm_path"), "cpm_ lowercase must be a builtin");
+}
+
+// ---------------------------------------------------------------------------
+// Nested variable ref artifacts — names containing `}` must not be emitted
+// ---------------------------------------------------------------------------
+
+#[test]
+fn nested_variable_ref_artifact_not_emitted() {
+    // `${${CPM_ARGS_NAME}_SOURCE_DIR}` — the inner extraction leaks `}` into the name.
+    let src = r#"message("${${CPM_ARGS_NAME}_SOURCE_DIR}")"#;
+    let r = extract::extract(src, lang());
+    let type_ref_names: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !type_ref_names.iter().any(|n| n.contains('}')),
+        "TypeRef targets must not contain '}}' — got: {type_ref_names:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// CPM_ variables are not emitted as TypeRef edges (classified as builtin)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cpm_prefixed_variable_ref_not_in_unresolved() {
+    // ${CPM_PATH} appears as a variable_ref but is_cmake_builtin suppresses it
+    // before it reaches unresolved_refs — the resolver marks it external.
+    assert!(is_cmake_builtin("CPM_PATH"), "CPM_PATH is a CPM cache variable");
+    assert!(is_cmake_builtin("CPM_ARGS_SOURCE_DIR"), "CPM_ARGS_SOURCE_DIR is a CPM arg");
+    assert!(is_cmake_builtin("CPM_DECLARATION_mylib"), "CPM_DECLARATION_* is CPM-injected");
+}
+
+// ---------------------------------------------------------------------------
+// infer_external_namespace — _SOURCE_DIR / _BINARY_DIR classified as external
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cpm_source_dir_suffix_variable_ref_emitted_without_closing_brace() {
+    // Verify the extractor strips CPM-style nested ref artifacts.
+    // `${lua_SOURCE_DIR}` should emit a clean TypeRef to `lua_SOURCE_DIR`,
+    // not a malformed target containing `}`.
+    let src = "include_directories(${lua_SOURCE_DIR}/src)";
+    let r = extract::extract(src, lang());
+    let type_ref_names: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !type_ref_names.iter().any(|n| n.contains('}')),
+        "TypeRef targets must not contain '}}'; got: {type_ref_names:?}",
+    );
+}
