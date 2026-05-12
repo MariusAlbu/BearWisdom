@@ -208,13 +208,15 @@ fn flush_resolve_buf(
 ///
 /// Each emission carries a file path (not a DB id — the file may not have
 /// been inserted yet when the parallel section ran). This function batches
-/// a `SELECT id FROM files WHERE path IN (...)` to resolve the ids, then
-/// inserts the flow_edges rows for well-known emissions.
+/// a `SELECT id FROM files WHERE path IN (...)` to resolve the ids, then:
 ///
-/// Single-ended entries (no target_file_id) record call sites so the
-/// architecture query and quality-check counter can see resolver-detected
-/// HTTP calls, IPC commands, etc., even when no handler side has been
-/// indexed yet.
+/// 1. Pairs `NamedChannel { Producer }` ↔ `NamedChannel { Consumer }` by
+///    `(kind, name)` across files and writes paired rows with both
+///    `source_file_id` and `target_file_id` populated.
+/// 2. Pairs `DbQuery` ↔ `DbEntity` by `entity_name` / `table_name_hint`.
+/// 3. Writes single-ended rows for every unpaired emission and all single-
+///    ended variants (DiBinding, ConfigLookup, FeatureFlag, AuthGuard,
+///    CliCommand, ScheduledJob).
 fn flush_flow_emissions(
     conn: &rusqlite::Connection,
     emissions: &[(String, u32, FlowEmission)],
@@ -226,7 +228,6 @@ fn flush_flow_emissions(
     // Batch-look up file_ids for all distinct paths.
     let mut path_to_id: HashMap<&str, i64> = HashMap::new();
     {
-        // SELECT in batches of 256 to avoid SQLITE_MAX_VARIABLE_NUMBER.
         let paths: Vec<&str> = {
             let mut seen = std::collections::HashSet::new();
             emissions.iter()
@@ -249,8 +250,6 @@ fn flush_flow_emissions(
                 let id: i64 = row.get(0)?;
                 let path: String = row.get(1)?;
                 path_to_id.entry(
-                    // SAFETY: the key lifetime must be tied to `emissions`, not to
-                    // the local `path` String. Use the original slice entry.
                     emissions.iter()
                         .find(|(p, _, _)| p == &path)
                         .map(|(p, _, _)| p.as_str())
@@ -260,27 +259,154 @@ fn flush_flow_emissions(
         }
     }
 
-    let mut stmt = conn
+    use flow_emit::{ChannelRole, FlowEmission};
+
+    // Resolve each emission to its file_id (skip those whose file isn't in the DB).
+    struct Resolved<'a> {
+        file_id: i64,
+        line: u32,
+        emission: &'a FlowEmission,
+    }
+    let resolved: Vec<Resolved<'_>> = emissions.iter()
+        .filter_map(|(path, line, emission)| {
+            path_to_id.get(path.as_str()).map(|&file_id| Resolved { file_id, line: *line, emission })
+        })
+        .collect();
+
+    // -----------------------------------------------------------------------
+    // Phase 1: pair NamedChannel Producer ↔ Consumer by (kind, name).
+    // Only non-empty names are eligible for pairing.
+    // -----------------------------------------------------------------------
+    let mut named_channel_paired: std::collections::HashSet<usize> = Default::default();
+
+    {
+        // Build producer and consumer index by (edge_type_str, name).
+        let mut producers: HashMap<(&str, &str), Vec<usize>> = Default::default();
+        let mut consumers: HashMap<(&str, &str), Vec<usize>> = Default::default();
+        for (idx, r) in resolved.iter().enumerate() {
+            if let FlowEmission::NamedChannel { kind, name, role, .. } = r.emission {
+                if name.is_empty() { continue; }
+                let key = (kind.edge_type_str(), name.as_str());
+                match role {
+                    ChannelRole::Producer => producers.entry(key).or_default().push(idx),
+                    ChannelRole::Consumer => consumers.entry(key).or_default().push(idx),
+                }
+            }
+        }
+
+        let mut pair_stmt = conn
+            .prepare_cached(
+                "INSERT OR IGNORE INTO flow_edges
+                    (source_file_id, source_line, target_file_id, target_line,
+                     edge_type, protocol, http_method, url_pattern, confidence)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )
+            .context("Failed to prepare paired flow_edges INSERT")?;
+
+        for (key, prod_idxs) in &producers {
+            if let Some(cons_idxs) = consumers.get(key) {
+                for &pi in prod_idxs {
+                    for &ci in cons_idxs {
+                        let pr = &resolved[pi];
+                        let cr = &resolved[ci];
+                        if let FlowEmission::NamedChannel { kind, method, name, .. } = pr.emission {
+                            let n = pair_stmt.execute(rusqlite::params![
+                                pr.file_id, pr.line,
+                                cr.file_id, cr.line,
+                                kind.edge_type_str(), kind.protocol_str(),
+                                method.map(|m| m.as_str()),
+                                Some(name.as_str()),
+                                0.9_f64,
+                            ]).context("Failed to insert paired flow_edge")?;
+                            if n > 0 {
+                                named_channel_paired.insert(pi);
+                                named_channel_paired.insert(ci);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 2: pair DbQuery ↔ DbEntity by entity_name / table_name_hint.
+    // -----------------------------------------------------------------------
+    let mut db_paired: std::collections::HashSet<usize> = Default::default();
+
+    {
+        // Build entity index by table_name_hint (or base_name_hint as fallback).
+        let mut entities: HashMap<&str, Vec<usize>> = Default::default();
+        for (idx, r) in resolved.iter().enumerate() {
+            if let FlowEmission::DbEntity { table_name_hint, base_name_hint, .. } = r.emission {
+                let key = table_name_hint.as_deref().unwrap_or(base_name_hint.as_str());
+                if !key.is_empty() {
+                    entities.entry(key).or_default().push(idx);
+                }
+            }
+        }
+
+        let mut pair_stmt = conn
+            .prepare_cached(
+                "INSERT OR IGNORE INTO flow_edges
+                    (source_file_id, source_line, target_file_id, target_line,
+                     edge_type, url_pattern, confidence, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )
+            .context("Failed to prepare db-paired flow_edges INSERT")?;
+
+        for (idx, r) in resolved.iter().enumerate() {
+            if let FlowEmission::DbQuery { entity_name, operation } = r.emission {
+                if entity_name.is_empty() { continue; }
+                let entity_idxs = entities.get(entity_name.as_str())
+                    .or_else(|| entities.get(entity_name.to_lowercase().as_str()))
+                    .cloned()
+                    .unwrap_or_default();
+                for ei in entity_idxs {
+                    let er = &resolved[ei];
+                    let n = pair_stmt.execute(rusqlite::params![
+                        r.file_id, r.line,
+                        er.file_id, er.line,
+                        "db_query",
+                        Some(entity_name.as_str()),
+                        0.85_f64,
+                        Some(operation.as_str()),
+                    ]).context("Failed to insert db-query flow_edge")?;
+                    if n > 0 {
+                        db_paired.insert(idx);
+                        db_paired.insert(ei);
+                    }
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3: write single-ended rows for everything not already paired.
+    // -----------------------------------------------------------------------
+    let mut single_stmt = conn
         .prepare_cached(
             "INSERT OR IGNORE INTO flow_edges
                 (source_file_id, source_line, edge_type, protocol, http_method, url_pattern, confidence)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         )
-        .context("Failed to prepare resolver flow_edges INSERT")?;
+        .context("Failed to prepare single-ended flow_edges INSERT")?;
 
-    let mut written = 0u32;
-    for (path, line, emission) in emissions {
-        let Some(&file_id) = path_to_id.get(path.as_str()) else { continue };
+    let mut written = named_channel_paired.len() as u32 + db_paired.len() as u32;
 
-        let n = stmt.execute(rusqlite::params![
-            file_id,
-            *line,
-            emission.edge_type(),
-            emission.protocol(),
-            emission.http_method_str(),
-            emission.url_pattern(),
+    for (idx, r) in resolved.iter().enumerate() {
+        if named_channel_paired.contains(&idx) || db_paired.contains(&idx) {
+            continue;
+        }
+        let n = single_stmt.execute(rusqlite::params![
+            r.file_id,
+            r.line,
+            r.emission.edge_type(),
+            r.emission.protocol(),
+            r.emission.http_method_str(),
+            r.emission.url_pattern(),
             0.9_f64,
-        ]).context("Failed to insert resolver flow_edge")?;
+        ]).context("Failed to insert single-ended flow_edge")?;
         written += n as u32;
     }
 

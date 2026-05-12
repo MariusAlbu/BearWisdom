@@ -482,6 +482,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
 
@@ -650,6 +651,7 @@ fn extract_superclass_refs(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             "attribute" => {
@@ -667,6 +669,7 @@ fn extract_superclass_refs(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -938,6 +941,7 @@ fn infer_python_variable_type(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -1134,6 +1138,7 @@ fn extract_with_item(
                                 chain: Some(chain),
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -1300,6 +1305,7 @@ pub(super) fn extract_named_expression(
                         chain: Some(chain),
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1471,6 +1477,7 @@ fn extract_pattern_refs(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1886,6 +1893,7 @@ fn extract_except_clause(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1927,6 +1935,7 @@ fn extract_except_type_refs(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -1943,6 +1952,7 @@ fn extract_except_type_refs(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1993,6 +2003,7 @@ fn extract_raise_statement(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -2011,6 +2022,7 @@ fn extract_raise_statement(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -2027,6 +2039,7 @@ fn extract_raise_statement(
                                         chain: None,
                                         byte_offset: 0,
                                                                             namespace_segments: Vec::new(),
+                                                                            call_args: Vec::new(),
 });
                                 }
                             }
@@ -2070,6 +2083,7 @@ fn extract_augmented_assignment(
                         chain: Some(chain),
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -2166,6 +2180,7 @@ fn extract_type_refs_from_annotation(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -2191,6 +2206,7 @@ fn extract_type_refs_from_annotation(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

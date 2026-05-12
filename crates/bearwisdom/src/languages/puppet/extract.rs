@@ -338,6 +338,7 @@ fn extract_class_definition(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -640,6 +641,7 @@ fn extract_resource_declaration(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -701,6 +703,7 @@ fn extract_include_or_require(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             // Calls edge.
             refs.push(ExtractedRef {
@@ -712,6 +715,7 @@ fn extract_include_or_require(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -761,6 +765,7 @@ fn extract_function_call(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -823,6 +828,7 @@ fn collect_all_function_calls(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
         // Recurse into function_call children to find nested calls
         let mut cursor = node.walk();
@@ -869,6 +875,7 @@ fn collect_resource_references(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
         // Still recurse to find nested resource_references
         let mut cursor = node.walk();

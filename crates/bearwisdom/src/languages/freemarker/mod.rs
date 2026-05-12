@@ -101,6 +101,7 @@ fn imports_ref(name: &str, line: u32) -> ExtractedRef {
     ExtractedRef { source_symbol_index: 0, target_name: target,
         kind: EdgeKind::Imports, line, module: None,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
         chain: None,
         byte_offset: 0,
     }

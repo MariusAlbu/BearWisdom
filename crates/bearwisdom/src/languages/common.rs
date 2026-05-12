@@ -259,6 +259,7 @@ pub fn emit_chain_type_ref(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -860,6 +861,7 @@ pub fn append_amd_define_imports(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
 }

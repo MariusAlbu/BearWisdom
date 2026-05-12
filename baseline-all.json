@@ -8837,19 +8837,24 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 99
       },
-      "code_chunks": 168270,
-      "files": 3330,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "internal_edges": 193783,
-      "internal_unresolved": 2068,
+      "code_chunks": 162243,
+      "files": 3371,
+      "flow_edge_types": {
+        "auth_guard": 9,
+        "db_entity": 369,
+        "http_call": 81,
+        "websocket": 6
+      },
+      "flow_edges": 465,
+      "internal_edges": 289613,
+      "internal_unresolved": 1610,
       "languages": {
         "c": 3,
         "cmake": 1,
         "cpp": 1,
-        "css": 2,
+        "css": 3,
         "dart": 1428,
         "dockerfile": 4,
         "gotemplate": 1,
@@ -8859,7 +8864,7 @@
         "html": 2,
         "java": 1,
         "javascript": 14,
-        "json": 146,
+        "json": 147,
         "kotlin": 38,
         "make": 1,
         "markdown": 114,
@@ -8869,51 +8874,49 @@
         "ruby": 2,
         "shell": 13,
         "sql": 34,
-        "svelte": 400,
+        "svelte": 430,
         "swift": 33,
         "toml": 10,
-        "typescript": 943,
+        "typescript": 952,
         "xml": 52,
         "yaml": 25
       },
       "path": "F:/Work/Projects/TestProjects/ts-immich",
       "perf": {
-        "end_ws_mb": 431,
-        "files_per_sec": 19,
-        "index_duration_ms": 174499
+        "end_ws_mb": 301,
+        "files_per_sec": 12,
+        "index_duration_ms": 289993
       },
       "project": "ts-immich",
-      "resolution_rate": 98.94,
+      "resolution_rate": 99.45,
       "routes": 18,
-      "symbols": 83429,
+      "symbols": 84870,
       "unresolved_by_lang_kind": {
         "c.type_ref": 67,
         "cmake.calls": 1,
-        "cpp.calls": 24,
-        "cpp.imports": 1,
+        "cpp.calls": 12,
         "cpp.inherits": 2,
-        "cpp.type_ref": 75,
-        "dart.calls": 226,
-        "dart.implements": 1,
+        "cpp.type_ref": 79,
+        "dart.calls": 229,
         "dart.inherits": 24,
-        "dart.instantiates": 6,
-        "dart.type_ref": 828,
-        "handlebars.imports": 4,
+        "dart.instantiates": 5,
+        "dart.type_ref": 464,
         "hcl.calls": 8,
-        "kotlin.calls": 144,
+        "kotlin.calls": 97,
         "kotlin.implements": 3,
         "kotlin.inherits": 2,
-        "kotlin.type_ref": 93,
+        "kotlin.type_ref": 108,
         "mdx.calls": 18,
-        "python.calls": 21,
-        "python.type_ref": 54,
+        "python.calls": 22,
+        "python.type_ref": 53,
         "shell.calls": 3,
         "sql.type_ref": 14,
-        "svelte.calls": 84,
-        "swift.type_ref": 7,
-        "typescript.calls": 212,
-        "typescript.instantiates": 20,
-        "typescript.type_ref": 126
+        "svelte.calls": 80,
+        "swift.type_ref": 3,
+        "typescript.calls": 201,
+        "typescript.inherits": 1,
+        "typescript.instantiates": 9,
+        "typescript.type_ref": 105
       }
     },
     {
@@ -9097,7 +9100,7 @@
         "http_call": 28
       },
       "flow_edges": 28,
-      "internal_edges": 16700,
+      "internal_edges": 16707,
       "internal_unresolved": 250,
       "languages": {
         "css": 4,
@@ -9116,9 +9119,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 118,
-        "files_per_sec": 39,
-        "index_duration_ms": 32122
+        "end_ws_mb": 178,
+        "files_per_sec": 42,
+        "index_duration_ms": 30092
       },
       "project": "ts-rallly",
       "resolution_rate": 98.53,
@@ -9136,32 +9139,35 @@
       "assertions": {
         "min_resolution_rate": 99
       },
-      "code_chunks": 53803,
+      "code_chunks": 64623,
       "files": 1697,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "internal_edges": 65007,
+      "flow_edge_types": {
+        "db_entity": 436,
+        "http_call": 160
+      },
+      "flow_edges": 596,
+      "internal_edges": 65510,
       "internal_unresolved": 309,
       "languages": {
-        "css": 6,
+        "css": 8,
         "html": 2,
-        "javascript": 26,
-        "json": 123,
-        "markdown": 212,
-        "mdx": 66,
+        "javascript": 34,
+        "json": 124,
+        "markdown": 215,
+        "mdx": 71,
         "prisma": 3,
         "sql": 13,
         "toml": 3,
-        "typescript": 883,
+        "typescript": 1193,
         "vue": 1,
-        "xml": 17,
+        "xml": 19,
         "yaml": 11
       },
       "path": "F:/Work/Projects/TestProjects/ts-trpc",
       "perf": {
-        "end_ws_mb": 445,
-        "files_per_sec": 13,
-        "index_duration_ms": 108894
+        "end_ws_mb": 191,
+        "files_per_sec": 40,
+        "index_duration_ms": 42736
       },
       "project": "ts-trpc",
       "resolution_rate": 99.53,
@@ -9494,9 +9500,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "perf": {
-        "end_ws_mb": 49,
-        "files_per_sec": 195,
-        "index_duration_ms": 1505
+        "end_ws_mb": 180,
+        "files_per_sec": 181,
+        "index_duration_ms": 1625
       },
       "project": "vue-element-admin",
       "resolution_rate": 58.6,

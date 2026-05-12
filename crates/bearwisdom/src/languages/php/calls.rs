@@ -38,6 +38,7 @@ pub(super) fn extract_calls_from_body(
                         chain,
                         byte_offset: name_node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // Recurse into the object expression and arguments to find nested calls.
@@ -59,6 +60,7 @@ pub(super) fn extract_calls_from_body(
                         chain,
                         byte_offset: name_node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // Recurse into arguments to find nested calls.
@@ -95,6 +97,7 @@ pub(super) fn extract_calls_from_body(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -112,6 +115,7 @@ pub(super) fn extract_calls_from_body(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -199,6 +203,7 @@ pub(super) fn extract_include_require(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -434,6 +439,7 @@ fn extract_catch_type_refs(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -564,6 +570,7 @@ pub(super) fn extract_type_refs_from_php_type(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -742,6 +749,7 @@ fn push_fq_import(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -771,6 +779,7 @@ pub(super) fn extract_trait_use(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }

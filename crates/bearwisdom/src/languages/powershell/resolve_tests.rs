@@ -216,6 +216,7 @@ fn make_member_ref(target: &str, module: &str, kind: EdgeKind) -> ExtractedRef {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 
@@ -304,6 +305,7 @@ fn test_infer_external_ns_cmdlet_no_module() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let sym = make_source_sym();
     let ref_ctx = RefContext {

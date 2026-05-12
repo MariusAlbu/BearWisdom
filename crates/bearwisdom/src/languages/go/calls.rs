@@ -340,6 +340,7 @@ pub(super) fn extract_refs_from_body(
                                     },
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -372,6 +373,7 @@ pub(super) fn extract_refs_from_body(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                         // Second TypeRef at the same line — consumed by the
                         // `type_identifier` budget inside the qualified_type.
@@ -384,6 +386,7 @@ pub(super) fn extract_refs_from_body(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -404,6 +407,7 @@ pub(super) fn extract_refs_from_body(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -427,6 +431,7 @@ pub(super) fn extract_refs_from_body(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -471,6 +476,7 @@ pub(super) fn extract_refs_from_body(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
@@ -496,6 +502,7 @@ pub(super) fn extract_refs_from_body(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // Also recurse into type arguments for their contained type refs.
@@ -656,6 +663,7 @@ fn extract_call_ref(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -669,6 +677,7 @@ fn extract_call_ref(
         chain,
         byte_offset: func_node.start_byte() as u32,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -718,6 +727,7 @@ fn extract_make_chan_type_ref(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 break;
@@ -878,6 +888,7 @@ pub(super) fn extract_composite_literal_ref(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -923,6 +934,7 @@ pub(super) fn extract_type_assertion_ref(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -962,6 +974,7 @@ pub(super) fn extract_type_switch_refs(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -1125,6 +1138,7 @@ fn emit_type_refs_from_type_node(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -1148,6 +1162,7 @@ fn emit_type_refs_from_type_node(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                     refs.push(ExtractedRef {
                         source_symbol_index,
@@ -1158,6 +1173,7 @@ fn emit_type_refs_from_type_node(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

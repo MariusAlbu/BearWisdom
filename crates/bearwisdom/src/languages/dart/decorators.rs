@@ -91,6 +91,7 @@ fn emit_annotation(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -211,6 +212,7 @@ fn extract_cascade_section(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                         break;
@@ -230,6 +232,7 @@ fn extract_cascade_section(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

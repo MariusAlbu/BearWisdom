@@ -62,6 +62,7 @@ fn make_calls(target: &str) -> ExtractedRef {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 
@@ -75,6 +76,7 @@ fn make_type_ref(target: &str) -> ExtractedRef {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 

@@ -408,6 +408,7 @@ fn walk_node(
                                             chain: None,
                                             byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
                                         });
                                     }
                                 }
@@ -445,6 +446,7 @@ fn walk_node(
                                             chain: None,
                                             byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
                                         });
                                     }
                                 }
@@ -467,6 +469,7 @@ fn walk_node(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
             }
 
@@ -526,6 +529,7 @@ fn walk_node(
                                     chain: None,
                                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
                                 });
                             }
                         } else if count == 1 {
@@ -542,6 +546,7 @@ fn walk_node(
                                     chain: None,
                                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
                                 });
                             }
                         }
@@ -558,6 +563,7 @@ fn walk_node(
                                 chain: None,
                                 byte_offset: 0,
                                 namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
                             });
                         }
                     }
@@ -587,6 +593,7 @@ fn walk_node(
                                 chain: None,
                                 byte_offset: 0,
                                 namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
                             });
                         }
                     }
@@ -619,6 +626,7 @@ fn walk_node(
                                     chain: None,
                                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
                                 });
                             }
                         } else if count == 1 {
@@ -636,6 +644,7 @@ fn walk_node(
                                     chain: None,
                                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
                                 });
                             }
                         }
@@ -815,6 +824,7 @@ fn extract_extends(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }

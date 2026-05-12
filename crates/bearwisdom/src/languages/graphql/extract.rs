@@ -312,6 +312,7 @@ fn extract_union_type(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -481,6 +482,7 @@ fn extract_input_value(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -551,6 +553,7 @@ fn extract_schema_def(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -651,6 +654,7 @@ fn extract_fragment_def(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -675,6 +679,7 @@ fn extract_type_extension(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -747,6 +752,7 @@ fn extract_field_def(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -809,6 +815,7 @@ fn collect_implements_interfaces(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }

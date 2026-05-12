@@ -382,6 +382,7 @@ fn extract_instance(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     Some(idx)
@@ -456,6 +457,7 @@ fn collect_deriving_names(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -629,6 +631,7 @@ fn extract_import(
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     });
 }
 
@@ -699,6 +702,7 @@ fn extract_apply(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -813,6 +817,7 @@ fn extract_infix(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 

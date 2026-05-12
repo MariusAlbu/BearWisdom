@@ -202,6 +202,7 @@ fn process_directive(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         return;
@@ -244,6 +245,7 @@ fn process_directive(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         return;
@@ -310,6 +312,7 @@ fn extract_body_goals(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }

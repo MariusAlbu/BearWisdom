@@ -467,6 +467,7 @@ fn scan_all_type_identifiers(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

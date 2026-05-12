@@ -391,6 +391,7 @@ fn make_imports_ref(source_idx: usize, target: String, line: u32) -> ExtractedRe
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 

@@ -438,6 +438,7 @@ fn make_typeref(source_symbol_index: usize, name: String, line: u32) -> Extracte
         line,
         module: None,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
         chain: None,
         byte_offset: 0,
     }
@@ -464,6 +465,7 @@ fn make_scoped_typeref(source_symbol_index: usize, full: String, line: u32) -> E
         line,
         module,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
         chain: None,
         byte_offset: 0,
     }
@@ -533,6 +535,7 @@ fn emit_inherits_from_trait_bounds(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -554,6 +557,7 @@ fn emit_inherits_from_trait_bounds(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -570,6 +574,7 @@ fn emit_inherits_from_trait_bounds(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }

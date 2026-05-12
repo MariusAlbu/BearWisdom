@@ -681,6 +681,7 @@ fn extract_constructor_initializer_call(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -771,6 +772,7 @@ fn scan_all_type_positions(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 scan_all_type_positions(child, src, sym_idx, refs);
             }
@@ -854,6 +856,7 @@ fn emit_csharp_type_ref(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -873,6 +876,7 @@ fn emit_csharp_type_ref(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }

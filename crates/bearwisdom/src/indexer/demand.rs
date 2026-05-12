@@ -232,6 +232,7 @@ mod tests {
             line: 0,
             module: module.map(|s| s.to_string()),
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
             chain: None,
             byte_offset: 0,
         }
@@ -265,6 +266,7 @@ mod tests {
                 ],
             }),
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
             byte_offset: 0,
         }
     }

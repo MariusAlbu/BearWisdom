@@ -159,6 +159,7 @@ fn extract_class_name_stmt(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -196,6 +197,7 @@ fn extract_extends_stmt(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -252,6 +254,7 @@ fn extract_inner_class(
                 chain: None,
                 byte_offset: 0,
                 namespace_segments: Vec::new(),
+                call_args: Vec::new(),
             });
         }
     }
@@ -581,6 +584,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
 
                     // `preload("res://path/to/foo.gd")` and `load(...)` bring another
@@ -612,6 +616,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }

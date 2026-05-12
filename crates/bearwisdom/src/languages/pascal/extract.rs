@@ -1443,6 +1443,7 @@ fn extract_class(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                             break;
@@ -1459,6 +1460,7 @@ fn extract_class(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                             break;
@@ -1659,6 +1661,7 @@ fn extract_uses(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -1755,6 +1758,7 @@ fn extract_typeref(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 return; // one ref per typeref is enough
@@ -1772,6 +1776,7 @@ fn extract_typeref(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 return;
@@ -1807,6 +1812,7 @@ fn extract_call(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }

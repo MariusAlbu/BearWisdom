@@ -271,6 +271,7 @@ fn walk_node(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         return;
@@ -296,6 +297,7 @@ fn walk_node(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         } else {
@@ -419,6 +421,7 @@ fn process_list(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -438,6 +441,7 @@ fn process_list(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             let vis = if head == "defn-" {
                 Visibility::Private
@@ -470,6 +474,7 @@ fn process_list(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             let idx = push_sym(
                 node,
@@ -495,6 +500,7 @@ fn process_list(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             let idx = push_sym(
                 node,
@@ -557,6 +563,7 @@ fn process_list(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             let idx = push_sym(
                 node,
@@ -587,6 +594,7 @@ fn process_list(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 let idx = push_sym(
                     node,
@@ -736,6 +744,7 @@ fn walk_def_macro_body(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
             }
         } else {
@@ -1018,6 +1027,7 @@ fn walk_method_body(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 past_head = true;
@@ -1177,6 +1187,7 @@ fn walk_call_args(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         } else {
@@ -1293,6 +1304,7 @@ fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                         // Per-name `:refer [n1 n2]` imports — emit each
                         // referred symbol as its own Imports ref so the
@@ -1355,6 +1367,7 @@ fn collect_refer_names(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
             }
             return;

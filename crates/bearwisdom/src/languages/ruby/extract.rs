@@ -170,6 +170,7 @@ pub(super) fn extract_from_node(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -190,6 +191,7 @@ pub(super) fn extract_from_node(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -263,6 +265,7 @@ fn scan_all_constants(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -280,6 +283,7 @@ fn scan_all_constants(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // Don't recurse into scope_resolution — we already extracted the name.

@@ -139,6 +139,7 @@ fn extract_resource_declaration(
                 chain: None,
                 byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
         }
     }
@@ -189,6 +190,7 @@ fn extract_module_declaration(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -395,6 +397,7 @@ fn extract_import_statement(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -414,6 +417,7 @@ fn extract_using_statement(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -441,6 +445,7 @@ fn extract_calls_in_subtree(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         } else {
@@ -459,6 +464,7 @@ fn extract_calls_in_subtree(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                         break;
                     }
@@ -630,6 +636,7 @@ fn collect_all_call_expressions(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         // Don't recurse further into call_expression — avoid double-counting nested calls

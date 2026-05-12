@@ -562,6 +562,7 @@ pub(super) fn for_each_type_child<'src>(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

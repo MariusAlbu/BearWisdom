@@ -790,6 +790,7 @@ fn extract_node(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -837,6 +838,7 @@ fn extract_node(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -859,6 +861,7 @@ fn extract_node(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1055,6 +1058,7 @@ fn extract_bare_reexports_via_imports(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
 
                 let already_emitted = symbols
@@ -1207,6 +1211,7 @@ fn emit_triple_slash_ref(refs: &mut Vec<ExtractedRef>, kind: &str, value: &str, 
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     });
 }
 
@@ -1316,6 +1321,7 @@ fn extract_reexports(
                                 chain: None,
                                 byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
                             });
                         }
 
@@ -1387,6 +1393,7 @@ fn extract_reexports(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -1493,6 +1500,7 @@ fn scan_all_type_identifiers(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -1513,6 +1521,7 @@ fn scan_all_type_identifiers(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1538,6 +1547,7 @@ fn scan_all_type_identifiers(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -1648,6 +1658,7 @@ fn scan_all_type_identifiers(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         } else {
                             // Even for primitive annotations we need a ref at this line
@@ -1663,6 +1674,7 @@ fn scan_all_type_identifiers(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -1704,6 +1716,7 @@ fn scan_all_type_identifiers(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                         break;
@@ -1738,6 +1751,7 @@ fn scan_all_type_identifiers(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                         break;

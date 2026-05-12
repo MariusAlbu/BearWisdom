@@ -42,6 +42,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 /// Make an import binding ref — the TS extractor emits these as TypeRef with module set.
@@ -55,6 +56,7 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 fn make_ts_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
@@ -995,6 +997,7 @@ fn make_reexport_ref(source_idx: usize, exported_name: &str, from_module: &str, 
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 #[test]
@@ -1719,6 +1722,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let barrel = make_ts_file_in_pkg(
         "apps/web/src/features/quick-create/index.ts",
@@ -1953,6 +1957,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let barrel = make_ts_file_in_pkg(
         "apps/landing/src/i18n/client/trans.tsx",
@@ -2126,6 +2131,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let tobe_rt_ref = ExtractedRef {
         source_symbol_index: 2,
@@ -2136,6 +2142,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let chai_file = ParsedFile {
         path: "ext:ts:chai/__bw_synthetic__.d.ts".to_string(),
@@ -2190,6 +2197,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         }),
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let import_ref = ExtractedRef {
         source_symbol_index: 0,
@@ -2200,6 +2208,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let test_sym = make_symbol("myTest", "myTest", SymbolKind::Function, Visibility::Public, None);
     let consumer_file = ParsedFile {
@@ -2302,6 +2311,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         kind: EdgeKind::TypeRef,
         line: 0, module: None, chain: None, byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
 
     let synth_file = ParsedFile {
@@ -2352,6 +2362,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         }),
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let test_sym = make_symbol("myTest", "myTest", SymbolKind::Function, Visibility::Public, None);
     let consumer_file = ParsedFile {
@@ -2537,6 +2548,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     // The chain ref: this.users.get(k) emitted from `do`.
@@ -2576,6 +2588,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         }),
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     // Consumer ParsedFile, including the explicit alias_targets payload that
@@ -2749,6 +2762,7 @@ fn alias_expansion_handles_array_type_form() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let chain_ref = ExtractedRef {
@@ -2787,6 +2801,7 @@ fn alias_expansion_handles_array_type_form() {
         }),
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let consumer_file = ParsedFile {
@@ -2896,6 +2911,7 @@ fn alias_expansion_refuses_union_aliases() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let chain_ref = ExtractedRef {
@@ -2934,6 +2950,7 @@ fn alias_expansion_refuses_union_aliases() {
         }),
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let file = ParsedFile {
@@ -3030,6 +3047,7 @@ fn typeof_alias_dereferences_to_value_type() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let api_type_alias = make_symbol(
@@ -3078,6 +3096,7 @@ fn typeof_alias_dereferences_to_value_type() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let chain_ref = ExtractedRef {
@@ -3116,6 +3135,7 @@ fn typeof_alias_dereferences_to_value_type() {
         }),
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let file = ParsedFile {
@@ -3271,6 +3291,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
     let p_typeref_user = ExtractedRef {
         source_symbol_index: 4,
@@ -3281,6 +3302,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let chain_ref = ExtractedRef {
@@ -3319,6 +3341,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         }),
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let file = ParsedFile {
@@ -3443,6 +3466,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
     let child_inherits_base = ExtractedRef {
         source_symbol_index: 4,
@@ -3453,6 +3477,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let chain_ref = ExtractedRef {
@@ -3491,6 +3516,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         }),
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let file = ParsedFile {
@@ -3597,6 +3623,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
     let mid_inherits = ExtractedRef {
         source_symbol_index: 4,
@@ -3607,6 +3634,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
     let leaf_inherits = ExtractedRef {
         source_symbol_index: 5,
@@ -3617,6 +3645,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let chain_ref = ExtractedRef {
@@ -3655,6 +3684,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         }),
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let file = ParsedFile {
@@ -3800,6 +3830,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         }),
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let file = ParsedFile {
@@ -3896,7 +3927,7 @@ fn http_call_axios_get_emits_with_method() {
         ("get", SegmentKind::Property),
     ]);
     let file_ctx = make_ctx_with_import("axios", "axios");
-    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    let result = detect_chain_flow_emission(&chain, &[], &file_ctx);
     assert!(result.is_some(), "axios.get should emit a flow edge");
     match result.unwrap() {
         FlowEmission::NamedChannel { kind, method, role, .. } => {
@@ -3919,7 +3950,7 @@ fn http_call_axios_post_emits_post_method() {
         ("post", SegmentKind::Property),
     ]);
     let file_ctx = make_ctx_with_import("axios", "axios");
-    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    let result = detect_chain_flow_emission(&chain, &[], &file_ctx);
     assert!(result.is_some());
     match result.unwrap() {
         FlowEmission::NamedChannel { kind, method, .. } => {
@@ -3943,7 +3974,7 @@ fn http_call_global_fetch_emits_without_import() {
         imports: vec![],
         file_namespace: None,
     };
-    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    let result = detect_chain_flow_emission(&chain, &[], &file_ctx);
     assert!(result.is_some(), "global fetch should emit without import");
     match result.unwrap() {
         FlowEmission::NamedChannel { kind, .. } => {
@@ -3964,7 +3995,7 @@ fn websocket_emit_producer_on_emit() {
         ("emit", SegmentKind::Property),
     ]);
     let file_ctx = make_ctx_with_import("socket", "socket.io-client");
-    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    let result = detect_chain_flow_emission(&chain, &[], &file_ctx);
     assert!(result.is_some());
     match result.unwrap() {
         FlowEmission::NamedChannel { kind, role, .. } => {
@@ -3986,7 +4017,7 @@ fn websocket_on_handler_emits_consumer_role() {
         ("on", SegmentKind::Property),
     ]);
     let file_ctx = make_ctx_with_import("socket", "socket.io-client");
-    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    let result = detect_chain_flow_emission(&chain, &[], &file_ctx);
     assert!(result.is_some());
     match result.unwrap() {
         FlowEmission::NamedChannel { kind, role, .. } => {
@@ -4005,7 +4036,7 @@ fn ipc_call_tauri_invoke_emits_ipc_call() {
 
     let chain = make_chain_segs(&[("invoke", SegmentKind::Identifier)]);
     let file_ctx = make_ctx_with_import("invoke", "@tauri-apps/api/tauri");
-    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    let result = detect_chain_flow_emission(&chain, &[], &file_ctx);
     assert!(result.is_some());
     match result.unwrap() {
         FlowEmission::NamedChannel { kind, .. } => {
@@ -4025,6 +4056,443 @@ fn non_http_package_does_not_emit() {
         ("get", SegmentKind::Property),
     ]);
     let file_ctx = make_ctx_with_import("_", "lodash");
-    let result = detect_chain_flow_emission(&chain, &file_ctx);
+    let result = detect_chain_flow_emission(&chain, &[], &file_ctx);
     assert!(result.is_none(), "lodash.get should NOT emit a flow edge");
+}
+
+// ---------------------------------------------------------------------------
+// parse_gql_operation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gql_named_query_parses_operation_name() {
+    use super::resolve::parse_gql_operation;
+    let body = "\n  query GetUsers {\n    users { id name }\n  }\n";
+    let result = parse_gql_operation(body);
+    assert_eq!(result, Some("query:GetUsers".to_string()));
+}
+
+#[test]
+fn gql_named_mutation_parses_operation_name() {
+    use super::resolve::parse_gql_operation;
+    let body = "mutation CreatePost($input: PostInput!) { createPost(input: $input) { id } }";
+    let result = parse_gql_operation(body);
+    assert_eq!(result, Some("mutation:CreatePost".to_string()));
+}
+
+#[test]
+fn gql_named_subscription_parses_operation_name() {
+    use super::resolve::parse_gql_operation;
+    let body = "subscription OnMessageAdded { messageAdded { id body } }";
+    let result = parse_gql_operation(body);
+    assert_eq!(result, Some("subscription:OnMessageAdded".to_string()));
+}
+
+#[test]
+fn gql_anonymous_query_returns_anon_sentinel() {
+    use super::resolve::parse_gql_operation;
+    let body = "query { users { id } }";
+    let result = parse_gql_operation(body);
+    assert_eq!(result, Some("query:__anon__".to_string()));
+}
+
+#[test]
+fn gql_underscore_prefixed_name_parses() {
+    use super::resolve::parse_gql_operation;
+    let body = "query _InternalFetch { nodes { id } }";
+    let result = parse_gql_operation(body);
+    assert_eq!(result, Some("query:_InternalFetch".to_string()));
+}
+
+#[test]
+fn gql_empty_body_returns_none() {
+    use super::resolve::parse_gql_operation;
+    let result = parse_gql_operation("");
+    assert_eq!(result, None);
+}
+
+#[test]
+fn gql_non_graphql_body_returns_none() {
+    use super::resolve::parse_gql_operation;
+    let result = parse_gql_operation("SELECT * FROM users");
+    assert_eq!(result, None);
+}
+
+// ---------------------------------------------------------------------------
+// detect_chain_flow_emission — URL captured from call_args
+// ---------------------------------------------------------------------------
+
+#[test]
+fn http_call_axios_captures_url_from_string_arg() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[
+        ("axios", SegmentKind::Identifier),
+        ("get", SegmentKind::Property),
+    ]);
+    let call_args = vec![CallArg::StringLit("/api/users".to_string())];
+    let file_ctx = make_ctx_with_import("axios", "axios");
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    assert!(result.is_some());
+    match result.unwrap() {
+        FlowEmission::NamedChannel { name, .. } => {
+            assert_eq!(name, "/api/users");
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+#[test]
+fn http_call_global_fetch_captures_url() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[("fetch", SegmentKind::Identifier)]);
+    let call_args = vec![CallArg::StringLit("/graphql".to_string())];
+    let file_ctx = crate::indexer::resolve::engine::FileContext {
+        file_path: "src/api.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    match result.unwrap() {
+        FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "/graphql"),
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+#[test]
+fn ipc_call_tauri_invoke_captures_command_name() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[
+        ("invoke", SegmentKind::Identifier),
+    ]);
+    let call_args = vec![CallArg::StringLit("get_config".to_string())];
+    let file_ctx = make_ctx_with_import("invoke", "@tauri-apps/api/tauri");
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    assert!(result.is_some());
+    match result.unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::IpcCall);
+            assert_eq!(name, "get_config");
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// detect_chain_flow_emission — GQL tagged template
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gql_tagged_template_emits_graphql_op() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[("gql", SegmentKind::Identifier)]);
+    let body = "query GetPosts { posts { id title } }".to_string();
+    let call_args = vec![CallArg::TaggedTemplate {
+        tag: "gql".to_string(),
+        body,
+    }];
+    let file_ctx = make_ctx_with_import("gql", "@apollo/client");
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    assert!(result.is_some(), "gql tagged template should emit graphql_op");
+    match result.unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::GraphQLOp);
+            assert_eq!(name, "query:GetPosts");
+        }
+        other => panic!("Expected NamedChannel, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// detect_chain_flow_emission — migration calls
+// ---------------------------------------------------------------------------
+
+#[test]
+fn knex_schema_create_table_emits_migration_target() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[
+        ("knex", SegmentKind::Identifier),
+        ("schema", SegmentKind::Property),
+        ("createTable", SegmentKind::Property),
+    ]);
+    let call_args = vec![CallArg::StringLit("users".to_string())];
+    let file_ctx = make_ctx_with_import("knex", "knex");
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    assert!(result.is_some(), "knex.schema.createTable should emit MigrationTarget");
+    match result.unwrap() {
+        FlowEmission::MigrationTarget { table_name, .. } => {
+            assert_eq!(table_name, "users");
+        }
+        other => panic!("Expected MigrationTarget, got {other:?}"),
+    }
+}
+
+#[test]
+fn sequelize_query_interface_create_table_emits_migration_target() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[
+        ("queryInterface", SegmentKind::Identifier),
+        ("createTable", SegmentKind::Property),
+    ]);
+    let call_args = vec![CallArg::StringLit("orders".to_string())];
+    // Sequelize queryInterface is recognized by root name — no import check.
+    let file_ctx = make_ctx_with_import("queryInterface", "sequelize");
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    assert!(result.is_some(), "queryInterface.createTable should emit MigrationTarget");
+    match result.unwrap() {
+        FlowEmission::MigrationTarget { table_name, .. } => {
+            assert_eq!(table_name, "orders");
+        }
+        other => panic!("Expected MigrationTarget, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// detect_chain_flow_emission — scheduled job
+// ---------------------------------------------------------------------------
+
+#[test]
+fn node_cron_schedule_emits_scheduled_job() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[
+        ("cron", SegmentKind::Identifier),
+        ("schedule", SegmentKind::Property),
+    ]);
+    let call_args = vec![CallArg::StringLit("0 * * * *".to_string())];
+    let file_ctx = make_ctx_with_import("cron", "node-cron");
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    assert!(result.is_some(), "cron.schedule should emit ScheduledJob");
+    match result.unwrap() {
+        FlowEmission::ScheduledJob { schedule } => {
+            assert_eq!(schedule, "0 * * * *");
+        }
+        other => panic!("Expected ScheduledJob, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// detect_chain_flow_emission — CLI command
+// ---------------------------------------------------------------------------
+
+#[test]
+fn commander_command_emits_cli_command() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[
+        ("program", SegmentKind::Identifier),
+        ("command", SegmentKind::Property),
+    ]);
+    let call_args = vec![CallArg::StringLit("build".to_string())];
+    let file_ctx = make_ctx_with_import("program", "commander");
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    assert!(result.is_some(), "program.command should emit CliCommand");
+    match result.unwrap() {
+        FlowEmission::CliCommand { command_name, framework } => {
+            assert_eq!(command_name, "build");
+            assert_eq!(framework.as_deref(), Some("commander"));
+        }
+        other => panic!("Expected CliCommand, got {other:?}"),
+    }
+}
+
+#[test]
+fn yargs_command_emits_cli_command_yargs_framework() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_chain_flow_emission;
+    use crate::types::{CallArg, SegmentKind};
+
+    let chain = make_chain_segs(&[
+        ("yargs", SegmentKind::Identifier),
+        ("command", SegmentKind::Property),
+    ]);
+    let call_args = vec![CallArg::StringLit("deploy".to_string())];
+    let file_ctx = make_ctx_with_import("yargs", "yargs");
+    let result = detect_chain_flow_emission(&chain, &call_args, &file_ctx);
+    match result.unwrap() {
+        FlowEmission::CliCommand { command_name, framework } => {
+            assert_eq!(command_name, "deploy");
+            assert_eq!(framework.as_deref(), Some("yargs"));
+        }
+        other => panic!("Expected CliCommand, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// detect_decorator_flow_emission — direct function tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn decorator_entity_with_table_name_emits_db_entity() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("Entity", Some("users"));
+    assert!(result.is_some(), "Entity decorator should emit DbEntity");
+    match result.unwrap() {
+        FlowEmission::DbEntity { table_name_hint, base_name_hint, .. } => {
+            assert_eq!(table_name_hint.as_deref(), Some("users"));
+            assert_eq!(base_name_hint, "Entity");
+        }
+        other => panic!("Expected DbEntity, got {other:?}"),
+    }
+}
+
+#[test]
+fn decorator_entity_without_table_name_emits_db_entity_no_hint() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("Entity", None);
+    match result.unwrap() {
+        FlowEmission::DbEntity { table_name_hint, .. } => {
+            assert!(table_name_hint.is_none());
+        }
+        other => panic!("Expected DbEntity, got {other:?}"),
+    }
+}
+
+#[test]
+fn decorator_table_emits_db_entity_with_model_base() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("Table", Some("products"));
+    match result.unwrap() {
+        FlowEmission::DbEntity { base_name_hint, table_name_hint, .. } => {
+            assert_eq!(base_name_hint, "Model");
+            assert_eq!(table_name_hint.as_deref(), Some("products"));
+        }
+        other => panic!("Expected DbEntity, got {other:?}"),
+    }
+}
+
+#[test]
+fn decorator_schema_emits_db_entity() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("Schema", Some("post"));
+    match result.unwrap() {
+        FlowEmission::DbEntity { base_name_hint, .. } => {
+            assert_eq!(base_name_hint, "Schema");
+        }
+        other => panic!("Expected DbEntity, got {other:?}"),
+    }
+}
+
+#[test]
+fn decorator_roles_emits_auth_guard_role_kind() {
+    use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("Roles", Some("admin"));
+    assert!(result.is_some(), "Roles decorator should emit AuthGuard");
+    match result.unwrap() {
+        FlowEmission::AuthGuard { requirement, kind } => {
+            assert_eq!(requirement, "admin");
+            assert_eq!(kind, AuthGuardKind::Role);
+        }
+        other => panic!("Expected AuthGuard, got {other:?}"),
+    }
+}
+
+#[test]
+fn decorator_use_guards_emits_auth_guard_custom_kind() {
+    use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("UseGuards", Some("JwtAuthGuard"));
+    match result.unwrap() {
+        FlowEmission::AuthGuard { requirement, kind } => {
+            assert_eq!(requirement, "JwtAuthGuard");
+            assert_eq!(kind, AuthGuardKind::Custom);
+        }
+        other => panic!("Expected AuthGuard, got {other:?}"),
+    }
+}
+
+#[test]
+fn decorator_permissions_emits_auth_guard_permission_kind() {
+    use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("Permissions", Some("read:users"));
+    match result.unwrap() {
+        FlowEmission::AuthGuard { kind, .. } => assert_eq!(kind, AuthGuardKind::Permission),
+        other => panic!("Expected AuthGuard, got {other:?}"),
+    }
+}
+
+#[test]
+fn decorator_jwt_auth_guard_emits_token_kind() {
+    use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("JwtAuthGuard", None);
+    match result.unwrap() {
+        FlowEmission::AuthGuard { requirement, kind } => {
+            assert_eq!(kind, AuthGuardKind::Token);
+            // When no first arg, falls back to the decorator name itself.
+            assert_eq!(requirement, "JwtAuthGuard");
+        }
+        other => panic!("Expected AuthGuard, got {other:?}"),
+    }
+}
+
+#[test]
+fn decorator_policy_emits_auth_guard_policy_kind() {
+    use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("Policy", Some("IsOwner"));
+    match result.unwrap() {
+        FlowEmission::AuthGuard { requirement, kind } => {
+            assert_eq!(requirement, "IsOwner");
+            assert_eq!(kind, AuthGuardKind::Policy);
+        }
+        other => panic!("Expected AuthGuard, got {other:?}"),
+    }
+}
+
+#[test]
+fn unknown_decorator_does_not_emit() {
+    use super::resolve::detect_decorator_flow_emission;
+
+    let result = detect_decorator_flow_emission("Injectable", None);
+    assert!(result.is_none(), "Injectable is not a flow-relevant decorator");
+}
+
+#[test]
+fn decorator_input_does_not_emit() {
+    use super::resolve::detect_decorator_flow_emission;
+    assert!(detect_decorator_flow_emission("Input", Some("name")).is_none());
+}
+
+#[test]
+fn decorator_controller_does_not_emit() {
+    use super::resolve::detect_decorator_flow_emission;
+    assert!(detect_decorator_flow_emission("Controller", Some("/api")).is_none());
 }

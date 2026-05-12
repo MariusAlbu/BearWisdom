@@ -165,6 +165,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 i += 1;
                 continue;
@@ -347,6 +348,7 @@ fn extract_struct_body(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -645,6 +647,7 @@ fn extract_call_identifiers(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

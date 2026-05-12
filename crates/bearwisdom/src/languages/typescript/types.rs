@@ -388,6 +388,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         "generic_type" => {
@@ -406,6 +407,7 @@ pub(super) fn extract_type_ref_from_annotation(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 // Also extract type arguments for generic parameter resolution.
                 if let Some(type_args_node) = type_node.child_by_field_name("type_arguments") {
@@ -447,6 +449,7 @@ pub(super) fn extract_type_ref_from_annotation(
                                         chain: None,
                                         byte_offset: 0,
                                                                             namespace_segments: Vec::new(),
+                                                                            call_args: Vec::new(),
 });
                                 }
                             }
@@ -478,6 +481,7 @@ pub(super) fn extract_type_ref_from_annotation(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
                 return;
             }
@@ -490,6 +494,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         "function_type" => {
@@ -646,6 +651,7 @@ pub(super) fn extract_type_ref_from_annotation(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             } else {
@@ -664,6 +670,7 @@ pub(super) fn extract_type_ref_from_annotation(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                                 break;
                             }
@@ -789,6 +796,7 @@ pub(super) fn extract_type_refs_recursive(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -842,6 +850,7 @@ pub(super) fn extract_type_refs_recursive(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }

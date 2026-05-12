@@ -302,6 +302,7 @@ fn extract_binary_operator(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 return Some(idx);
             }
@@ -376,6 +377,7 @@ fn extract_call(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         return None;
@@ -431,6 +433,7 @@ fn extract_call(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
     None
 }
@@ -466,6 +469,7 @@ fn extract_namespace_operator(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 

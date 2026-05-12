@@ -134,6 +134,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                     continue;
                 }
@@ -217,6 +218,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
 
@@ -231,6 +233,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                     refs.push(ExtractedRef {
                         source_symbol_index: source_idx,
@@ -241,6 +244,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
 
@@ -255,6 +259,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
 
@@ -269,6 +274,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -304,6 +310,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

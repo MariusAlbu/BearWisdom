@@ -120,6 +120,80 @@ impl NamedChannelKind {
     }
 }
 
+/// The operation kind for a `DbQuery` emission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DbQueryOp {
+    Insert,
+    Select,
+    Update,
+    Delete,
+    Upsert,
+    Other,
+}
+
+impl DbQueryOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DbQueryOp::Insert => "insert",
+            DbQueryOp::Select => "select",
+            DbQueryOp::Update => "update",
+            DbQueryOp::Delete => "delete",
+            DbQueryOp::Upsert => "upsert",
+            DbQueryOp::Other => "other",
+        }
+    }
+
+    /// Infer operation from a method name as written on the call chain.
+    pub fn from_method_name(name: &str) -> Self {
+        match name.to_ascii_lowercase().as_str() {
+            "find" | "findall" | "findone" | "findunique" | "findmany" | "findandcountall"
+            | "select" | "selectfrom" | "get" | "getall" | "getone" | "list" | "count"
+            | "where" | "fetch" | "query" | "read" | "load" | "exists" => DbQueryOp::Select,
+            "create" | "insert" | "insertinto" | "insertmany" | "add" | "save" | "new"
+            | "build" | "insertorignore" => DbQueryOp::Insert,
+            "update" | "updateall" | "updatewhere" | "set" | "patch" | "modify"
+            | "updateone" | "updatemany" => DbQueryOp::Update,
+            "delete" | "deleteall" | "deletewhere" | "remove" | "removeall" | "destroy"
+            | "destroyall" | "deleteone" | "deletemany" | "drop" => DbQueryOp::Delete,
+            "upsert" | "createorupdate" | "insertorignoreall" | "saveorupdate" => DbQueryOp::Upsert,
+            _ => DbQueryOp::Other,
+        }
+    }
+}
+
+/// The schema-change direction for a `MigrationTarget` emission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationDirection {
+    /// Forward migration (schema creation / alteration).
+    Up,
+    /// Rollback migration.
+    Down,
+    /// Both directions present in the same migration file.
+    Both,
+}
+
+/// Authorization requirement kind for an `AuthGuard` emission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthGuardKind {
+    Role,
+    Permission,
+    Policy,
+    Token,
+    Custom,
+}
+
+impl AuthGuardKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AuthGuardKind::Role => "role",
+            AuthGuardKind::Permission => "permission",
+            AuthGuardKind::Policy => "policy",
+            AuthGuardKind::Token => "token",
+            AuthGuardKind::Custom => "custom",
+        }
+    }
+}
+
 /// Emitted by a `LanguageResolver::resolve` impl when the resolved ref's
 /// shape matches a cross-tier flow-edge pattern.
 ///
@@ -135,8 +209,8 @@ pub enum FlowEmission {
     /// Covers HTTP calls, GraphQL operations, WebSocket events, IPC commands,
     /// background jobs, mailer templates, and message-queue topics.
     ///
-    /// Pairing rule (future): `(kind, name, role=Producer)` ↔
-    ///                         `(kind, name, role=Consumer)` across files.
+    /// Pairing rule: `(kind, name, role=Producer)` ↔
+    ///               `(kind, name, role=Consumer)` across files.
     NamedChannel {
         kind: NamedChannelKind,
         /// Pairing key: URL path, event name, operation name, command name, etc.
@@ -145,6 +219,38 @@ pub enum FlowEmission {
         role: ChannelRole,
         /// HTTP method when `kind == HttpCall`, None for other kinds.
         method: Option<HttpMethod>,
+    },
+
+    /// A class declaration that is a persisted entity (ORM model, schema, document).
+    ///
+    /// Acts as the Consumer end in DbEntity ↔ DbQuery pairing; paired by
+    /// `table_name_hint` (explicit table name) or `base_name_hint` (ORM base
+    /// class name). Single-ended when no matching DbQuery or MigrationTarget
+    /// is found in the same index pass.
+    DbEntity {
+        /// Resolved superclass DB id if the chain walker found it.
+        base_symbol_id: Option<i64>,
+        /// Name of the resolved/inferred base class (e.g. "Model", "Entity",
+        /// "Schema", "ActiveRecord::Base", "Document").
+        base_name_hint: String,
+        /// Explicit table name from a `@Table('users')` decorator,
+        /// `static tableName = 'users'`, etc. None when not statically
+        /// determinable (pairer may fall back to pluralized class name).
+        table_name_hint: Option<String>,
+    },
+
+    /// Call site that queries or mutates a known entity. Paired to
+    /// DbEntity by `entity_name`. Single-ended when the entity isn't in scope.
+    DbQuery {
+        entity_name: String,
+        operation: DbQueryOp,
+    },
+
+    /// Migration script that creates or alters a specific table. Paired to
+    /// DbEntity by `table_name`.
+    MigrationTarget {
+        table_name: String,
+        direction: MigrationDirection,
     },
 
     /// A DI-injected service binding: field or constructor-parameter type
@@ -166,6 +272,24 @@ pub enum FlowEmission {
     FeatureFlag {
         flag_name: String,
     },
+
+    /// Authorization requirement attached to a route handler or class.
+    /// Single-ended (records the guard requirement at the handler site).
+    AuthGuard {
+        requirement: String,
+        kind: AuthGuardKind,
+    },
+
+    /// CLI command/subcommand registration. Single-ended marker.
+    CliCommand {
+        command_name: String,
+        framework: Option<String>,
+    },
+
+    /// Scheduled job registration. Single-ended marker.
+    ScheduledJob {
+        schedule: String,
+    },
 }
 
 impl FlowEmission {
@@ -173,9 +297,15 @@ impl FlowEmission {
     pub fn edge_type(&self) -> &str {
         match self {
             FlowEmission::NamedChannel { kind, .. } => kind.edge_type_str(),
+            FlowEmission::DbEntity { .. } => "db_entity",
+            FlowEmission::DbQuery { .. } => "db_query",
+            FlowEmission::MigrationTarget { .. } => "migration_target",
             FlowEmission::DiBinding { .. } => "di_binding",
             FlowEmission::ConfigLookup { .. } => "config_lookup",
             FlowEmission::FeatureFlag { .. } => "feature_flag",
+            FlowEmission::AuthGuard { .. } => "auth_guard",
+            FlowEmission::CliCommand { .. } => "cli_command",
+            FlowEmission::ScheduledJob { .. } => "scheduled_job",
         }
     }
 
@@ -201,10 +331,32 @@ impl FlowEmission {
     pub fn url_pattern(&self) -> Option<&str> {
         match self {
             FlowEmission::NamedChannel { name, .. } if !name.is_empty() => Some(name.as_str()),
+            FlowEmission::DbEntity { table_name_hint: Some(t), .. } => Some(t.as_str()),
+            FlowEmission::DbEntity { base_name_hint, .. } => Some(base_name_hint.as_str()),
+            FlowEmission::DbQuery { entity_name, .. } => Some(entity_name.as_str()),
+            FlowEmission::MigrationTarget { table_name, .. } => Some(table_name.as_str()),
             FlowEmission::ConfigLookup { key } => Some(key.as_str()),
             FlowEmission::FeatureFlag { flag_name } => Some(flag_name.as_str()),
+            FlowEmission::AuthGuard { requirement, .. } => Some(requirement.as_str()),
+            FlowEmission::CliCommand { command_name, .. } => Some(command_name.as_str()),
+            FlowEmission::ScheduledJob { schedule } => Some(schedule.as_str()),
             _ => None,
         }
+    }
+
+    /// Returns true when this emission type is single-ended (no pairing partner).
+    /// Single-ended emissions are written directly without waiting for a
+    /// matching Producer or Consumer from another file.
+    pub fn is_single_ended(&self) -> bool {
+        matches!(
+            self,
+            FlowEmission::DiBinding { .. }
+            | FlowEmission::ConfigLookup { .. }
+            | FlowEmission::FeatureFlag { .. }
+            | FlowEmission::AuthGuard { .. }
+            | FlowEmission::CliCommand { .. }
+            | FlowEmission::ScheduledJob { .. }
+        )
     }
 }
 

@@ -541,6 +541,7 @@ fn extract_function_call(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             } else if name == "setmetatable" {
@@ -556,6 +557,7 @@ fn extract_function_call(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 if let Some(parent) = extract_setmetatable_parent(node, src) {
                     refs.push(ExtractedRef {
@@ -567,6 +569,7 @@ fn extract_function_call(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             } else if !name.is_empty() {
@@ -579,6 +582,7 @@ fn extract_function_call(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -594,6 +598,7 @@ fn extract_function_call(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -609,6 +614,7 @@ fn extract_function_call(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

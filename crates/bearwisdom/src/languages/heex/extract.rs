@@ -38,6 +38,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         module: None, chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 i = j;

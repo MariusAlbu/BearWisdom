@@ -306,6 +306,7 @@ pub(super) fn extract_for_loop_var(
                 chain: Some(chain),
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     } else if iterable_node.kind() == "identifier" {
@@ -327,6 +328,7 @@ pub(super) fn extract_for_loop_var(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }

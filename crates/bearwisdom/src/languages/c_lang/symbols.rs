@@ -145,6 +145,7 @@ fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -402,6 +403,7 @@ fn emit_namespace_target_refs(
                 chain: None,
                 byte_offset: 0,
                 namespace_segments: Vec::new(),
+                call_args: Vec::new(),
             });
         }
         return;
@@ -708,6 +710,7 @@ pub(super) fn push_include(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 return;
             }
@@ -935,6 +938,7 @@ pub(super) fn push_using_decl(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 return;
@@ -1056,6 +1060,7 @@ pub(super) fn extract_bases(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                     "base_class_specifier" => {
@@ -1072,6 +1077,7 @@ pub(super) fn extract_bases(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }

@@ -141,3 +141,228 @@ fn feature_flag_emission_url_pattern_is_flag_name() {
     assert_eq!(e.edge_type(), "feature_flag");
     assert_eq!(e.url_pattern(), Some("dark_mode"));
 }
+
+// ---------------------------------------------------------------------------
+// DbQueryOp
+// ---------------------------------------------------------------------------
+
+#[test]
+fn db_query_op_from_method_name_select_variants() {
+    assert_eq!(DbQueryOp::from_method_name("find"), DbQueryOp::Select);
+    assert_eq!(DbQueryOp::from_method_name("findOne"), DbQueryOp::Select);
+    assert_eq!(DbQueryOp::from_method_name("findUnique"), DbQueryOp::Select);
+    assert_eq!(DbQueryOp::from_method_name("select"), DbQueryOp::Select);
+    assert_eq!(DbQueryOp::from_method_name("count"), DbQueryOp::Select);
+    assert_eq!(DbQueryOp::from_method_name("where"), DbQueryOp::Select);
+    assert_eq!(DbQueryOp::from_method_name("query"), DbQueryOp::Select);
+}
+
+#[test]
+fn db_query_op_from_method_name_insert_variants() {
+    assert_eq!(DbQueryOp::from_method_name("create"), DbQueryOp::Insert);
+    assert_eq!(DbQueryOp::from_method_name("insert"), DbQueryOp::Insert);
+    assert_eq!(DbQueryOp::from_method_name("save"), DbQueryOp::Insert);
+    assert_eq!(DbQueryOp::from_method_name("add"), DbQueryOp::Insert);
+}
+
+#[test]
+fn db_query_op_from_method_name_update_variants() {
+    assert_eq!(DbQueryOp::from_method_name("update"), DbQueryOp::Update);
+    assert_eq!(DbQueryOp::from_method_name("set"), DbQueryOp::Update);
+    assert_eq!(DbQueryOp::from_method_name("patch"), DbQueryOp::Update);
+    assert_eq!(DbQueryOp::from_method_name("updateOne"), DbQueryOp::Update);
+}
+
+#[test]
+fn db_query_op_from_method_name_delete_variants() {
+    assert_eq!(DbQueryOp::from_method_name("delete"), DbQueryOp::Delete);
+    assert_eq!(DbQueryOp::from_method_name("remove"), DbQueryOp::Delete);
+    assert_eq!(DbQueryOp::from_method_name("destroy"), DbQueryOp::Delete);
+    assert_eq!(DbQueryOp::from_method_name("deleteMany"), DbQueryOp::Delete);
+}
+
+#[test]
+fn db_query_op_from_method_name_upsert() {
+    assert_eq!(DbQueryOp::from_method_name("upsert"), DbQueryOp::Upsert);
+}
+
+#[test]
+fn db_query_op_from_method_name_unknown_falls_back_to_other() {
+    assert_eq!(DbQueryOp::from_method_name("migrate"), DbQueryOp::Other);
+    assert_eq!(DbQueryOp::from_method_name("transaction"), DbQueryOp::Other);
+}
+
+#[test]
+fn db_query_op_as_str_roundtrip() {
+    assert_eq!(DbQueryOp::Select.as_str(), "select");
+    assert_eq!(DbQueryOp::Insert.as_str(), "insert");
+    assert_eq!(DbQueryOp::Update.as_str(), "update");
+    assert_eq!(DbQueryOp::Delete.as_str(), "delete");
+    assert_eq!(DbQueryOp::Upsert.as_str(), "upsert");
+    assert_eq!(DbQueryOp::Other.as_str(), "other");
+}
+
+// ---------------------------------------------------------------------------
+// New FlowEmission variants — edge_type / url_pattern / is_single_ended
+// ---------------------------------------------------------------------------
+
+#[test]
+fn db_entity_with_table_name_hint() {
+    let e = FlowEmission::DbEntity {
+        base_symbol_id: None,
+        base_name_hint: "Entity".to_string(),
+        table_name_hint: Some("users".to_string()),
+    };
+    assert_eq!(e.edge_type(), "db_entity");
+    assert_eq!(e.url_pattern(), Some("users"));
+    assert!(!e.is_single_ended());
+}
+
+#[test]
+fn db_entity_without_table_name_falls_back_to_base_name() {
+    let e = FlowEmission::DbEntity {
+        base_symbol_id: Some(7),
+        base_name_hint: "Model".to_string(),
+        table_name_hint: None,
+    };
+    assert_eq!(e.url_pattern(), Some("Model"));
+}
+
+#[test]
+fn db_query_emission_fields() {
+    let e = FlowEmission::DbQuery {
+        entity_name: "User".to_string(),
+        operation: DbQueryOp::Select,
+    };
+    assert_eq!(e.edge_type(), "db_query");
+    assert_eq!(e.url_pattern(), Some("User"));
+    assert!(!e.is_single_ended());
+}
+
+#[test]
+fn migration_target_emission() {
+    let e = FlowEmission::MigrationTarget {
+        table_name: "orders".to_string(),
+        direction: MigrationDirection::Up,
+    };
+    assert_eq!(e.edge_type(), "migration_target");
+    assert_eq!(e.url_pattern(), Some("orders"));
+    assert!(!e.is_single_ended());
+}
+
+#[test]
+fn auth_guard_role_emission() {
+    let e = FlowEmission::AuthGuard {
+        requirement: "admin".to_string(),
+        kind: AuthGuardKind::Role,
+    };
+    assert_eq!(e.edge_type(), "auth_guard");
+    assert_eq!(e.url_pattern(), Some("admin"));
+    assert_eq!(AuthGuardKind::Role.as_str(), "role");
+    assert!(e.is_single_ended());
+}
+
+#[test]
+fn auth_guard_permission_emission() {
+    let e = FlowEmission::AuthGuard {
+        requirement: "read:users".to_string(),
+        kind: AuthGuardKind::Permission,
+    };
+    assert_eq!(AuthGuardKind::Permission.as_str(), "permission");
+    assert_eq!(e.url_pattern(), Some("read:users"));
+    assert!(e.is_single_ended());
+}
+
+#[test]
+fn auth_guard_policy_emission() {
+    let e = FlowEmission::AuthGuard {
+        requirement: "IsOwner".to_string(),
+        kind: AuthGuardKind::Policy,
+    };
+    assert_eq!(AuthGuardKind::Policy.as_str(), "policy");
+    assert!(e.is_single_ended());
+}
+
+#[test]
+fn auth_guard_token_emission() {
+    let e = FlowEmission::AuthGuard {
+        requirement: "JwtAuthGuard".to_string(),
+        kind: AuthGuardKind::Token,
+    };
+    assert_eq!(AuthGuardKind::Token.as_str(), "token");
+    assert!(e.is_single_ended());
+}
+
+#[test]
+fn cli_command_emission() {
+    let e = FlowEmission::CliCommand {
+        command_name: "build".to_string(),
+        framework: Some("commander".to_string()),
+    };
+    assert_eq!(e.edge_type(), "cli_command");
+    assert_eq!(e.url_pattern(), Some("build"));
+    assert!(e.is_single_ended());
+}
+
+#[test]
+fn cli_command_no_framework() {
+    let e = FlowEmission::CliCommand {
+        command_name: "serve".to_string(),
+        framework: None,
+    };
+    assert_eq!(e.url_pattern(), Some("serve"));
+    assert!(e.is_single_ended());
+}
+
+#[test]
+fn scheduled_job_emission() {
+    let e = FlowEmission::ScheduledJob {
+        schedule: "0 0 * * *".to_string(),
+    };
+    assert_eq!(e.edge_type(), "scheduled_job");
+    assert_eq!(e.url_pattern(), Some("0 0 * * *"));
+    assert!(e.is_single_ended());
+}
+
+// ---------------------------------------------------------------------------
+// is_single_ended — coverage for paired variants
+// ---------------------------------------------------------------------------
+
+#[test]
+fn named_channel_is_not_single_ended() {
+    let e = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: "/api".to_string(),
+        role: ChannelRole::Producer,
+        method: Some(HttpMethod::Get),
+    };
+    assert!(!e.is_single_ended());
+}
+
+#[test]
+fn db_entity_is_not_single_ended() {
+    let e = FlowEmission::DbEntity {
+        base_symbol_id: None,
+        base_name_hint: "Entity".to_string(),
+        table_name_hint: None,
+    };
+    assert!(!e.is_single_ended());
+}
+
+#[test]
+fn db_query_is_not_single_ended() {
+    let e = FlowEmission::DbQuery {
+        entity_name: "Post".to_string(),
+        operation: DbQueryOp::Insert,
+    };
+    assert!(!e.is_single_ended());
+}
+
+#[test]
+fn migration_target_is_not_single_ended() {
+    let e = FlowEmission::MigrationTarget {
+        table_name: "events".to_string(),
+        direction: MigrationDirection::Down,
+    };
+    assert!(!e.is_single_ended());
+}

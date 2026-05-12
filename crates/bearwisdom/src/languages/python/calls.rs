@@ -127,6 +127,7 @@ pub(super) fn extract_calls_from_body(
                         chain: None,
                         byte_offset: func_node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                     extract_calls_from_body(&child, source, source_symbol_index, refs, import_map);
                     continue;
@@ -167,6 +168,7 @@ pub(super) fn extract_calls_from_body(
                         chain,
                         byte_offset: func_node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -238,6 +240,7 @@ fn emit_isinstance_type_node(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -257,6 +260,7 @@ fn emit_isinstance_type_node(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -275,6 +279,7 @@ fn emit_isinstance_type_node(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -370,6 +375,7 @@ pub(super) fn extract_import_statement(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             "aliased_import" => {
@@ -391,6 +397,7 @@ pub(super) fn extract_import_statement(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -435,6 +442,7 @@ pub(super) fn extract_import_from_statement(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             "aliased_import" => {
@@ -449,6 +457,7 @@ pub(super) fn extract_import_from_statement(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -462,6 +471,7 @@ pub(super) fn extract_import_from_statement(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             _ => {}

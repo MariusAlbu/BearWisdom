@@ -128,6 +128,7 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -149,6 +150,7 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -167,6 +169,7 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
 
@@ -184,6 +187,7 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -209,6 +213,7 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -548,6 +553,7 @@ fn visit(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 visit(child, src, symbols, refs, parent_index, class_prefix);
@@ -695,6 +701,7 @@ fn extract_class(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                     saw_colon = false; // only emit once per `:` separator
@@ -881,6 +888,7 @@ fn extract_using(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -953,6 +961,7 @@ fn extract_command(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                     emitted = true;
                     break;
@@ -970,6 +979,7 @@ fn extract_command(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         return;
@@ -984,6 +994,7 @@ fn extract_command(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -1021,6 +1032,7 @@ fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Ext
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             visit_for_calls(&child, src, source_idx, refs);
@@ -1224,6 +1236,7 @@ fn extract_member_access(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
 }

@@ -304,6 +304,7 @@ fn extract_behaviour(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -358,6 +359,7 @@ fn extract_import_attr(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
         emitted = true;
     }
@@ -374,6 +376,7 @@ fn extract_import_attr(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
 }
@@ -408,6 +411,7 @@ fn extract_include(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -594,6 +598,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                                         chain: None,
                                         byte_offset: 0,
                                         namespace_segments: Vec::new(),
+                                        call_args: Vec::new(),
                                     });
                                 }
                                 String::new()
@@ -630,6 +635,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                             chain: None,
                             byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
                         });
                     }
                 }
@@ -659,6 +665,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                             chain: None,
                             byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
                         });
                     }
                 }
@@ -690,6 +697,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                             chain: None,
                             byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
                         });
                     }
                 }
@@ -714,6 +722,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }

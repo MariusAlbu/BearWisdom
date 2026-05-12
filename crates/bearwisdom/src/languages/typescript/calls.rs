@@ -1,6 +1,99 @@
 use super::helpers::node_text;
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
+
+/// Extract the positional arguments from a `call_expression`'s `arguments` node.
+///
+/// Walks named children of the `arguments` list, converting each to a `CallArg`.
+/// Handles string literals, template literals with/without interpolation, tagged
+/// template bodies, bare identifiers, and numeric/boolean literals.
+pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
+    let Some(args_node) = call_node.child_by_field_name("arguments") else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        let arg = match child.kind() {
+            "string" => {
+                // `"text"` or `'text'` — strip surrounding quotes.
+                let raw = node_text(child, src);
+                let inner = raw
+                    .trim_start_matches(['"', '\'', '`'])
+                    .trim_end_matches(['"', '\'', '`'])
+                    .to_string();
+                CallArg::StringLit(inner)
+            }
+            "template_string" => {
+                // `` `text ${expr} more` `` — check for substitution children.
+                let has_substitution = (0..child.child_count()).any(|i| {
+                    child.child(i)
+                        .map(|c| c.kind() == "template_substitution")
+                        .unwrap_or(false)
+                });
+                if has_substitution {
+                    // Replace each `${...}` span with `{}` placeholder.
+                    let raw = node_text(child, src);
+                    let replaced = replace_template_substitutions(&raw);
+                    CallArg::TemplateLit(replaced)
+                } else {
+                    // No interpolation — treat as a plain string literal.
+                    let raw = node_text(child, src);
+                    let inner = raw.trim_matches('`').to_string();
+                    CallArg::StringLit(inner)
+                }
+            }
+            "tagged_template_expression" => {
+                // `` gql`query Foo { ... }` `` — capture tag + body.
+                let tag_node = child.child_by_field_name("tag");
+                let tmpl_node = child.child_by_field_name("template");
+                let tag = tag_node.map(|n| node_text(n, src)).unwrap_or_default();
+                let body = tmpl_node
+                    .map(|n| {
+                        let raw = node_text(n, src);
+                        raw.trim_matches('`').to_string()
+                    })
+                    .unwrap_or_default();
+                CallArg::TaggedTemplate { tag, body }
+            }
+            "identifier" => CallArg::Ident(node_text(child, src)),
+            "number" => CallArg::Literal(node_text(child, src)),
+            "true" | "false" | "null" | "undefined" => {
+                CallArg::Literal(child.kind().to_string())
+            }
+            _ => CallArg::Other,
+        };
+        result.push(arg);
+    }
+    result
+}
+
+/// Replace `${...}` spans in a raw template literal text with `{}` placeholders.
+#[cfg_attr(test, allow(dead_code))]
+pub(super) fn replace_template_substitutions(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '$' && chars.peek() == Some(&'{') {
+            chars.next(); // consume '{'
+            let mut depth = 1usize;
+            while let Some(inner) = chars.next() {
+                match inner {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 { break; }
+                    }
+                    _ => {}
+                }
+            }
+            out.push_str("{}");
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
 
 /// Emit a Calls ref for a single `call_expression` node.
 ///
@@ -23,6 +116,7 @@ pub(super) fn emit_call_ref(
 
         crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
         if !target_name.is_empty() && target_name != "undefined" {
+            let call_args = extract_call_args(call_node, src);
             refs.push(ExtractedRef {
                 source_symbol_index,
                 target_name,
@@ -32,6 +126,7 @@ pub(super) fn emit_call_ref(
                 chain,
                 byte_offset: func_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
+                            call_args,
 });
         }
     }
@@ -60,6 +155,7 @@ pub(super) fn emit_new_ref(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -85,6 +181,7 @@ pub(super) fn extract_calls(
 
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
                     if !target_name.is_empty() && target_name != "undefined" {
+                        let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name,
@@ -94,6 +191,7 @@ pub(super) fn extract_calls(
                             chain,
                             byte_offset: func_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args,
 });
                     }
                 }
@@ -117,6 +215,14 @@ pub(super) fn extract_calls(
                         .unwrap_or_else(|| callee_name_fallback(tag, src));
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag, refs);
                     if !target_name.is_empty() && target_name != "undefined" {
+                        // For tagged templates the body is the sole "argument".
+                        let call_args = child.child_by_field_name("template")
+                            .map(|tmpl| {
+                                let raw = node_text(tmpl, src);
+                                let body = raw.trim_matches('`').to_string();
+                                vec![CallArg::TaggedTemplate { tag: target_name.clone(), body }]
+                            })
+                            .unwrap_or_default();
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name,
@@ -126,6 +232,7 @@ pub(super) fn extract_calls(
                             chain,
                             byte_offset: tag.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args,
 });
                     }
                 }
@@ -189,6 +296,7 @@ pub(super) fn emit_jsx_component_ref(
         chain,
         byte_offset: tag_node.start_byte() as u32,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 

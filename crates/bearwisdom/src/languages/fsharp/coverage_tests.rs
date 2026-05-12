@@ -436,6 +436,7 @@ fn infer_external_namespace_from_hash_r_import() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
     let file_ctx = FileContext {
         file_path: "docs/generators/apiref.fsx".to_string(),
@@ -458,6 +459,7 @@ fn infer_external_namespace_from_hash_r_import() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
     let dummy_symbol = ExtractedSymbol {
         name: "generate".to_string(),

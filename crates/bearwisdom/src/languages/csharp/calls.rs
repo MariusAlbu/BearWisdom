@@ -44,6 +44,7 @@ pub(super) fn extract_calls_from_body(
                             chain,
                             byte_offset: callee.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -63,6 +64,7 @@ pub(super) fn extract_calls_from_body(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                     // Also emit TypeRefs for type arguments: `new Dictionary<string, Foo>()`
@@ -166,6 +168,7 @@ pub(super) fn extract_calls_from_body(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                         break;
@@ -585,6 +588,7 @@ fn extract_is_expression_refs(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -659,6 +663,7 @@ fn extract_is_expression_refs(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         break;
@@ -705,6 +710,7 @@ fn extract_pattern_type_refs_recursive(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -765,6 +771,7 @@ fn emit_pattern_type_ref(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }

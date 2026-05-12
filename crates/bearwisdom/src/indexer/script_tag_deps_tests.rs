@@ -63,6 +63,7 @@ fn tilde_prefixed_url_resolves_to_wwwroot() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let registry = crate::languages::default_registry();
@@ -97,6 +98,7 @@ fn cdn_and_absolute_urls_filtered_at_extraction() {
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -127,6 +129,7 @@ fn relative_url_resolves_against_host_dir() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let registry = crate::languages::default_registry();
@@ -158,6 +161,7 @@ fn already_parsed_file_not_duplicated() {
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
         pf
     };

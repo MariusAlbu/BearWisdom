@@ -91,6 +91,7 @@ pub(super) fn extract_calls_from_body(
                             chain,
                             byte_offset: fn_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -139,6 +140,7 @@ pub(super) fn extract_calls_from_body(
                                             chain: None,
                                             byte_offset: 0,
                                                                                     namespace_segments: Vec::new(),
+                                                                                    call_args: Vec::new(),
 });
                                     }
                                 }
@@ -171,6 +173,7 @@ pub(super) fn extract_calls_from_body(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                                 refs.push(ExtractedRef {
                                     source_symbol_index,
@@ -181,6 +184,7 @@ pub(super) fn extract_calls_from_body(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -198,6 +202,7 @@ pub(super) fn extract_calls_from_body(
                                             chain: None,
                                             byte_offset: 0,
                                                                                     namespace_segments: Vec::new(),
+                                                                                    call_args: Vec::new(),
 });
                                         refs.push(ExtractedRef {
                                             source_symbol_index,
@@ -208,6 +213,7 @@ pub(super) fn extract_calls_from_body(
                                             chain: None,
                                             byte_offset: 0,
                                                                                     namespace_segments: Vec::new(),
+                                                                                    call_args: Vec::new(),
 });
                                     }
                                 }
@@ -300,6 +306,7 @@ fn extract_lambda_param_typerefs(
                                         chain: None,
                                         byte_offset: 0,
                                                                             namespace_segments: Vec::new(),
+                                                                            call_args: Vec::new(),
 });
                                 }
                             }
@@ -337,6 +344,7 @@ fn extract_catch_typerefs(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -354,6 +362,7 @@ fn extract_catch_typerefs(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }

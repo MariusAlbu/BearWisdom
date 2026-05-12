@@ -131,6 +131,7 @@ fn collect_include_refs(source: &str) -> Vec<ExtractedRef> {
                 chain: None,
                 byte_offset: absolute as u32,
                 namespace_segments: Vec::new(),
+                call_args: Vec::new(),
             });
         }
         i = k + 1;

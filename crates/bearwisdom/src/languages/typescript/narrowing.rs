@@ -103,5 +103,6 @@ fn emit_type_ref_for_type_node(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }

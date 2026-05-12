@@ -557,6 +557,7 @@ pub(super) fn push_import(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -593,6 +594,7 @@ pub(super) fn extract_type_inheritance(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -617,6 +619,7 @@ pub(super) fn extract_type_inheritance(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

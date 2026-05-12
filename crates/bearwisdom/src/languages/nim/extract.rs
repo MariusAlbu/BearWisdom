@@ -255,6 +255,7 @@ fn extract_calls(line: &str, line_num: u32, out: &mut Vec<ExtractedRef>) {
                 chain: None,
                 byte_offset: id_start as u32,
                 namespace_segments: Vec::new(),
+                call_args: Vec::new(),
             });
         }
 
@@ -540,6 +541,7 @@ fn parse_collected_import(text: &str, line_num: u32) -> Vec<ExtractedRef> {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     if let Some(rest) = text.strip_prefix("import ") {
@@ -584,6 +586,7 @@ fn parse_include_line(line: &str, line_num: u32) -> Option<ExtractedRef> {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     })
 }
 

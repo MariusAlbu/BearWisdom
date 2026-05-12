@@ -36,6 +36,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 fn make_require(source_idx: usize, name: &str, module: Option<&str>) -> ExtractedRef {
@@ -48,6 +49,7 @@ fn make_require(source_idx: usize, name: &str, module: Option<&str>) -> Extracte
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
@@ -296,6 +298,7 @@ fn test_stdlib_require_is_external() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
 
     let sym = make_symbol("Foo", "Foo", SymbolKind::Class, None);

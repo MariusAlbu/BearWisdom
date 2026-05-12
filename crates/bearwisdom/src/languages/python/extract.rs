@@ -148,6 +148,7 @@ pub(super) fn extract_from_node(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -308,6 +309,7 @@ fn emit_type_ref_from_annotation(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -331,6 +333,7 @@ fn emit_type_ref_from_annotation(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -381,6 +384,7 @@ fn scan_type_annotation_nodes(
                         chain: None,
                         byte_offset: 0,
                         namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
                     });
                 }
             }
@@ -395,6 +399,7 @@ fn scan_type_annotation_nodes(
                         chain: None,
                         byte_offset: 0,
                         namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
                     });
                 }
             }
@@ -428,6 +433,7 @@ fn emit_type_ref_from_type_node(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

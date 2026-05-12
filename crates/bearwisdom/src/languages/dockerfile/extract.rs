@@ -193,6 +193,7 @@ fn extract_from(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
         // Inherits edge: each stage inherits its base image
         refs.push(ExtractedRef {
@@ -204,6 +205,7 @@ fn extract_from(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -465,6 +467,7 @@ fn extract_copy(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -482,6 +485,7 @@ fn extract_copy(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }

@@ -30,6 +30,7 @@ fn make_partial_ref(target: &str) -> ExtractedRef {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 
@@ -240,6 +241,7 @@ fn calls_kind_refs_are_not_resolved_by_partial_resolver() {
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         }],
     );
     let (index, _id_map) = build_env(&[&source]);

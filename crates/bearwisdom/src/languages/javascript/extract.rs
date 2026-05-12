@@ -833,6 +833,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -851,6 +852,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -868,6 +870,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -900,6 +903,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                                 break 'outer_lex;
                             }
@@ -937,6 +941,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -960,6 +965,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -986,6 +992,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -1021,6 +1028,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                     "extends_clause" => {
@@ -1036,6 +1044,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -1077,6 +1086,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -1092,6 +1102,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -1120,6 +1131,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                                 chain,
                                 byte_offset: func_node.start_byte() as u32,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -1141,6 +1153,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -1161,6 +1174,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -1212,6 +1226,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             chain,
                             byte_offset: tag_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -1302,6 +1317,7 @@ fn emit_call_ref_js(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     } else if callee == "import" {
@@ -1315,6 +1331,7 @@ fn emit_call_ref_js(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     } else if !callee.is_empty() && !is_js_keyword(&callee) {
@@ -1348,6 +1365,7 @@ fn emit_call_ref_js(
             chain,
             byte_offset: func_node.start_byte() as u32,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -1503,6 +1521,7 @@ fn emit_new_ref_js(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -1595,6 +1614,7 @@ fn extract_module_exports(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -1737,6 +1757,7 @@ fn try_emit_require(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -1830,6 +1851,7 @@ fn extract_for_loop_var(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -1948,6 +1970,7 @@ fn scan_all_type_identifiers(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

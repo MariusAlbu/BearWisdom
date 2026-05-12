@@ -102,6 +102,7 @@ pub(super) fn extract_class(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -128,6 +129,7 @@ pub(super) fn extract_class(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -165,6 +167,7 @@ pub(super) fn extract_interface_list(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         } else {
             extract_interface_list(&child, src, refs, class_idx, edge_kind);

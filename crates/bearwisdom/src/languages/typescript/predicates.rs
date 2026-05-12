@@ -120,6 +120,40 @@ pub(crate) fn is_global_fetch(callee_name: &str) -> bool {
     matches!(callee_name, "fetch" | "$fetch" | "ofetch" | "useFetch")
 }
 
+/// Returns `true` when `pkg` is a knex or knex-compatible schema builder package.
+pub(crate) fn is_knex_module(pkg: &str) -> bool {
+    let root = pkg.split('/').next().unwrap_or(pkg);
+    matches!(root, "knex" | "better-knex" | "knex-schema-inspector")
+}
+
+/// Returns `true` when `pkg` is a cron/scheduling package.
+pub(crate) fn is_cron_module(pkg: &str) -> bool {
+    let root = pkg.split('/').next().unwrap_or(pkg);
+    matches!(
+        root,
+        "node-cron" | "cron" | "cron-job.org" | "cron-schedule"
+            | "node-schedule" | "croner" | "bree"
+    )
+}
+
+/// Returns `true` when `pkg` is a CLI argument parsing package.
+pub(crate) fn is_cli_module(pkg: &str) -> bool {
+    let root = if pkg.starts_with('@') {
+        let mut parts = pkg.splitn(3, '/');
+        match (parts.next(), parts.next()) {
+            (Some(scope), Some(name)) => &pkg[..scope.len() + 1 + name.len()],
+            _ => pkg,
+        }
+    } else {
+        pkg.split('/').next().unwrap_or(pkg)
+    };
+    matches!(
+        root,
+        "commander" | "yargs" | "@oclif/core" | "@oclif/command"
+            | "meow" | "cac" | "minimist" | "mri" | "arg"
+    )
+}
+
 /// Check that the edge kind is compatible with the symbol kind.
 ///
 /// TypeScript is structurally typed and more permissive than C# — we allow

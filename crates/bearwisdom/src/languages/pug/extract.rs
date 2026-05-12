@@ -64,6 +64,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         } else if let Some(rest) = trimmed.strip_prefix("extends ") {
@@ -78,6 +79,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

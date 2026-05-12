@@ -385,6 +385,7 @@ fn extract_from_node(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -482,6 +483,7 @@ fn scan_all_type_identifiers(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -504,6 +506,7 @@ fn scan_all_type_identifiers(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // Don't recurse into scoped_type_identifier children — we already extracted the leaf.

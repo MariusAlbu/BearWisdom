@@ -331,6 +331,33 @@ pub struct MemberChain {
 // Extracted types (parser output, pre-resolution)
 // ---------------------------------------------------------------------------
 
+/// A single argument in a call expression, captured at extract time.
+///
+/// Populated only for call-site refs (`EdgeKind::Calls`, `EdgeKind::Imports`)
+/// when the extractor walks the argument list. The `Other` arm covers any
+/// argument shape not worth preserving: function references, complex
+/// expressions, spread elements, etc.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallArg {
+    /// Plain string literal: `"users"`, `'users'`.
+    StringLit(String),
+    /// Template literal with interpolation holes replaced by `{}`:
+    /// `` `/api/users/${id}` `` → `"/api/users/{}"`.
+    TemplateLit(String),
+    /// Bare identifier reference — carries the name so the consumer can
+    /// chase it to the binding's own `call_args`.
+    Ident(String),
+    /// Tagged template: `` gql`query Foo { users { id } }` ``.
+    /// `tag` is the tag identifier (`"gql"`, `"sql"`, `"html"`).
+    /// `body` is the raw inner text with interpolation holes removed.
+    TaggedTemplate { tag: String, body: String },
+    /// Numeric, boolean, null, or simple array/object literal — stored as
+    /// its source text.
+    Literal(String),
+    /// Any argument shape not covered by the above variants.
+    Other,
+}
+
 /// An unresolved reference from one symbol to a named target.
 ///
 /// After all files are parsed, the resolver walks these and attempts to match
@@ -381,6 +408,12 @@ pub struct ExtractedRef {
     /// specific refs. `0` means "not populated" — languages whose extractors
     /// haven't been wired up yet emit this as default.
     pub byte_offset: u32,
+    /// Positional arguments at this call site, populated only by extractors
+    /// that walk call-expression argument lists. Empty for non-call refs
+    /// (TypeRef, Inherits, Implements) and for extractors that haven't been
+    /// wired yet. The resolver's flow-emission hook uses the first argument
+    /// for URL pattern extraction (HTTP calls, IPC commands, gql tags, etc.).
+    pub call_args: Vec<CallArg>,
 }
 
 /// An HTTP route attribute extracted from C#.

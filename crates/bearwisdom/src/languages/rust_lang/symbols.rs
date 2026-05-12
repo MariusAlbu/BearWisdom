@@ -686,6 +686,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
             }
         }
@@ -792,6 +793,7 @@ fn make_type_ref(sym_index: usize, name: String, line: u32) -> ExtractedRef {
         line,
         module: None,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
         chain: None,
         byte_offset: 0,
     }

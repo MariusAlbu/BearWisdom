@@ -34,6 +34,10 @@ mod coverage_tests;
 mod extract_tests;
 
 #[cfg(test)]
+#[path = "calls_tests.rs"]
+mod calls_tests;
+
+#[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod resolve_tests;
 

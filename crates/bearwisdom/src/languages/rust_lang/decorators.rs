@@ -193,6 +193,7 @@ fn extract_trait_names_from_token_tree(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
                 i = j;
                 continue;
@@ -210,6 +211,7 @@ fn extract_trait_names_from_token_tree(
                         chain: None,
                         byte_offset: 0,
                         namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
                     });
                 }
             }

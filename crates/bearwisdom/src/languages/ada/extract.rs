@@ -440,6 +440,7 @@ fn walk_node(
                         chain: None,
                         byte_offset: 0,
                         namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
                     });
                     // Emit the alias as a real Namespace symbol qualified
                     // under its parent so cross-file `members_of(parent)`
@@ -475,6 +476,7 @@ fn walk_node(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -491,6 +493,7 @@ fn walk_node(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -520,6 +523,7 @@ fn walk_node(
                             chain: None,
                             byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
                         });
                     }
                 }

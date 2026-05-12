@@ -47,6 +47,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain,
                             byte_offset: name_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -70,6 +71,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -190,6 +192,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         chain: None,
                         byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
@@ -265,6 +268,7 @@ fn extract_catch_clause_refs(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -324,6 +328,7 @@ fn extract_try_with_resources_refs(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -362,6 +367,7 @@ fn extract_cast_expression_refs(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -413,6 +419,7 @@ fn extract_method_reference_calls(
                 chain: None,
                 byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -441,6 +448,7 @@ fn extract_method_reference_calls(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -474,6 +482,7 @@ fn extract_enhanced_for_refs(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -521,6 +530,7 @@ fn extract_class_literal_ref(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         break;
@@ -583,6 +593,7 @@ fn extract_instanceof_refs(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     // Pattern variable: the identifier after the type, if present.
@@ -606,6 +617,7 @@ fn extract_instanceof_refs(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 break;

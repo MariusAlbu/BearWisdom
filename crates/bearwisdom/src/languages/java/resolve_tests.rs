@@ -37,6 +37,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 fn make_import_ref(source_idx: usize, name: &str, module: &str) -> ExtractedRef {
@@ -49,6 +50,7 @@ fn make_import_ref(source_idx: usize, name: &str, module: &str) -> ExtractedRef 
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 fn make_file(path: &str, lang: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {

@@ -39,6 +39,7 @@ pub(super) fn extract_calls_from_body(
                             chain,
                             byte_offset: callee.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -65,6 +66,7 @@ pub(super) fn extract_calls_from_body(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -89,6 +91,7 @@ pub(super) fn extract_calls_from_body(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -106,6 +109,7 @@ pub(super) fn extract_calls_from_body(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -156,6 +160,7 @@ fn extract_type_refs_from_type_arguments(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

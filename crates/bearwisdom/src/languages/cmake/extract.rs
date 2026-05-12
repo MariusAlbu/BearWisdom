@@ -168,6 +168,7 @@ fn visit_def_body(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -216,6 +217,7 @@ fn extract_normal_command(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -659,6 +661,7 @@ fn extract_include_command(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -690,6 +693,7 @@ fn extract_find_package_command(
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     });
     emit_find_package_vars(node, &pkg, symbols);
 }
@@ -756,6 +760,7 @@ fn extract_add_subdirectory_command(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -812,6 +817,7 @@ fn extract_target_link_libraries(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -1111,6 +1117,7 @@ fn collect_all_normal_commands(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -1157,6 +1164,7 @@ fn collect_variable_refs(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }

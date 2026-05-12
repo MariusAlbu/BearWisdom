@@ -38,6 +38,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 fn make_use(source_idx: usize, alias: &str, fqn: &str) -> ExtractedRef {
@@ -50,6 +51,7 @@ fn make_use(source_idx: usize, alias: &str, fqn: &str) -> ExtractedRef {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
@@ -435,6 +437,7 @@ fn test_inherited_method_via_this_resolves() {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
             // $this->account() inside execute()
             ExtractedRef {
@@ -446,6 +449,7 @@ fn test_inherited_method_via_this_resolves() {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
         ],
     );
@@ -511,6 +515,7 @@ fn test_static_eloquent_call_via_type_access() {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
         ],
     );
@@ -552,6 +557,7 @@ fn test_static_eloquent_call_via_type_access() {
                 }),
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
         ],
     );
@@ -620,6 +626,7 @@ fn test_inherited_method_via_chain_selfref() {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
             // Realistic: extractor emits target_name="account" with SelfRef chain.
             ExtractedRef {
@@ -650,6 +657,7 @@ fn test_inherited_method_via_chain_selfref() {
                 }),
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
         ],
     );
@@ -708,6 +716,7 @@ fn test_transitive_inherited_method_resolves() {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
         ],
     );
@@ -727,6 +736,7 @@ fn test_transitive_inherited_method_resolves() {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
             ExtractedRef {
                 source_symbol_index: 1, // handle
@@ -737,6 +747,7 @@ fn test_transitive_inherited_method_resolves() {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
         ],
     );

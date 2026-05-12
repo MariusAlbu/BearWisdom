@@ -318,6 +318,7 @@ fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
 }
@@ -347,6 +348,7 @@ fn extract_open(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -789,6 +791,7 @@ fn extract_interface_implementation(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         break;
@@ -824,6 +827,7 @@ fn extract_class_inherits(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             break;
         }
@@ -906,6 +910,7 @@ fn collect_applications(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -924,6 +929,7 @@ fn collect_applications(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }

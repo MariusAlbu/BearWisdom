@@ -168,6 +168,7 @@ fn extract_assignment(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -277,6 +278,7 @@ fn extract_call(
                 chain,
                 byte_offset: fn_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -377,6 +379,7 @@ fn extract_load_refs(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
         // Remaining args are symbol names or `alias = "sym"` pairs.
         // For aliased loads use the alias (the name used inside this file)
@@ -408,6 +411,7 @@ fn extract_load_refs(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

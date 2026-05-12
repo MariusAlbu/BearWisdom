@@ -108,6 +108,7 @@ fn visit_expr(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             // Recurse into sub-expressions
@@ -344,6 +345,7 @@ fn extract_value_refs(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             // Recurse into sub-expressions (but not the attrpath — avoid double-emit)
@@ -474,6 +476,7 @@ fn extract_inherit_from(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -594,6 +597,7 @@ fn extract_apply(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -616,6 +620,7 @@ fn extract_apply(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 return;
             }
@@ -637,6 +642,7 @@ fn extract_apply(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 return;
             }
@@ -654,6 +660,7 @@ fn extract_apply(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -753,6 +760,7 @@ fn extract_with(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }

@@ -42,6 +42,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 
@@ -60,6 +61,7 @@ fn make_import_ref(
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
@@ -351,6 +353,7 @@ fn test_build_file_context_alias_import() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let resolver = GoResolver;
@@ -387,6 +390,7 @@ fn test_build_file_context_blank_import_skipped() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let resolver = GoResolver;
@@ -613,6 +617,7 @@ fn test_import_alias_resolution() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let (index, id_map) = build_test_env(&[&gin_file, &main_file]);
@@ -1015,6 +1020,7 @@ fn test_is_visible_public_always() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let source_sym = make_symbol("Run", "pkg.Run", SymbolKind::Function, Visibility::Public, Some("pkg"));
     let ref_ctx = RefContext {
@@ -1058,6 +1064,7 @@ fn test_is_visible_private_same_dir() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let source_sym = make_symbol("Run", "pkg.Run", SymbolKind::Function, Visibility::Public, Some("pkg"));
     let ref_ctx = RefContext {
@@ -1101,6 +1108,7 @@ fn test_is_visible_private_different_dir() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let source_sym = make_symbol("main", "main.main", SymbolKind::Function, Visibility::Private, Some("main"));
     let ref_ctx = RefContext {
@@ -1152,6 +1160,7 @@ fn test_instantiates_ref_resolution() {
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 },
         ],
     );

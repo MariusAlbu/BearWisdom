@@ -119,6 +119,7 @@ fn collect_uses_refs(source: &str, file_path: &str) -> Vec<ExtractedRef> {
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
     out

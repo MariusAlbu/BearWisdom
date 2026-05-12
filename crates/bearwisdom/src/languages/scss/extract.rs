@@ -417,6 +417,7 @@ fn handle_include(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
     // Recurse into arguments to find nested call_expressions
@@ -451,6 +452,7 @@ fn handle_extend(
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     });
 }
 
@@ -477,6 +479,7 @@ fn handle_import(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
@@ -505,6 +508,7 @@ fn handle_forward(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
@@ -548,6 +552,7 @@ fn handle_use(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
@@ -745,6 +750,7 @@ fn handle_call_expr(
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     });
 
     // Recurse into children (arguments may contain nested call_expressions).

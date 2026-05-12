@@ -465,6 +465,7 @@ impl TypeChecker for TypeScriptChecker {
                     confidence: 1.0,
                     strategy: "ts_chain_resolution",
                     resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                    flow_emit: None,
                 });
             }
         }
@@ -477,6 +478,7 @@ impl TypeChecker for TypeScriptChecker {
                     confidence: 0.95,
                     strategy: "ts_chain_resolution",
                     resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                    flow_emit: None,
                 });
             }
         }
@@ -507,6 +509,7 @@ impl TypeChecker for TypeScriptChecker {
                         confidence: 0.9,
                         strategy: "ts_chain_inheritance",
                         resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                        flow_emit: None,
                     });
                 }
             }
@@ -517,6 +520,7 @@ impl TypeChecker for TypeScriptChecker {
                         confidence: 0.85,
                         strategy: "ts_chain_inheritance",
                         resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                        flow_emit: None,
                     });
                 }
             }

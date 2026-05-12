@@ -37,6 +37,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 
@@ -251,6 +252,7 @@ fn test_using_directive_resolution() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let (index, id_map) = build_test_env(&[&file1, &file2]);
@@ -359,6 +361,7 @@ fn test_private_visibility_cross_file() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let (index, _) = build_test_env(&[&file1, &file2]);
@@ -618,6 +621,7 @@ fn test_infer_no_false_positive_on_project_ref() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let resolver = CSharpResolver;
@@ -666,6 +670,7 @@ fn test_infer_without_project_context_fallback() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let resolver = CSharpResolver;
@@ -700,6 +705,7 @@ fn workspace_project_namespace_not_classified_as_external() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let file = make_file(
         "App/Foo.cs",
@@ -749,6 +755,7 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let file = make_file(
         "App/Foo.cs",

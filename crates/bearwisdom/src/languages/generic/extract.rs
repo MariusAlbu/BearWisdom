@@ -352,6 +352,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         // Don't recurse into imports — there's nothing useful inside.
@@ -448,6 +449,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
         recurse_children(node, ctx, language);
@@ -469,6 +471,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

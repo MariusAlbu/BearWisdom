@@ -97,6 +97,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let ref_type = ExtractedRef {
         source_symbol_index: 0,
@@ -107,6 +108,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 };
     let file_a = make_parsed_file("a.cs", vec![sym_a], vec![ref_import, ref_type]);
 

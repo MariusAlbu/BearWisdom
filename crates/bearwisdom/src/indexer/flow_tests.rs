@@ -68,6 +68,7 @@ fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
         chain: None,
         byte_offset,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 
@@ -171,6 +172,7 @@ fn flow_type_args_populate_chain_segment() {
         }),
         byte_offset: 5, // inside the `findOne` span (5..12)
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 }];
 
     let _ = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);

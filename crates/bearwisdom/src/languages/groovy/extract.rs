@@ -413,6 +413,7 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -617,6 +618,7 @@ fn extract_class(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -784,6 +786,7 @@ fn extract_type_list_refs(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -962,6 +965,7 @@ fn extract_import(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -1003,6 +1007,7 @@ fn extract_call(
         chain,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     });
 }
 

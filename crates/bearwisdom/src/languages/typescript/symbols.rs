@@ -358,6 +358,7 @@ fn infer_field_type_from_initializer(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             // `new Foo<Bar, Baz>()` — emit each generic arg as an extra
             // TypeRef so the field_type_args map picks them up (mirrors
@@ -383,6 +384,7 @@ fn infer_field_type_from_initializer(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -639,6 +641,7 @@ pub(super) fn extract_type_ref_from_type_assertion(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 return;
@@ -656,6 +659,7 @@ pub(super) fn extract_type_ref_from_type_assertion(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -865,6 +869,7 @@ pub(super) fn push_variable_decl(
                                             chain: Some(chain),
                                             byte_offset: 0,
                                                                                     namespace_segments: Vec::new(),
+                                                                                    call_args: Vec::new(),
 });
                                     }
                                 }
@@ -888,6 +893,7 @@ pub(super) fn push_variable_decl(
                                         chain: None,
                                         byte_offset: 0,
                                                                             namespace_segments: Vec::new(),
+                                                                            call_args: Vec::new(),
 });
                                 }
                             }
@@ -909,6 +915,7 @@ pub(super) fn push_variable_decl(
                                         chain: Some(chain),
                                         byte_offset: 0,
                                                                             namespace_segments: Vec::new(),
+                                                                            call_args: Vec::new(),
 });
                                 }
                             }
@@ -1025,6 +1032,7 @@ pub(super) fn push_variable_decl(
                                 chain: Some(prop_chain),
                                 byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
                             });
                         }
                     }
@@ -1141,6 +1149,7 @@ pub(super) fn push_variable_decl(
                                     chain: Some(elem_chain),
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }

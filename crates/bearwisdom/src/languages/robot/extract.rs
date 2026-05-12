@@ -182,6 +182,7 @@ fn extract_settings_line(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -299,6 +300,7 @@ fn emit_keyword_call(
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     });
 }
 
@@ -390,6 +392,7 @@ fn extract_keyword_invocation(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 

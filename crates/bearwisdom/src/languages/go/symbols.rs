@@ -130,6 +130,7 @@ fn emit_import_ref(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -732,6 +733,7 @@ fn extract_field_declaration(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             // Also emit a Field symbol (the embedded type acts as an accessible field).
             symbols.push(ExtractedSymbol {
@@ -819,6 +821,7 @@ fn emit_type_refs_from_subtree(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -851,6 +854,7 @@ fn emit_type_refs_from_subtree(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -1123,6 +1127,7 @@ pub(super) fn extract_short_var_decl(
                                     chain: Some(chain),
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         } else {
@@ -1138,6 +1143,7 @@ pub(super) fn extract_short_var_decl(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -1170,6 +1176,7 @@ pub(super) fn extract_short_var_decl(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -1353,6 +1360,7 @@ fn extract_const_var_spec(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -1489,6 +1497,7 @@ pub(super) fn extract_go_typed_params_as_symbols(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }

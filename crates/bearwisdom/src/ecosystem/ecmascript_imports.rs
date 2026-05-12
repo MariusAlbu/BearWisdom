@@ -96,6 +96,7 @@ pub fn push_import_refs(
                 chain: None,
                 byte_offset: 0,
                 namespace_segments: Vec::new(),
+                call_args: Vec::new(),
             });
         }
     }
@@ -127,6 +128,7 @@ pub fn push_import_refs(
                 chain: None,
                 byte_offset: 0,
                 namespace_segments: Vec::new(),
+                call_args: Vec::new(),
             });
         }
     }
@@ -153,6 +155,7 @@ fn emit_clause_refs(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
             }
             // `import { X, Y as Z } from 'pkg'` — emit per import_specifier
@@ -177,6 +180,7 @@ fn emit_clause_refs(
                         chain: None,
                         byte_offset: 0,
                         namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
                     });
                 }
             }
@@ -194,6 +198,7 @@ fn emit_clause_refs(
                             chain: None,
                             byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
                         });
                         break;
                     }
@@ -236,6 +241,7 @@ fn emit_require_clause_ref(
             chain: None,
             byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         });
     }
 }

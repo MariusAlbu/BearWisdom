@@ -78,6 +78,7 @@ pub(super) fn extract_impl(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -99,6 +100,7 @@ pub(super) fn extract_impl(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -208,6 +210,7 @@ pub(super) fn extract_impl(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -470,6 +473,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain: None,
                             byte_offset: macro_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -505,6 +509,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -586,6 +591,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain: None,
                             byte_offset: name_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                         // Also emit TypeRef so the type graph is connected.
                         refs.push(ExtractedRef {
@@ -597,6 +603,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -657,6 +664,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain,
                             byte_offset: func.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -693,6 +701,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -722,6 +731,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         chain: None,
                         byte_offset: 0,
                         namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
                     });
                 }
             }
@@ -939,6 +949,7 @@ pub(super) fn extract_extern_crate(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -1002,6 +1013,7 @@ fn walk_use_tree(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
 
@@ -1069,6 +1081,7 @@ fn walk_use_tree(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
 
@@ -1087,6 +1100,7 @@ fn walk_use_tree(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
 
@@ -1109,6 +1123,7 @@ fn walk_use_tree(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
 
@@ -1266,6 +1281,7 @@ fn infer_rust_variable_type(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1310,6 +1326,7 @@ fn infer_rust_variable_type(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1433,6 +1450,7 @@ fn walk_synthetic_macro_calls(
                                 chain: None,
                                 byte_offset,
                                 namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
                             });
                         }
                     } else if !raw.contains(['.', '(']) {
@@ -1446,6 +1464,7 @@ fn walk_synthetic_macro_calls(
                             chain: None,
                             byte_offset,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
                         });
                     }
                 }

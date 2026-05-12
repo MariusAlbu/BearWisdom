@@ -411,6 +411,7 @@ fn extract_class_parameter(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
         }
     }
@@ -558,6 +559,7 @@ pub(super) fn emit_import(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 } else {
                     let target = parts.last().cloned().unwrap_or_default();
@@ -571,6 +573,7 @@ pub(super) fn emit_import(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 return;
@@ -587,6 +590,7 @@ pub(super) fn emit_import(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 return;
             }
@@ -629,6 +633,7 @@ pub(super) fn extract_delegation_specifiers(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }

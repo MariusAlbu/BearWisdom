@@ -200,6 +200,7 @@ fn visit(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         } else {
@@ -259,6 +260,7 @@ fn dispatch_call(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             // For dot calls (e.g. `Enum.map`), also emit a TypeRef for the receiver module.
             extract_dot_call_module_ref(node, src, sym_idx, refs);
@@ -536,6 +538,7 @@ fn extract_implementation(
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 
     let do_block_idx = find_do_block_index(node);
@@ -652,6 +655,7 @@ fn extract_directive(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                                 emitted = true;
                             }
@@ -674,6 +678,7 @@ fn extract_directive(
                                             chain: None,
                                             byte_offset: 0,
                                                                                     namespace_segments: Vec::new(),
+                                                                                    call_args: Vec::new(),
 });
                                         emitted = true;
                                     }
@@ -711,6 +716,7 @@ fn extract_directive(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -774,6 +780,7 @@ fn extract_qualified_multi_alias(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                     emitted = true;
                 }
@@ -792,6 +799,7 @@ fn extract_qualified_multi_alias(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
         emitted = true;
     }
@@ -857,6 +865,7 @@ fn dispatch_attribute(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -907,6 +916,7 @@ fn extract_calls_recursive(
                                 chain: None,
                                 byte_offset: 0,
                                                         namespace_segments: Vec::new(),
+                                                        call_args: Vec::new(),
 });
                             // For dot calls like `Enum.map(...)`, also emit a TypeRef
                             // for the module part (the `alias` node before the dot).
@@ -938,6 +948,7 @@ fn extract_calls_recursive(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -1016,6 +1027,7 @@ fn extract_dot_call_module_ref(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                         return; // only the receiver, not the function name
@@ -1067,6 +1079,7 @@ fn extract_pipe_calls(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                         // Also emit TypeRef for module part of dot calls on the right side.
                         extract_dot_call_module_ref(&r, src, source_symbol_index, refs);
@@ -1092,6 +1105,7 @@ fn extract_pipe_calls(
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
 });
             // Also emit TypeRef for module part of dot calls (`Enum.map`, etc.).
             extract_dot_call_module_ref(right, src, source_symbol_index, refs);
@@ -1255,6 +1269,7 @@ fn extract_attribute_type_refs(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -1346,6 +1361,7 @@ fn scan_type_refs_inner(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             // alias is a leaf — no children to recurse into.
@@ -1371,6 +1387,7 @@ fn scan_type_refs_inner(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }

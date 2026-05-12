@@ -254,6 +254,7 @@ pub(super) fn extract_function_type_refs(
                                         chain: None,
                                         byte_offset: 0,
                                                                             namespace_segments: Vec::new(),
+                                                                            call_args: Vec::new(),
 });
                                 }
                             }
@@ -271,6 +272,7 @@ pub(super) fn extract_function_type_refs(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }

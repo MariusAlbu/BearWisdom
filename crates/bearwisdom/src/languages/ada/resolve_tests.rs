@@ -159,6 +159,7 @@ fn make_extracted_ref(target: &str) -> ExtractedRef {
         line: 1,
         module: None,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
         chain: None,
         byte_offset: 0,
     }

@@ -42,6 +42,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                             // Don't also emit a Calls edge for `.new`.
                             // Recurse into arguments but not the receiver again.
@@ -65,6 +66,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         chain,
                         byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
@@ -90,6 +92,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 } else {
@@ -108,6 +111,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                             break;
@@ -137,6 +141,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -220,6 +225,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // Do NOT recurse further — constituent parts are captured above.
@@ -238,6 +244,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

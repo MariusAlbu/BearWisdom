@@ -138,6 +138,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 
@@ -214,6 +215,7 @@ fn try_extract_on_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) 
         chain: None,
         byte_offset: 0,
             namespace_segments: Vec::new(),
+            call_args: Vec::new(),
 });
 }
 
@@ -244,6 +246,7 @@ fn extract_svelte_blocks(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }

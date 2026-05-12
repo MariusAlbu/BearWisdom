@@ -554,6 +554,7 @@ fn emit_annotation_ref(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }
@@ -628,6 +629,7 @@ fn scan_type_refs_inner(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             // Recurse ONLY into type_arguments children (for generic params like
@@ -660,6 +662,7 @@ fn scan_type_refs_inner(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             let mut cursor = node.walk();
@@ -688,6 +691,7 @@ fn scan_type_refs_inner(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             // Recurse to handle type args inside annotations and nested annotations.
@@ -730,6 +734,7 @@ fn scan_type_refs_inner(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
             let mut cursor = node.walk();
@@ -850,6 +855,7 @@ fn infer_type_from_initializer(
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
+                                                    call_args: Vec::new(),
 });
                     }
                 }
@@ -867,6 +873,7 @@ fn infer_type_from_initializer(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }

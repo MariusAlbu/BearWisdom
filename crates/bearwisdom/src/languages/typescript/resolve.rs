@@ -679,12 +679,22 @@ impl LanguageResolver for TypeScriptResolver {
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
     ) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
-        // Only inspect call-kind refs that carry a chain.
-        if ref_ctx.extracted_ref.kind != EdgeKind::Calls {
+        let r = &ref_ctx.extracted_ref;
+
+        // Decorator-based detection: TypeRef refs whose target_name matches a
+        // well-known decorator (NestJS guards, TypeORM/Sequelize entity markers, etc.).
+        if r.kind == EdgeKind::TypeRef {
+            if let Some(emission) = detect_decorator_flow_emission(r.target_name.as_str(), r.module.as_deref()) {
+                return Some(emission);
+            }
+        }
+
+        // Call-based detection: Calls refs that carry a chain.
+        if r.kind != EdgeKind::Calls {
             return None;
         }
-        let chain_ref = ref_ctx.extracted_ref.chain.as_ref()?;
-        detect_chain_flow_emission(chain_ref, file_ctx)
+        let chain_ref = r.chain.as_ref()?;
+        detect_chain_flow_emission(chain_ref, &r.call_args, file_ctx)
     }
 
     fn infer_external_namespace(
@@ -1352,26 +1362,120 @@ fn is_npm_package_match(
 // Resolver-emitted flow edge detection
 // ---------------------------------------------------------------------------
 
-use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+use crate::indexer::resolve::flow_emit::{
+    AuthGuardKind, ChannelRole, DbQueryOp, FlowEmission, HttpMethod,
+    MigrationDirection, NamedChannelKind,
+};
+use crate::types::CallArg;
+
+/// Inspect a TypeRef ref whose `target_name` is a decorator name and return a
+/// `FlowEmission` when it matches a well-known cross-tier pattern decorator.
+///
+/// This covers:
+/// - NestJS `@UseGuards(...)`, `@Roles(...)`, `@Permissions(...)`, `@AuthGuard(...)`
+/// - TypeORM `@Entity(...)`, `@Table(...)` — DbEntity marker
+/// - Sequelize `@Table(...)`, `@Column(...)` applied to a model class
+///
+/// `first_arg` is the first string argument from the decorator call, stored in
+/// `ExtractedRef::module` by the decorator extractor.
+pub(crate) fn detect_decorator_flow_emission(decorator_name: &str, first_arg: Option<&str>) -> Option<FlowEmission> {
+    match decorator_name {
+        // NestJS authorization decorators
+        "UseGuards" | "Guard" => Some(FlowEmission::AuthGuard {
+            requirement: first_arg.unwrap_or("").to_string(),
+            kind: AuthGuardKind::Custom,
+        }),
+        "Roles" => Some(FlowEmission::AuthGuard {
+            requirement: first_arg.unwrap_or("").to_string(),
+            kind: AuthGuardKind::Role,
+        }),
+        "Permissions" | "RequirePermissions" => Some(FlowEmission::AuthGuard {
+            requirement: first_arg.unwrap_or("").to_string(),
+            kind: AuthGuardKind::Permission,
+        }),
+        "Policy" | "CheckPolicy" => Some(FlowEmission::AuthGuard {
+            requirement: first_arg.unwrap_or("").to_string(),
+            kind: AuthGuardKind::Policy,
+        }),
+        "AuthGuard" | "JwtAuthGuard" | "BearerAuth" => Some(FlowEmission::AuthGuard {
+            requirement: first_arg.unwrap_or(decorator_name).to_string(),
+            kind: AuthGuardKind::Token,
+        }),
+        // TypeORM / Sequelize entity markers
+        "Entity" => Some(FlowEmission::DbEntity {
+            base_symbol_id: None,
+            base_name_hint: "Entity".to_string(),
+            table_name_hint: first_arg.filter(|s| !s.is_empty()).map(|s| s.to_string()),
+        }),
+        "Table" => Some(FlowEmission::DbEntity {
+            base_symbol_id: None,
+            base_name_hint: "Model".to_string(),
+            table_name_hint: first_arg.filter(|s| !s.is_empty()).map(|s| s.to_string()),
+        }),
+        "Schema" | "Document" | "Collection" => Some(FlowEmission::DbEntity {
+            base_symbol_id: None,
+            base_name_hint: decorator_name.to_string(),
+            table_name_hint: first_arg.filter(|s| !s.is_empty()).map(|s| s.to_string()),
+        }),
+        _ => None,
+    }
+}
+
+/// Extract a string name from the first call argument, if it is a string literal
+/// or a template literal. Returns an empty string when the argument is an identifier
+/// or otherwise not statically determinable.
+fn first_arg_string(call_args: &[CallArg]) -> String {
+    match call_args.first() {
+        Some(CallArg::StringLit(s)) => s.clone(),
+        Some(CallArg::TemplateLit(s)) => s.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Parse a GraphQL operation type + name from a tagged template body.
+///
+/// Looks for the pattern `(query|mutation|subscription)\s+(\w+)` at the start
+/// of the body (ignoring leading whitespace). Returns `"<op>:<Name>"` when
+/// found, e.g. `"query:GetUsers"`.
+pub(crate) fn parse_gql_operation(body: &str) -> Option<String> {
+    let trimmed = body.trim();
+    let rest = trimmed
+        .strip_prefix("query")
+        .or_else(|| trimmed.strip_prefix("mutation"))
+        .or_else(|| trimmed.strip_prefix("subscription"))?;
+    let op = if trimmed.starts_with("query") {
+        "query"
+    } else if trimmed.starts_with("mutation") {
+        "mutation"
+    } else {
+        "subscription"
+    };
+    // Skip optional whitespace, then take the operation name (word chars).
+    let rest = rest.trim_start();
+    // Operation name is optional in GraphQL but always present when named.
+    if rest.is_empty() || !rest.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') {
+        // Anonymous operation — use the op kind as the name key.
+        return Some(format!("{op}:__anon__"));
+    }
+    let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+    Some(format!("{op}:{name}"))
+}
 
 /// Inspect `chain_ref` and `file_ctx` to detect whether the chain root resolves
-/// to an HTTP-client module, a Socket.IO client, or a Tauri/Electron IPC call.
-///
-/// Returns a `FlowEmission::NamedChannel` when the shape matches. The
-/// `name` field is always empty — `ExtractedRef` doesn't carry call arguments,
-/// so no URL string is available at resolution time. Future extractors that
-/// capture first-arg literals can enrich this via a follow-up UPDATE.
+/// to an HTTP-client module, a Socket.IO client, a Tauri/Electron IPC call,
+/// a migration call, a scheduled job, or a CLI command registration.
 ///
 /// Recognition is chain-root-import–based, not symbol-name–based:
 /// 1. Look at the first chain segment's name.
 /// 2. Find the import entry in `file_ctx` that binds that name.
-/// 3. Check whether the import source is a well-known HTTP-client / WebSocket /
-///    IPC package, using `is_http_client_module` et al.
+/// 3. Check whether the import source is a well-known package using the
+///    `is_http_client_module` et al. predicates.
 ///
-/// This avoids naming the packages' internal symbol names (Axios.get,
-/// AxiosInstance, etc.) — only the npm package name is checked.
+/// `call_args` is used to extract the URL pattern, IPC command name, or cron
+/// expression from the first literal argument.
 pub(crate) fn detect_chain_flow_emission(
     chain_ref: &crate::types::MemberChain,
+    call_args: &[CallArg],
     file_ctx: &FileContext,
 ) -> Option<FlowEmission> {
     let root_seg = chain_ref.segments.first()?;
@@ -1379,11 +1483,10 @@ pub(crate) fn detect_chain_flow_emission(
 
     // Global `fetch` / `$fetch` — no import required, detected by name alone.
     if predicates::is_global_fetch(root_name.as_str()) {
-        // The HTTP method for bare `fetch` is GET unless we can read the
-        // second argument's `method` property — not available here.
+        let name = first_arg_string(call_args);
         return Some(FlowEmission::NamedChannel {
             kind: NamedChannelKind::HttpCall,
-            name: String::new(),
+            name,
             role: ChannelRole::Producer,
             method: Some(HttpMethod::Any),
         });
@@ -1393,22 +1496,37 @@ pub(crate) fn detect_chain_flow_emission(
     if predicates::is_electron_ipc_renderer(root_name.as_str()) {
         if let Some(leaf) = chain_ref.segments.last() {
             let role = if leaf.name == "on" { ChannelRole::Consumer } else { ChannelRole::Producer };
+            let name = first_arg_string(call_args);
             return Some(FlowEmission::NamedChannel {
                 kind: NamedChannelKind::IpcCall,
-                name: String::new(),
+                name,
                 role,
                 method: None,
             });
         }
     }
 
+    // gql`...` / graphql`...` tagged template — GraphQL operation.
+    // The call_args carry a TaggedTemplate when the tagged template extractor ran.
+    if let Some(CallArg::TaggedTemplate { tag, body }) = call_args.first() {
+        if matches!(tag.as_str(), "gql" | "graphql" | "gqlTag" | "GraphQL") {
+            let name = parse_gql_operation(body).unwrap_or_else(|| "graphql:__unknown__".to_string());
+            return Some(FlowEmission::NamedChannel {
+                kind: NamedChannelKind::GraphQLOp,
+                name,
+                role: ChannelRole::Producer,
+                method: None,
+            });
+        }
+    }
+
     // Import-based: look up the package the root name was imported from.
-    let import_source = file_ctx.imports.iter()
+    let import_entry = file_ctx.imports.iter()
         .find(|imp| {
             imp.imported_name == *root_name
                 || imp.alias.as_deref() == Some(root_name.as_str())
-        })
-        .and_then(|imp| imp.module_path.as_deref())?;
+        });
+    let import_source = import_entry.and_then(|imp| imp.module_path.as_deref())?;
 
     if predicates::is_http_client_module(import_source) {
         // Derive HTTP method from the chained method name, e.g. `axios.get` → GET.
@@ -1416,9 +1534,10 @@ pub(crate) fn detect_chain_flow_emission(
         let method = method_seg
             .map(|s| HttpMethod::from_method_name(&s.name))
             .unwrap_or(HttpMethod::Any);
+        let name = first_arg_string(call_args);
         return Some(FlowEmission::NamedChannel {
             kind: NamedChannelKind::HttpCall,
-            name: String::new(),
+            name,
             role: ChannelRole::Producer,
             method: Some(method),
         });
@@ -1427,9 +1546,10 @@ pub(crate) fn detect_chain_flow_emission(
     if predicates::is_socketio_client_module(import_source) {
         if let Some(leaf) = chain_ref.segments.last() {
             let role = if leaf.name == "on" { ChannelRole::Consumer } else { ChannelRole::Producer };
+            let name = first_arg_string(call_args);
             return Some(FlowEmission::NamedChannel {
                 kind: NamedChannelKind::WebSocket,
-                name: String::new(),
+                name,
                 role,
                 method: None,
             });
@@ -1437,15 +1557,105 @@ pub(crate) fn detect_chain_flow_emission(
     }
 
     if predicates::is_tauri_invoke_module(import_source) {
+        let name = first_arg_string(call_args);
         return Some(FlowEmission::NamedChannel {
             kind: NamedChannelKind::IpcCall,
-            name: String::new(),
+            name,
             role: ChannelRole::Producer,
             method: None,
         });
     }
 
+    // Migration: knex.schema.createTable / queryInterface.createTable / knex.schema.dropTable etc.
+    if is_migration_call_chain(chain_ref, import_source) {
+        let table_name = first_arg_string(call_args);
+        if !table_name.is_empty() {
+            let direction = infer_migration_direction_from_chain(chain_ref);
+            return Some(FlowEmission::MigrationTarget { table_name, direction });
+        }
+    }
+
+    // Scheduled job: cron.schedule / node-cron, BullMQ queue.add with repeat
+    if is_cron_schedule_call(chain_ref, import_source) {
+        let schedule = first_arg_string(call_args);
+        if !schedule.is_empty() {
+            return Some(FlowEmission::ScheduledJob { schedule });
+        }
+    }
+
+    // CLI: program.command / yargs.command
+    if is_cli_command_call(chain_ref, import_source) {
+        let command_name = first_arg_string(call_args);
+        if !command_name.is_empty() {
+            let framework = infer_cli_framework(import_source);
+            return Some(FlowEmission::CliCommand { command_name, framework });
+        }
+    }
+
     None
+}
+
+/// True when the chain looks like a knex/queryInterface migration table call:
+/// `queryInterface.createTable` / `queryInterface.dropTable` /
+/// `knex.schema.createTable` / `knex.schema.dropTableIfExists`.
+fn is_migration_call_chain(chain: &crate::types::MemberChain, import_source: &str) -> bool {
+    if predicates::is_knex_module(import_source) {
+        return chain.segments.windows(2).any(|w| {
+            w[0].name == "schema"
+                && matches!(
+                    w[1].name.to_ascii_lowercase().as_str(),
+                    "createtable" | "droptable" | "droptableifexists" | "renametable"
+                        | "altertable" | "hastable"
+                )
+        });
+    }
+    // Sequelize queryInterface (first segment name)
+    let root = chain.segments.first().map(|s| s.name.as_str()).unwrap_or("");
+    if root == "queryInterface" || root == "queryRunner" {
+        return chain.segments.last().map_or(false, |s| {
+            matches!(
+                s.name.to_ascii_lowercase().as_str(),
+                "createtable" | "droptable" | "addcolumn" | "removecolumn"
+                    | "renametable" | "addindex" | "removeindex" | "createqueryinterface"
+            )
+        });
+    }
+    false
+}
+
+fn infer_migration_direction_from_chain(chain: &crate::types::MemberChain) -> MigrationDirection {
+    // Direction can't be determined from the call site alone — the containing
+    // function name (up/down) is at a higher AST level. Default to Up.
+    let _ = chain;
+    MigrationDirection::Up
+}
+
+/// True when the chain looks like a cron schedule registration.
+fn is_cron_schedule_call(chain: &crate::types::MemberChain, import_source: &str) -> bool {
+    predicates::is_cron_module(import_source)
+        && chain.segments.last().map_or(false, |s| {
+            matches!(s.name.to_ascii_lowercase().as_str(), "schedule" | "create" | "scheduleJob")
+        })
+}
+
+/// True when the chain looks like a CLI command registration.
+fn is_cli_command_call(chain: &crate::types::MemberChain, import_source: &str) -> bool {
+    predicates::is_cli_module(import_source)
+        && chain.segments.last().map_or(false, |s| s.name == "command")
+}
+
+fn infer_cli_framework(import_source: &str) -> Option<String> {
+    if import_source.contains("commander") {
+        Some("commander".to_string())
+    } else if import_source.contains("yargs") {
+        Some("yargs".to_string())
+    } else if import_source.contains("@oclif") {
+        Some("oclif".to_string())
+    } else if import_source.contains("meow") {
+        Some("meow".to_string())
+    } else {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------

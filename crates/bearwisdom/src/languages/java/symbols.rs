@@ -465,6 +465,7 @@ pub(super) fn extract_type_refs_recursive(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -485,6 +486,7 @@ pub(super) fn extract_type_refs_recursive(
                                 chain: None,
                                 byte_offset: 0,
                                                             namespace_segments: Vec::new(),
+                                                            call_args: Vec::new(),
 });
                         }
                     }
@@ -516,6 +518,7 @@ pub(super) fn extract_type_refs_recursive(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
             }
         }
@@ -574,6 +577,7 @@ pub(super) fn push_import(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 } else {
                     // `import com.foo.Bar;` — exact import.
@@ -587,6 +591,7 @@ pub(super) fn push_import(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 return;
@@ -602,6 +607,7 @@ pub(super) fn push_import(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 return;
             }
@@ -636,6 +642,7 @@ pub(super) fn extract_class_inheritance(
                     chain: None,
                     byte_offset: 0,
                                     namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
 });
                 break;
             }
@@ -700,6 +707,7 @@ fn extract_type_list_as_implements(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
             }
@@ -776,6 +784,7 @@ pub(super) fn extract_java_typed_params_as_symbols(
             chain: None,
             byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
 });
     }
 }

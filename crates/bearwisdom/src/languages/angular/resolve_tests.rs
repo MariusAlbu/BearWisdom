@@ -140,6 +140,7 @@ fn selector_map_hit_resolves_to_class() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let file_ctx = FileContext {
@@ -190,6 +191,7 @@ fn selector_map_miss_falls_through() {
         chain: None,
         byte_offset: 0,
         namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
 
     let file_ctx = FileContext {

@@ -1495,6 +1495,7 @@ fn extract_node<'a>(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -1670,6 +1671,7 @@ fn emit_misparsed_base_class_refs(
                     chain: None,
                     byte_offset: 0,
                     namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
                 });
             }
         }
@@ -1759,6 +1761,7 @@ fn sweep_typerefs<'a>(
                         chain: None,
                         byte_offset: 0,
                                             namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
 });
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -1786,6 +1789,7 @@ fn sweep_typerefs<'a>(
                                     chain: None,
                                     byte_offset: 0,
                                                                     namespace_segments: Vec::new(),
+                                                                    call_args: Vec::new(),
 });
                             }
                         }
@@ -1804,6 +1808,7 @@ fn sweep_typerefs<'a>(
                                             chain: None,
                                             byte_offset: 0,
                                                                                     namespace_segments: Vec::new(),
+                                                                                    call_args: Vec::new(),
 });
                                     }
                                 }
