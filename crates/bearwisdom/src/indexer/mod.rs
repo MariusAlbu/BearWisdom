@@ -22,6 +22,8 @@ mod service_tests;
 pub mod post_index;
 pub mod keywords;
 pub mod query_builtins;
+pub mod plugin_state;
+pub use plugin_state::PluginStateBag;
 pub mod project_context;
 pub mod ref_cache;
 pub mod resolve;

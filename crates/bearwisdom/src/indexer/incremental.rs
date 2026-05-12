@@ -421,12 +421,35 @@ fn run_incremental_pipeline(
     // silently strips sibling-package resolution.
     let distinct_langs: HashSet<String> =
         parsed.iter().map(|pf| pf.language.clone()).collect();
-    let project_ctx = super::project_context::ProjectContext::initialize(
+    let mut project_ctx = super::project_context::ProjectContext::initialize(
         project_root,
         &packages,
         distinct_langs,
         crate::ecosystem::default_registry(),
     );
+
+    // --- Step 11a: Plugin-owned cross-file state ---
+    // Mirror the full-index Step 4b — populate the plugin state bag from
+    // each active plugin. This runs on every incremental save, closing the
+    // gap where Vue auto-imports and Robot library bindings were silently
+    // absent for the incremental path.
+    {
+        let registry = languages::default_registry();
+        let mut plugin_state = super::plugin_state::PluginStateBag::new();
+        for plugin in registry.all() {
+            if !project_ctx.language_presence.contains(plugin.id()) {
+                continue;
+            }
+            plugin.populate_project_state(
+                &mut plugin_state,
+                &parsed,
+                project_root,
+                &project_ctx,
+            );
+        }
+        project_ctx.plugin_state = plugin_state;
+    }
+
     let rstats = resolve::resolve_and_write_incremental(db, &parsed, &symbol_id_map, Some(&project_ctx))
         .context("Failed to resolve references")?;
     stats.edges_written = rstats.resolved as u32;

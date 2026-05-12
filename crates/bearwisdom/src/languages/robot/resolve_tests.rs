@@ -648,15 +648,21 @@ fn make_project_ctx_with_dynamic_libs(
     keywords: Vec<super::dynamic_keywords::RobotDynamicKeyword>,
 ) -> ProjectContext {
     let mut ctx = ProjectContext::default();
-    ctx.robot_library_map.insert(
+    let mut library_map = super::library_map::RobotLibraryMap::default();
+    library_map.insert(
         robot_path.to_string(),
         vec![super::library_map::RobotPythonLibrary {
             library_name: library_name.to_string(),
             py_file_path: py_path.to_string(),
         }],
     );
-    ctx.robot_dynamic_keywords
-        .insert(py_path.to_string(), keywords);
+    let mut dynamic_keywords = super::dynamic_keywords::RobotDynamicKeywordMap::default();
+    dynamic_keywords.insert(py_path.to_string(), keywords);
+    ctx.plugin_state.set(super::RobotProjectState {
+        library_map,
+        resource_basenames: Default::default(),
+        dynamic_keywords,
+    });
     ctx
 }
 

@@ -151,9 +151,9 @@ const SEARCH_DIRS: &[&str] = &["", "src", "apps"];
 /// Scan the project tree for Vue global component registrations and return a
 /// `VueGlobalRegistry` describing what was found.
 ///
-/// This is called once per full index, **before** the resolution pass.  The
-/// returned registry is stored on `ProjectContext.vue_global_registry` and
-/// consulted by `VueResolver::build_file_context`.
+/// This is called once per full or incremental index, before the resolution
+/// pass. The returned registry is stored in `ProjectContext::plugin_state`
+/// and consulted by `VueResolver::build_file_context`.
 ///
 /// `parsed_paths` should be the list of relative paths of all project source
 /// files, used to efficiently enumerate candidate entry-point files without

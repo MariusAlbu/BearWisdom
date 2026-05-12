@@ -19,9 +19,7 @@ use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManife
 use crate::ecosystem::{
     self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform,
 };
-use crate::languages::robot::dynamic_keywords::RobotDynamicKeywordMap;
-use crate::languages::robot::library_map::{RobotLibraryMap, RobotResourceBasenameMap};
-use crate::languages::vue::global_registry::VueGlobalRegistry;
+use crate::indexer::plugin_state::PluginStateBag;
 use crate::types::PackageInfo;
 
 // ---------------------------------------------------------------------------
@@ -80,18 +78,6 @@ pub struct ProjectContext {
     ///   - Swift         → `ManifestKind::SwiftPM`
     ///   - Dart/Flutter  → `ManifestKind::Pubspec`
     pub manifests: HashMap<ManifestKind, ManifestData>,
-
-    /// Gradle version catalog accessor names discovered at `gradle/*.versions.toml`.
-    ///
-    /// For a file named `gradle/libs.versions.toml` the accessor name is `libs`.
-    /// Kotlin build scripts reference these catalogs as `libs.androidx.core`,
-    /// `libs.plugins.android.application`, `libs.versions.compileSdk`, etc.
-    /// The Kotlin resolver uses this list to classify any ref whose root segment
-    /// matches a catalog name as an external (build-tooling) reference.
-    ///
-    /// The conventional default is `["libs"]`; custom names are supported via
-    /// additional `.versions.toml` files in `gradle/`.
-    pub gradle_catalog_names: Vec<String>,
 
     /// Per-package manifests — populated only for monorepos (M2).
     ///
@@ -167,47 +153,12 @@ pub struct ProjectContext {
     /// the Python package's locator pass.
     pub language_presence_by_package: HashMap<i64, HashSet<String>>,
 
-    /// Vue-specific: project-wide globally-registered component map, populated
-    /// after the file-scan pass in `full_index` (and the incremental equivalent).
-    ///
-    /// Used by `VueResolver::build_file_context` to inject synthetic import
-    /// entries for components that are registered globally (via `app.use()`,
-    /// `app.component()`, or `unplugin-vue-components`) so that the standard
-    /// TS import-resolution chain can resolve them.
-    ///
-    /// `Default` leaves this empty; the full indexer populates it by calling
-    /// `languages::vue::global_registry::scan_global_registrations`.
-    pub vue_global_registry: VueGlobalRegistry,
-
-    /// Robot Framework: per-file flattened Library imports keyed by
-    /// `.robot`/`.resource` file path. Built by walking each file's
-    /// Resource imports transitively and resolving every `Library  <name>`
-    /// to a project-internal `.py` file. Used by `RobotResolver` to
-    /// resolve cross-language keyword calls (e.g. `Check Test Case` →
-    /// `check_test_case` in `TestCheckerLibrary.py`).
-    ///
-    /// `Default` leaves this empty; the full indexer populates it after
-    /// parsing via `languages::robot::library_map::build_robot_library_map`.
-    pub robot_library_map: RobotLibraryMap,
-
-    /// Robot Framework: project-wide map from `.robot`/`.resource`
-    /// basename to its indexed full path. The extractor can only see the
-    /// bare filename in `Resource    atest_resource.robot`; the resolver
-    /// uses this map to translate to the indexed path before calling
-    /// `lookup.in_file(...)`. Without it, every cross-file Resource
-    /// import silently misses Step 4.
-    pub robot_resource_basenames: RobotResourceBasenameMap,
-
-    /// Robot Framework: per-Python-library dynamic keywords. Each
-    /// `.py` file referenced as a Robot Library is scanned for
-    /// `KEYWORDS = {...}` dicts and `get_keyword_names` list-literal
-    /// returns. Keys are project-relative `.py` paths; values are the
-    /// normalised keyword names exposed by that file plus their owning
-    /// class (or `None` for a module-level KEYWORDS dict). The
-    /// `RobotResolver::build_file_context` step plumbs these into the
-    /// per-file import list so resolution can reach keywords that have
-    /// no `def name():` declaration.
-    pub robot_dynamic_keywords: RobotDynamicKeywordMap,
+    /// Per-plugin cross-file state populated once per index pass by
+    /// `LanguagePlugin::populate_project_state`. Each plugin stores a single
+    /// typed value keyed by `TypeId` — resolvers read it via
+    /// `plugin_state.get::<T>()`. The bag is language-agnostic; this field
+    /// carries no language-specific knowledge.
+    pub plugin_state: PluginStateBag,
 }
 
 // ---------------------------------------------------------------------------
@@ -226,22 +177,17 @@ pub struct ProjectContext {
 pub fn build_project_context(project_root: &Path) -> ProjectContext {
     let manifests = manifest::read_all_manifests(project_root);
     log_manifests(&manifests);
-    let gradle_catalog_names = discover_gradle_catalog_names(project_root);
     ProjectContext {
         project_root: project_root.to_path_buf(),
         manifests,
         by_package: HashMap::new(),
         workspace_pkg_by_declared_name: HashMap::new(),
         workspace_pkg_paths: HashMap::new(),
-        gradle_catalog_names,
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
         language_presence_by_package: HashMap::new(),
-        vue_global_registry: VueGlobalRegistry::default(),
-        robot_library_map: RobotLibraryMap::default(),
-        robot_resource_basenames: RobotResourceBasenameMap::default(),
-        robot_dynamic_keywords: RobotDynamicKeywordMap::default(),
+        plugin_state: PluginStateBag::new(),
     }
 }
 
@@ -341,23 +287,17 @@ pub fn build_project_context_with_packages(
         workspace_pkg_by_declared_name.len(),
     );
 
-    let gradle_catalog_names = discover_gradle_catalog_names(project_root);
-
     ProjectContext {
         project_root: project_root.to_path_buf(),
         manifests,
         by_package,
         workspace_pkg_by_declared_name,
         workspace_pkg_paths,
-        gradle_catalog_names,
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
         language_presence_by_package: HashMap::new(),
-        vue_global_registry: VueGlobalRegistry::default(),
-        robot_library_map: RobotLibraryMap::default(),
-        robot_resource_basenames: RobotResourceBasenameMap::default(),
-        robot_dynamic_keywords: RobotDynamicKeywordMap::default(),
+        plugin_state: PluginStateBag::new(),
     }
 }
 
@@ -1017,64 +957,6 @@ impl ProjectContext {
 }
 
 // ---------------------------------------------------------------------------
-// Gradle version catalog discovery
-// ---------------------------------------------------------------------------
-
-/// Scan `{project_root}/gradle/` for `*.versions.toml` files and return the
-/// catalog accessor names derived from their stems.
-///
-/// Convention: `gradle/libs.versions.toml` → accessor name `libs`.
-/// Gradle supports multiple catalogs; each `.versions.toml` file in the
-/// `gradle/` directory registers one. We walk up to two levels of subdirectories
-/// to handle nested Gradle projects (Android multi-module layouts).
-pub(crate) fn discover_gradle_catalog_names(project_root: &Path) -> Vec<String> {
-    let mut names = Vec::new();
-    discover_gradle_catalog_names_recursive(project_root, &mut names, 0);
-    names.dedup();
-    names
-}
-
-fn discover_gradle_catalog_names_recursive(dir: &Path, names: &mut Vec<String>, depth: usize) {
-    if depth > 3 {
-        return;
-    }
-    let gradle_dir = dir.join("gradle");
-    if gradle_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&gradle_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                        // e.g. "libs.versions.toml" → stem before ".versions.toml" = "libs"
-                        if let Some(stem) = file_name.strip_suffix(".versions.toml") {
-                            if !stem.is_empty() {
-                                names.push(stem.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Walk one level deeper for Android multi-module layouts where the catalog
-    // may live in a subproject's gradle/ dir (e.g. noty-android/gradle/).
-    if depth < 2 {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if matches!(name, ".git" | "build" | "target" | ".gradle" | "node_modules") {
-                            continue;
-                        }
-                    }
-                    discover_gradle_catalog_names_recursive(&path, names, depth + 1);
-                }
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

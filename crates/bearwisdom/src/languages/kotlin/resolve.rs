@@ -369,7 +369,12 @@ impl LanguageResolver for KotlinResolver {
         {
             let root = target.split('.').next().unwrap_or(target);
             if let Some(ctx) = project_ctx {
-                if ctx.gradle_catalog_names.iter().any(|n| n == root) {
+                let catalog_names = ctx
+                    .plugin_state
+                    .get::<crate::ecosystem::manifest::gradle::GradleCatalogNames>()
+                    .map(|c| c.0.as_slice())
+                    .unwrap_or_default();
+                if catalog_names.iter().any(|n| n == root) {
                     return Some(format!("gradle.catalog.{root}"));
                 }
             }

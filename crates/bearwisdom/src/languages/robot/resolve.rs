@@ -245,8 +245,9 @@ impl LanguageResolver for RobotResolver {
                     .unwrap_or(raw_path);
                 project_ctx
                     .and_then(|ctx| {
-                        ctx.robot_resource_basenames
-                            .get(lookup_key)
+                        ctx.plugin_state
+                            .get::<super::RobotProjectState>()
+                            .and_then(|s| s.resource_basenames.get(lookup_key))
                             .and_then(|paths| {
                                 super::library_map::pick_resource_for_importer(
                                     paths, &file.path,
@@ -280,26 +281,25 @@ impl LanguageResolver for RobotResolver {
         // that have no `def name():` declaration in source. See
         // `dynamic_keywords::build_robot_dynamic_keyword_map`.
         if let Some(ctx) = project_ctx {
-            if let Some(libs) = ctx.robot_library_map.get(&file.path) {
-                for lib in libs {
-                    imports.push(ImportEntry {
-                        imported_name: lib.library_name.clone(),
-                        module_path: Some(lib.py_file_path.clone()),
-                        alias: None,
-                        is_wildcard: true,
-                    });
+            if let Some(robot_state) = ctx.plugin_state.get::<super::RobotProjectState>() {
+                if let Some(libs) = robot_state.library_map.get(&file.path) {
+                    for lib in libs {
+                        imports.push(ImportEntry {
+                            imported_name: lib.library_name.clone(),
+                            module_path: Some(lib.py_file_path.clone()),
+                            alias: None,
+                            is_wildcard: true,
+                        });
 
-                    if let Some(dyn_kws) = ctx
-                        .robot_dynamic_keywords
-                        .get(&lib.py_file_path)
-                    {
-                        for kw in dyn_kws {
-                            imports.push(ImportEntry {
-                                imported_name: kw.normalized_name.clone(),
-                                module_path: Some(lib.py_file_path.clone()),
-                                alias: encode_dynamic_alias(&kw.class_name, &kw.method_name),
-                                is_wildcard: false,
-                            });
+                        if let Some(dyn_kws) = robot_state.dynamic_keywords.get(&lib.py_file_path) {
+                            for kw in dyn_kws {
+                                imports.push(ImportEntry {
+                                    imported_name: kw.normalized_name.clone(),
+                                    module_path: Some(lib.py_file_path.clone()),
+                                    alias: encode_dynamic_alias(&kw.class_name, &kw.method_name),
+                                    is_wildcard: false,
+                                });
+                            }
                         }
                     }
                 }

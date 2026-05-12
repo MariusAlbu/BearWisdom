@@ -495,83 +495,25 @@ pub fn full_index(
             crate::ecosystem::default_registry(),
         );
 
-    // --- Step 4b.1: Vue global component registry ---
-    // Only run when the project contains Vue files — avoids the filesystem
-    // scan cost on pure TS/Java/Go projects.
-    if project_ctx.language_presence.contains("vue") {
-        let parsed_paths: Vec<String> = parsed
-            .iter()
-            .filter(|pf| !pf.path.starts_with("ext:"))
-            .map(|pf| pf.path.clone())
-            .collect();
-        let vue_registry = crate::languages::vue::global_registry::scan_global_registrations(
-            project_root,
-            &parsed_paths,
-        );
-        if !vue_registry.is_empty() {
-            info!(
-                "Vue global registry: {} components/prefixes, unplugin_auto_import={}",
-                vue_registry.components.len(),
-                vue_registry.has_unplugin_auto_import,
-            );
-        }
-        project_ctx.vue_global_registry = vue_registry;
-    }
-
-    // --- Step 4b.2: Robot Framework Library binding map ---
-    // Only run when the project contains .robot/.resource files. Walks
-    // each robot file's Resource imports transitively, resolves every
-    // `Library  <name>` to a project-internal `.py` file, and stores the
-    // result on ProjectContext for the RobotResolver to consume.
-    if project_ctx.language_presence.contains("robot") {
-        let robot_map =
-            crate::languages::robot::library_map::build_robot_library_map(&parsed);
-        if !robot_map.is_empty() {
-            info!(
-                "Robot library map: {} files with transitive Python library bindings",
-                robot_map.len()
-            );
-        }
-
-        // Robot dynamic libraries: scan every `.py` file referenced as a
-        // Library for `KEYWORDS = {...}` dicts and `get_keyword_names`
-        // list-literal returns. Without this, calls to keywords whose
-        // names don't exist as Python `def`s evaporate as unresolved.
-        // Reads each library's source from disk via
-        // `std::fs::read_to_string` — typical Robot library files are
-        // small (<500 lines) and the unique-path set is bounded by the
-        // project's Library-import surface, so the cost is negligible.
-        let mut library_paths: std::collections::HashSet<&str> =
-            std::collections::HashSet::new();
-        for libs in robot_map.values() {
-            for lib in libs {
-                library_paths.insert(lib.py_file_path.as_str());
+    // --- Step 4b: Plugin-owned cross-file state ---
+    // Each active plugin scans the parsed file slice and stores its
+    // cross-file state in the bag. Populate into a separate bag first to
+    // satisfy the borrow checker (can't borrow `project_ctx` mutably and
+    // immutably at the same time), then assign the completed bag.
+    {
+        let mut plugin_state = crate::indexer::plugin_state::PluginStateBag::new();
+        for plugin in registry.all() {
+            if !project_ctx.language_presence.contains(plugin.id()) {
+                continue;
             }
-        }
-        let library_paths_vec: Vec<&str> = library_paths.iter().copied().collect();
-        // Library paths in `parsed` are relative to the project root; the
-        // disk reader must rejoin with `project_root` because the indexer's
-        // cwd isn't guaranteed to match (CLI may be invoked from anywhere).
-        let dyn_kw_map =
-            crate::languages::robot::dynamic_keywords::build_robot_dynamic_keyword_map(
-                &library_paths_vec,
-                |path| std::fs::read_to_string(project_root.join(path)).ok(),
-            );
-        if !dyn_kw_map.is_empty() {
-            info!(
-                "Robot dynamic keywords: {} library files expose dynamic keywords",
-                dyn_kw_map.len()
+            plugin.populate_project_state(
+                &mut plugin_state,
+                &parsed,
+                project_root,
+                &project_ctx,
             );
         }
-
-        project_ctx.robot_library_map = robot_map;
-        project_ctx.robot_dynamic_keywords = dyn_kw_map;
-
-        // Resource basename → full-path map. Pairs with the library_map so
-        // RobotResolver can translate `Resource    atest_resource.robot`
-        // (basename) into a path that `lookup.in_file()` can use.
-        project_ctx.robot_resource_basenames =
-            crate::languages::robot::library_map::build_robot_resource_basename_map(&parsed);
+        project_ctx.plugin_state = plugin_state;
     }
     mem_probe::probe("04_project_ctx_built");
 

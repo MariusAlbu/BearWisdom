@@ -22,8 +22,11 @@ mod extract_tests;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+use crate::ecosystem::manifest::gradle::discover_gradle_catalog_names;
+use crate::indexer::plugin_state::PluginStateBag;
+use crate::indexer::project_context::ProjectContext;
 use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
+use crate::types::{EmbeddedRegion, ExtractionResult, ParsedFile};
 use crate::parser::scope_tree::ScopeKind;
 
 pub use resolve::KotlinResolver;
@@ -135,4 +138,15 @@ impl LanguagePlugin for KotlinPlugin {
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::KOTLIN_FLOW_CONFIG)
     }
+
+    fn populate_project_state(
+        &self,
+        state: &mut PluginStateBag,
+        _parsed: &[ParsedFile],
+        project_root: &std::path::Path,
+        _project_ctx: &ProjectContext,
+    ) {
+        state.set(discover_gradle_catalog_names(project_root));
+    }
 }
+

@@ -280,6 +280,20 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         None
     }
+
+    /// Populate cross-file plugin state once per index pass.
+    ///
+    /// Called after all files are parsed, before resolution. The result is
+    /// stored in `ProjectContext::plugin_state` and made available to
+    /// resolvers. Default: no-op.
+    fn populate_project_state(
+        &self,
+        _state: &mut crate::indexer::plugin_state::PluginStateBag,
+        _parsed: &[crate::types::ParsedFile],
+        _project_root: &std::path::Path,
+        _project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+    }
 }
 
 // ---------------------------------------------------------------------------

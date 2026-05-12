@@ -528,6 +528,30 @@ fn unquote(s: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Gradle version-catalog name discovery (for PluginStateBag)
+// ---------------------------------------------------------------------------
+
+/// Newtype wrapping the list of catalog accessor prefixes found in this
+/// project (e.g. `["libs"]` for a standard `gradle/libs.versions.toml`).
+///
+/// Stored in `PluginStateBag` by the Kotlin plugin so the Kotlin resolver
+/// can classify `libs.*` and `catalog.*` refs as external Gradle DSL.
+#[derive(Debug, Default, Clone)]
+pub struct GradleCatalogNames(pub Vec<String>);
+
+/// Discover the version-catalog accessor names declared in this project.
+///
+/// Scans for `gradle/*.versions.toml` files and returns the file stems
+/// before `.versions.toml` (e.g. `libs` for `gradle/libs.versions.toml`).
+pub fn discover_gradle_catalog_names(project_root: &std::path::Path) -> GradleCatalogNames {
+    let names = collect_version_catalogs(project_root)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    GradleCatalogNames(names)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
