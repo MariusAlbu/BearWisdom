@@ -59,6 +59,11 @@ fn extract_toplevel(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Skip nodes produced by error recovery — they are not real Make
+    // constructs and would produce spurious symbols and refs.
+    if node.is_error() || node.is_missing() {
+        return;
+    }
     match node.kind() {
         "rule" => extract_rule(node, src, symbols, refs),
         "variable_assignment" => extract_variable_assignment(node, src, symbols),
@@ -80,6 +85,12 @@ fn extract_rule(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Nodes created during error recovery are not valid Make rules.
+    // Suppress them entirely to avoid spurious symbols and refs.
+    if node.has_error() {
+        return;
+    }
+
     // Extract the first target name from the targets field.
     let target_name = match find_rule_target(node, src) {
         Some(n) => n,
@@ -99,8 +110,32 @@ fn extract_rule(
         None,
     ));
 
+    // Special targets (`.PHONY`, `.SUFFIXES`, `.DEFAULT`, etc.) use their
+    // prerequisite list as declarations, not as build dependencies. Emitting
+    // Calls edges for them produces unresolvable refs against the declared
+    // target names.
+    //
+    // Pattern rules (target contains `%`) also should not emit Calls edges
+    // for their prerequisites — the prerequisite stems (`%.c`, `%.o`) are
+    // not addressable symbols.
+    if is_special_make_target(&target_name) || target_name.contains('%') {
+        return;
+    }
+
     // Prerequisites → Calls edges from the target to each dependency.
     extract_prerequisites(node, src, idx, refs);
+}
+
+/// Returns true for GNU Make / POSIX special targets that use their
+/// prerequisite list as declarations rather than build dependencies.
+/// Any target starting with `.` followed by all-uppercase ASCII letters
+/// is treated as special.
+pub(crate) fn is_special_make_target(name: &str) -> bool {
+    if !name.starts_with('.') {
+        return false;
+    }
+    let rest = &name[1..];
+    !rest.is_empty() && rest.chars().all(|c| c.is_ascii_uppercase() || c == '_')
 }
 
 /// Find the first target word in a `rule` node's `targets` child.
@@ -165,7 +200,10 @@ fn extract_prerequisites(
                 match prereq.kind() {
                     "word" | "variable_reference" => {
                         let name = node_text(prereq, src);
-                        if !name.is_empty() && !name.starts_with('$') {
+                        if !name.is_empty()
+                            && !name.starts_with('$')
+                            && !is_unresolvable_prereq(&name)
+                        {
                             refs.push(ExtractedRef {
                                 source_symbol_index: source_idx,
                                 target_name: name,
@@ -174,8 +212,8 @@ fn extract_prerequisites(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                                                            namespace_segments: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                            });
                         }
                     }
                     _ => {}
@@ -186,6 +224,58 @@ fn extract_prerequisites(
         if child.kind() == "recipe" {
             extract_function_calls_in_subtree(&child, src, source_idx, refs);
         }
+    }
+}
+
+/// Returns true for prerequisite tokens that cannot map to an indexed Make
+/// target symbol and would always produce unresolved edges:
+///
+/// - Pattern stems (`%.c`, `%.o`) — wildcard build patterns, not targets.
+/// - Unexpanded variable references (`$(FOO)/bar`) — still contain `$(`.
+/// - File-path prerequisites (`src/main.o`, `foo.c`) — file-to-file build
+///   deps tracked by the build system, not cross-target dependencies.
+/// - Makefile filenames used as sentinel dependencies (`makefile`, `GNUmakefile`).
+pub(crate) fn is_unresolvable_prereq(name: &str) -> bool {
+    // Pattern stem.
+    if name.contains('%') {
+        return true;
+    }
+    // Unexpanded variable expansion remnant.
+    if name.contains("$(") {
+        return true;
+    }
+    // Path separator → file path dependency, not a target name.
+    if name.contains('/') || name.contains('\\') {
+        return true;
+    }
+    // Makefile filenames used as sentinel dependencies (rebuild when the
+    // build file itself changes). Case-insensitive to cover all common forms.
+    let lower = name.to_ascii_lowercase();
+    if matches!(lower.as_str(), "makefile" | "gnumakefile" | "makefile.in") {
+        return true;
+    }
+    // File extension that indicates a source or object file rather than a
+    // named target. Only matches names of the form `stem.ext` where `ext`
+    // is a known build artifact or source extension.
+    if let Some(dot) = name.rfind('.') {
+        let ext = &name[dot + 1..];
+        // Single-char extensions like `.c`, `.h`, `.o`, `.a` plus common multi-char ones.
+        matches!(
+            ext,
+            "c" | "h" | "cc" | "cpp" | "cxx" | "C" | "hh" | "hpp" | "hxx"
+                | "o" | "obj" | "a" | "so" | "dylib" | "lib" | "dll"
+                | "d" | "s" | "S" | "asm"
+                | "f" | "f90" | "f95" | "for"
+                | "go" | "rs" | "py" | "rb" | "js" | "ts" | "lua"
+                | "java" | "class" | "jar"
+                | "cs" | "vb"
+                | "xml" | "xslt" | "xsl" | "dtd" | "xsls"
+                | "html" | "htm" | "css" | "json" | "yaml" | "yml" | "toml"
+                | "pod" | "pm" | "man" | "txt" | "md"
+                | "mk" | "mak"
+        )
+    } else {
+        false
     }
 }
 
@@ -297,8 +387,8 @@ fn extract_include_directive(
                 module: Some(path),
                 chain: None,
                 byte_offset: 0,
-                            namespace_segments: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+            });
         }
     }
 }
@@ -347,8 +437,8 @@ fn extract_function_calls_in_subtree(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                });
             }
         }
         _ => {}
