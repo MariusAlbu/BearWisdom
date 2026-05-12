@@ -75,7 +75,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | Plugin           | Category | Unresolved | Status | Note |
 |------------------|----------|-----------:|:------:|------|
 | gsp              | template | 0   | ✅ | `<g:render>` import refs handled by resolve engine; stale index carried pre-fix counts |
-| make             | config   | 148 | 🟡 | Makefile target refs (`$(MAKE) -C dir target`) |
+| make             | config   | ~31 | 🟢 | Special-target prereqs (`.PHONY`, `.SUFFIXES`), pattern stems (`%.c`), file-path deps, and unexpanded `$(VAR)` prereqs suppressed at extraction; remaining refs are undefined cross-Makefile targets |
 | scss             | markup   | 114 | 🟡 | `@import` / `@use` chain resolution with `_partial` convention |
 | nunjucks         | template | 75  | 🟡 | tail of JS-expression refs |
 | hcl              | config   | 58  | 🟡 | Terraform / Nomad data-model traversal (`var.x`, `module.y.output.z`) |
