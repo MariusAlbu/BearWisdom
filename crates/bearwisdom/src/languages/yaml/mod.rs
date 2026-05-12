@@ -11,6 +11,7 @@
 //! defines, which is enough for cross-file dispatch without exposing
 //! every nested sequence entry as a graph node.
 
+pub mod ansible;
 pub mod embedded;
 pub mod extract;
 pub mod resolve;

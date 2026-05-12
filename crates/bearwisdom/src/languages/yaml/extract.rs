@@ -19,7 +19,14 @@ use crate::types::{
 };
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
+    // Ansible role-variable files get scope-qualified Field symbols instead
+    // of file-stem-qualified ones so the Jinja resolver can look up variables
+    // by bare name against the role scope.
     let norm = file_path.replace('\\', "/");
+    if let Some(scope) = super::ansible::classify_ansible_path(&norm) {
+        return super::ansible::extract_ansible(source, file_path, &scope);
+    }
+
     let stem = norm.rsplit('/').next().unwrap_or(&norm).to_string();
 
     let mut symbols = vec![ExtractedSymbol {

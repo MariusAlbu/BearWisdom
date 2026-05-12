@@ -15,6 +15,7 @@
 // NOTE: `description` manifest reader migrated to `crate::ecosystem::cran` in Phase 2+3.
 // NOTE: `gemfile` manifest reader migrated to `crate::ecosystem::rubygems` in Phase 2+3.
 // NOTE: `go_mod` manifest reader migrated to `crate::ecosystem::go_mod` in Phase 2+3.
+pub mod ansible;
 pub mod gradle;
 pub mod js_config_aliases;
 pub mod maven;
@@ -86,6 +87,11 @@ pub enum ManifestKind {
     /// of any `.tf` file under the project root is itself the manifest
     /// signal — Terraform projects don't have a separate manifest file.
     Terraform,
+    /// Ansible `requirements.yml` at the project root. Dependency names are
+    /// declared role/collection names. The Jinja resolver uses these to
+    /// classify refs that start with a declared external role prefix as
+    /// `external_refs` rather than truly unresolved.
+    AnsibleRequirements,
 }
 
 /// Normalized data extracted from a project manifest.
@@ -238,6 +244,7 @@ fn all_readers() -> Vec<Box<dyn ManifestReader>> {
         Box::new(crate::ecosystem::psgallery::Psd1Manifest),
         Box::new(crate::ecosystem::bazel_central_registry::ModuleBazelManifest),
         Box::new(crate::ecosystem::tf_registry::TerraformManifest),
+        Box::new(ansible::AnsibleRequirementsManifest),
     ]
 }
 

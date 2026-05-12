@@ -12,9 +12,15 @@
 //!    stem; same shape as Markdown link refs. We mirror MarkdownResolver's
 //!    candidate-walk: resolve relative to the source file's directory,
 //!    try each Jinja extension, bind to the file's host Class symbol.
+//!
+//! Ansible-specific: `infer_external_namespace` checks whether a bare-name
+//! ref starts with a declared external role's name (from `requirements.yml`)
+//! and, when it does, classifies the ref as an `external_ref` rather than
+//! an unresolved ref.
 
 use std::path::{Component, Path, PathBuf};
 
+use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
@@ -63,6 +69,38 @@ impl LanguageResolver for JinjaResolver {
             _ => engine::resolve_common("jinja", file_ctx, ref_ctx, lookup, kind_compatible),
         }
     }
+
+    fn infer_external_namespace(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        infer_ansible_external(ref_ctx.extracted_ref.target_name.as_str(), project_ctx)
+    }
+}
+
+/// Classify a Jinja TypeRef as external when its name starts with a
+/// declared external Ansible role name from `requirements.yml`.
+///
+/// Checks `project_ctx.manifests[AnsibleRequirements].dependencies` for
+/// every declared role name. When the target starts with `<role>_` the ref
+/// is classified as `external_refs` with namespace `ansible.<role>`.
+fn infer_ansible_external(
+    target: &str,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    let ctx = project_ctx?;
+    let manifest = ctx.manifests.get(&ManifestKind::AnsibleRequirements)?;
+    for role in &manifest.dependencies {
+        // Require an underscore separator so a role named `docker` does not
+        // match a local var `docker_image` when only `docker` is external.
+        let prefix = format!("{role}_");
+        if target.starts_with(prefix.as_str()) || target == role.as_str() {
+            return Some(format!("ansible.{role}"));
+        }
+    }
+    None
 }
 
 fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
@@ -151,3 +189,10 @@ fn lexical_normalize(p: &Path) -> PathBuf {
     }
     out
 }
+
+// ---------------------------------------------------------------------------
+// Tests live in sibling file.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
