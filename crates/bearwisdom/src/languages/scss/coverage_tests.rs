@@ -301,9 +301,13 @@ fn cov_scss_variable_declaration() {
 
 #[test]
 fn cov_use_statement_emits_imports() {
+    // `@use 'sass:math'` introduces the Sass built-in namespace `math`
+    // (the segment after the colon); the raw module path is preserved in the
+    // `module` field so the resolver can classify it as external.
     let r = extract::extract("@use 'sass:math';", "");
-    let imp = r.refs.iter().find(|e| e.kind == EdgeKind::Imports && e.target_name == "sass:math");
-    assert!(imp.is_some(), "expected Imports ref to 'sass:math' from @use; got: {:?}", r.refs);
+    let imp = r.refs.iter().find(|e| e.kind == EdgeKind::Imports && e.target_name == "math");
+    assert!(imp.is_some(), "expected Imports ref with target 'math' from @use 'sass:math'; got: {:?}", r.refs);
+    assert_eq!(imp.unwrap().module.as_deref(), Some("sass:math"));
 }
 
 #[test]
@@ -362,4 +366,84 @@ fn cov_include_statement_edge_kind_is_calls() {
     let call = r.refs.iter().find(|e| e.target_name == "theme");
     assert!(call.is_some(), "expected ref to 'theme'");
     assert_eq!(call.unwrap().kind, EdgeKind::Calls, "@include should produce Calls, not {:?}", call.unwrap().kind);
+}
+
+// ---------------------------------------------------------------------------
+// @use 'path' as alias — alias stored as target_name
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_use_statement_with_alias_stores_alias_as_target() {
+    let r = extract::extract("@use 'mixins' as m;", "test.scss");
+    let imp = r.refs.iter().find(|e| e.kind == EdgeKind::Imports);
+    assert!(imp.is_some(), "expected Imports ref; got: {:?}", r.refs);
+    assert_eq!(imp.unwrap().target_name, "m", "alias should be stored as target_name");
+    assert_eq!(imp.unwrap().module.as_deref(), Some("mixins"));
+}
+
+#[test]
+fn cov_use_statement_sass_builtin_with_alias() {
+    let r = extract::extract("@use 'sass:math' as math;", "test.scss");
+    let imp = r.refs.iter().find(|e| e.kind == EdgeKind::Imports);
+    assert!(imp.is_some(), "expected Imports ref for sass:math");
+    assert_eq!(imp.unwrap().target_name, "math");
+    assert_eq!(imp.unwrap().module.as_deref(), Some("sass:math"));
+}
+
+// ---------------------------------------------------------------------------
+// @include namespace.mixin() — grammar limitation: only namespace returned
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_include_namespace_qualified_emits_namespace_as_target() {
+    // The SCSS grammar surfaces only the first identifier before the dot;
+    // the resolver classifies the namespace against `@use` import entries.
+    let r = extract::extract("@include m.fa-icon();", "test.scss");
+    let call = r.refs.iter().find(|e| e.kind == EdgeKind::Calls);
+    assert!(call.is_some(), "expected Calls ref; got: {:?}", r.refs);
+    assert_eq!(call.unwrap().target_name, "m", "namespace prefix should be the target");
+}
+
+// ---------------------------------------------------------------------------
+// @extend .#{$expr} — interpolated selectors skipped
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_extend_interpolated_target_is_skipped() {
+    let r = extract::extract(".x { @extend .#{$var}; }", "test.scss");
+    let inherits = r.refs.iter().filter(|e| e.kind == EdgeKind::Inherits).count();
+    assert_eq!(inherits, 0, "interpolated @extend should produce no Inherits ref");
+}
+
+// ---------------------------------------------------------------------------
+// .sass indented syntax — `=mixin-name` recovery
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_sass_indented_mixin_recovery() {
+    let src = "=my-mixin($arg)\n  display: block\n";
+    let r = extract::extract(src, "styles.sass");
+    let sym = r.symbols.iter().find(|s| s.name == "my-mixin");
+    assert!(sym.is_some(), "expected Function 'my-mixin' from indented sass; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Function);
+}
+
+// ---------------------------------------------------------------------------
+// Partial parse errors — fallback runs even when some symbols were extracted
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_partial_parse_error_recovers_late_mixins() {
+    // A mixin defined before a parse error is captured by the grammar path.
+    // A mixin defined after the error node is only recovered by the text
+    // fallback — but only if the fallback runs regardless of how many
+    // symbols the grammar path already found.
+    let src = "@mixin early() { color: red; }\n\
+               .bad { font: 12/14 sans-serif; }\n\
+               @mixin late() { color: blue; }\n";
+    let r = extract::extract(src, "test.scss");
+    let early = r.symbols.iter().any(|s| s.name == "early");
+    let late = r.symbols.iter().any(|s| s.name == "late");
+    assert!(early, "expected 'early' mixin; got: {:?}", r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>());
+    assert!(late, "expected 'late' mixin recovered by text fallback; got: {:?}", r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>());
 }

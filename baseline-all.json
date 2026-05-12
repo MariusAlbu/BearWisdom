@@ -164,8 +164,8 @@
       "files": 261,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 6779,
-      "internal_unresolved": 131,
+      "internal_edges": 6782,
+      "internal_unresolved": 128,
       "languages": {
         "angular_template": 52,
         "html": 1,
@@ -177,32 +177,31 @@
       },
       "path": "F:/Work/Projects/TestProjects/angular-coreui",
       "perf": {
-        "end_ws_mb": 69,
-        "files_per_sec": 59,
-        "index_duration_ms": 4452
+        "end_ws_mb": 67,
+        "files_per_sec": 63,
+        "index_duration_ms": 4158
       },
       "project": "angular-coreui",
-      "resolution_rate": 98.1,
+      "resolution_rate": 98.15,
       "routes": 0,
       "symbols": 5947,
       "unresolved_by_lang_kind": {
-        "scss.calls": 3,
         "typescript.calls": 117,
         "typescript.type_ref": 11
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 98
       },
-      "code_chunks": 10356,
-      "files": 884,
+      "code_chunks": 12135,
+      "files": 955,
       "flow_edge_types": {
-        "di_binding": 19
+        "di_binding": 77
       },
-      "flow_edges": 19,
-      "internal_edges": 12674,
-      "internal_unresolved": 80,
+      "flow_edges": 77,
+      "internal_edges": 14791,
+      "internal_unresolved": 154,
       "languages": {
         "angular_template": 62,
         "css": 2,
@@ -211,37 +210,36 @@
         "json": 103,
         "markdown": 22,
         "scss": 21,
-        "typescript": 664,
+        "typescript": 735,
         "xml": 1
       },
       "path": "F:/Work/Projects/TestProjects/angular-formly",
       "perf": {
-        "end_ws_mb": 318,
-        "files_per_sec": 87,
-        "index_duration_ms": 10130
+        "end_ws_mb": 106,
+        "files_per_sec": 72,
+        "index_duration_ms": 13290
       },
       "project": "angular-formly",
-      "resolution_rate": 99.37,
+      "resolution_rate": 98.97,
       "routes": 0,
-      "symbols": 6040,
+      "symbols": 7863,
       "unresolved_by_lang_kind": {
-        "scss.calls": 5,
-        "typescript.calls": 72,
+        "typescript.calls": 151,
         "typescript.type_ref": 3
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 97
+        "min_resolution_rate": 98
       },
-      "code_chunks": 6212,
-      "files": 441,
+      "code_chunks": 6688,
+      "files": 515,
       "flow_edge_types": {
-        "di_binding": 24
+        "di_binding": 99
       },
-      "flow_edges": 24,
-      "internal_edges": 4294,
-      "internal_unresolved": 88,
+      "flow_edges": 99,
+      "internal_edges": 5159,
+      "internal_unresolved": 85,
       "languages": {
         "angular_template": 78,
         "html": 1,
@@ -249,21 +247,20 @@
         "json": 11,
         "markdown": 8,
         "scss": 95,
-        "typescript": 242,
+        "typescript": 316,
         "xml": 4
       },
       "path": "F:/Work/Projects/TestProjects/angular-ngx-admin",
       "perf": {
-        "end_ws_mb": 271,
-        "files_per_sec": 24,
-        "index_duration_ms": 18355
+        "end_ws_mb": 100,
+        "files_per_sec": 26,
+        "index_duration_ms": 19966
       },
       "project": "angular-ngx-admin",
-      "resolution_rate": 97.99,
+      "resolution_rate": 98.38,
       "routes": 0,
-      "symbols": 2982,
+      "symbols": 3479,
       "unresolved_by_lang_kind": {
-        "scss.calls": 3,
         "typescript.calls": 12,
         "typescript.instantiates": 63,
         "typescript.type_ref": 10
@@ -1769,16 +1766,16 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 97
       },
-      "code_chunks": 188683,
-      "files": 4398,
+      "code_chunks": 185116,
+      "files": 4594,
       "flow_edge_types": {
-        "di_binding": 459
+        "di_binding": 911
       },
-      "flow_edges": 459,
-      "internal_edges": 124111,
-      "internal_unresolved": 796,
+      "flow_edges": 911,
+      "internal_edges": 146397,
+      "internal_unresolved": 3600,
       "languages": {
         "angular_template": 291,
         "csharp": 2692,
@@ -1795,27 +1792,26 @@
         "scss": 304,
         "shell": 7,
         "sql": 4,
-        "typescript": 757,
+        "typescript": 953,
         "xml": 172,
         "yaml": 29
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-squidex",
       "perf": {
-        "end_ws_mb": 284,
-        "files_per_sec": 40,
-        "index_duration_ms": 109548
+        "end_ws_mb": 187,
+        "files_per_sec": 35,
+        "index_duration_ms": 131758
       },
       "project": "dotnet-squidex",
-      "resolution_rate": 99.36,
+      "resolution_rate": 97.6,
       "routes": 1024,
-      "symbols": 76739,
+      "symbols": 81654,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 9,
-        "scss.calls": 4,
-        "typescript.calls": 301,
+        "javascript.calls": 26,
+        "typescript.calls": 1721,
         "typescript.inherits": 3,
-        "typescript.instantiates": 12,
-        "typescript.type_ref": 467
+        "typescript.instantiates": 16,
+        "typescript.type_ref": 1834
       }
     },
     {
@@ -1976,12 +1972,12 @@
       "assertions": {
         "min_resolution_rate": 94
       },
-      "code_chunks": 29352,
+      "code_chunks": 29360,
       "files": 1235,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 32421,
-      "internal_unresolved": 1749,
+      "internal_edges": 32412,
+      "internal_unresolved": 1740,
       "languages": {
         "css": 6,
         "eex": 257,
@@ -1998,21 +1994,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/elixir-changelog",
       "perf": {
-        "end_ws_mb": 124,
-        "files_per_sec": 55,
-        "index_duration_ms": 22263
+        "end_ws_mb": 111,
+        "files_per_sec": 75,
+        "index_duration_ms": 16481
       },
       "project": "elixir-changelog",
-      "resolution_rate": 94.88,
+      "resolution_rate": 94.91,
       "routes": 0,
-      "symbols": 8795,
+      "symbols": 8798,
       "unresolved_by_lang_kind": {
         "elixir.calls": 572,
-        "elixir.imports": 6,
         "elixir.type_ref": 72,
         "go.calls": 6,
-        "javascript.calls": 1090,
-        "scss.calls": 3
+        "javascript.calls": 1090
       }
     },
     {
@@ -4390,14 +4384,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 88
+        "min_resolution_rate": 69
       },
-      "code_chunks": 16787,
+      "code_chunks": 16415,
       "files": 235,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 4028,
-      "internal_unresolved": 526,
+      "internal_edges": 3334,
+      "internal_unresolved": 1466,
       "languages": {
         "css": 6,
         "dockerfile": 1,
@@ -4416,21 +4410,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/liquid-al-folio",
       "perf": {
-        "end_ws_mb": 291,
-        "files_per_sec": 10,
-        "index_duration_ms": 23772
+        "end_ws_mb": 183,
+        "files_per_sec": 9,
+        "index_duration_ms": 24887
       },
       "project": "liquid-al-folio",
-      "resolution_rate": 88.45,
+      "resolution_rate": 69.46,
       "routes": 0,
       "symbols": 6862,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 501,
-        "javascript.imports": 4,
+        "javascript.calls": 1454,
         "javascript.type_ref": 10,
         "python.type_ref": 1,
-        "scss.calls": 4,
-        "scss.inherits": 5,
         "shell.calls": 1
       }
     },
@@ -5185,14 +5176,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 87
+        "min_resolution_rate": 88
       },
       "code_chunks": 2430,
       "files": 119,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2286,
-      "internal_unresolved": 323,
+      "internal_edges": 2314,
+      "internal_unresolved": 294,
       "languages": {
         "css": 11,
         "dockerfile": 1,
@@ -5207,18 +5198,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/nim-nitter",
       "perf": {
-        "end_ws_mb": 68,
-        "files_per_sec": 22,
-        "index_duration_ms": 5495
+        "end_ws_mb": 365,
+        "files_per_sec": 25,
+        "index_duration_ms": 4764
       },
       "project": "nim-nitter",
-      "resolution_rate": 87.62,
+      "resolution_rate": 88.73,
       "routes": 0,
       "symbols": 1542,
       "unresolved_by_lang_kind": {
         "javascript.calls": 82,
         "javascript.type_ref": 2,
-        "nim.calls": 94,
+        "nim.calls": 65,
         "python.calls": 121,
         "scss.calls": 24
       }
@@ -5771,8 +5762,8 @@
       "files": 3859,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 288424,
-      "internal_unresolved": 12990,
+      "internal_edges": 288431,
+      "internal_unresolved": 12925,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -5800,18 +5791,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 257,
-        "files_per_sec": 9,
-        "index_duration_ms": 406894
+        "end_ws_mb": 540,
+        "files_per_sec": 10,
+        "index_duration_ms": 381433
       },
       "project": "pascal-castle-fresh",
-      "resolution_rate": 95.69,
+      "resolution_rate": 95.71,
       "routes": 0,
-      "symbols": 273517,
+      "symbols": 273832,
       "unresolved_by_lang_kind": {
         "c.calls": 23,
         "c.type_ref": 753,
-        "cmake.type_ref": 92,
+        "cmake.type_ref": 28,
         "cpp.calls": 750,
         "cpp.inherits": 4,
         "cpp.instantiates": 16,
@@ -5823,7 +5814,6 @@
         "pascal.calls": 7851,
         "pascal.inherits": 69,
         "php.calls": 1,
-        "scss.calls": 1,
         "shell.calls": 34
       }
     },
@@ -7969,38 +7959,38 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 88
       },
-      "code_chunks": 16569,
-      "files": 534,
+      "code_chunks": 19367,
+      "files": 582,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 7579,
-      "internal_unresolved": 99,
+      "internal_edges": 10554,
+      "internal_unresolved": 1323,
       "languages": {
         "astro": 104,
         "css": 31,
         "html": 14,
-        "javascript": 91,
+        "javascript": 137,
         "json": 5,
         "markdown": 14,
         "mdx": 110,
-        "scss": 122,
+        "scss": 123,
         "shell": 1,
-        "typescript": 24,
+        "typescript": 25,
         "xml": 6,
         "yaml": 12
       },
       "path": "F:/Work/Projects/TestProjects/scss-bootstrap",
       "perf": {
-        "end_ws_mb": 560,
-        "files_per_sec": 106,
-        "index_duration_ms": 5046
+        "end_ws_mb": 64,
+        "files_per_sec": 155,
+        "index_duration_ms": 3748
       },
       "project": "scss-bootstrap",
-      "resolution_rate": 98.71,
+      "resolution_rate": 88.86,
       "routes": 0,
-      "symbols": 8683,
+      "symbols": 10114,
       "unresolved_by_lang_kind": {
         "astro.calls": 2,
         "javascript.calls": 1140,
@@ -8015,67 +8005,64 @@
       "assertions": {
         "min_resolution_rate": 88
       },
-      "code_chunks": 1599,
-      "files": 120,
+      "code_chunks": 1610,
+      "files": 128,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 112,
-      "internal_unresolved": 15,
+      "internal_edges": 107,
+      "internal_unresolved": 14,
       "languages": {
         "css": 3,
         "html": 1,
-        "javascript": 42,
+        "javascript": 50,
         "json": 2,
         "markdown": 4,
         "scss": 68
       },
       "path": "F:/Work/Projects/TestProjects/scss-nescss",
       "perf": {
-        "end_ws_mb": 384,
-        "files_per_sec": 59,
-        "index_duration_ms": 2049
+        "end_ws_mb": 56,
+        "files_per_sec": 194,
+        "index_duration_ms": 659
       },
       "project": "scss-nescss",
-      "resolution_rate": 88.19,
+      "resolution_rate": 88.43,
       "routes": 0,
-      "symbols": 695,
+      "symbols": 701,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 1,
-        "scss.calls": 13,
+        "javascript.calls": 13,
         "scss.inherits": 1
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 100
       },
-      "code_chunks": 9606,
-      "files": 204,
+      "code_chunks": 9731,
+      "files": 209,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1307,
-      "internal_unresolved": 4,
+      "internal_edges": 1503,
+      "internal_unresolved": 0,
       "languages": {
         "json": 4,
         "markdown": 157,
         "proto": 1,
         "shell": 1,
-        "typescript": 38,
+        "typescript": 43,
         "yaml": 3
       },
       "path": "F:/Work/Projects/TestProjects/scss-sass",
       "perf": {
-        "end_ws_mb": 280,
-        "files_per_sec": 81,
-        "index_duration_ms": 2531
+        "end_ws_mb": 82,
+        "files_per_sec": 69,
+        "index_duration_ms": 3009
       },
       "project": "scss-sass",
-      "resolution_rate": 99.69,
+      "resolution_rate": 100.0,
       "routes": 0,
-      "symbols": 4465,
-      "unresolved_by_lang_kind": {
-        "typescript.calls": 4
-      }
+      "symbols": 4598,
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -8818,15 +8805,15 @@
       "assertions": {
         "min_resolution_rate": 97
       },
-      "code_chunks": 58502,
+      "code_chunks": 80916,
       "files": 3605,
       "flow_edge_types": {
-        "di_binding": 1507,
+        "di_binding": 11855,
         "service_dependency": 5
       },
       "flow_edges": 11860,
-      "internal_edges": 85003,
-      "internal_unresolved": 2328,
+      "internal_edges": 84124,
+      "internal_unresolved": 2319,
       "languages": {
         "angular_template": 276,
         "c": 1,
@@ -8837,39 +8824,37 @@
         "groovy": 3,
         "handlebars": 31,
         "html": 105,
-        "javascript": 16,
-        "json": 133,
+        "javascript": 17,
+        "json": 137,
         "kotlin": 1,
         "markdown": 38,
-        "scss": 398,
+        "scss": 401,
         "swift": 1,
         "toml": 1,
-        "typescript": 1470,
-        "xml": 35,
+        "typescript": 2364,
+        "xml": 38,
         "yaml": 7
       },
       "path": "F:/Work/Projects/TestProjects/ts-ever-demand",
       "perf": {
-        "end_ws_mb": 419,
-        "files_per_sec": 40,
-        "index_duration_ms": 67809
+        "end_ws_mb": 378,
+        "files_per_sec": 26,
+        "index_duration_ms": 140476
       },
       "project": "ts-ever-demand",
-      "resolution_rate": 97.33,
+      "resolution_rate": 97.32,
       "routes": 7,
-      "symbols": 49091,
+      "symbols": 49092,
       "unresolved_by_lang_kind": {
         "dart.calls": 4,
         "dart.instantiates": 3,
         "dart.type_ref": 50,
-        "javascript.imports": 2,
         "scss.calls": 3,
         "scss.inherits": 1,
-        "typescript.calls": 1114,
+        "typescript.calls": 1110,
         "typescript.implements": 3,
-        "typescript.inherits": 1,
         "typescript.instantiates": 315,
-        "typescript.type_ref": 832
+        "typescript.type_ref": 830
       }
     },
     {

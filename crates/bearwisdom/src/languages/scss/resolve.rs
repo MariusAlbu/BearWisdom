@@ -45,15 +45,36 @@ impl LanguageResolver for ScssResolver {
         let mut imports = Vec::new();
 
         // Collect @use / @import / @forward paths from Imports refs.
+        //
+        // When `@use 'path' as alias` is present the extractor stores the
+        // alias as `target_name` and the raw path as `module`. The import
+        // entry's `alias` field carries the alias so the resolver can match
+        // `@include alias.mixin()` calls back to this entry.
         for r in &file.refs {
             if r.kind != EdgeKind::Imports {
                 continue;
             }
             let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
+            // Detect whether `target_name` is an alias (differs from the
+            // last path segment after stripping the leading underscore and
+            // extension — the shape `path_to_target` would produce).
+            let bare_segment = module_path
+                .rsplit('/')
+                .next()
+                .unwrap_or(module_path.as_str())
+                .trim_start_matches('_')
+                .trim_end_matches(".scss")
+                .trim_end_matches(".sass")
+                .trim_end_matches(".css");
+            let alias = if r.target_name != bare_segment {
+                Some(r.target_name.clone())
+            } else {
+                None
+            };
             imports.push(ImportEntry {
                 imported_name: r.target_name.clone(),
                 module_path: Some(module_path),
-                alias: None,
+                alias,
                 is_wildcard: false,
             });
         }
@@ -127,6 +148,21 @@ impl LanguageResolver for ScssResolver {
         if ref_ctx.extracted_ref.module.is_some() {
             return None;
         }
+
+        // When the target matches a `@use` alias stored in the file context,
+        // this is a namespace prefix used as `@include alias.mixin()` — the
+        // SCSS grammar only surfaces the alias token, not the mixin name.
+        // Return None here; `infer_external_namespace` classifies the call
+        // as external if the aliased module is an npm package.
+        let is_alias = file_ctx
+            .imports
+            .iter()
+            .any(|imp| imp.alias.as_deref() == Some(target.as_str())
+                || imp.imported_name == *target);
+        if is_alias {
+            return None;
+        }
+
         for sym in lookup.by_name(target) {
             if !predicates::kind_compatible(edge_kind, &sym.kind) {
                 continue;
@@ -134,7 +170,7 @@ impl LanguageResolver for ScssResolver {
             // Only resolve to SCSS-defined symbols. Cross-language
             // collisions (a Python `assert_equal` shadowing the SCSS
             // mixin) would otherwise leak through the bare-name path.
-            if !sym.file_path.ends_with(".scss") {
+            if !sym.file_path.ends_with(".scss") && !sym.file_path.ends_with(".sass") {
                 continue;
             }
             return Some(Resolution {
@@ -190,6 +226,26 @@ impl LanguageResolver for ScssResolver {
                     {
                         return Some(mp.clone());
                     }
+                }
+            }
+        }
+
+        // `@include alias.mixin()` where `alias` was introduced by
+        // `@use 'npm-package/path' as alias` — the target is the alias token.
+        // Walk the file's imports to find an entry whose alias or
+        // imported_name matches the target, then classify the module path
+        // as an external npm package when it isn't a relative path.
+        for import in &file_ctx.imports {
+            let alias_matches = import.alias.as_deref() == Some(target.as_str())
+                || import.imported_name == *target;
+            if !alias_matches {
+                continue;
+            }
+            if let Some(mp) = &import.module_path {
+                if !mp.starts_with('.') && !mp.starts_with('/') {
+                    // Non-relative path → treat the first segment as the npm package name.
+                    let pkg = mp.split('/').next().unwrap_or(mp.as_str());
+                    return Some(pkg.to_string());
                 }
             }
         }

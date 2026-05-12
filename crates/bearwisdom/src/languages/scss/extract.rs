@@ -25,7 +25,18 @@ use tree_sitter::{Node, Parser};
 /// calls. Public so the resolver can import the same constant.
 pub(crate) const SCSS_CSS_FN_HINT: &str = "__scss_css_fn__";
 
-pub fn extract(source: &str, _file_path: &str) -> super::ExtractionResult {
+pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
+    // Indented-syntax `.sass` files are not handled by the SCSS grammar;
+    // fall back to a text-only scan that recognises `=mixin-name` and
+    // `@mixin mixin-name` declarations.
+    if file_path.ends_with(".sass") {
+        let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+        let refs: Vec<ExtractedRef> = Vec::new();
+        recover_mixin_symbols_from_text(source, &mut symbols);
+        recover_sass_indented_symbols_from_text(source, &mut symbols);
+        return super::ExtractionResult::new(symbols, refs, true);
+    }
+
     let language: tree_sitter::Language = tree_sitter_scss_local::LANGUAGE.into();
     let mut parser = Parser::new();
     parser
@@ -47,17 +58,12 @@ pub fn extract(source: &str, _file_path: &str) -> super::ExtractionResult {
     // Error-recovery fallback: tree-sitter-scss-local degrades to a root
     // `ERROR` node for any file containing a construct the grammar can't
     // handle (e.g. `#{$a}/#{$b}` interpolations in a `font:` shorthand,
-    // or `@mixin name()` with empty parens). When that happens the tree
-    // has NO `mixin_statement` / `function_statement` nodes anywhere —
-    // the `@mixin` keyword is broken into loose identifier / parameters
-    // / ERROR tokens and `visit_node` finds nothing to extract.
-    //
-    // We don't want to miss every mixin in a Font Awesome / Bootstrap /
-    // legacy SCSS file over a single malformed line, so do a byte-level
-    // scan for `@mixin NAME` and `@function NAME` when the grammar parse
-    // is in error state and emitted zero symbols. The scan is skipped on
-    // clean parses so it never double-emits.
-    if has_errors && symbols.is_empty() {
+    // or `@mixin name()` with empty parens). Run the text-scan fallback
+    // whenever the tree has errors — not just when it found zero symbols —
+    // so that mixins defined after the first parse error are also captured.
+    // The `already` guard in the scan prevents double-emission for any
+    // symbol the grammar-driven path already found.
+    if has_errors {
         recover_mixin_symbols_from_text(source, &mut symbols);
     }
 
@@ -145,6 +151,46 @@ fn recover_mixin_symbols_from_text(source: &str, symbols: &mut Vec<ExtractedSymb
                 continue;
             }
             i += 1;
+        }
+    }
+}
+
+/// Text-scan for indented Sass `=mixin-name` declarations.
+///
+/// The indented Sass syntax uses `=name` for mixin definitions instead of
+/// `@mixin name { }`. The SCSS grammar does not handle this form, so `.sass`
+/// files run this scan alongside `recover_mixin_symbols_from_text`.
+fn recover_sass_indented_symbols_from_text(source: &str, symbols: &mut Vec<ExtractedSymbol>) {
+    for (line_no, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with('=') {
+            continue;
+        }
+        let rest = &trimmed[1..];
+        // Name runs until `(`, whitespace, or end-of-line.
+        let name: String = rest
+            .chars()
+            .take_while(|&c| c != '(' && c != ' ' && c != '\t' && c != '\r')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        let already = symbols.iter().any(|s| s.name == name);
+        if !already {
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: name.clone(),
+                kind: SymbolKind::Function,
+                visibility: Some(Visibility::Public),
+                start_line: line_no as u32,
+                end_line: line_no as u32,
+                start_col: (line.len() - trimmed.len()) as u32,
+                end_col: (line.len() - trimmed.len() + 1 + name.len()) as u32,
+                signature: Some(format!("={name}")),
+                doc_comment: None,
+                scope_path: None,
+                parent_index: None,
+            });
         }
     }
 }
@@ -293,7 +339,12 @@ fn handle_include(
     symbols: &mut Vec<ExtractedSymbol>,
     source_symbol_index: usize,
 ) {
-    let target = find_first_identifier(node, src);
+    // `find_include_target` inspects raw node text to detect the
+    // `namespace.mixin` dotted form that the SCSS grammar collapses into a
+    // single identifier. When a dot is present the namespace prefix is used
+    // as the target so the resolver can match it against `@use` alias entries
+    // and classify the call as external.
+    let target = find_include_target(node, src);
     if !target.is_empty() {
         refs.push(ExtractedRef {
             source_symbol_index,
@@ -303,8 +354,8 @@ fn handle_include(
             module: None,
             chain: None,
             byte_offset: 0,
-                    namespace_segments: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+        });
     }
     // Recurse into arguments to find nested call_expressions
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
@@ -324,6 +375,11 @@ fn handle_extend(
     if target.is_empty() {
         return;
     }
+    // Interpolated selectors (`@extend .#{$expr}`) are dynamic and cannot
+    // be resolved statically — skip rather than emit an unresolvable ref.
+    if target.contains("#{") {
+        return;
+    }
     refs.push(ExtractedRef {
         source_symbol_index,
         target_name: target,
@@ -332,8 +388,8 @@ fn handle_extend(
         module: None,
         chain: None,
         byte_offset: 0,
-            namespace_segments: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -358,8 +414,8 @@ fn handle_import(
             module: Some(module),
             chain: None,
             byte_offset: 0,
-                    namespace_segments: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+        });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
 }
@@ -386,8 +442,8 @@ fn handle_forward(
             module: Some(module),
             chain: None,
             byte_offset: 0,
-                    namespace_segments: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+        });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
 }
@@ -405,7 +461,22 @@ fn handle_use(
 ) {
     let module = find_string_value(node, src);
     if !module.is_empty() {
-        let target = path_to_target(&module);
+        // When `@use 'path' as alias` is present, store the alias as the
+        // target_name so that `@include alias.mixin()` calls can be matched
+        // back to this import entry via the alias field in FileContext.
+        //
+        // For `@use 'sass:math'` (no `as` clause), Sass introduces the
+        // namespace `math` — the segment after the colon. `path_to_target`
+        // would return `"sass:math"` which doesn't match `math` used as a
+        // namespace prefix, so we strip the `sass:` prefix explicitly.
+        let alias = find_use_alias(node, src);
+        let target = if !alias.is_empty() {
+            alias.clone()
+        } else if let Some(stem) = module.strip_prefix("sass:") {
+            stem.to_string()
+        } else {
+            path_to_target(&module)
+        };
         refs.push(ExtractedRef {
             source_symbol_index,
             target_name: target,
@@ -414,8 +485,8 @@ fn handle_use(
             module: Some(module),
             chain: None,
             byte_offset: 0,
-                    namespace_segments: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+        });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
 }
@@ -595,8 +666,8 @@ fn handle_call_expr(
         module: Some(SCSS_CSS_FN_HINT.to_string()),
         chain: None,
         byte_offset: 0,
-            namespace_segments: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+    });
 
     // Recurse into children (arguments may contain nested call_expressions).
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
@@ -644,12 +715,54 @@ fn find_child_of_kind<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {
     None
 }
 
-fn find_first_identifier(node: &Node, src: &str) -> String {
+/// Returns the include target for `@include [ns.]name(…)`.
+///
+/// The SCSS grammar does not model namespace-qualified includes as two
+/// separate identifier nodes — it surfaces only the leading part before the
+/// first dot. Raw-text inspection of the first child's source span detects
+/// the dot and returns the namespace prefix so the resolver can match it
+/// against `@use` alias entries.
+fn find_include_target(node: &Node, src: &str) -> String {
+    // The grammar emits the mixin name (or the namespace prefix for
+    // dotted forms) as the first `identifier` child.
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
             if child.kind() == "identifier" {
-                return node_text(child, src);
+                let text = node_text(child, src);
+                // Peek at the byte immediately following the identifier in
+                // the raw source to detect `namespace.mixin` form.
+                let end_byte = child.end_byte();
+                if end_byte < src.len() && src.as_bytes().get(end_byte) == Some(&b'.') {
+                    // Dotted form: return the namespace prefix so the
+                    // resolver can classify this as a module-qualified call.
+                    return text;
+                }
+                return text;
             }
+        }
+    }
+    String::new()
+}
+
+/// Extracts the `as alias` clause from a `@use 'path' as alias` statement.
+///
+/// The SCSS grammar does not model the `as alias` syntax — it produces an
+/// `ERROR` node for the entire `as alias` token sequence. Raw-text scanning
+/// of the node's source span is the only reliable approach.
+///
+/// Returns the alias string, or an empty string if no `as` clause is present.
+fn find_use_alias(node: &Node, src: &str) -> String {
+    let raw = node_text(*node, src);
+    // Match ` as <identifier>` anywhere in the statement, stopping at `;`,
+    // whitespace, or end of input. The `as` keyword is lower-case in SCSS.
+    if let Some(idx) = raw.find(" as ") {
+        let rest = &raw[idx + 4..];
+        let alias: String = rest
+            .chars()
+            .take_while(|&c| c.is_alphanumeric() || c == '_' || c == '-')
+            .collect();
+        if !alias.is_empty() {
+            return alias;
         }
     }
     String::new()
