@@ -16,3 +16,4 @@ pub mod matcher;
 pub mod registry;
 pub mod traits;
 pub mod types;
+pub mod url_pattern;

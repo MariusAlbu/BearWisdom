@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 use flow_emit::FlowEmission;
+use crate::connectors::url_pattern;
 
 // Per-file output buffer. Each rayon worker fills its own; the main thread
 // merges + bulk-writes after the parallel section. Avoids sharing the
@@ -211,9 +212,13 @@ fn flush_resolve_buf(
 /// a `SELECT id FROM files WHERE path IN (...)` to resolve the ids, then:
 ///
 /// 1. Pairs `NamedChannel { Producer }` ↔ `NamedChannel { Consumer }` by
-///    `(kind, name)` across files and writes paired rows with both
-///    `source_file_id` and `target_file_id` populated.
-/// 2. Pairs `DbQuery` ↔ `DbEntity` by `entity_name` / `table_name_hint`.
+///    `(kind, normalized_name)` across files, with HTTP method compatibility
+///    filtering.  URL patterns are normalized via `url_pattern::normalize`
+///    before keying so `:id`, `<id>`, `{id}` all compare equal to `{}`.
+/// 2. Pairs `DbQuery` ↔ `DbEntity` and `MigrationTarget` ↔ `DbEntity` by
+///    entity/table name with case-insensitive pluralization tolerance.
+///    A single `DbEntity` can accumulate many `DbQuery` and many
+///    `MigrationTarget` partners — one `flow_edges` row per pair.
 /// 3. Writes single-ended rows for every unpaired emission and all single-
 ///    ended variants (DiBinding, ConfigLookup, FeatureFlag, AuthGuard,
 ///    CliCommand, ScheduledJob).
@@ -274,22 +279,38 @@ fn flush_flow_emissions(
         .collect();
 
     // -----------------------------------------------------------------------
-    // Phase 1: pair NamedChannel Producer ↔ Consumer by (kind, name).
-    // Only non-empty names are eligible for pairing.
+    // Phase 1: pair NamedChannel Producer ↔ Consumer.
+    //
+    // Key: (edge_type_str, normalized_name).  URL patterns are normalized
+    // before keying so `:id`, `<id>`, `{id}`, and `{}` all hash to the same
+    // bucket.  HTTP method compatibility is checked per-pair inside the loop
+    // rather than in the key, allowing `Any` to match any concrete method.
     // -----------------------------------------------------------------------
     let mut named_channel_paired: std::collections::HashSet<usize> = Default::default();
 
     {
-        // Build producer and consumer index by (edge_type_str, name).
+        // Pre-normalize every NamedChannel name to avoid allocating inside the
+        // nested loop.  Index: emission index → normalized name.
+        let mut normalized_names: HashMap<usize, String> = HashMap::new();
+        for (idx, r) in resolved.iter().enumerate() {
+            if let FlowEmission::NamedChannel { name, .. } = r.emission {
+                if !name.is_empty() {
+                    normalized_names.insert(idx, url_pattern::normalize(name));
+                }
+            }
+        }
+
+        // Build producer/consumer buckets keyed by (edge_type_str, normalized_name).
         let mut producers: HashMap<(&str, &str), Vec<usize>> = Default::default();
         let mut consumers: HashMap<(&str, &str), Vec<usize>> = Default::default();
         for (idx, r) in resolved.iter().enumerate() {
-            if let FlowEmission::NamedChannel { kind, name, role, .. } = r.emission {
-                if name.is_empty() { continue; }
-                let key = (kind.edge_type_str(), name.as_str());
-                match role {
-                    ChannelRole::Producer => producers.entry(key).or_default().push(idx),
-                    ChannelRole::Consumer => consumers.entry(key).or_default().push(idx),
+            if let FlowEmission::NamedChannel { kind, role, .. } = r.emission {
+                if let Some(norm) = normalized_names.get(&idx) {
+                    let key = (kind.edge_type_str(), norm.as_str());
+                    match role {
+                        ChannelRole::Producer => producers.entry(key).or_default().push(idx),
+                        ChannelRole::Consumer => consumers.entry(key).or_default().push(idx),
+                    }
                 }
             }
         }
@@ -309,12 +330,25 @@ fn flush_flow_emissions(
                     for &ci in cons_idxs {
                         let pr = &resolved[pi];
                         let cr = &resolved[ci];
-                        if let FlowEmission::NamedChannel { kind, method, name, .. } = pr.emission {
+                        if let FlowEmission::NamedChannel { kind, method: prod_method, name, .. } = pr.emission {
+                            // Extract consumer method for compatibility check.
+                            let cons_method = if let FlowEmission::NamedChannel { method, .. } = cr.emission {
+                                method.map(|m| m.as_str())
+                            } else {
+                                None
+                            };
+                            // Skip incompatible method pairs (GET ≠ POST; Any matches all).
+                            if !url_pattern::http_methods_compatible(
+                                prod_method.map(|m| m.as_str()),
+                                cons_method,
+                            ) {
+                                continue;
+                            }
                             let n = pair_stmt.execute(rusqlite::params![
                                 pr.file_id, pr.line,
                                 cr.file_id, cr.line,
                                 kind.edge_type_str(), kind.protocol_str(),
-                                method.map(|m| m.as_str()),
+                                prod_method.map(|m| m.as_str()),
                                 Some(name.as_str()),
                                 0.9_f64,
                             ]).context("Failed to insert paired flow_edge")?;
@@ -330,18 +364,32 @@ fn flush_flow_emissions(
     }
 
     // -----------------------------------------------------------------------
-    // Phase 2: pair DbQuery ↔ DbEntity by entity_name / table_name_hint.
+    // Phase 2: pair DbQuery ↔ DbEntity and MigrationTarget ↔ DbEntity.
+    //
+    // Entity index keys are the canonical names from DbEntity (both the
+    // table_name_hint when present, and the base_name_hint as fallback).
+    // Matching is case-insensitive with simple suffix-s pluralization
+    // tolerance via `url_pattern::entity_names_match`.
+    //
+    // A single DbEntity can appear in many pairs — one flow_edge row per
+    // (query/migration, entity) combination.
     // -----------------------------------------------------------------------
     let mut db_paired: std::collections::HashSet<usize> = Default::default();
 
     {
-        // Build entity index by table_name_hint (or base_name_hint as fallback).
-        let mut entities: HashMap<&str, Vec<usize>> = Default::default();
+        // Build entity list: (key, idx) pairs.  A DbEntity contributes two
+        // entries when both table_name_hint and base_name_hint are non-empty,
+        // making it reachable under either name.
+        let mut entity_entries: Vec<(&str, usize)> = Vec::new();
         for (idx, r) in resolved.iter().enumerate() {
             if let FlowEmission::DbEntity { table_name_hint, base_name_hint, .. } = r.emission {
-                let key = table_name_hint.as_deref().unwrap_or(base_name_hint.as_str());
-                if !key.is_empty() {
-                    entities.entry(key).or_default().push(idx);
+                if let Some(tname) = table_name_hint.as_deref() {
+                    if !tname.is_empty() {
+                        entity_entries.push((tname, idx));
+                    }
+                }
+                if !base_name_hint.is_empty() {
+                    entity_entries.push((base_name_hint.as_str(), idx));
                 }
             }
         }
@@ -355,14 +403,22 @@ fn flush_flow_emissions(
             )
             .context("Failed to prepare db-paired flow_edges INSERT")?;
 
+        // Helper: find entity indices whose key matches `name` via
+        // case-insensitive pluralization-tolerant comparison.
+        let find_entities = |name: &str| -> Vec<usize> {
+            let mut seen = std::collections::HashSet::new();
+            entity_entries.iter()
+                .filter(|(key, _)| url_pattern::entity_names_match(name, key))
+                .map(|(_, idx)| *idx)
+                .filter(|idx| seen.insert(*idx))
+                .collect()
+        };
+
+        // Pair DbQuery ↔ DbEntity.
         for (idx, r) in resolved.iter().enumerate() {
             if let FlowEmission::DbQuery { entity_name, operation } = r.emission {
                 if entity_name.is_empty() { continue; }
-                let entity_idxs = entities.get(entity_name.as_str())
-                    .or_else(|| entities.get(entity_name.to_lowercase().as_str()))
-                    .cloned()
-                    .unwrap_or_default();
-                for ei in entity_idxs {
+                for ei in find_entities(entity_name) {
                     let er = &resolved[ei];
                     let n = pair_stmt.execute(rusqlite::params![
                         r.file_id, r.line,
@@ -372,6 +428,28 @@ fn flush_flow_emissions(
                         0.85_f64,
                         Some(operation.as_str()),
                     ]).context("Failed to insert db-query flow_edge")?;
+                    if n > 0 {
+                        db_paired.insert(idx);
+                        db_paired.insert(ei);
+                    }
+                }
+            }
+        }
+
+        // Pair MigrationTarget ↔ DbEntity.
+        for (idx, r) in resolved.iter().enumerate() {
+            if let FlowEmission::MigrationTarget { table_name, direction } = r.emission {
+                if table_name.is_empty() { continue; }
+                for ei in find_entities(table_name) {
+                    let er = &resolved[ei];
+                    let n = pair_stmt.execute(rusqlite::params![
+                        r.file_id, r.line,
+                        er.file_id, er.line,
+                        "migration_target",
+                        Some(table_name.as_str()),
+                        0.85_f64,
+                        Some(direction.as_str()),
+                    ]).context("Failed to insert migration-target flow_edge")?;
                     if n > 0 {
                         db_paired.insert(idx);
                         db_paired.insert(ei);
@@ -412,6 +490,18 @@ fn flush_flow_emissions(
 
     Ok(written)
 }
+
+#[cfg(test)]
+pub(crate) fn _test_flush_flow_emissions(
+    conn: &rusqlite::Connection,
+    emissions: &[(String, u32, FlowEmission)],
+) -> Result<u32> {
+    flush_flow_emissions(conn, emissions)
+}
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
 
 /// Stats returned by `resolve_and_write` / `resolve_iteration`.
 #[derive(Debug, Clone, Default)]

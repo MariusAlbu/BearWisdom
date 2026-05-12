@@ -172,6 +172,17 @@ pub enum MigrationDirection {
     Both,
 }
 
+impl MigrationDirection {
+    /// The string written to `flow_edges.metadata` for a migration-target edge.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MigrationDirection::Up => "up",
+            MigrationDirection::Down => "down",
+            MigrationDirection::Both => "both",
+        }
+    }
+}
+
 /// Authorization requirement kind for an `AuthGuard` emission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthGuardKind {
