@@ -88,6 +88,45 @@ impl LanguageResolver for HclResolver {
         }
 
         // ----------------------------------------------------------------
+        // Step 1b: provider alias resolution.
+        //
+        // `provider "aws" { alias = "remote" }` is referenced via `aws.remote`
+        // (or `provider = aws.remote` in resource meta-arguments).  The alias
+        // suffix is provider-defined, not a separate indexed symbol — resolve
+        // to the underlying provider symbol by stripping the alias label.
+        //
+        // "aws.remote" → head "aws" → look for Class "aws" (provider symbol)
+        // ----------------------------------------------------------------
+        if let Some(dot_pos) = target.find('.') {
+            let head = &target[..dot_pos];
+            // Only attempt this when the head is a bare provider name (no
+            // underscore-separated resource suffix, which would be handled by
+            // is_provider_resource_type in infer_external_namespace instead).
+            if !head.contains('_') && !head.is_empty() {
+                for sym in lookup.in_file(&file_ctx.file_path) {
+                    if sym.name == head && sym.kind == "class" {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.95,
+                            strategy: "hcl_provider_alias",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+                for sym in lookup.by_name(head) {
+                    if sym.kind == "class" {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.85,
+                            strategy: "hcl_provider_alias_cross_file",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
         // Step 2: prefix-stripped Variable lookup for var.* and local.*.
         //
         // "var.region" → strip "var." → look for Variable named "region"
