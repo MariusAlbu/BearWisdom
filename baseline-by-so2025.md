@@ -74,7 +74,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 
 | Plugin           | Category | Unresolved | Status | Note |
 |------------------|----------|-----------:|:------:|------|
-| nunjucks         | template | 75  | 🟡 | tail of JS-expression refs |
+| nunjucks         | template | 0   | ✅ | stale baseline resolved; imports refs now classified correctly in full-index path; remaining 28 unresolved are in `.js` files inside nunjucks projects (browser builtins), not nunjucks language itself |
 | scss             | markup   | 73  | 🟡 | `.sass` indented-syntax recovery + `@use ... as alias` round-trip landed; residual is `@include alias.mixin()` patterns where the alias targets an unindexed npm package |
 | hcl              | config   | 58  | 🟡 | Terraform / Nomad data-model traversal (`var.x`, `module.y.output.z`) |
 | heex             | template | 42  | 🟡 | tail of Elixir refs |

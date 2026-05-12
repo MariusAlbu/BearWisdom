@@ -5407,14 +5407,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 83
+        "min_resolution_rate": 93
       },
-      "code_chunks": 5776,
+      "code_chunks": 5619,
       "files": 395,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 309,
-      "internal_unresolved": 60,
+      "internal_edges": 422,
+      "internal_unresolved": 28,
       "languages": {
         "javascript": 13,
         "json": 16,
@@ -5426,28 +5426,28 @@
       },
       "path": "F:/Work/Projects/TestProjects/nunjucks-a11yproject",
       "perf": {
-        "end_ws_mb": 288,
-        "files_per_sec": 118,
-        "index_duration_ms": 3355
+        "end_ws_mb": 54,
+        "files_per_sec": 246,
+        "index_duration_ms": 1605
       },
       "project": "nunjucks-a11yproject",
-      "resolution_rate": 83.74,
+      "resolution_rate": 93.78,
       "routes": 0,
-      "symbols": 2897,
+      "symbols": 2898,
       "unresolved_by_lang_kind": {
-        "nunjucks.imports": 60
+        "javascript.calls": 28
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 83
+        "min_resolution_rate": 92
       },
-      "code_chunks": 2264,
+      "code_chunks": 2171,
       "files": 76,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 79,
-      "internal_unresolved": 16,
+      "internal_edges": 23,
+      "internal_unresolved": 2,
       "languages": {
         "css": 7,
         "javascript": 3,
@@ -5458,17 +5458,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/nunjucks-frontend-interview-questions",
       "perf": {
-        "end_ws_mb": 366,
-        "files_per_sec": 42,
-        "index_duration_ms": 1827
+        "end_ws_mb": 42,
+        "files_per_sec": 122,
+        "index_duration_ms": 625
       },
       "project": "nunjucks-frontend-interview-questions",
-      "resolution_rate": 83.16,
+      "resolution_rate": 92.0,
       "routes": 0,
       "symbols": 1182,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 1,
-        "nunjucks.imports": 15
+        "javascript.calls": 2
       }
     },
     {
