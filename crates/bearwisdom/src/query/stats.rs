@@ -288,14 +288,20 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
 
     let mut unresolved_by_lang_kind: BTreeMap<String, u32> = BTreeMap::new();
     {
+        // Attribute by the symbol's `origin_language` when set — refs from
+        // embedded sub-language regions (e.g. JavaScript inside an HTML
+        // `<script>` block, Groovy inside a GSP expression) report under
+        // the language they're actually written in rather than the host
+        // file's language. Falls back to `f.language` for host-extracted
+        // refs.
         let by_lang_kind_sql = format!(
-            "SELECT f.language, u.kind, COUNT(*)
+            "SELECT COALESCE(s.origin_language, f.language) AS lang, u.kind, COUNT(*)
              FROM unresolved_refs u
              JOIN symbols s ON s.id = u.source_id
              JOIN files   f ON f.id = s.file_id
              WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
-             GROUP BY f.language, u.kind
-             ORDER BY f.language, u.kind"
+             GROUP BY lang, u.kind
+             ORDER BY lang, u.kind"
         );
         let mut stmt = conn.prepare(&by_lang_kind_sql)?;
         let rows = stmt.query_map([], |r| {
@@ -381,13 +387,19 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     const TOP_N_UNRESOLVED: u32 = 25;
     let mut top_unresolved_targets: Vec<UnresolvedTarget> = Vec::new();
     {
+        // Same origin_language coalesce as `unresolved_by_lang_kind` —
+        // attribute embedded-region refs to their actual language so the
+        // gate worklist routes engineering attention to the right plugin.
         let top_sql = format!(
-            "SELECT u.target_name, f.language, u.kind, COUNT(*) AS c
+            "SELECT u.target_name,
+                    COALESCE(s.origin_language, f.language) AS lang,
+                    u.kind,
+                    COUNT(*) AS c
              FROM unresolved_refs u
              JOIN symbols s ON s.id = u.source_id
              JOIN files   f ON f.id = s.file_id
              WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
-             GROUP BY u.target_name, f.language, u.kind
+             GROUP BY u.target_name, lang, u.kind
              ORDER BY c DESC, u.target_name ASC
              LIMIT {TOP_N_UNRESOLVED}"
         );

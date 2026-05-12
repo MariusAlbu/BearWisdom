@@ -41,15 +41,15 @@
       "routes": 688,
       "symbols": 17264,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 224,
+        "javascript.calls": 242,
         "javascript.imports": 1,
-        "razor.calls": 18,
-        "razor.type_ref": 2
+        "javascript.type_ref": 2
       }
     },
     {
       "path": "F:/Work/Projects/TestProjects/Smartstore",
-      "project": "Smartstore"
+      "project": "Smartstore",
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -263,12 +263,10 @@
       "routes": 0,
       "symbols": 2982,
       "unresolved_by_lang_kind": {
-        "angular_template.calls": 2,
-        "angular_template.type_ref": 3,
         "scss.calls": 3,
-        "typescript.calls": 10,
+        "typescript.calls": 12,
         "typescript.instantiates": 63,
-        "typescript.type_ref": 7
+        "typescript.type_ref": 10
       }
     },
     {
@@ -309,11 +307,12 @@
       "routes": 0,
       "symbols": 2851,
       "unresolved_by_lang_kind": {
-        "astro.calls": 4,
+        "astro.calls": 2,
         "c.calls": 3,
         "c.type_ref": 7,
-        "html.calls": 1,
+        "javascript.calls": 2,
         "python.type_ref": 6,
+        "typescript.calls": 1,
         "typescript.instantiates": 1
       }
     },
@@ -349,11 +348,10 @@
       "routes": 0,
       "symbols": 933,
       "unresolved_by_lang_kind": {
-        "astro.calls": 12,
-        "astro.type_ref": 1,
-        "javascript.calls": 3,
-        "typescript.calls": 1,
-        "typescript.type_ref": 3
+        "astro.calls": 7,
+        "javascript.calls": 5,
+        "typescript.calls": 4,
+        "typescript.type_ref": 4
       }
     },
     {
@@ -389,12 +387,11 @@
       "routes": 0,
       "symbols": 18040,
       "unresolved_by_lang_kind": {
-        "astro.calls": 42,
-        "astro.instantiates": 2,
-        "astro.type_ref": 41,
-        "typescript.calls": 306,
-        "typescript.instantiates": 62,
-        "typescript.type_ref": 901
+        "astro.calls": 27,
+        "javascript.calls": 12,
+        "typescript.calls": 309,
+        "typescript.instantiates": 64,
+        "typescript.type_ref": 942
       }
     },
     {
@@ -591,7 +588,7 @@
       "symbols": 68159,
       "unresolved_by_lang_kind": {
         "bicep.calls": 138,
-        "html.calls": 2,
+        "javascript.calls": 2,
         "powershell.calls": 2,
         "shell.calls": 6,
         "typescript.calls": 360,
@@ -644,8 +641,7 @@
       "symbols": 41253,
       "unresolved_by_lang_kind": {
         "bicep.calls": 3427,
-        "html.calls": 5,
-        "javascript.calls": 81,
+        "javascript.calls": 86,
         "javascript.imports": 2,
         "powershell.calls": 2,
         "python.calls": 7,
@@ -1138,8 +1134,8 @@
         "c.type_ref": 181,
         "cmake.calls": 21,
         "cmake.type_ref": 25,
-        "html.calls": 108,
-        "html.type_ref": 65,
+        "javascript.calls": 108,
+        "javascript.type_ref": 65,
         "odin.calls": 93
       }
     },
@@ -1231,7 +1227,7 @@
         "cpp.calls": 103,
         "cpp.imports": 3,
         "cpp.type_ref": 92,
-        "html.calls": 12,
+        "javascript.calls": 12,
         "shell.calls": 21
       }
     },
@@ -1580,7 +1576,7 @@
       "routes": 40,
       "symbols": 1074,
       "unresolved_by_lang_kind": {
-        "razor.calls": 4
+        "javascript.calls": 4
       }
     },
     {
@@ -1625,17 +1621,14 @@
       "routes": 1207,
       "symbols": 154938,
       "unresolved_by_lang_kind": {
-        "angular_template.calls": 16,
-        "angular_template.type_ref": 42,
-        "javascript.calls": 794,
+        "javascript.calls": 804,
         "javascript.type_ref": 7,
         "powershell.type_ref": 1,
-        "razor.calls": 10,
-        "typescript.calls": 2040,
+        "typescript.calls": 2056,
         "typescript.implements": 6,
         "typescript.inherits": 3,
         "typescript.instantiates": 48,
-        "typescript.type_ref": 410
+        "typescript.type_ref": 452
       }
     },
     {
@@ -1698,14 +1691,12 @@
         "cpp.type_ref": 1731,
         "csharp.imports": 40,
         "groovy.calls": 11,
-        "html.calls": 2,
         "java.calls": 130,
         "java.type_ref": 168,
-        "javascript.calls": 32,
-        "javascript.type_ref": 145,
+        "javascript.calls": 34,
+        "javascript.type_ref": 148,
         "lua.calls": 8,
         "powershell.calls": 3,
-        "razor.type_ref": 3,
         "shell.calls": 27,
         "typescript.calls": 39,
         "typescript.type_ref": 36
@@ -1819,14 +1810,12 @@
       "routes": 1024,
       "symbols": 76739,
       "unresolved_by_lang_kind": {
-        "angular_template.calls": 148,
-        "angular_template.type_ref": 55,
-        "html.calls": 9,
+        "javascript.calls": 9,
         "scss.calls": 4,
-        "typescript.calls": 153,
+        "typescript.calls": 301,
         "typescript.inherits": 3,
         "typescript.instantiates": 12,
-        "typescript.type_ref": 412
+        "typescript.type_ref": 467
       }
     },
     {
@@ -1868,7 +1857,7 @@
       "routes": 141,
       "symbols": 19787,
       "unresolved_by_lang_kind": {
-        "astro.calls": 1,
+        "javascript.calls": 1,
         "mdx.calls": 1
       }
     },
@@ -1980,8 +1969,7 @@
       "routes": 0,
       "symbols": 18906,
       "unresolved_by_lang_kind": {
-        "ejs.calls": 23,
-        "javascript.calls": 8
+        "javascript.calls": 31
       }
     },
     {
@@ -2019,13 +2007,11 @@
       "routes": 0,
       "symbols": 8795,
       "unresolved_by_lang_kind": {
-        "eex.calls": 3,
-        "eex.type_ref": 1,
-        "elixir.calls": 571,
+        "elixir.calls": 572,
         "elixir.imports": 6,
-        "elixir.type_ref": 71,
+        "elixir.type_ref": 72,
         "go.calls": 6,
-        "javascript.calls": 1088,
+        "javascript.calls": 1090,
         "scss.calls": 3
       }
     },
@@ -2103,9 +2089,8 @@
         "elixir.calls": 2594,
         "elixir.imports": 3,
         "elixir.type_ref": 130,
-        "heex.calls": 43,
-        "html.calls": 3,
-        "javascript.calls": 386,
+        "heex.calls": 42,
+        "javascript.calls": 390,
         "javascript.type_ref": 2,
         "shell.calls": 1,
         "sql.type_ref": 76,
@@ -2148,7 +2133,7 @@
         "erlang.calls": 32,
         "erlang.implements": 35,
         "erlang.instantiates": 6,
-        "html.calls": 6,
+        "javascript.calls": 6,
         "make.calls": 44
       }
     },
@@ -2197,8 +2182,8 @@
         "erlang.calls": 2350,
         "erlang.implements": 476,
         "erlang.instantiates": 298,
-        "html.calls": 231,
-        "html.type_ref": 213,
+        "javascript.calls": 231,
+        "javascript.type_ref": 213,
         "python.calls": 27,
         "python.type_ref": 11,
         "shell.calls": 82
@@ -2253,19 +2238,16 @@
       "unresolved_by_lang_kind": {
         "c.calls": 65,
         "c.type_ref": 32,
-        "ejs.calls": 2,
-        "ejs.type_ref": 2,
         "elixir.calls": 48,
         "elixir.type_ref": 11,
         "erlang.calls": 1298,
         "erlang.implements": 211,
         "erlang.instantiates": 5128,
-        "html.calls": 76,
         "java.calls": 257,
         "java.instantiates": 8,
         "java.type_ref": 65,
-        "javascript.calls": 2363,
-        "javascript.type_ref": 12,
+        "javascript.calls": 2441,
+        "javascript.type_ref": 14,
         "kotlin.calls": 1,
         "make.calls": 42,
         "python.calls": 39,
@@ -2376,14 +2358,9 @@
       "routes": 0,
       "symbols": 29327,
       "unresolved_by_lang_kind": {
-        "cmake.calls": 26,
-        "cmake.type_ref": 24,
-        "cpp.calls": 138,
-        "cpp.type_ref": 1,
-        "fortran.calls": 4502,
-        "fortran.type_ref": 116,
-        "markdown.calls": 13,
-        "markdown.type_ref": 10
+        "cmake.type_ref": 118,
+        "cpp.type_ref": 33,
+        "fortran.calls": 4679
       }
     },
     {
@@ -2647,8 +2624,7 @@
       "symbols": 1516,
       "unresolved_by_lang_kind": {
         "fsharp.calls": 2,
-        "html.calls": 2,
-        "javascript.calls": 147,
+        "javascript.calls": 149,
         "javascript.type_ref": 1,
         "shell.calls": 3
       }
@@ -2728,7 +2704,7 @@
       "unresolved_by_lang_kind": {
         "gdscript.calls": 29,
         "gdscript.inherits": 3,
-        "html.calls": 10
+        "javascript.calls": 10
       }
     },
     {
@@ -2800,7 +2776,7 @@
       "unresolved_by_lang_kind": {
         "gdscript.calls": 29,
         "gdscript.inherits": 2,
-        "html.calls": 172
+        "javascript.calls": 172
       }
     },
     {
@@ -3056,7 +3032,8 @@
     },
     {
       "path": "F:/Work/Projects/TestProjects/go-gitea",
-      "project": "go-gitea"
+      "project": "go-gitea",
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -3093,11 +3070,11 @@
       "symbols": 32124,
       "unresolved_by_lang_kind": {
         "go.calls": 290,
-        "go.type_ref": 167,
-        "javascript.calls": 12,
-        "javascript.type_ref": 2,
-        "svelte.calls": 13,
-        "svelte.type_ref": 206,
+        "go.type_ref": 164,
+        "javascript.calls": 24,
+        "javascript.type_ref": 208,
+        "sql.type_ref": 3,
+        "svelte.calls": 1,
         "typescript.type_ref": 18
       }
     },
@@ -3143,7 +3120,8 @@
     },
     {
       "path": "F:/Work/Projects/TestProjects/grandnode",
-      "project": "grandnode"
+      "project": "grandnode",
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -3181,7 +3159,7 @@
         "c.calls": 1,
         "c.type_ref": 12,
         "graphql.implements": 2,
-        "html.type_ref": 1,
+        "javascript.type_ref": 1,
         "rust.calls": 39,
         "rust.implements": 11,
         "rust.imports": 9,
@@ -3257,11 +3235,10 @@
         "groovy.calls": 280,
         "groovy.implements": 1,
         "groovy.inherits": 15,
-        "html.calls": 8,
         "java.calls": 9,
         "java.instantiates": 4,
         "java.type_ref": 23,
-        "javascript.calls": 8
+        "javascript.calls": 16
       }
     },
     {
@@ -3346,11 +3323,10 @@
         "groovy.calls": 2039,
         "groovy.implements": 10,
         "groovy.inherits": 14,
-        "html.calls": 1,
         "java.calls": 101,
         "java.instantiates": 50,
         "java.type_ref": 224,
-        "javascript.calls": 42,
+        "javascript.calls": 43,
         "javascript.type_ref": 9,
         "python.calls": 2,
         "shell.calls": 1
@@ -3485,13 +3461,10 @@
         "groovy.calls": 8712,
         "groovy.implements": 229,
         "groovy.inherits": 143,
-        "gsp.calls": 496,
         "gsp.imports": 210,
-        "gsp.type_ref": 4,
-        "html.calls": 5,
-        "javascript.calls": 2785,
+        "javascript.calls": 3286,
         "javascript.imports": 1,
-        "javascript.type_ref": 57,
+        "javascript.type_ref": 61,
         "shell.calls": 1,
         "sql.type_ref": 2
       }
@@ -3529,7 +3502,8 @@
     },
     {
       "path": "F:/Work/Projects/TestProjects/handlebars-javascript-ghost",
-      "project": "handlebars-javascript-ghost"
+      "project": "handlebars-javascript-ghost",
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -3610,12 +3584,11 @@
         "c.calls": 1,
         "c.type_ref": 22,
         "haskell.calls": 3985,
-        "html.calls": 55,
-        "javascript.calls": 189,
+        "javascript.calls": 244,
         "javascript.type_ref": 5,
-        "jupyter.calls": 2,
         "lua.calls": 514,
         "nix.calls": 42,
+        "python.calls": 2,
         "python.type_ref": 1,
         "shell.calls": 20
       }
@@ -3881,11 +3854,11 @@
         "java.calls": 1737,
         "java.instantiates": 2,
         "java.type_ref": 375,
-        "typescript.calls": 24,
-        "typescript.instantiates": 2,
+        "javascript.calls": 6,
+        "typescript.calls": 26,
+        "typescript.instantiates": 3,
         "typescript.type_ref": 27,
-        "vue.calls": 114,
-        "vue.instantiates": 1
+        "vue.calls": 106
       }
     },
     {
@@ -3920,9 +3893,9 @@
       "routes": 16,
       "symbols": 651,
       "unresolved_by_lang_kind": {
-        "html.calls": 2,
         "java.calls": 112,
         "java.type_ref": 5,
+        "javascript.calls": 2,
         "sql.type_ref": 1
       }
     },
@@ -4125,10 +4098,8 @@
       "routes": 0,
       "symbols": 150694,
       "unresolved_by_lang_kind": {
-        "html.calls": 2,
-        "javascript.calls": 1,
-        "jupyter.calls": 1400,
-        "python.calls": 16
+        "javascript.calls": 3,
+        "python.calls": 1416
       }
     },
     {
@@ -4160,12 +4131,10 @@
       "routes": 0,
       "symbols": 9294,
       "unresolved_by_lang_kind": {
-        "html.calls": 23,
         "java.type_ref": 1,
-        "jupyter.calls": 27,
-        "jupyter.type_ref": 1,
-        "python.calls": 1,
-        "python.type_ref": 5
+        "javascript.calls": 23,
+        "python.calls": 28,
+        "python.type_ref": 6
       }
     },
     {
@@ -4290,10 +4259,10 @@
         "kotlin.inherits": 1,
         "kotlin.type_ref": 250,
         "sql.type_ref": 46,
-        "typescript.calls": 14,
+        "typescript.calls": 1837,
         "typescript.instantiates": 1,
-        "vue.calls": 4331,
-        "vue.type_ref": 10
+        "typescript.type_ref": 10,
+        "vue.calls": 2508
       }
     },
     {
@@ -4376,7 +4345,7 @@
       "routes": 0,
       "symbols": 2334,
       "unresolved_by_lang_kind": {
-        "html.calls": 1,
+        "javascript.calls": 1,
         "kotlin.calls": 111,
         "kotlin.inherits": 1,
         "kotlin.type_ref": 74
@@ -4460,10 +4429,9 @@
       "routes": 0,
       "symbols": 6862,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 498,
+        "javascript.calls": 501,
         "javascript.imports": 4,
         "javascript.type_ref": 10,
-        "liquid.calls": 3,
         "python.type_ref": 1,
         "scss.calls": 4,
         "scss.inherits": 5,
@@ -4542,8 +4510,7 @@
       "routes": 0,
       "symbols": 6832,
       "unresolved_by_lang_kind": {
-        "html.calls": 8,
-        "javascript.calls": 18
+        "javascript.calls": 26
       }
     },
     {
@@ -4739,7 +4706,7 @@
         "cpp.inherits": 94,
         "cpp.instantiates": 20,
         "cpp.type_ref": 33172,
-        "html.calls": 8,
+        "javascript.calls": 8,
         "lua.calls": 1122,
         "lua.imports": 295,
         "make.calls": 33,
@@ -4916,7 +4883,7 @@
       "routes": 0,
       "symbols": 1725,
       "unresolved_by_lang_kind": {
-        "matlab.calls": 345
+        "matlab.calls": 186
       }
     },
     {
@@ -4944,7 +4911,7 @@
       "routes": 0,
       "symbols": 73815,
       "unresolved_by_lang_kind": {
-        "matlab.calls": 4276
+        "matlab.calls": 2015
       }
     },
     {
@@ -4972,7 +4939,7 @@
       "routes": 0,
       "symbols": 2926,
       "unresolved_by_lang_kind": {
-        "matlab.calls": 317
+        "matlab.calls": 276
       }
     },
     {
@@ -5050,14 +5017,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 91
+        "min_resolution_rate": 95
       },
-      "code_chunks": 59971,
+      "code_chunks": 64532,
       "files": 3811,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 102730,
-      "internal_unresolved": 9357,
+      "internal_edges": 113309,
+      "internal_unresolved": 5032,
       "languages": {
         "c": 10,
         "cpp": 7,
@@ -5074,22 +5041,22 @@
       },
       "path": "F:/Work/Projects/TestProjects/nim-compiler",
       "perf": {
-        "end_ws_mb": 234,
-        "files_per_sec": 50,
-        "index_duration_ms": 75748
+        "end_ws_mb": 246,
+        "files_per_sec": 52,
+        "index_duration_ms": 72625
       },
       "project": "nim-compiler",
-      "resolution_rate": 91.65,
+      "resolution_rate": 95.75,
       "routes": 0,
-      "symbols": 29583,
+      "symbols": 35380,
       "unresolved_by_lang_kind": {
         "c.calls": 7,
         "c.type_ref": 16,
         "cpp.type_ref": 44,
-        "nim.calls": 9170,
-        "python.calls": 101,
+        "nim.calls": 4788,
+        "python.calls": 159,
         "python.type_ref": 7,
-        "shell.calls": 3,
+        "shell.calls": 2,
         "sql.type_ref": 9
       }
     },
@@ -5211,7 +5178,7 @@
       "unresolved_by_lang_kind": {
         "c.calls": 51,
         "c.type_ref": 104,
-        "html.type_ref": 8,
+        "javascript.type_ref": 8,
         "matlab.calls": 2,
         "nim.calls": 6236,
         "nix.calls": 29,
@@ -5644,8 +5611,8 @@
         "c.calls": 221,
         "c.type_ref": 93,
         "cpp.calls": 7,
-        "html.calls": 20,
-        "html.type_ref": 5,
+        "javascript.calls": 20,
+        "javascript.type_ref": 5,
         "ocaml.calls": 1093
       }
     },
@@ -5795,8 +5762,8 @@
       "routes": 0,
       "symbols": 144,
       "unresolved_by_lang_kind": {
-        "html.calls": 3,
-        "html.type_ref": 2,
+        "javascript.calls": 3,
+        "javascript.type_ref": 2,
         "shell.calls": 3
       }
     },
@@ -6242,11 +6209,10 @@
       "routes": 38,
       "symbols": 27209,
       "unresolved_by_lang_kind": {
-        "blade.calls": 13,
         "blade.imports": 1,
-        "javascript.calls": 1999,
+        "javascript.calls": 2009,
         "javascript.type_ref": 81,
-        "php.calls": 127,
+        "php.calls": 130,
         "php.imports": 14,
         "php.inherits": 28
       }
@@ -6284,10 +6250,9 @@
       "routes": 51,
       "symbols": 39981,
       "unresolved_by_lang_kind": {
-        "blade.calls": 2,
         "blade.imports": 10,
         "javascript.calls": 4,
-        "php.calls": 666,
+        "php.calls": 668,
         "php.imports": 1,
         "php.instantiates": 1,
         "php.type_ref": 14,
@@ -6324,8 +6289,7 @@
       "routes": 13,
       "symbols": 11074,
       "unresolved_by_lang_kind": {
-        "blade.calls": 1,
-        "javascript.calls": 12,
+        "javascript.calls": 13,
         "php.calls": 1211,
         "php.implements": 5,
         "php.imports": 2,
@@ -6368,10 +6332,10 @@
       "routes": 306,
       "symbols": 10575,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 17,
+        "javascript.calls": 811,
         "php.calls": 5,
         "shell.calls": 1,
-        "vue.calls": 946
+        "vue.calls": 152
       }
     },
     {
@@ -6432,9 +6396,8 @@
       "routes": 0,
       "symbols": 26556,
       "unresolved_by_lang_kind": {
-        "powershell.calls": 4,
-        "powershell.inherits": 3,
-        "yaml.calls": 58
+        "powershell.calls": 62,
+        "powershell.inherits": 3
       }
     },
     {
@@ -6509,15 +6472,15 @@
       "routes": 140,
       "symbols": 138181,
       "unresolved_by_lang_kind": {
-        "html.calls": 10,
+        "javascript.calls": 10,
         "mdx.calls": 6,
         "php.calls": 3,
         "shell.calls": 5,
         "sql.type_ref": 41,
-        "typescript.calls": 338,
-        "typescript.implements": 1,
-        "typescript.instantiates": 52,
-        "typescript.type_ref": 695
+        "typescript.calls": 376,
+        "typescript.implements": 6,
+        "typescript.instantiates": 24,
+        "typescript.type_ref": 1127
       }
     },
     {
@@ -6556,9 +6519,10 @@
         "javascript.calls": 5,
         "prisma.type_ref": 4,
         "sql.type_ref": 4,
-        "typescript.calls": 270,
-        "typescript.instantiates": 4,
-        "typescript.type_ref": 376
+        "typescript.calls": 247,
+        "typescript.inherits": 1,
+        "typescript.instantiates": 6,
+        "typescript.type_ref": 450
       }
     },
     {
@@ -6639,8 +6603,7 @@
         "c.type_ref": 1024,
         "cmake.calls": 3,
         "cmake.type_ref": 141,
-        "html.calls": 18,
-        "javascript.calls": 231,
+        "javascript.calls": 249,
         "javascript.type_ref": 2,
         "prolog.calls": 1348,
         "shell.calls": 39
@@ -6680,8 +6643,7 @@
       "symbols": 9801,
       "unresolved_by_lang_kind": {
         "c.type_ref": 17,
-        "html.calls": 1,
-        "javascript.calls": 76,
+        "javascript.calls": 77,
         "javascript.imports": 4,
         "javascript.type_ref": 14,
         "prolog.calls": 1427
@@ -6838,7 +6800,7 @@
       "symbols": 634,
       "unresolved_by_lang_kind": {
         "javascript.calls": 24,
-        "pug.type_ref": 10
+        "javascript.type_ref": 10
       }
     },
     {
@@ -7132,20 +7094,19 @@
       "routes": 29,
       "symbols": 40704,
       "unresolved_by_lang_kind": {
-        "angular_template.calls": 78,
-        "angular_template.type_ref": 22,
-        "html.calls": 1,
+        "javascript.calls": 1,
         "python.calls": 114,
         "python.type_ref": 73,
         "shell.calls": 2,
-        "typescript.calls": 2124,
+        "typescript.calls": 2202,
         "typescript.instantiates": 16,
-        "typescript.type_ref": 327
+        "typescript.type_ref": 349
       }
     },
     {
       "path": "F:/Work/Projects/TestProjects/python-posthog",
-      "project": "python-posthog"
+      "project": "python-posthog",
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -7287,8 +7248,8 @@
       "routes": 1,
       "symbols": 31801,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 95,
-        "typescript.type_ref": 74
+        "typescript.calls": 144,
+        "typescript.type_ref": 110
       }
     },
     {
@@ -7361,8 +7322,7 @@
       "routes": 0,
       "symbols": 5032,
       "unresolved_by_lang_kind": {
-        "html.calls": 22,
-        "javascript.calls": 343,
+        "javascript.calls": 365,
         "javascript.type_ref": 6,
         "lua.calls": 14
       }
@@ -7565,12 +7525,11 @@
       "unresolved_by_lang_kind": {
         "c.calls": 7,
         "c.type_ref": 18,
-        "javascript.calls": 64,
-        "javascript.type_ref": 313,
+        "javascript.calls": 242,
+        "javascript.type_ref": 350,
         "ruby.imports": 2,
         "shell.calls": 3,
-        "vue.calls": 985,
-        "vue.type_ref": 37
+        "vue.calls": 807
       }
     },
     {
@@ -7606,7 +7565,8 @@
     },
     {
       "path": "F:/Work/Projects/TestProjects/ruby-discourse",
-      "project": "ruby-discourse"
+      "project": "ruby-discourse",
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -7643,8 +7603,7 @@
       "routes": 94,
       "symbols": 4152,
       "unresolved_by_lang_kind": {
-        "erb.calls": 31,
-        "javascript.calls": 487,
+        "javascript.calls": 518,
         "ruby.imports": 4,
         "shell.calls": 2
       }
@@ -7911,11 +7870,11 @@
       "routes": 0,
       "symbols": 10246,
       "unresolved_by_lang_kind": {
-        "html.calls": 2,
         "java.calls": 63,
         "java.implements": 4,
         "java.instantiates": 2,
         "java.type_ref": 141,
+        "javascript.calls": 2,
         "python.calls": 4,
         "python.type_ref": 2,
         "scala.calls": 786,
@@ -7957,12 +7916,11 @@
       "routes": 0,
       "symbols": 17405,
       "unresolved_by_lang_kind": {
-        "html.calls": 3,
         "java.calls": 52,
         "java.implements": 4,
         "java.instantiates": 26,
         "java.type_ref": 440,
-        "javascript.calls": 28,
+        "javascript.calls": 31,
         "scala.calls": 807,
         "scala.implements": 7,
         "scala.inherits": 53,
@@ -7971,7 +7929,8 @@
     },
     {
       "path": "F:/Work/Projects/TestProjects/scala-lila",
-      "project": "scala-lila"
+      "project": "scala-lila",
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -8047,14 +8006,13 @@
       "routes": 0,
       "symbols": 8683,
       "unresolved_by_lang_kind": {
-        "astro.calls": 6,
-        "javascript.calls": 4,
-        "javascript.type_ref": 32,
-        "mdx.calls": 9,
-        "scss.calls": 14,
+        "astro.calls": 2,
+        "javascript.calls": 1140,
+        "javascript.type_ref": 57,
+        "scss.calls": 42,
         "scss.inherits": 1,
-        "typescript.calls": 4,
-        "typescript.type_ref": 29
+        "typescript.calls": 17,
+        "typescript.type_ref": 64
       }
     },
     {
@@ -8162,8 +8120,8 @@
       "unresolved_by_lang_kind": {
         "haskell.calls": 7446,
         "haskell.implements": 64,
-        "julius.calls": 672,
-        "julius.type_ref": 59
+        "javascript.calls": 672,
+        "javascript.type_ref": 59
       }
     },
     {
@@ -8280,8 +8238,7 @@
       "symbols": 129787,
       "unresolved_by_lang_kind": {
         "dockerfile.calls": 1,
-        "javascript.calls": 18,
-        "razor.calls": 18,
+        "javascript.calls": 36,
         "shell.calls": 5,
         "sql.type_ref": 2
       }
@@ -8525,12 +8482,11 @@
       "routes": 0,
       "symbols": 7184,
       "unresolved_by_lang_kind": {
-        "astro.calls": 13,
-        "html.calls": 2,
-        "html.type_ref": 5,
-        "javascript.calls": 20,
-        "javascript.type_ref": 4,
-        "svelte.calls": 11
+        "astro.calls": 12,
+        "javascript.calls": 32,
+        "javascript.type_ref": 9,
+        "svelte.calls": 1,
+        "typescript.calls": 1
       }
     },
     {
@@ -8597,11 +8553,10 @@
       "routes": 0,
       "symbols": 11929,
       "unresolved_by_lang_kind": {
-        "svelte.calls": 669,
-        "svelte.instantiates": 4,
-        "svelte.type_ref": 135,
-        "typescript.calls": 4,
-        "typescript.type_ref": 11
+        "svelte.calls": 614,
+        "typescript.calls": 59,
+        "typescript.instantiates": 4,
+        "typescript.type_ref": 146
       }
     },
     {
@@ -8818,10 +8773,9 @@
       "routes": 13,
       "symbols": 11747,
       "unresolved_by_lang_kind": {
-        "html.calls": 103,
         "java.calls": 9,
         "java.type_ref": 1,
-        "javascript.calls": 648,
+        "javascript.calls": 751,
         "javascript.imports": 6,
         "javascript.type_ref": 4,
         "php.calls": 10
@@ -8909,18 +8863,17 @@
       "routes": 7,
       "symbols": 49091,
       "unresolved_by_lang_kind": {
-        "angular_template.calls": 86,
-        "angular_template.type_ref": 19,
         "dart.calls": 4,
         "dart.instantiates": 3,
         "dart.type_ref": 50,
-        "javascript.imports": 1,
-        "scss.calls": 2,
+        "javascript.imports": 2,
+        "scss.calls": 3,
         "scss.inherits": 1,
-        "typescript.calls": 859,
+        "typescript.calls": 1114,
+        "typescript.implements": 3,
         "typescript.inherits": 1,
-        "typescript.instantiates": 271,
-        "typescript.type_ref": 677
+        "typescript.instantiates": 315,
+        "typescript.type_ref": 832
       }
     },
     {
@@ -8996,13 +8949,12 @@
         "python.calls": 21,
         "python.type_ref": 54,
         "shell.calls": 3,
-        "svelte.calls": 100,
-        "svelte.instantiates": 3,
-        "svelte.type_ref": 11,
+        "sql.type_ref": 14,
+        "svelte.calls": 84,
         "swift.type_ref": 7,
-        "typescript.calls": 196,
-        "typescript.instantiates": 17,
-        "typescript.type_ref": 129
+        "typescript.calls": 212,
+        "typescript.instantiates": 20,
+        "typescript.type_ref": 126
       }
     },
     {
@@ -9043,15 +8995,16 @@
       "routes": 148,
       "symbols": 44958,
       "unresolved_by_lang_kind": {
-        "mdx.calls": 34,
-        "ruby.calls": 14,
+        "javascript.imports": 1,
+        "mdx.calls": 30,
+        "ruby.calls": 13,
         "ruby.inherits": 1,
         "ruby.type_ref": 1,
         "shell.calls": 15,
         "sql.type_ref": 5,
-        "typescript.calls": 243,
-        "typescript.instantiates": 24,
-        "typescript.type_ref": 368
+        "typescript.calls": 201,
+        "typescript.instantiates": 22,
+        "typescript.type_ref": 142
       }
     },
     {
@@ -9173,37 +9126,7 @@
       "resolution_rate": 98.3,
       "routes": 106,
       "symbols": 377329,
-      "unresolved_by_lang_kind": {
-        "graphql.type_ref": 1,
-        "html.calls": 2,
-        "javascript.calls": 382,
-        "javascript.implements": 12,
-        "javascript.instantiates": 5,
-        "javascript.type_ref": 525,
-        "markdown.calls": 41,
-        "markdown.implements": 10,
-        "markdown.instantiates": 16,
-        "markdown.type_ref": 259,
-        "mdx.calls": 143,
-        "mdx.inherits": 2,
-        "mdx.instantiates": 6,
-        "mdx.type_ref": 374,
-        "prisma.type_ref": 2,
-        "pug.type_ref": 5,
-        "rust.calls": 550,
-        "rust.implements": 11,
-        "rust.inherits": 1,
-        "rust.instantiates": 18,
-        "rust.type_ref": 1150,
-        "scss.calls": 15,
-        "scss.type_ref": 60,
-        "typescript.calls": 2958,
-        "typescript.implements": 107,
-        "typescript.inherits": 10,
-        "typescript.instantiates": 102,
-        "typescript.type_ref": 5568,
-        "yaml.type_ref": 1
-      }
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -9284,11 +9207,11 @@
       "routes": 2,
       "symbols": 37849,
       "unresolved_by_lang_kind": {
-        "mdx.calls": 16,
-        "typescript.calls": 87,
-        "typescript.instantiates": 6,
-        "typescript.type_ref": 108,
-        "vue.calls": 1
+        "mdx.calls": 15,
+        "typescript.calls": 94,
+        "typescript.inherits": 2,
+        "typescript.instantiates": 7,
+        "typescript.type_ref": 191
       }
     },
     {
@@ -9356,10 +9279,10 @@
       "unresolved_by_lang_kind": {
         "c.calls": 1,
         "c.type_ref": 9,
+        "javascript.calls": 3,
+        "javascript.type_ref": 8,
         "php.calls": 2,
-        "twig.calls": 3,
-        "twig.imports": 26,
-        "twig.type_ref": 8
+        "twig.imports": 26
       }
     },
     {
@@ -9540,8 +9463,8 @@
       "routes": 0,
       "symbols": 1020,
       "unresolved_by_lang_kind": {
-        "html.calls": 8,
-        "html.type_ref": 10,
+        "javascript.calls": 8,
+        "javascript.type_ref": 10,
         "scss.inherits": 1
       }
     },
@@ -9577,16 +9500,12 @@
       "routes": 0,
       "symbols": 42089,
       "unresolved_by_lang_kind": {
-        "freemarker.calls": 2,
         "freemarker.imports": 3,
-        "freemarker.type_ref": 73,
-        "html.calls": 5,
-        "java.calls": 5917,
+        "java.calls": 5919,
         "java.inherits": 4,
         "java.instantiates": 10,
-        "java.type_ref": 849,
-        "javascript.calls": 18,
-        "jsp.type_ref": 16
+        "java.type_ref": 938,
+        "javascript.calls": 23
       }
     },
     {
@@ -9622,10 +9541,10 @@
       "routes": 0,
       "symbols": 2387,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 29,
+        "javascript.calls": 109,
         "javascript.imports": 2,
         "javascript.type_ref": 7,
-        "vue.calls": 127
+        "vue.calls": 47
       }
     },
     {
@@ -9661,12 +9580,10 @@
       "routes": 0,
       "symbols": 4988,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 361,
-        "typescript.instantiates": 6,
-        "typescript.type_ref": 77,
-        "vue.calls": 406,
-        "vue.instantiates": 2,
-        "vue.type_ref": 49
+        "typescript.calls": 498,
+        "typescript.instantiates": 8,
+        "typescript.type_ref": 126,
+        "vue.calls": 269
       }
     },
     {
@@ -9719,18 +9636,17 @@
         "go.calls": 1,
         "go.type_ref": 2,
         "javascript.calls": 13,
-        "javascript.imports": 4,
+        "javascript.imports": 5,
         "nix.calls": 12,
         "nix.imports": 12,
         "rust.calls": 43,
         "rust.type_ref": 16,
         "sql.type_ref": 2,
-        "typescript.calls": 582,
-        "typescript.inherits": 1,
-        "typescript.instantiates": 3,
-        "typescript.type_ref": 1193,
-        "vue.calls": 202,
-        "vue.type_ref": 78
+        "typescript.calls": 1211,
+        "typescript.inherits": 10,
+        "typescript.instantiates": 5,
+        "typescript.type_ref": 1841,
+        "vue.calls": 198
       }
     },
     {
@@ -9769,11 +9685,10 @@
       "routes": 0,
       "symbols": 17566,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 44,
-        "typescript.instantiates": 10,
-        "typescript.type_ref": 43,
-        "vue.calls": 60,
-        "vue.type_ref": 3
+        "typescript.calls": 54,
+        "typescript.instantiates": 16,
+        "typescript.type_ref": 75,
+        "vue.calls": 52
       }
     },
     {
@@ -9812,11 +9727,10 @@
       "routes": 0,
       "symbols": 17212,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 47,
+        "typescript.calls": 54,
         "typescript.instantiates": 16,
-        "typescript.type_ref": 65,
-        "vue.calls": 62,
-        "vue.type_ref": 8
+        "typescript.type_ref": 73,
+        "vue.calls": 55
       }
     },
     {
@@ -9851,12 +9765,10 @@
       "routes": 0,
       "symbols": 1204,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 2,
-        "typescript.instantiates": 1,
-        "typescript.type_ref": 1,
-        "vue.calls": 12,
-        "vue.instantiates": 1,
-        "vue.type_ref": 1
+        "typescript.calls": 6,
+        "typescript.instantiates": 2,
+        "typescript.type_ref": 2,
+        "vue.calls": 8
       }
     },
     {
@@ -9884,9 +9796,8 @@
       "routes": 0,
       "symbols": 267,
       "unresolved_by_lang_kind": {
-        "zig.calls": 200,
-        "zig.imports": 5,
-        "zig.type_ref": 14
+        "zig.calls": 189,
+        "zig.type_ref": 8
       }
     },
     {
@@ -9925,22 +9836,22 @@
       "routes": 0,
       "symbols": 1691458,
       "unresolved_by_lang_kind": {
-        "c.calls": 4021,
-        "c.type_ref": 8998,
+        "c.calls": 2529,
+        "c.type_ref": 8726,
         "cmake.type_ref": 17,
-        "cpp.calls": 7662,
-        "cpp.imports": 248,
-        "cpp.inherits": 6,
-        "cpp.instantiates": 59,
-        "cpp.type_ref": 35330,
+        "cpp.calls": 2697,
+        "cpp.inherits": 7,
+        "cpp.instantiates": 35,
+        "cpp.type_ref": 31226,
+        "javascript.calls": 14,
+        "javascript.type_ref": 2,
         "matlab.calls": 2,
         "powershell.calls": 2,
-        "python.calls": 330,
+        "python.calls": 327,
         "python.type_ref": 22,
         "shell.calls": 7,
-        "zig.calls": 7119,
-        "zig.imports": 2723,
-        "zig.type_ref": 6939
+        "zig.calls": 5889,
+        "zig.type_ref": 5453
       }
     },
     {
@@ -9971,10 +9882,9 @@
       "routes": 0,
       "symbols": 1122,
       "unresolved_by_lang_kind": {
-        "python.calls": 1,
+        "python.calls": 2,
         "shell.calls": 1,
-        "zig.calls": 930,
-        "zig.imports": 78,
+        "zig.calls": 905,
         "zig.type_ref": 16
       }
     },
@@ -10006,9 +9916,8 @@
       "symbols": 1535,
       "unresolved_by_lang_kind": {
         "c.calls": 2,
-        "zig.calls": 1567,
-        "zig.imports": 225,
-        "zig.type_ref": 63
+        "zig.calls": 1519,
+        "zig.type_ref": 36
       }
     },
     {
@@ -10052,26 +9961,28 @@
       "routes": 0,
       "symbols": 26819,
       "unresolved_by_lang_kind": {
-        "c.calls": 18,
-        "c.type_ref": 6,
+        "c.calls": 16,
+        "c.type_ref": 4,
+        "cpp.type_ref": 6,
         "go.calls": 2,
         "go.type_ref": 33,
         "java.calls": 7,
-        "java.instantiates": 2,
-        "java.type_ref": 26,
-        "javascript.calls": 2,
-        "lua.calls": 15,
+        "java.implements": 5,
+        "java.inherits": 2,
+        "java.instantiates": 41,
+        "java.type_ref": 327,
+        "javascript.calls": 35,
+        "lua.calls": 19,
         "python.calls": 19,
         "python.type_ref": 8,
         "rust.calls": 1,
-        "rust.implements": 1,
-        "rust.imports": 1,
-        "rust.type_ref": 11,
+        "rust.implements": 11,
+        "rust.type_ref": 60,
         "shell.calls": 1,
-        "typescript.calls": 2,
-        "zig.calls": 3491,
-        "zig.imports": 770,
-        "zig.type_ref": 1692
+        "typescript.calls": 13,
+        "typescript.type_ref": 1,
+        "zig.calls": 3275,
+        "zig.type_ref": 1101
       }
     }
   ],
