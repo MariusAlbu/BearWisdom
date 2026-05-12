@@ -6,11 +6,14 @@
 // SYMBOLS:
 //   Function  — `proc name(...)`, `func name(...)`, `template name(...)`,
 //               `macro name(...)`, `iterator name(...)`, `converter name(...)`
+//               Also extracted at 2-space indent (inside `when` blocks).
 //   Method    — `method name(...)`
 //   Struct    — `type Name = object`
 //   Enum      — `type Name = enum`
+//   EnumMember — individual enum members (for enum-constructor DSL patterns)
 //   Interface — `type Name = concept`
 //   TypeAlias — `type Name = OtherType` (not object/enum/concept)
+//               Pragma-annotated forms (`Name* {.importc.} = T`) are also handled.
 //
 // REFERENCES:
 //   Imports   — `import module`, `import module, module2`, `from module import ...`
@@ -115,12 +118,29 @@ pub fn extract(source: &str) -> ExtractionResult {
                 i += 1;
                 continue;
             }
+        } else if indent == 2 && !in_type_section {
+            // Proc/func/template/etc. declarations at one level of indentation
+            // are module-level routines inside conditional compilation blocks
+            // (`when defined(...)`, `when not weirdTarget`, etc.).  These are
+            // public API that callers import and must be indexed as symbols.
+            // We register the symbol but do NOT skip the body — the call
+            // extraction loop below handles body lines independently.
+            if let Some((name, kind, vis)) = parse_proc_line(trimmed) {
+                let line = i as u32;
+                symbols.push(make_sym(name, kind, vis, line, line));
+                // Fall through to extract_calls for the signature line.
+            }
         } else if in_type_section && indent >= type_section_indent && type_section_indent > 0 {
             // Inside a `type` section body — each indented `Name = ...` is a type.
             if let Some((tname, tkind)) = parse_type_section_entry(trimmed) {
                 let line = i as u32;
                 let end = find_type_block_end(&lines, i, indent);
-                symbols.push(make_sym(tname, tkind, Visibility::Public, line, end));
+                symbols.push(make_sym(tname.clone(), tkind, Visibility::Public, line, end));
+                // For enum types, also extract individual members so that
+                // enum-value call patterns (`memberName(...)`) resolve correctly.
+                if tkind == SymbolKind::Enum {
+                    extract_enum_members(&lines, i + 1, end, &mut symbols);
+                }
                 i = end as usize + 1;
                 continue;
             }
@@ -376,7 +396,8 @@ fn parse_type_section_entry(trimmed: &str) -> Option<(String, SymbolKind)> {
 
 /// Parse `Name = rhs` → (name, kind).
 ///
-/// Also accepts `Name* = rhs` where `*` is Nim's export marker.
+/// Accepts `Name* = rhs`, `Name[T] = rhs`, and `Name* {.pragma.} = rhs`
+/// where `*` is Nim's export marker and `{. ... .}` is a pragma annotation.
 fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
     // Name may have generic params: `Name[T]` or `Name`
     let name: String = s
@@ -412,6 +433,16 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
     };
     // Strip another optional `*` that can follow generic params: `Name[T]* = ...`
     let after_name = after_name.strip_prefix('*').unwrap_or(after_name).trim_start();
+    // Strip optional pragma annotation `{. ... .}` — present in C-interop types
+    // such as `cint* {.importc: "int", nodecl.} = int32`.
+    let after_name = if after_name.starts_with("{.") {
+        match after_name.find(".}") {
+            Some(end) => after_name[end + 2..].trim_start(),
+            None => after_name,
+        }
+    } else {
+        after_name
+    };
 
     let rhs = after_name.strip_prefix('=')?.trim_start();
 
@@ -649,6 +680,62 @@ fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u3
 
 fn leading_spaces(line: &str) -> usize {
     line.len() - line.trim_start().len()
+}
+
+/// Extract enum member names from lines of an enum body block.
+///
+/// Nim enum members appear as comma-separated identifiers, one or more per
+/// line, optionally with an explicit value: `memberA = value,  memberB,`.
+/// Backtick-quoted names like `` `var` `` are also handled.
+///
+/// Each extracted member is emitted as an `EnumMember` (mapped to `Constant`)
+/// so that call-site refs `memberName(...)` in karax DSL and pattern-matching
+/// expressions `of nnkFoo(...)` can resolve.
+fn extract_enum_members(
+    lines: &[&str],
+    body_start: usize,
+    body_end: u32,
+    out: &mut Vec<ExtractedSymbol>,
+) {
+    for idx in body_start..=(body_end as usize).min(lines.len().saturating_sub(1)) {
+        let raw = lines[idx];
+        let trimmed = raw.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        // Each line may contain multiple comma-separated members.
+        // Strip inline comments first.
+        let effective = trimmed.split('#').next().unwrap_or("").trim();
+        // Split on commas.
+        for token in effective.split(',') {
+            let token = token.trim();
+            if token.is_empty() { continue; }
+            // Strip explicit value: `name = expr` → `name`
+            let name_part = token.split('=').next().unwrap_or("").trim();
+            // Handle backtick-quoted identifiers: `` `var` `` → `var`
+            let name = if name_part.starts_with('`') && name_part.ends_with('`') && name_part.len() > 2 {
+                &name_part[1..name_part.len() - 1]
+            } else {
+                name_part
+            };
+            // Validate: must be a non-empty identifier (alphanumeric + underscore,
+            // starting with a letter or underscore), not a string literal.
+            if name.is_empty() || name.starts_with('"') { continue; }
+            if !name.chars().next().map(|c| c.is_alphabetic() || c == '_').unwrap_or(false) {
+                continue;
+            }
+            if !name.chars().all(|c| c.is_alphanumeric() || c == '_') { continue; }
+            // Skip enum members that are too short to be meaningful call targets.
+            if name.len() < 2 { continue; }
+            out.push(make_sym(
+                name.to_string(),
+                SymbolKind::EnumMember,
+                Visibility::Public,
+                idx as u32,
+                idx as u32,
+            ));
+        }
+    }
 }
 
 /// Find where a block started at `start` ends.

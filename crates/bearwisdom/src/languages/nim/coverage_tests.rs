@@ -361,3 +361,51 @@ fn cov_exported_object_type_produces_struct() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+/// Pragma-annotated type: `cint* {.importc: "int", nodecl.} = int32` → TypeAlias named `cint`
+#[test]
+fn cov_pragma_annotated_type_produces_symbol() {
+    let src = "type\n  cint* {.importc: \"int\", nodecl.} = int32\n  csize_t* {.importc: \"size_t\", nodecl.} = uint\n";
+    let r = extract::extract(src);
+    let names: Vec<_> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.contains(&"cint") && names.contains(&"csize_t"),
+        "pragma-annotated type section entries should produce symbols; got: {:?}", names
+    );
+}
+
+/// Proc at 2-space indent (inside `when` block) produces a Function symbol
+#[test]
+fn cov_when_block_proc_produces_function() {
+    let src = "when defined(windows):\n  proc execShellCmd*(command: string): int =\n    discard\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "execShellCmd" && s.kind == SymbolKind::Function),
+        "proc inside when block (2-space indent) should produce Function; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Pragma-annotated type at indent 0 single-line form: `type cint* {.importc.} = int32`
+#[test]
+fn cov_single_line_pragma_type_produces_symbol() {
+    let src = "type cint* {.importc: \"int\", nodecl.} = int32\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "cint"),
+        "single-line pragma type decl should produce a symbol; got: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}
+
+/// Enum members in a type section produce EnumMember symbols
+#[test]
+fn cov_enum_members_produce_symbols() {
+    let src = "type\n  VNodeKind* = enum\n    tdiv = \"div\",\n    meta, script,\n    span\n";
+    let r = extract::extract(src);
+    let names: Vec<_> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.contains(&"tdiv") && names.contains(&"meta") && names.contains(&"script") && names.contains(&"span"),
+        "enum members should produce EnumMember symbols; got: {:?}", names
+    );
+}

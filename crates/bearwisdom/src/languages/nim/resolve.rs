@@ -164,21 +164,48 @@ fn nim_module_file_stem_resolve(
     edge_kind: EdgeKind,
     lookup: &dyn SymbolLookup,
 ) -> Option<Resolution> {
-    // Build a set of leaf module names from the file's imports.
-    // `std/options` → `options`, `chronos` → `chronos`, `system` → `system`.
-    let import_leaves: Vec<&str> = file_ctx
-        .imports
-        .iter()
-        .filter_map(|imp| imp.module_path.as_deref())
-        .map(|mp| {
-            // Strip `std/` / `pkg/` prefix then take the final `/`-segment.
-            let stripped = mp
-                .strip_prefix("std/")
-                .or_else(|| mp.strip_prefix("pkg/"))
-                .unwrap_or(mp);
-            stripped.rsplit('/').next().unwrap_or(stripped)
-        })
-        .collect();
+    // Build two sets from the file's imports:
+    //   import_leaves — the final path segment (e.g. `std/options` → `options`,
+    //                   `chronos` → `chronos`)
+    //   import_packages — the first path segment, i.e. the top-level package
+    //                     name (e.g. `stew/io2` → `stew`,
+    //                     `chronos/asyncsync` → `chronos`)
+    //   has_stdlib_import — whether any import is a Nim stdlib module (bare
+    //                       name like `os`, `strutils` or `std/X` prefix)
+    let mut import_leaves: Vec<&str> = Vec::new();
+    let mut import_packages: Vec<&str> = Vec::new();
+    let mut has_stdlib_import = false;
+
+    for imp in &file_ctx.imports {
+        let mp = match imp.module_path.as_deref() {
+            Some(mp) => mp,
+            None => continue,
+        };
+        // Check for stdlib imports: bare name (system, os, strutils, …) or `std/X`.
+        let is_std = mp.starts_with("std/")
+            || matches!(
+                mp,
+                "system" | "os" | "strutils" | "sequtils" | "tables" | "sets"
+                    | "math" | "options" | "json" | "times" | "algorithm" | "unicode"
+                    | "streams" | "hashes" | "sugar" | "macros" | "parseutils"
+                    | "strformat" | "pegs" | "re" | "uri" | "asyncdispatch"
+                    | "asyncnet" | "httpclient" | "logging" | "terminal"
+            );
+        if is_std { has_stdlib_import = true; }
+
+        let stripped = mp
+            .strip_prefix("std/")
+            .or_else(|| mp.strip_prefix("pkg/"))
+            .unwrap_or(mp);
+        let leaf = stripped.rsplit('/').next().unwrap_or(stripped);
+        import_leaves.push(leaf);
+
+        // Top-level package: the first `/`-segment of the raw module path.
+        let pkg = mp.split('/').next().unwrap_or(mp);
+        if pkg != "std" && pkg != "pkg" && !pkg.is_empty() {
+            import_packages.push(pkg);
+        }
+    }
 
     if import_leaves.is_empty() {
         return None;
@@ -186,8 +213,7 @@ fn nim_module_file_stem_resolve(
 
     let by_name = lookup.by_name(target);
 
-    // Prefer symbols from external Nim files (the project files were already
-    // tried by `resolve_common`'s same-file and scope-chain steps).
+    // Pass 1: symbols from external Nim files (project files handled by resolve_common).
     let nim_external: Vec<&SymbolInfo> = by_name
         .iter()
         .filter(|s| {
@@ -201,6 +227,8 @@ fn nim_module_file_stem_resolve(
         return None;
     }
 
+    // High-confidence match: the symbol's file path contains the import leaf
+    // or is inside a directory named after the leaf (package submodule).
     for sym in &nim_external {
         if !predicates::kind_compatible(edge_kind, &sym.kind) {
             continue;
@@ -208,8 +236,6 @@ fn nim_module_file_stem_resolve(
         let fl = sym.file_path.to_lowercase().replace('\\', "/");
         for leaf in &import_leaves {
             let leaf_lower = leaf.to_lowercase();
-            // File stem match: `.../<leaf>.nim` — direct module file.
-            // Path segment match: `.../<leaf>/...` — package subdirectory.
             if fl.ends_with(&format!("/{leaf_lower}.nim"))
                 || fl.contains(&format!("/{leaf_lower}/"))
             {
@@ -217,6 +243,49 @@ fn nim_module_file_stem_resolve(
                     target_symbol_id: sym.id,
                     confidence: 0.85,
                     strategy: "nim_module_file_stem",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+    }
+
+    // Medium-confidence pass: the symbol lives in an external package that the
+    // file imports at the package level (`stew/io2` means `stew` is imported).
+    // This covers transitive re-exports inside a package (e.g. `import stew/io2`
+    // but the called symbol lives in `stew/byteutils`).
+    for sym in &nim_external {
+        if !predicates::kind_compatible(edge_kind, &sym.kind) {
+            continue;
+        }
+        let fl = sym.file_path.to_lowercase().replace('\\', "/");
+        for pkg in &import_packages {
+            let pkg_lower = pkg.to_lowercase();
+            // Match: `ext:nim:<pkg>/...` where <pkg> matches the top-level package.
+            if fl.contains(&format!("/{pkg_lower}/")) || fl.contains(&format!(":{pkg_lower}/")) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.75,
+                    strategy: "nim_package_level",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+    }
+
+    // Low-confidence stdlib pass: when the file has at least one Nim stdlib
+    // import, any stdlib symbol is potentially in scope via re-export chains
+    // (`os` re-exports from `dirs`, `osdirs`, etc.).
+    if has_stdlib_import {
+        for sym in &nim_external {
+            if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                continue;
+            }
+            let fl = sym.file_path.as_ref();
+            if fl.contains("ext:nim:nim-stdlib/") {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.70,
+                    strategy: "nim_stdlib_any",
                     resolved_yield_type: None,
                 });
             }

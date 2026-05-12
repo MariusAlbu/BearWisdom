@@ -136,8 +136,11 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         .collect();
 
     let mut roots = Vec::new();
+    // Track which declared deps were satisfied from pkgs2 to avoid re-adding
+    // them from pkgcache.
+    let mut resolved: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // Nimble package roots — `~/.nimble/pkgs2/<dep>-<version>-<hash>/`.
+    // Primary source: `~/.nimble/pkgs2/<dep>-<version>-<hash>/`.
     if let Some(pkgs_dir) = find_nimble_pkgs_dir() {
         if let Ok(entries) = std::fs::read_dir(&pkgs_dir) {
             let all_entries: Vec<_> = entries.flatten().collect();
@@ -158,6 +161,7 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                         .file_name().and_then(|n| n.to_str())
                         .and_then(|n| n.strip_prefix(&prefix))
                         .unwrap_or("").to_string();
+                    resolved.insert(dep_name.clone());
                     roots.push(ExternalDepRoot {
                         module_path: dep_name.clone(),
                         version,
@@ -166,6 +170,57 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                         package_id: None,
                         requested_imports: user_imports.clone(),
                     });
+                }
+            }
+        }
+    }
+
+    // Fallback: `~/.nimble/pkgcache/githubcom_<org><repo>_<commit>/` for packages
+    // that were downloaded but whose build step failed (no binary output, but Nim
+    // sources are available and indexable). The dir naming convention is
+    // `githubcom_<org><packagename>` or `githubcom_<org><packagename>_<commit>`.
+    // We match a declared dep name by checking whether the directory contains
+    // a `<dep>.nim` or `src/<dep>.nim` entry file — that's the standard entry
+    // point for a Nimble package.
+    if let Some(home) = dirs::home_dir() {
+        let pkgcache = home.join(".nimble").join("pkgcache");
+        if pkgcache.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&pkgcache) {
+                let all_cache: Vec<_> = entries.flatten().collect();
+                for dep_name in &declared {
+                    if resolved.contains(dep_name) { continue }
+                    // Match: dir name (lowercased) ends with the dep name or
+                    // dep name prefixed with the dep name string.
+                    let dep_lower = dep_name.to_lowercase();
+                    let mut matches: Vec<PathBuf> = all_cache
+                        .iter()
+                        .filter(|e| {
+                            if !e.path().is_dir() { return false; }
+                            let n = e.file_name();
+                            let s = n.to_string_lossy().to_lowercase();
+                            // `githubcom_org<depname>` or `githubcom_org<depname>_<commit>`
+                            s.contains(&dep_lower)
+                        })
+                        .map(|e| e.path())
+                        .collect();
+                    matches.sort();
+                    // Prefer the most-recent (alphabetically last) match.
+                    if let Some(best) = matches.pop() {
+                        // Verify by checking for the package entry file.
+                        let has_entry = best.join(format!("{dep_name}.nim")).is_file()
+                            || best.join("src").join(format!("{dep_name}.nim")).is_file()
+                            || best.join(dep_name.as_str()).is_dir();
+                        if !has_entry { continue }
+                        resolved.insert(dep_name.clone());
+                        roots.push(ExternalDepRoot {
+                            module_path: dep_name.clone(),
+                            version: "pkgcache".to_string(),
+                            root: best,
+                            ecosystem: LEGACY_ECOSYSTEM_TAG,
+                            package_id: None,
+                            requested_imports: user_imports.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -689,19 +744,41 @@ fn build_nim_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex 
     index
 }
 
-/// Line-based scan of a Nim source file for top-level declarations. Looks
-/// for `proc name*(...)`, `type Foo*`, `const X*`, `var Y*`, etc. — only at
-/// column 0 so nested definitions inside proc bodies don't leak through.
+/// Line-based scan of a Nim source file for module-level declarations. Looks
+/// for `proc name*(...)`, `type Foo*`, `const X*`, `var Y*`, etc. at column 0
+/// AND at two-space indent (routines inside conditional-compilation `when`
+/// blocks). Column-0 is the common case; two-space is for platform-gated
+/// module exports like `when not weirdTarget: proc execShellCmd*`.
 pub(crate) fn scan_nim_header(source: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in source.lines() {
-        // Only consider lines that start at column 0 (no leading whitespace).
-        if line.is_empty() || line.starts_with(char::is_whitespace) { continue }
-        let kw = match next_nim_keyword(line) {
+        let (bare, indent) = if line.is_empty() {
+            continue;
+        } else if !line.starts_with(char::is_whitespace) {
+            (line, 0usize)
+        } else {
+            let trimmed = line.trim_start();
+            let leading = line.len() - trimmed.len();
+            if leading == 2 {
+                (trimmed, 2)
+            } else {
+                continue;
+            }
+        };
+        let kw = match next_nim_keyword(bare) {
             Some(kw) => kw,
             None => continue,
         };
-        let rest = line[kw.len()..].trim_start();
+        // At indent 2, only extract procs/funcs/templates/etc. — not type/var/let/const,
+        // as those inside `when` blocks rarely form the bulk of unresolved calls.
+        // (We still want them, but the big win is the proc-level routines.)
+        if indent == 2 {
+            match kw {
+                "proc" | "func" | "method" | "iterator" | "converter" | "template" | "macro" => {}
+                _ => continue,
+            }
+        }
+        let rest = bare[kw.len()..].trim_start();
         let name = extract_nim_identifier(rest);
         if !name.is_empty() {
             out.push(name);
