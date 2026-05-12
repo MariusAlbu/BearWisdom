@@ -68,4 +68,38 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 
 *Rates marked `~` are weighted averages from projects where the language is ≥30% of files. Resolved counts marked `~` are derived (`unresolved × rate / (1 − rate)`) rounded to the nearest 100 — per-language resolved-edge counts aren't tracked separately in `baseline-all.json`. Razor uses the dominant project's edge total (`dotnet-fluentui-blazor`); MDX uses the SFC-fix delta as a floor (real per-language total is higher).*
 
-**93 language plugins total.** Not in the table above: ~40 templating engines (blade, ejs, erb, eex, heex, freemarker, gotemplate, gsp, haml, handlebars, hcl, jsp, liquid, mako, nunjucks, pug, shakespeare, slim, smarty, templ, thymeleaf, twig, velocity), schema/config languages (graphql, prisma, proto, dockerfile, systemd, crontab, make, nginx, puppet, hcl), markup (markdown, json, yaml, xml, toml, scss, css, html), and embedded sub-languages (angular, angular_template, julius). Most have either trivial unresolved counts (≤30) or no `internal_edges` graph at all (markup/config). They're indexed and parsed but don't move resolution-rate metrics meaningfully.
+## Other indexed plugins
+
+40+ plugins are parsed and indexed but absent from the SO2025 ranking above — they either emit no `internal_edges` of their own (markup/config) or resolve their bracketed expressions back through a host language's plugin (most template DSLs). Concrete unresolved counts per plugin, summed across all test projects:
+
+| Plugin           | Category | Unresolved | Note |
+|------------------|----------|-----------:|------|
+| html             | markup   | 1,261 | bare DOM identifier refs without TS backing |
+| julius           | embedded | 731   | Shakespeare/Yesod sub-language |
+| gsp              | template | 716   | Grails server pages backed by Groovy |
+| angular_template | embedded | 471   | binding refs into TypeScript components |
+| markdown         | markup   | 349   | fenced-code-snippet refs |
+| scss             | markup   | 160   | `@import` / `@use` chain resolution |
+| make             | config   | 148   | Makefile target refs |
+| freemarker       | template | 78    | |
+| nunjucks         | template | 75    | |
+| yaml             | markup   | 59    | tag-typed value refs |
+| hcl              | config   | 58    | Terraform / Nomad |
+| heex             | template | 43    | Phoenix HEEx |
+| twig             | template | 37    | |
+| erb              | template | 31    | |
+| blade            | template | 27    | |
+| ejs              | template | 27    | |
+| jsp              | template | 16    | |
+| pug              | template | 15    | |
+| handlebars       | template | 9     | |
+| prisma           | config   | 6     | |
+| eex              | template | 4     | |
+| dockerfile       | config   | 4     | |
+| graphql          | config   | 3     | |
+| liquid           | template | 3     | Jekyll, Shopify (resolves via Jekyll-page graph elsewhere) |
+| proto            | config   | 2     | |
+
+Zero-unresolved plugins (parsed, but either produce no symbol-level refs or resolve entirely through a host language): `angular`, `crontab`, `gotemplate`, `haml`, `hare`, `mako`, `nginx`, `puppet`, `rmarkdown`, `shakespeare`, `slim`, `smarty`, `systemd`, `templ`, `thymeleaf`, `velocity`. Plus the meta dispatchers `generic` and `polyglot_nb`.
+
+**Total:** 94 directories under `crates/bearwisdom/src/languages/` (93 language plugins + 1 fallback dispatcher).
