@@ -70,36 +70,36 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 
 ## Other indexed plugins
 
-40+ plugins are parsed and indexed but absent from the SO2025 ranking above — they either emit no `internal_edges` of their own (markup/config) or resolve their bracketed expressions back through a host language's plugin (most template DSLs). Concrete unresolved counts per plugin, summed across all test projects:
+40+ plugins are parsed and indexed but absent from the SO2025 ranking above — they either emit no `internal_edges` of their own (markup/config) or resolve their bracketed expressions back through a host language's plugin (most template DSLs). Concrete unresolved counts per plugin, summed across all test projects. **Status here is bucketed on absolute unresolved count, not rate** (per-language resolved isn't tracked separately, so a percentage can't be computed): ✅ 0 · 🟢 1–30 · 🟡 31–300 · 🔴 >300.
 
-| Plugin           | Category | Unresolved | Note |
-|------------------|----------|-----------:|------|
-| html             | markup   | 1,261 | bare DOM identifier refs without TS backing |
-| julius           | embedded | 731   | Shakespeare/Yesod sub-language |
-| gsp              | template | 716   | Grails server pages backed by Groovy |
-| angular_template | embedded | 471   | binding refs into TypeScript components |
-| markdown         | markup   | 349   | fenced-code-snippet refs |
-| scss             | markup   | 160   | `@import` / `@use` chain resolution |
-| make             | config   | 148   | Makefile target refs |
-| freemarker       | template | 78    | |
-| nunjucks         | template | 75    | |
-| yaml             | markup   | 59    | tag-typed value refs |
-| hcl              | config   | 58    | Terraform / Nomad |
-| heex             | template | 43    | Phoenix HEEx |
-| twig             | template | 37    | |
-| erb              | template | 31    | |
-| blade            | template | 27    | |
-| ejs              | template | 27    | |
-| jsp              | template | 16    | |
-| pug              | template | 15    | |
-| handlebars       | template | 9     | |
-| prisma           | config   | 6     | |
-| eex              | template | 4     | |
-| dockerfile       | config   | 4     | |
-| graphql          | config   | 3     | |
-| liquid           | template | 3     | Jekyll, Shopify (resolves via Jekyll-page graph elsewhere) |
-| proto            | config   | 2     | |
+| Plugin           | Category | Unresolved | Status | Note |
+|------------------|----------|-----------:|:------:|------|
+| html             | markup   | 1,261 | 🔴 | bare DOM identifier refs without TS backing |
+| julius           | embedded | 731   | 🔴 | Shakespeare/Yesod sub-language |
+| gsp              | template | 716   | 🔴 | Grails server pages backed by Groovy |
+| angular_template | embedded | 471   | 🔴 | binding refs into TypeScript components |
+| markdown         | markup   | 349   | 🔴 | fenced-code-snippet refs |
+| scss             | markup   | 160   | 🟡 | `@import` / `@use` chain resolution |
+| make             | config   | 148   | 🟡 | Makefile target refs |
+| freemarker       | template | 78    | 🟡 | |
+| nunjucks         | template | 75    | 🟡 | |
+| yaml             | markup   | 59    | 🟡 | tag-typed value refs |
+| hcl              | config   | 58    | 🟡 | Terraform / Nomad |
+| heex             | template | 43    | 🟡 | Phoenix HEEx |
+| twig             | template | 37    | 🟡 | |
+| erb              | template | 31    | 🟡 | |
+| blade            | template | 27    | 🟢 | |
+| ejs              | template | 27    | 🟢 | |
+| jsp              | template | 16    | 🟢 | |
+| pug              | template | 15    | 🟢 | |
+| handlebars       | template | 9     | 🟢 | |
+| prisma           | config   | 6     | 🟢 | |
+| eex              | template | 4     | 🟢 | |
+| dockerfile       | config   | 4     | 🟢 | |
+| graphql          | config   | 3     | 🟢 | |
+| liquid           | template | 3     | 🟢 | Jekyll, Shopify (resolves via Jekyll-page graph elsewhere) |
+| proto            | config   | 2     | 🟢 | |
 
-Zero-unresolved plugins (parsed, but either produce no symbol-level refs or resolve entirely through a host language): `angular`, `crontab`, `gotemplate`, `haml`, `hare`, `mako`, `nginx`, `puppet`, `rmarkdown`, `shakespeare`, `slim`, `smarty`, `systemd`, `templ`, `thymeleaf`, `velocity`. Plus the meta dispatchers `generic` and `polyglot_nb`.
+Zero-unresolved plugins (✅) — parsed, but either produce no symbol-level refs or resolve entirely through a host language: `angular`, `crontab`, `gotemplate`, `haml`, `hare`, `mako`, `nginx`, `puppet`, `rmarkdown`, `shakespeare`, `slim`, `smarty`, `systemd`, `templ`, `thymeleaf`, `velocity`. Plus the meta dispatchers `generic` and `polyglot_nb`.
 
 **Total:** 94 directories under `crates/bearwisdom/src/languages/` (93 language plugins + 1 fallback dispatcher).
