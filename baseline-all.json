@@ -3627,31 +3627,29 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 100
       },
-      "code_chunks": 10214,
+      "code_chunks": 10191,
       "files": 101,
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 2260,
-      "internal_unresolved": 23,
+      "internal_unresolved": 0,
       "languages": {
         "hcl": 77,
         "markdown": 24
       },
       "path": "F:/Work/Projects/TestProjects/hcl-aws-vpc",
       "perf": {
-        "end_ws_mb": 34,
-        "files_per_sec": 225,
-        "index_duration_ms": 448
+        "end_ws_mb": 39,
+        "files_per_sec": 178,
+        "index_duration_ms": 568
       },
       "project": "hcl-aws-vpc",
-      "resolution_rate": 98.99,
+      "resolution_rate": 100.0,
       "routes": 0,
       "symbols": 7644,
-      "unresolved_by_lang_kind": {
-        "hcl.calls": 23
-      }
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -8678,14 +8676,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 100
       },
-      "code_chunks": 12214,
+      "code_chunks": 12175,
       "files": 159,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1291,
-      "internal_unresolved": 20,
+      "internal_edges": 1301,
+      "internal_unresolved": 0,
       "languages": {
         "gotemplate": 8,
         "hcl": 90,
@@ -8697,18 +8695,15 @@
       },
       "path": "F:/Work/Projects/TestProjects/terraform-aws-eks",
       "perf": {
-        "end_ws_mb": 100,
-        "files_per_sec": 24,
-        "index_duration_ms": 6612
+        "end_ws_mb": 103,
+        "files_per_sec": 20,
+        "index_duration_ms": 7981
       },
       "project": "terraform-aws-eks",
-      "resolution_rate": 98.47,
+      "resolution_rate": 100.0,
       "routes": 0,
       "symbols": 8599,
-      "unresolved_by_lang_kind": {
-        "hcl.calls": 11,
-        "hcl.type_ref": 9
-      }
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
