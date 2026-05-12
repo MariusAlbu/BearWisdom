@@ -64,7 +64,7 @@ Per-language resolution rates from `baseline-all.json`, ordered by Stack Overflo
 | —  | Starlark            | —        | ~95.4%   | —          | 249        | 🟢     | bazel-skylib / rules-python |
 | —  | MDX                 | —        | ~100%    | —          | 0          | ✅     | astro-starlight MDX-specific refs all resolved; SFC default-import name fallback (`.astro`/`.svelte`) + Fragment suppression closed 999 refs |
 | —  | CMake               | —        | ~82.3%   | —          | ~1,500     | 🟡     | examples + ttroy50 at 91.21% ✓; ARGC builtin + `::` imported targets externalised + `find_package()`/`string(REPLACE)` output vars extracted; cpm at 79% gated by CPM runtime-injected vars |
-| —  | Jinja               | —        | 65.45%   | 3,353      | 1,770      | 🔴     | template macros + Ansible variable namespace not resolved |
+| —  | Jinja               | —        | 87.16%   | 10,189     | 1,501      | 🟡     | raw-block skip (Go-template body inside `{% raw %}`), filter-name suppression after `\|` at any paren depth, subscript-chain continuation (`arr[0].field`); kubespray 90.5% ✓, matrix-ansible 85.0% — residual gated by Ansible role resolver (requirements.yml + `defaults/`) not yet implemented |
 
 *Rates marked `~` are weighted averages from projects where the language is ≥30% of files (per-language resolved-edge counts aren't tracked separately in `baseline-all.json`).*
 
