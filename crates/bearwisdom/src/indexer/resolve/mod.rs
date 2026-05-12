@@ -324,6 +324,12 @@ fn flush_flow_emissions(
             )
             .context("Failed to prepare paired flow_edges INSERT")?;
 
+        // (source_file_id, source_line, target_file_id, target_line, edge_type)
+        // — guards against duplicate edges when the same emission appears
+        // multiple times in the resolved list.
+        let mut seen_pairs: std::collections::HashSet<(i64, u32, i64, u32, &str)> =
+            Default::default();
+
         for (key, prod_idxs) in &producers {
             if let Some(cons_idxs) = consumers.get(key) {
                 for &pi in prod_idxs {
@@ -342,6 +348,14 @@ fn flush_flow_emissions(
                                 prod_method.map(|m| m.as_str()),
                                 cons_method,
                             ) {
+                                continue;
+                            }
+                            let pair_key = (pr.file_id, pr.line, cr.file_id, cr.line, kind.edge_type_str());
+                            if !seen_pairs.insert(pair_key) {
+                                // Already emitted this exact edge; mark both sides paired
+                                // without a second INSERT.
+                                named_channel_paired.insert(pi);
+                                named_channel_paired.insert(ci);
                                 continue;
                             }
                             let n = pair_stmt.execute(rusqlite::params![
