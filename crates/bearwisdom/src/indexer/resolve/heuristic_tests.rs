@@ -1,4 +1,8 @@
 use super::*;
+use super::super::indexes::{
+    build_import_map, build_module_to_files, build_name_index, build_qname_index,
+};
+use super::super::path_util::{file_path_matches_module, kind_matches_symbol_kind};
 use crate::types::{ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind};
 
 fn make_parsed_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {

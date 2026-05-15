@@ -1,0 +1,171 @@
+// =============================================================================
+// indexer/resolve/engine/registry.rs — per-language resolver trait + dispatch
+//
+// The `LanguageResolver` trait is the per-language contract: every language
+// plugin that wants deterministic (tier-1) resolution implements it and
+// returns its impl from `LanguagePlugin::resolver()`. The `ResolutionEngine`
+// struct collects those impls keyed by language id and hands them to the
+// resolve loop via `resolver_for()`.
+// =============================================================================
+
+use std::sync::Arc;
+
+use rustc_hash::FxHashMap;
+
+use crate::indexer::project_context::ProjectContext;
+use crate::types::ParsedFile;
+
+use super::{FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup};
+
+// ---------------------------------------------------------------------------
+// LanguageResolver trait
+// ---------------------------------------------------------------------------
+
+/// Per-language resolution rules. Each language implements this trait
+/// in a separate file under `resolve/rules/`.
+pub trait LanguageResolver: Send + Sync {
+    /// The language identifier(s) this resolver handles.
+    /// Must match the language strings from file detection.
+    fn language_ids(&self) -> &[&str];
+
+    /// Build the file context for a parsed file.
+    /// `project_ctx` provides global usings and external prefix data.
+    fn build_file_context(
+        &self,
+        file: &ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> FileContext;
+
+    /// Attempt to resolve a reference using language-specific scope rules.
+    ///
+    /// Returns `Some(Resolution)` if deterministically resolved.
+    /// Returns `None` to fall back to the heuristic resolver.
+    fn resolve(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution>;
+
+    /// Detect a cross-tier flow-edge pattern for a ref, independent of
+    /// whether `resolve` succeeded.
+    ///
+    /// Called for every `Calls`-kind ref before the heuristic fallback.
+    /// The default returns an empty `Vec` (no emission). Language resolvers
+    /// that recognize HTTP-client chains, IPC calls, WebSocket emits, etc.
+    /// override this to emit one or more `FlowEmission`s without needing a
+    /// resolved target symbol. The Vec return shape supports patterns like
+    /// `server.addService(SvcDef, { m1: h, m2: h })` where a single ref site
+    /// registers handlers for multiple methods.
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        Vec::new()
+    }
+
+    /// Lookup-aware variant of `detect_flow_emission`. Override this when
+    /// the detector benefits from inspecting the SymbolIndex — for
+    /// instance, to look up the type of a let-bound variable so chains
+    /// like `let c = ServiceClient::new(); c.method(...)` can still emit
+    /// the appropriate RpcCall on the second call.
+    ///
+    /// The default forwards to the lookup-less version so existing
+    /// implementations need no changes.
+    fn detect_flow_emission_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        _lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        self.detect_flow_emission(file_ctx, ref_ctx)
+    }
+
+    /// Check whether a target symbol is visible from the reference site.
+    /// Default: always visible (no filtering).
+    fn is_visible(
+        &self,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _target: &SymbolInfo,
+    ) -> bool {
+        true
+    }
+
+    /// When a reference can't be resolved (not in the index), try to infer
+    /// which external namespace/package it likely comes from based on the
+    /// file's import statements.
+    ///
+    /// Returns `Some("Microsoft.EntityFrameworkCore")` if the target probably
+    /// comes from that namespace. Returns `None` if no guess can be made.
+    ///
+    /// Default: no inference.
+    fn infer_external_namespace(
+        &self,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        None
+    }
+
+    /// When the resolver needs to consult another file's imports alongside
+    /// this file's own, return that companion's path. The resolve driver
+    /// merges the companion's `FileContext.imports` into this file's before
+    /// any reference is resolved.
+    ///
+    /// Used by Angular templates (`.component.html`) to consult the paired
+    /// `.component.ts` file — the template has no imports of its own, but
+    /// every symbol it references is imported by its component class.
+    /// Returns `None` when no companion applies.
+    fn companion_file_for_imports(&self, _file_path: &str) -> Option<String> {
+        None
+    }
+
+    /// Same as `infer_external_namespace` but with `lookup` access for
+    /// barrel/re-export inspection. Resolvers that need to chase a
+    /// passthrough barrel (`@/foo` → `apps/x/src/foo.ts` → `export { Y }
+    /// from "external-pkg"`) override this; default delegates to the
+    /// lookup-free variant for callers that don't need it.
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        self.infer_external_namespace(file_ctx, ref_ctx, project_ctx)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ResolutionEngine
+// ---------------------------------------------------------------------------
+
+/// The engine that dispatches resolution to language-specific resolvers.
+pub struct ResolutionEngine {
+    resolvers: FxHashMap<String, Arc<dyn LanguageResolver>>,
+}
+
+impl ResolutionEngine {
+    /// Create a new engine with the default set of language resolvers.
+    pub fn new() -> Self {
+        let mut engine = Self {
+            resolvers: FxHashMap::default(),
+        };
+        for resolver in crate::languages::default_resolvers() {
+            for &lang_id in resolver.language_ids() {
+                engine
+                    .resolvers
+                    .insert(lang_id.to_string(), Arc::clone(&resolver));
+            }
+        }
+        engine
+    }
+
+    /// Get the resolver for a language, if one is registered.
+    pub fn resolver_for(&self, language: &str) -> Option<&dyn LanguageResolver> {
+        self.resolvers.get(language).map(|r| r.as_ref())
+    }
+}
