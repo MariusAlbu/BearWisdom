@@ -25,8 +25,6 @@ use regex::Regex;
 use rusqlite::Connection;
 use tracing::{debug, info};
 
-use crate::connectors::traits::{Connector, ConnectorDescriptor};
-use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
@@ -34,69 +32,77 @@ use crate::indexer::project_context::ProjectContext;
 // RailsRouteConnector — LanguagePlugin entry point
 // ===========================================================================
 
-pub struct RailsRouteConnector;
+/// Rails routes.rb cross-file scan + `routes` table population. The
+/// routes-table → FlowEmission bridge in resolve/mod.rs handles downstream
+/// flow_edges emission.
+///
+/// Returns the count of routes written to the `routes` table.
+pub fn discover_rails_routes(
+    conn: &Connection,
+    project_root: &Path,
+    ctx: &ProjectContext,
+) -> u32 {
+    if !ctx.has_dependency(ManifestKind::Gemfile, "rails")
+        && !ctx.has_dependency(ManifestKind::Gemfile, "railties")
+    {
+        return 0;
+    }
 
-impl Connector for RailsRouteConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "rails_routes",
-            protocols: &[Protocol::Rest],
-            languages: &["ruby"],
+    let mut stmt = match conn.prepare(
+        "SELECT id, path FROM files
+         WHERE language = 'ruby'
+           AND (path LIKE '%routes.rb' OR path LIKE '%/routes/%')",
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("rails routes: prepare files failed: {e}");
+            return 0;
         }
-    }
+    };
 
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Gemfile, "rails")
-            || ctx.has_dependency(ManifestKind::Gemfile, "railties")
-    }
+    let files: Vec<(i64, String)> = match stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>())
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("rails routes: query files failed: {e}");
+            return 0;
+        }
+    };
 
-    fn extract(
-        &self,
-        conn: &Connection,
-        project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, path FROM files
-                 WHERE language = 'ruby'
-                   AND (path LIKE '%routes.rb' OR path LIKE '%/routes/%')",
-            )
-            .context("Failed to prepare Rails route file query")?;
+    let mut inserted: u32 = 0;
 
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-            .context("Failed to query Ruby route files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Ruby route file rows")?;
+    for (file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
 
-        let mut points = Vec::new();
+        let entries = parse_routes_source(&source);
 
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            let entries = parse_routes_source(&source);
-
-            for entry in entries {
-                points.push(ConnectionPoint {
+        if let Ok(mut stmt) = conn.prepare_cached(
+            "INSERT OR IGNORE INTO routes \
+             (file_id, symbol_id, http_method, route_template, resolved_route, line) \
+             VALUES (?1, NULL, ?2, ?3, ?3, ?4)",
+        ) {
+            for entry in &entries {
+                if let Ok(n) = stmt.execute(rusqlite::params![
                     file_id,
-                    symbol_id: None,
-                    line: entry.line,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Stop,
-                    key: entry.route_template,
-                    method: entry.http_method.to_string(),
-                    framework: "rails".to_string(),
-                    metadata: None,
-                });
+                    entry.http_method,
+                    entry.route_template,
+                    entry.line as i64,
+                ]) {
+                    if n > 0 {
+                        inserted += 1;
+                    }
+                }
             }
         }
-
-        Ok(points)
     }
+
+    inserted
 }
 
 // ---------------------------------------------------------------------------
@@ -448,160 +454,6 @@ pub fn connect(conn: &Connection, project_root: &Path) -> Result<u32> {
 }
 
 // ===========================================================================
-// RubyRestConnector — HTTP client call starts + route stops for Ruby
-// ===========================================================================
-
-pub struct RubyRestConnector;
-
-impl Connector for RubyRestConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "ruby_rest",
-            protocols: &[Protocol::Rest],
-            languages: &["ruby"],
-        }
-    }
-
-    fn detect(&self, _ctx: &ProjectContext) -> bool {
-        true
-    }
-
-    fn extract(
-        &self,
-        conn: &Connection,
-        project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
-        let mut points = Vec::new();
-        extract_ruby_rest_stops(conn, &mut points)?;
-        extract_ruby_rest_starts(conn, project_root, &mut points)?;
-        Ok(points)
-    }
-}
-
-fn extract_ruby_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> Result<()> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT r.file_id, r.symbol_id, r.line, r.http_method,
-                    COALESCE(r.resolved_route, r.route_template)
-             FROM routes r
-             JOIN files f ON f.id = r.file_id
-             WHERE f.language = 'ruby'
-               AND r.http_method != '' AND r.route_template != ''",
-        )
-        .context("Failed to prepare Ruby REST stops query")?;
-
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<i64>>(1)?,
-                row.get::<_, Option<u32>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })
-        .context("Failed to query Ruby routes")?;
-
-    for row in rows {
-        let (file_id, symbol_id, line, method, route) =
-            row.context("Failed to read Ruby route row")?;
-        out.push(ConnectionPoint {
-            file_id,
-            symbol_id,
-            line: line.unwrap_or(0),
-            protocol: Protocol::Rest,
-            direction: FlowDirection::Stop,
-            key: route,
-            method: method.to_uppercase(),
-            framework: String::new(),
-            metadata: None,
-        });
-    }
-    Ok(())
-}
-
-fn extract_ruby_rest_starts(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    // Net::HTTP.get("url"), Faraday.get("url"), HTTParty.post("url")
-    let re = regex::Regex::new(
-        r#"(?:Net::HTTP|Faraday|HTTParty)\s*\.\s*(?P<method>get|post|put|delete|patch)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
-    ).expect("ruby http regex");
-
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = 'ruby'")
-        .context("Failed to prepare Ruby files query")?;
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query Ruby files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect Ruby file rows")?;
-
-    for (file_id, rel_path) in files {
-        if ruby_rest_is_test_file(&rel_path) {
-            continue;
-        }
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-            for cap in re.captures_iter(line_text) {
-                let raw_url = cap.name("url1")
-                    .or_else(|| cap.name("url2"))
-                    .map(|m| m.as_str().to_string());
-                let Some(raw_url) = raw_url else { continue };
-                if !ruby_rest_looks_like_api_url(&raw_url) {
-                    continue;
-                }
-                let method = cap.name("method")
-                    .map(|m| m.as_str().to_uppercase())
-                    .unwrap_or_else(|| "GET".to_string());
-                let url_pattern = rest_normalise_url_pattern(&raw_url);
-                out.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: None,
-                    line: line_no,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Start,
-                    key: url_pattern,
-                    method,
-                    framework: String::new(),
-                    metadata: None,
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
-fn ruby_rest_is_test_file(rel_path: &str) -> bool {
-    let lower = rel_path.to_lowercase();
-    lower.contains("_spec.") || lower.contains("_test.")
-        || lower.contains("/spec/") || lower.contains("/test/")
-}
-
-fn ruby_rest_looks_like_api_url(s: &str) -> bool {
-    if s.starts_with("http://") || s.starts_with("https://") {
-        let after = s.find("://").map(|i| &s[i + 3..]).unwrap_or(s);
-        let path = after.find('/').map(|i| &after[i..]).unwrap_or("");
-        if path.is_empty() { return false; }
-        return ruby_rest_looks_like_api_url(path);
-    }
-    s.starts_with('/') || s.contains("/api/") || s.contains("/v1/") || s.contains("/v2/") || s.contains("/{")
-}
-
-fn rest_normalise_url_pattern(raw: &str) -> String {
-    let without_query = raw.split('?').next().unwrap_or(raw);
-    let re_tmpl = regex::Regex::new(r"\$\{[^}]+\}").expect("template regex");
-    re_tmpl.replace_all(without_query, "{param}").into_owned()
-}
-
-// ===========================================================================
 // RubyGraphQlConnector — graphql-ruby field/resolver stops
 // ===========================================================================
 
@@ -611,35 +463,21 @@ fn rest_normalise_url_pattern(raw: &str) -> String {
 /// Stop points:  `def resolve(...)` and `def field_name(...)` inside resolver classes.
 ///
 /// Detection: ruby_gems contains "graphql".
-pub struct RubyGraphQlConnector;
+// RubyGraphQlConnector removed — was a stub returning Vec::new(). Real
+// detection lives in `extract_ruby_graphql`, emitted via
+// `RubyPlugin::extract_connection_points`.
 
-impl Connector for RubyGraphQlConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "ruby_graphql",
-            protocols: &[Protocol::GraphQl],
-            languages: &["ruby"],
-        }
-    }
-
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Gemfile, "graphql")
-    }
-
-    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // Moved into `RubyPlugin::extract_connection_points`.
-        Ok(Vec::new())
-    }
-}
-
-/// Per-file Ruby GraphQL scan: emit `field :name` declarations as Start
-/// points and `def resolve` / `def field_name` definitions inside resolver
-/// classes as Stop points. Path-prefix filter keeps non-GraphQL Ruby files
-/// from being scanned by checking whether the file path sits under the
-/// conventional graphql-ruby directories.
-pub fn extract_ruby_graphql(source: &str, file_path: &str) -> Vec<crate::types::ConnectionPoint> {
-    use crate::types::{ConnectionKind, ConnectionPoint as AP, ConnectionRole};
-    use std::collections::HashMap;
+/// Per-file Ruby GraphQL scan: emit `field :name` declarations as Producer
+/// `NamedChannel { kind: GraphQLOp, .. }` and `def resolve` / `def field_name`
+/// definitions inside resolver classes as Consumer counterparts. The
+/// path-prefix filter keeps non-GraphQL Ruby files from being scanned by
+/// checking whether the file sits under the conventional graphql-ruby
+/// directories.
+pub fn extract_ruby_graphql(
+    source: &str,
+    file_path: &str,
+) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
 
     // Path filter — the legacy Connector applied this at SQL time.
     let lower = file_path.replace('\\', "/");
@@ -666,23 +504,22 @@ pub fn extract_ruby_graphql(source: &str, file_path: &str) -> Vec<crate::types::
     }
 
     let in_resolver = re_resolver_class.is_match(source);
-    let mut out: Vec<AP> = Vec::new();
+    let mut out: Vec<(u32, FlowEmission)> = Vec::new();
 
     for (line_idx, line_text) in source.lines().enumerate() {
         let line_no = (line_idx + 1) as u32;
 
         if let Some(cap) = re_field.captures(line_text) {
-            let mut meta = HashMap::new();
-            meta.insert("framework".to_string(), "graphql-ruby".to_string());
-            out.push(AP {
-                kind: ConnectionKind::GraphQL,
-                role: ConnectionRole::Start,
-                key: cap[1].to_string(),
-                line: line_no,
-                col: 1,
-                symbol_qname: String::new(),
-                meta,
-            });
+            out.push((
+                line_no,
+                FlowEmission::NamedChannel {
+                    kind: NamedChannelKind::GraphQLOp,
+                    name: cap[1].to_string(),
+                    role: ChannelRole::Producer,
+                    method: None,
+                    streaming: None,
+                },
+            ));
             continue;
         }
 
@@ -692,17 +529,16 @@ pub fn extract_ruby_graphql(source: &str, file_path: &str) -> Vec<crate::types::
                 if matches!(name.as_str(), "initialize" | "authorized?" | "ready?") {
                     continue;
                 }
-                let mut meta = HashMap::new();
-                meta.insert("framework".to_string(), "graphql-ruby".to_string());
-                out.push(AP {
-                    kind: ConnectionKind::GraphQL,
-                    role: ConnectionRole::Stop,
-                    key: name,
-                    line: line_no,
-                    col: 1,
-                    symbol_qname: String::new(),
-                    meta,
-                });
+                out.push((
+                    line_no,
+                    FlowEmission::NamedChannel {
+                        kind: NamedChannelKind::GraphQLOp,
+                        name,
+                        role: ChannelRole::Consumer,
+                        method: None,
+                        streaming: None,
+                    },
+                ));
             }
         }
     }

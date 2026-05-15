@@ -77,20 +77,12 @@ impl LanguagePlugin for ElixirPlugin {
         Some(std::sync::Arc::new(resolve::ElixirResolver))
     }
 
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        crate::languages::drive_connector(
-            &connectors::PhoenixRouteConnector, db, project_root, ctx,
-        )
-    }
+    // TODO(routes-dispatch): wire `connectors::discover_phoenix_routes` into the
+    // indexer route-population stage. The function now writes the `routes` table
+    // directly (returning the insert count) and the routes-table → FlowEmission
+    // bridge in resolve/mod.rs emits the Consumer flows. The
+    // `resolve_connection_points` override was removed because the ConnectionPoint
+    // Stop emission was redundant with that bridge.
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::ElixirChecker))

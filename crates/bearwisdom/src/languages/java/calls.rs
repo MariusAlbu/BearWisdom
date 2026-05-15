@@ -3,8 +3,56 @@
 // =============================================================================
 
 use super::helpers::{node_text, type_node_simple_name};
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
 use tree_sitter::Node;
+
+/// Extract positional arguments from a Java `method_invocation`'s
+/// `argument_list`. Captures string/text-block literals, class literals
+/// (`Entity.class`), identifiers, integer/float/boolean literals.
+/// Everything else becomes `CallArg::Other`.
+pub(super) fn extract_call_args(invocation: &Node, src: &[u8]) -> Vec<CallArg> {
+    let Some(args_node) = invocation.child_by_field_name("arguments") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        let arg = match child.kind() {
+            "string_literal" => {
+                let raw = node_text(child, src);
+                CallArg::StringLit(
+                    raw.trim_start_matches('"')
+                        .trim_end_matches('"')
+                        .to_string(),
+                )
+            }
+            "text_block" => {
+                let raw = node_text(child, src);
+                CallArg::StringLit(
+                    raw.trim_start_matches("\"\"\"")
+                        .trim_end_matches("\"\"\"")
+                        .to_string(),
+                )
+            }
+            // `Entity.class` — class literal. Capture as Ident with the
+            // type name so consumers can read it as a model reference.
+            "class_literal" => {
+                let raw = node_text(child, src);
+                let inner = raw.trim_end_matches(".class").trim();
+                CallArg::Ident(inner.to_string())
+            }
+            "identifier" => CallArg::Ident(node_text(child, src)),
+            "field_access" => CallArg::Other,
+            "decimal_integer_literal" | "hex_integer_literal" | "binary_integer_literal"
+            | "octal_integer_literal" | "decimal_floating_point_literal"
+            | "hex_floating_point_literal" => CallArg::Literal(node_text(child, src)),
+            "true" | "false" | "null_literal" => CallArg::Literal(node_text(child, src)),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
 
 pub(super) fn extract_calls_from_body(
     node: &Node,
@@ -38,6 +86,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         .unwrap_or_else(|| node_text(name_node, src));
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
                     if !target_name.is_empty() {
+                        let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name,
@@ -47,7 +96,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain,
                             byte_offset: name_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
+                                                    call_args,
 });
                     }
                 }

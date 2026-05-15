@@ -206,4 +206,128 @@ impl LanguageResolver for ClojureResolver {
         let root = ns.split('.').next().unwrap_or(ns);
         Some(root.to_string())
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let module = r.module.as_deref().unwrap_or("");
+        let target = r.target_name.as_str();
+        if let Some(em) = detect_clj_compojure_route(target, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_clj_http_producer(module, target, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_clj_jdbc_db_query(module, target) {
+            return vec![em];
+        }
+        Vec::new()
+    }
 }
+
+pub(crate) fn detect_clj_compojure_route(
+    target_name: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let method = match target_name {
+        "GET" => HttpMethod::Get,
+        "POST" => HttpMethod::Post,
+        "PUT" => HttpMethod::Put,
+        "PATCH" => HttpMethod::Patch,
+        "DELETE" => HttpMethod::Delete,
+        "HEAD" => HttpMethod::Head,
+        "OPTIONS" => HttpMethod::Options,
+        "ANY" => HttpMethod::Any,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) if s.starts_with('/') => Some(s.as_str()),
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Consumer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_clj_http_producer(
+    module: &str,
+    target: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let m_last = module.rsplit('.').next().unwrap_or(module);
+    if !matches!(m_last, "client" | "http") || !(module.contains("clj-http") || module.contains("http-kit") || module.contains("org.httpkit")) {
+        // Accept clj-http.client and org.httpkit.client.
+        if !matches!(module, "clj-http.client" | "org.httpkit.client" | "hato.client") {
+            return None;
+        }
+    }
+    let method = match target {
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "patch" => HttpMethod::Patch,
+        "delete" => HttpMethod::Delete,
+        "head" => HttpMethod::Head,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_clj_jdbc_db_query(
+    module: &str,
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    if !module.contains("jdbc") && !module.contains("honeysql") {
+        return None;
+    }
+    let op = match target {
+        "execute!" | "execute-one!" | "query" | "find-by-keys" | "get-by-id" => {
+            DbQueryOp::Select
+        }
+        "insert!" | "insert-multi!" => DbQueryOp::Insert,
+        "update!" => DbQueryOp::Update,
+        "delete!" => DbQueryOp::Delete,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: "clj.*".to_string(),
+        operation: op,
+    })
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;

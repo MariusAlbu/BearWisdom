@@ -57,15 +57,6 @@ impl LanguagePlugin for PhpPlugin {
         extract::extract(source)
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_php_connection_points(source, file_path)
-    }
-
     /// E2: surface `<script>` and `<style>` blocks that live in the HTML
     /// regions between `<?php … ?>` blocks for sub-extraction by the JS,
     /// TS, CSS, and SCSS plugins. Pure-PHP files (no HTML mode) emit
@@ -124,25 +115,12 @@ impl LanguagePlugin for PhpPlugin {
         Some(std::sync::Arc::new(type_checker::PhpChecker))
     }
 
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::LaravelRouteConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::PhpRestConnector, db, project_root, ctx,
-        ));
-        out
-    }
+    // TODO(routes-dispatch): wire `connectors::discover_laravel_routes` into
+    // the indexer route-population stage. The function now writes the `routes`
+    // table directly (returning the insert count) and the routes-table →
+    // FlowEmission bridge in resolve/mod.rs emits the Consumer flows. The
+    // `resolve_connection_points` override was removed because the
+    // ConnectionPoint Stop emission was redundant with that bridge.
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::PHP_FLOW_CONFIG)

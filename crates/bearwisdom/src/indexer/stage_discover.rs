@@ -203,7 +203,8 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
                                 if sub_name.starts_with('.') { continue; }
                                 let full_rel = format!("{}/{}", base, sub_name);
                                 let abs = project_root.join(&full_rel);
-                                let declared_name = package_name_from_manifest(&abs, kind_hint);
+                                let (declared_name, is_publishable) =
+                                    read_package_manifest(&abs, kind_hint);
                                 ws_packages.push(PackageInfo {
                                     id: None,
                                     name: sub_name.clone(),
@@ -211,6 +212,7 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
                                     kind: Some(kind_hint.to_string()),
                                     manifest: find_manifest_path_abs(&abs, kind_hint),
                                     declared_name,
+                                    is_publishable,
                                 });
                             }
                         }
@@ -218,7 +220,8 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
                 } else {
                     let abs = project_root.join(rel_path);
                     if !abs.is_dir() { continue; }
-                    let declared_name = package_name_from_manifest(&abs, kind_hint);
+                    let (declared_name, is_publishable) =
+                        read_package_manifest(&abs, kind_hint);
                     ws_packages.push(PackageInfo {
                         id: None,
                         name: dir_name(rel_path),
@@ -226,6 +229,7 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
                         kind: Some(kind_hint.to_string()),
                         manifest: find_manifest_path_abs(&abs, kind_hint),
                         declared_name,
+                        is_publishable,
                     });
                 }
             }
@@ -400,7 +404,7 @@ fn register_manifest(
     } else {
         format!("{}/{}", rel_dir, manifest_filename)
     };
-    let declared_name = package_name_from_manifest(pkg_dir, kind);
+    let (declared_name, is_publishable) = read_package_manifest(pkg_dir, kind);
     out.push(PackageInfo {
         id: None,
         name: folder_name,
@@ -408,6 +412,7 @@ fn register_manifest(
         kind: Some(kind.to_string()),
         manifest: Some(manifest_rel),
         declared_name,
+        is_publishable,
     });
 }
 
@@ -441,7 +446,7 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
                     if sub.join(mf).exists() {
                         let rel = format!("{}/{}", ws_dir, sub_name);
                         let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
-                        let declared_name = package_name_from_manifest(&sub, kind);
+                        let (declared_name, is_publishable) = read_package_manifest(&sub, kind);
                         packages.push(PackageInfo {
                             id: None,
                             name: sub_name.clone(),
@@ -449,6 +454,7 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
                             kind: Some(kind.to_string()),
                             manifest: Some(format!("{}/{}/{}", ws_dir, sub_name, mf)),
                             declared_name,
+                            is_publishable,
                         });
                         found = true;
                         break;
@@ -469,6 +475,7 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
                             kind: Some("dotnet".to_string()),
                             manifest: Some(format!("{}/{}/{}", ws_dir, sub_name, csproj)),
                             declared_name,
+                            is_publishable: true,
                         });
                     }
                 }
@@ -494,7 +501,7 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
             for mf in manifest_names {
                 if sub.join(mf).exists() {
                     let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
-                    let declared_name = package_name_from_manifest(&sub, kind);
+                    let (declared_name, is_publishable) = read_package_manifest(&sub, kind);
                     // Avoid duplicates from workspace_dirs scan.
                     if !packages.iter().any(|p| p.path == dir_name_str) {
                         packages.push(PackageInfo {
@@ -504,6 +511,7 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
                             kind: Some(kind.to_string()),
                             manifest: Some(format!("{}/{}", dir_name_str, mf)),
                             declared_name,
+                            is_publishable,
                         });
                     }
                     break;
@@ -519,68 +527,155 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
 /// by which this package is imported by siblings (`@myorg/utils`,
 /// `my-crate`, `github.com/user/proj/module`, `MyApp.Api`, etc.). Stored
 /// separately from the folder name on `PackageInfo::declared_name`.
-fn package_name_from_manifest(dir: &Path, kind: &str) -> Option<String> {
+///
+/// Returns `(declared_name, is_publishable)`. `is_publishable = false`
+/// signals the dead-code `exported_api` contributor that this package's
+/// public surface is workspace-internal — its public symbols should not
+/// auto-anchor reachability. Default `true` matches the v0 behavior.
+pub(crate) fn read_package_manifest(dir: &Path, kind: &str) -> (Option<String>, bool) {
     match kind {
-        "npm" => {
-            let content = std::fs::read_to_string(dir.join("package.json")).ok()?;
-            let v: serde_json::Value = serde_json::from_str(&content).ok()?;
-            v.get("name")?.as_str().map(|s| s.to_string())
-        }
-        "cargo" => {
-            let content = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?;
-            // Simple TOML parse: find `name = "..."` under [package].
-            let in_package = content.find("[package]")?;
-            content[in_package..]
-                .lines()
-                .find(|l| l.trim().starts_with("name"))
-                .and_then(|l| {
-                    let val = l.split('=').nth(1)?.trim().trim_matches('"');
-                    Some(val.to_string())
-                })
-        }
-        "go" => {
-            let content = std::fs::read_to_string(dir.join("go.mod")).ok()?;
-            content.lines().next().and_then(|l| {
-                l.strip_prefix("module ").map(|m| m.trim().to_string())
-            })
-        }
-        "python" => {
-            // pyproject.toml [project].name or [tool.poetry].name.
-            let content = std::fs::read_to_string(dir.join("pyproject.toml")).ok()?;
-            for marker in &["[project]", "[tool.poetry]"] {
-                if let Some(start) = content.find(marker) {
-                    // Scan forward until the next section header.
-                    let tail = &content[start + marker.len()..];
-                    let section = tail.split("\n[").next().unwrap_or(tail);
-                    if let Some(name) = section
-                        .lines()
-                        .find(|l| l.trim_start().starts_with("name"))
-                        .and_then(|l| {
-                            let val = l.split('=').nth(1)?.trim().trim_matches('"').trim_matches('\'');
-                            (!val.is_empty()).then(|| val.to_string())
-                        })
-                    {
-                        return Some(name);
-                    }
-                }
-            }
-            None
-        }
-        "dotnet" => {
-            // .csproj / .fsproj / .vbproj filename stem — this is what
-            // <ProjectReference> resolves against in MSBuild.
-            std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
-                let name = e.file_name().to_string_lossy().into_owned();
-                for ext in &[".csproj", ".fsproj", ".vbproj"] {
-                    if let Some(stem) = name.strip_suffix(ext) {
-                        return Some(stem.to_string());
-                    }
-                }
-                None
-            })
-        }
-        _ => None,
+        "npm" => read_npm_manifest(dir),
+        "cargo" => read_cargo_manifest(dir),
+        "go" => (read_go_manifest(dir), true),
+        "python" => read_python_manifest(dir),
+        "dotnet" => (read_dotnet_manifest(dir), true),
+        _ => (None, true),
     }
+}
+
+fn read_npm_manifest(dir: &Path) -> (Option<String>, bool) {
+    let Ok(content) = std::fs::read_to_string(dir.join("package.json")) else {
+        return (None, true);
+    };
+    let Ok(v): Result<serde_json::Value, _> = serde_json::from_str(&content) else {
+        return (None, true);
+    };
+    let name = v
+        .get("name")
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string());
+    // `"private": true` is the canonical npm signal for "do not publish
+    // to a registry." Workspace-internal helper packages set this to
+    // keep `npm publish` from accidentally pushing them.
+    let is_publishable = !v
+        .get("private")
+        .and_then(|p| p.as_bool())
+        .unwrap_or(false);
+    (name, is_publishable)
+}
+
+fn read_cargo_manifest(dir: &Path) -> (Option<String>, bool) {
+    let Ok(content) = std::fs::read_to_string(dir.join("Cargo.toml")) else {
+        return (None, true);
+    };
+    let Some(in_package) = content.find("[package]") else {
+        return (None, true);
+    };
+    // Section bounded by the next `[…]` header.
+    let section_tail = &content[in_package + "[package]".len()..];
+    let section = section_tail
+        .split_inclusive('\n')
+        .take_while(|l| !l.trim_start().starts_with('['))
+        .collect::<String>();
+
+    let name = section
+        .lines()
+        .find(|l| l.trim_start().starts_with("name"))
+        .and_then(|l| {
+            let val = l.split('=').nth(1)?.trim();
+            // Strip trailing comments and surrounding quotes.
+            let val = val.split('#').next()?.trim().trim_matches('"');
+            (!val.is_empty()).then(|| val.to_string())
+        });
+
+    // `publish = false` or `publish = []` flags the crate as
+    // workspace-internal (the Cargo book §"The publish field" defines
+    // both as preventing `cargo publish`). Anything else (`true`,
+    // `["registry"]`, absent) is publishable.
+    let is_publishable = section
+        .lines()
+        .find(|l| l.trim_start().starts_with("publish"))
+        .map(|l| {
+            let after_eq = l.split('=').nth(1).unwrap_or("").trim();
+            // Strip trailing comments.
+            let value = after_eq.split('#').next().unwrap_or("").trim();
+            !(value == "false" || value == "[]")
+        })
+        .unwrap_or(true);
+
+    (name, is_publishable)
+}
+
+fn read_go_manifest(dir: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(dir.join("go.mod")).ok()?;
+    content
+        .lines()
+        .next()
+        .and_then(|l| l.strip_prefix("module ").map(|m| m.trim().to_string()))
+}
+
+fn read_python_manifest(dir: &Path) -> (Option<String>, bool) {
+    // pyproject.toml [project].name or [tool.poetry].name. The
+    // `"Private :: Do Not Upload"` classifier (PEP 301) signals a
+    // workspace-internal package; the bare `private = true` key under
+    // `[tool.poetry]` is the Poetry-flavored alternative.
+    let Ok(content) = std::fs::read_to_string(dir.join("pyproject.toml")) else {
+        return (None, true);
+    };
+
+    let mut found_name: Option<String> = None;
+    let mut is_publishable = true;
+
+    for marker in &["[project]", "[tool.poetry]"] {
+        if let Some(start) = content.find(marker) {
+            let tail = &content[start + marker.len()..];
+            let section = tail.split("\n[").next().unwrap_or(tail);
+
+            if found_name.is_none() {
+                found_name = section
+                    .lines()
+                    .find(|l| l.trim_start().starts_with("name"))
+                    .and_then(|l| {
+                        let val = l.split('=').nth(1)?.trim().trim_matches('"').trim_matches('\'');
+                        (!val.is_empty()).then(|| val.to_string())
+                    });
+            }
+
+            // PEP 301 "Private :: Do Not Upload" classifier — same
+            // string in both [project] and [tool.poetry] dialects.
+            if section.contains("Private :: Do Not Upload") {
+                is_publishable = false;
+            }
+            // Poetry-specific shorthand: `private = true`.
+            if section
+                .lines()
+                .any(|l| l.trim_start().starts_with("private") && l.contains("true"))
+            {
+                is_publishable = false;
+            }
+        }
+    }
+
+    (found_name, is_publishable)
+}
+
+fn read_dotnet_manifest(dir: &Path) -> Option<String> {
+    // .csproj / .fsproj / .vbproj filename stem — this is what
+    // <ProjectReference> resolves against in MSBuild.
+    std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+        let name = e.file_name().to_string_lossy().into_owned();
+        for ext in &[".csproj", ".fsproj", ".vbproj"] {
+            if let Some(stem) = name.strip_suffix(ext) {
+                return Some(stem.to_string());
+            }
+        }
+        None
+    })
+}
+
+/// Back-compat shim — callers that just want the name keep working.
+fn package_name_from_manifest(dir: &Path, kind: &str) -> Option<String> {
+    read_package_manifest(dir, kind).0
 }
 
 fn dir_name(rel_path: &str) -> String {
@@ -660,3 +755,7 @@ pub(crate) fn mark_service_packages(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "stage_discover_tests.rs"]
+mod tests;

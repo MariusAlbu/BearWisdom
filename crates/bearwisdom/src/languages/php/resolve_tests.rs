@@ -73,10 +73,11 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 
@@ -109,10 +110,11 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
             flow: crate::types::FlowMeta::default(),
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
+
+            plugin_flow_emissions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -776,4 +778,277 @@ fn test_transitive_inherited_method_resolves() {
             ))
             .unwrap()
     );
+}
+
+// ---------------------------------------------------------------------------
+// DbQuery flow emission — Eloquent + Doctrine (Goal 17)
+// ---------------------------------------------------------------------------
+
+fn make_static_chain(segments: &[&str]) -> MemberChain {
+    // First segment is class (TypeAccess), rest are Property.
+    MemberChain {
+        segments: segments
+            .iter()
+            .enumerate()
+            .map(|(i, name)| ChainSegment {
+                name: name.to_string(),
+                node_kind: if i == 0 { "class".to_string() } else { "static_call_expression".to_string() },
+                kind: if i == 0 { SegmentKind::TypeAccess } else { SegmentKind::Property },
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            })
+            .collect(),
+    }
+}
+
+fn make_instance_chain(segments: &[&str]) -> MemberChain {
+    // First segment is variable identifier, rest are Property.
+    MemberChain {
+        segments: segments
+            .iter()
+            .enumerate()
+            .map(|(i, name)| ChainSegment {
+                name: name.to_string(),
+                node_kind: if i == 0 { "variable_name".to_string() } else { "member_call_expression".to_string() },
+                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn test_php_eloquent_where_emits_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+
+    let chain = make_static_chain(&["User", "where"]);
+    match detect_php_db_query_emission(&chain, &[]).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.User");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_eloquent_find_emits_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+
+    let chain = make_static_chain(&["Post", "find"]);
+    match detect_php_db_query_emission(&chain, &[]).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.Post");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_eloquent_create_emits_insert() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+
+    let chain = make_static_chain(&["Article", "create"]);
+    match detect_php_db_query_emission(&chain, &[]).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.Article");
+            assert_eq!(operation, DbQueryOp::Insert);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_eloquent_destroy_emits_delete() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+
+    let chain = make_static_chain(&["Comment", "destroy"]);
+    match detect_php_db_query_emission(&chain, &[]).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.Comment");
+            assert_eq!(operation, DbQueryOp::Delete);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_eloquent_chained_first_emits_on_leaf() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+
+    // `User::where(...)->orderBy(...)->first()` — chain root TypeAccess(User),
+    // intermediate Property segments, leaf is `first` (Select).
+    let chain = make_static_chain(&["User", "where", "orderBy", "first"]);
+    match detect_php_db_query_emission(&chain, &[]).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.User");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_eloquent_firstorcreate_emits_upsert() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+
+    let chain = make_static_chain(&["User", "firstOrCreate"]);
+    match detect_php_db_query_emission(&chain, &[]).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.User");
+            assert_eq!(operation, DbQueryOp::Upsert);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_doctrine_em_find_with_class_ident_arg() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+    use crate::types::CallArg;
+
+    // `$em->find(User::class, $id)` — chain is em.find, entity from arg.
+    let chain = make_instance_chain(&["em", "find"]);
+    let args = vec![CallArg::Ident("User".to_string()), CallArg::Ident("id".to_string())];
+    match detect_php_db_query_emission(&chain, &args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.User");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_doctrine_repository_chain_emits() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+    use crate::types::CallArg;
+
+    // `$em->getRepository(User::class)->findBy(...)` — chain is em.getRepository.findBy.
+    // The Ident("User") arg was attached to the `findBy` call's call_args via
+    // the doctrine path; here we simulate the leaf call which has no args, but
+    // an intermediate getRepository captured the entity. In practice we
+    // currently see args on the leaf-call ref; the test here uses args carried
+    // on the leaf ref (the cross-call propagation is out of scope for v1).
+    let chain = make_instance_chain(&["em", "getRepository", "findBy"]);
+    let args = vec![CallArg::Ident("User".to_string())];
+    match detect_php_db_query_emission(&chain, &args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.User");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_em_flush_emits_other() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_php_db_query_emission;
+
+    let chain = make_instance_chain(&["em", "flush"]);
+    match detect_php_db_query_emission(&chain, &[]).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "php.*");
+            assert_eq!(operation, DbQueryOp::Other);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_php_facade_static_call_not_emitted() {
+    use super::resolve::detect_php_db_query_emission;
+
+    // `Route::get(...)` — Route is a Laravel facade, not an Eloquent model.
+    let chain = make_static_chain(&["Route", "get"]);
+    assert!(detect_php_db_query_emission(&chain, &[]).is_none());
+
+    // `Auth::user()` — Auth facade, not a model.
+    let chain = make_static_chain(&["Auth", "user"]);
+    assert!(detect_php_db_query_emission(&chain, &[]).is_none());
+}
+
+#[test]
+fn test_php_lowercase_root_not_emitted() {
+    use super::resolve::detect_php_db_query_emission;
+
+    // `$user->where(...)` — chain root is an Identifier, not a class.
+    let chain = make_instance_chain(&["user", "where"]);
+    assert!(detect_php_db_query_emission(&chain, &[]).is_none());
+}
+
+#[test]
+fn test_php_unknown_leaf_not_emitted() {
+    use super::resolve::detect_php_db_query_emission;
+
+    // `User::someRandomMethod()` — leaf isn't a known Eloquent op.
+    let chain = make_static_chain(&["User", "logBackground"]);
+    assert!(detect_php_db_query_emission(&chain, &[]).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Symfony Route attribute → Consumer HttpCall (Goal 17)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_php_symfony_route_attribute_emits_consumer_httpcall() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_symfony_route_attribute_emission;
+
+    let em = detect_symfony_route_attribute_emission("Route", Some("/api/users")).unwrap();
+    match em {
+        FlowEmission::NamedChannel { kind, name, role, .. } => {
+            assert!(matches!(kind, NamedChannelKind::HttpCall));
+            assert_eq!(role, ChannelRole::Consumer);
+            assert_eq!(name, "/api/users");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_php_symfony_route_no_url_returns_none() {
+    use super::resolve::detect_symfony_route_attribute_emission;
+
+    // No URL arg.
+    assert!(detect_symfony_route_attribute_emission("Route", None).is_none());
+    // Empty URL.
+    assert!(detect_symfony_route_attribute_emission("Route", Some("")).is_none());
+    // Non-Route attribute.
+    assert!(detect_symfony_route_attribute_emission("Get", Some("/x")).is_none());
+    // Non-path URL (skip non-route refs that happen to land on a Route ident).
+    assert!(detect_symfony_route_attribute_emission("Route", Some("api/users")).is_none());
+}
+
+#[test]
+fn test_php_ratchet_message_component_emits_ws_consumer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_php_ratchet_emission;
+    match detect_php_ratchet_emission("Ratchet\\MessageComponentInterface").unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::WebSocket));
+            assert_eq!(role, ChannelRole::Consumer);
+            assert_eq!(name, "php.ratchet");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_php_ratchet_rejects_non_ws_interface() {
+    use super::resolve::detect_php_ratchet_emission;
+    assert!(detect_php_ratchet_emission("SomeInterface").is_none());
 }

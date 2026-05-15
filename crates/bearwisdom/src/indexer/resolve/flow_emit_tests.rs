@@ -52,6 +52,7 @@ fn named_channel_kind_edge_type_strings() {
     assert_eq!(NamedChannelKind::BgJob.edge_type_str(), "bg_job");
     assert_eq!(NamedChannelKind::Mailer.edge_type_str(), "mailer");
     assert_eq!(NamedChannelKind::MessageQueue.edge_type_str(), "message_queue");
+    assert_eq!(NamedChannelKind::EventBus.edge_type_str(), "event_bus");
 }
 
 #[test]
@@ -60,6 +61,7 @@ fn named_channel_kind_protocol_strings() {
     assert_eq!(NamedChannelKind::GraphQLOp.protocol_str(), "graphql");
     assert_eq!(NamedChannelKind::WebSocket.protocol_str(), "websocket");
     assert_eq!(NamedChannelKind::IpcCall.protocol_str(), "ipc");
+    assert_eq!(NamedChannelKind::EventBus.protocol_str(), "event_bus");
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +75,7 @@ fn http_call_emission_edge_type_and_protocol() {
         name: "/api/users".to_string(),
         role: ChannelRole::Producer,
         method: Some(HttpMethod::Get),
+    streaming: None,
     };
     assert_eq!(e.edge_type(), "http_call");
     assert_eq!(e.protocol(), Some("rest"));
@@ -87,6 +90,7 @@ fn http_call_empty_name_yields_no_url_pattern() {
         name: String::new(),
         role: ChannelRole::Producer,
         method: Some(HttpMethod::Post),
+    streaming: None,
     };
     assert_eq!(e.url_pattern(), None);
 }
@@ -98,6 +102,7 @@ fn websocket_emission_no_http_method() {
         name: "message".to_string(),
         role: ChannelRole::Producer,
         method: None,
+    streaming: None,
     };
     assert_eq!(e.edge_type(), "websocket");
     assert_eq!(e.http_method_str(), None);
@@ -111,6 +116,7 @@ fn ipc_call_emission_edge_type() {
         name: "get-settings".to_string(),
         role: ChannelRole::Producer,
         method: None,
+    streaming: None,
     };
     assert_eq!(e.edge_type(), "ipc_call");
     assert_eq!(e.protocol(), Some("ipc"));
@@ -335,6 +341,7 @@ fn named_channel_is_not_single_ended() {
         name: "/api".to_string(),
         role: ChannelRole::Producer,
         method: Some(HttpMethod::Get),
+    streaming: None,
     };
     assert!(!e.is_single_ended());
 }
@@ -365,4 +372,86 @@ fn migration_target_is_not_single_ended() {
         direction: MigrationDirection::Down,
     };
     assert!(!e.is_single_ended());
+}
+
+// ---------------------------------------------------------------------------
+// StreamKind
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stream_kind_as_str() {
+    assert_eq!(StreamKind::Unary.as_str(), "unary");
+    assert_eq!(StreamKind::ServerStreaming.as_str(), "server_streaming");
+    assert_eq!(StreamKind::ClientStreaming.as_str(), "client_streaming");
+    assert_eq!(StreamKind::BidiStreaming.as_str(), "bidi_streaming");
+}
+
+#[test]
+fn stream_kind_from_method_name_recognises_server_streaming_prefix() {
+    assert_eq!(StreamKind::from_method_name("stream_events"), StreamKind::ServerStreaming);
+    assert_eq!(StreamKind::from_method_name("subscribe_orders"), StreamKind::ServerStreaming);
+    assert_eq!(StreamKind::from_method_name("watch_pods"), StreamKind::ServerStreaming);
+}
+
+#[test]
+fn stream_kind_from_method_name_recognises_server_streaming_suffix() {
+    assert_eq!(StreamKind::from_method_name("get_events_stream"), StreamKind::ServerStreaming);
+}
+
+#[test]
+fn stream_kind_from_method_name_recognises_client_streaming() {
+    assert_eq!(StreamKind::from_method_name("upload_chunks"), StreamKind::ClientStreaming);
+    assert_eq!(StreamKind::from_method_name("record_route"), StreamKind::ClientStreaming);
+    assert_eq!(StreamKind::from_method_name("collect_metrics"), StreamKind::ClientStreaming);
+}
+
+#[test]
+fn stream_kind_from_method_name_recognises_bidi() {
+    assert_eq!(StreamKind::from_method_name("chat"), StreamKind::BidiStreaming);
+    assert_eq!(StreamKind::from_method_name("dialog_session"), StreamKind::BidiStreaming);
+    assert_eq!(StreamKind::from_method_name("route_bidi"), StreamKind::BidiStreaming);
+}
+
+#[test]
+fn stream_kind_from_method_name_defaults_to_unary() {
+    assert_eq!(StreamKind::from_method_name("get_user"), StreamKind::Unary);
+    assert_eq!(StreamKind::from_method_name("create_order"), StreamKind::Unary);
+    assert_eq!(StreamKind::from_method_name("HelloWorld"), StreamKind::Unary);
+}
+
+#[test]
+fn rpc_call_emission_carries_streaming_kind() {
+    let e = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::RpcCall,
+        name: "User.GetUser".to_string(),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: Some(StreamKind::ServerStreaming),
+    };
+    assert_eq!(e.streaming_str(), Some("server_streaming"));
+}
+
+#[test]
+fn rpc_call_unary_yields_no_streaming_metadata_string() {
+    let e = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::RpcCall,
+        name: "User.GetUser".to_string(),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: Some(StreamKind::Unary),
+    };
+    assert_eq!(e.streaming_str(), None);
+}
+
+#[test]
+fn http_call_streaming_str_is_always_none() {
+    let e = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: "/api".to_string(),
+        role: ChannelRole::Producer,
+        method: Some(HttpMethod::Get),
+        streaming: Some(StreamKind::ServerStreaming),
+    };
+    // streaming_str gates on kind == RpcCall.
+    assert_eq!(e.streaming_str(), None);
 }

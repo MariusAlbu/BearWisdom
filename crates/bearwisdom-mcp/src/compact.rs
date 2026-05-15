@@ -556,6 +556,7 @@ pub fn entry_points(report: &EntryPointsReport) -> String {
             EntryPointKind::ExportedApi => "exported_api",
             EntryPointKind::LifecycleHook => "lifecycle_hook",
             EntryPointKind::DiRegistered => "di_registered",
+            EntryPointKind::UserDeclared => "user_declared",
         };
         let _ = writeln!(body, "{}|{}|{}:{}|{}", e.name, e.kind, fr, e.line, ek);
     }

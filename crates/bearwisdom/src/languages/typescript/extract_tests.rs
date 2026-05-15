@@ -1386,3 +1386,71 @@ foo();
         .collect();
     assert!(calls.contains(&"foo".to_string()), "regression — clean call dropped: {calls:?}");
 }
+
+/// `export` keyword on top-level declarations lives on the
+/// `export_statement` parent, not on the declaration child. The
+/// reachability-based dead-code feature relies on these symbols being
+/// tagged `visibility = Public` so the `exported_api` entry-point
+/// contributor picks them up. Regression net for the helpers.rs parent
+/// walk added alongside the Phase 4 follow-up.
+#[test]
+fn exported_top_level_function_is_public() {
+    use crate::types::Visibility;
+    let src = "export function publicFn() {}\nfunction privateFn() {}\n";
+    let symbols = sym(src);
+    let pubf = symbols.iter().find(|s| s.name == "publicFn").expect("publicFn extracted");
+    let privf = symbols.iter().find(|s| s.name == "privateFn").expect("privateFn extracted");
+    assert_eq!(
+        pubf.visibility,
+        Some(Visibility::Public),
+        "exported function must be tagged public, got {:?}",
+        pubf.visibility,
+    );
+    assert!(
+        privf.visibility.is_none(),
+        "non-exported function must have no visibility, got {:?}",
+        privf.visibility,
+    );
+}
+
+#[test]
+fn exported_class_is_public() {
+    use crate::types::Visibility;
+    let src = "export class PublicClass {}\nclass PrivateClass {}\n";
+    let symbols = sym(src);
+    let pub_c = symbols.iter().find(|s| s.name == "PublicClass").expect("PublicClass extracted");
+    let priv_c = symbols.iter().find(|s| s.name == "PrivateClass").expect("PrivateClass extracted");
+    assert_eq!(pub_c.visibility, Some(Visibility::Public));
+    assert!(priv_c.visibility.is_none());
+}
+
+#[test]
+fn exported_const_arrow_is_public() {
+    use crate::types::Visibility;
+    // `export const handler = (req) => {}` — the arrow function nests two
+    // levels deeper than `export function` so the parent walk has to look
+    // at the grandparent.
+    let src = "export const handler = () => {};\nconst internal = () => {};\n";
+    let symbols = sym(src);
+    let h = symbols.iter().find(|s| s.name == "handler").expect("handler extracted");
+    let i = symbols.iter().find(|s| s.name == "internal").expect("internal extracted");
+    assert_eq!(
+        h.visibility,
+        Some(Visibility::Public),
+        "exported arrow const must be tagged public, got {:?}",
+        h.visibility,
+    );
+    assert!(i.visibility.is_none());
+}
+
+#[test]
+fn export_default_function_is_public() {
+    use crate::types::Visibility;
+    let src = "export default function defaultHandler() {}\n";
+    let symbols = sym(src);
+    let h = symbols
+        .iter()
+        .find(|s| s.name == "defaultHandler")
+        .expect("defaultHandler extracted");
+    assert_eq!(h.visibility, Some(Visibility::Public));
+}

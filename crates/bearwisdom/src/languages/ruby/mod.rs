@@ -56,15 +56,6 @@ impl LanguagePlugin for RubyPlugin {
         extract::extract(source)
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_ruby_graphql(source, file_path)
-    }
-
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class",
@@ -93,26 +84,6 @@ impl LanguagePlugin for RubyPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::RubyChecker))
-    }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::RailsRouteConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::RubyRestConnector, db, project_root, ctx,
-        ));
-        out
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

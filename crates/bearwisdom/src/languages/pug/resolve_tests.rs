@@ -38,10 +38,11 @@ fn make_pug_file(path: &str, host_name: &str, refs: Vec<ExtractedRef>) -> Parsed
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 
@@ -88,10 +89,11 @@ fn build_index_and_resolve(files: &[&ParsedFile], importer: &ParsedFile) -> Opti
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
             flow: crate::types::FlowMeta::default(),
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
+
+            plugin_flow_emissions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);

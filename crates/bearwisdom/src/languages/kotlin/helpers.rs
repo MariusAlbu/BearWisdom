@@ -95,14 +95,24 @@ pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
     for child in node.children(&mut cursor) {
         if child.kind() == "modifiers" {
             let text = node_text(child, src);
-            if text.contains("public")    { return Some(Visibility::Public);    }
+            // Check explicit modifiers in precedence order; specific keywords
+            // beat the implicit-public default below.
             if text.contains("private")   { return Some(Visibility::Private);   }
             if text.contains("protected") { return Some(Visibility::Protected); }
             if text.contains("internal")  { return Some(Visibility::Internal);  }
-            return None;
+            if text.contains("public")    { return Some(Visibility::Public);    }
+            // A `modifiers` block exists but holds only non-visibility
+            // tokens (`open`, `abstract`, `sealed`, `data`, …). Kotlin's
+            // default visibility is `public`; falling through to `None`
+            // would hide declarations like `open class Foo` from the
+            // dead-code `exported_api` entry-point contributor.
+            return Some(Visibility::Public);
         }
     }
-    None
+    // No `modifiers` block at all — bare `fun foo()` / `class Foo`.
+    // Kotlin's language default is `public`; emit it explicitly so the
+    // reachability seed-set picks the symbol up.
+    Some(Visibility::Public)
 }
 
 pub(super) fn extract_doc_comment(node: &Node, src: &[u8]) -> Option<String> {

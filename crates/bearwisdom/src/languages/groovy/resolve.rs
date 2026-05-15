@@ -113,4 +113,48 @@ impl LanguageResolver for GroovyResolver {
     ) -> bool {
         JavaResolver.is_visible(file_ctx, ref_ctx, target)
     }
+
+    fn detect_flow_emission(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        // Reuse Java detectors — Groovy/Grails uses the same annotations
+        // (`@GetMapping`, etc.), JPA, JdbcTemplate, etc.
+        let mut emissions = JavaResolver.detect_flow_emission(file_ctx, ref_ctx);
+        // GORM `User.where { ... }.list()`, `User.findById(id)` — uses chain.
+        if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
+            if let Some(em) = detect_groovy_gorm_emission(chain) {
+                emissions.push(em);
+            }
+        }
+        emissions
+    }
 }
+
+pub(crate) fn detect_groovy_gorm_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    if chain.segments.len() < 2 {
+        return None;
+    }
+    let root = chain.segments[0].name.as_str();
+    let leaf = chain.segments.last()?.name.as_str();
+    if !root.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+        return None;
+    }
+    let op = match leaf {
+        "list" | "findAll" | "findAllBy" | "findBy" | "findById" | "get" | "where" | "count"
+        | "first" | "last" => DbQueryOp::Select,
+        "save" | "insert" => DbQueryOp::Insert,
+        "update" => DbQueryOp::Update,
+        "delete" | "deleteAll" => DbQueryOp::Delete,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: format!("groovy.{}", root),
+        operation: op,
+    })
+}
+

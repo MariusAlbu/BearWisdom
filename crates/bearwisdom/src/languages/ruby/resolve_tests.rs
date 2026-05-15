@@ -71,10 +71,11 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 
@@ -107,10 +108,11 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
             flow: crate::types::FlowMeta::default(),
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
+
+            plugin_flow_emissions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -311,4 +313,151 @@ fn test_stdlib_require_is_external() {
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
     assert_eq!(ns, Some("json".to_string()), "json stdlib require should be external");
+}
+
+// ---------------------------------------------------------------------------
+// ActiveRecord DbQuery detection (Goal 16)
+// ---------------------------------------------------------------------------
+
+fn make_chain(segments: &[&str]) -> MemberChain {
+    MemberChain {
+        segments: segments
+            .iter()
+            .enumerate()
+            .map(|(i, name)| ChainSegment {
+                name: name.to_string(),
+                node_kind: if i == 0 { "constant".to_string() } else { "identifier".to_string() },
+                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn test_ruby_activerecord_where_emits_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_ruby_activerecord_emission;
+
+    let chain = make_chain(&["User", "where"]);
+    match detect_ruby_activerecord_emission(&chain).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "rb.User");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_ruby_activerecord_find_by_emits_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_ruby_activerecord_emission;
+
+    let chain = make_chain(&["Post", "find_by"]);
+    match detect_ruby_activerecord_emission(&chain).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "rb.Post");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_ruby_activerecord_create_emits_insert() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_ruby_activerecord_emission;
+
+    let chain = make_chain(&["Article", "create"]);
+    match detect_ruby_activerecord_emission(&chain).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "rb.Article");
+            assert_eq!(operation, DbQueryOp::Insert);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_ruby_activerecord_destroy_all_emits_delete() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_ruby_activerecord_emission;
+
+    let chain = make_chain(&["Comment", "destroy_all"]);
+    match detect_ruby_activerecord_emission(&chain).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "rb.Comment");
+            assert_eq!(operation, DbQueryOp::Delete);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_ruby_activerecord_chained_includes_emits_on_leaf() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_ruby_activerecord_emission;
+
+    let chain = make_chain(&["Poll", "includes", "where", "first"]);
+    match detect_ruby_activerecord_emission(&chain).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "rb.Poll");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_ruby_activerecord_find_or_create_emits_upsert() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_ruby_activerecord_emission;
+
+    let chain = make_chain(&["User", "find_or_create_by"]);
+    match detect_ruby_activerecord_emission(&chain).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "rb.User");
+            assert_eq!(operation, DbQueryOp::Upsert);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_ruby_activerecord_no_emit_for_lowercase_root() {
+    use super::resolve::detect_ruby_activerecord_emission;
+
+    let chain = make_chain(&["user", "where"]);
+    assert!(detect_ruby_activerecord_emission(&chain).is_none());
+}
+
+#[test]
+fn test_ruby_activerecord_no_emit_for_unknown_leaf() {
+    use super::resolve::detect_ruby_activerecord_emission;
+
+    let chain = make_chain(&["Logger", "info"]);
+    assert!(detect_ruby_activerecord_emission(&chain).is_none());
+}
+
+#[test]
+fn test_ruby_actioncable_channel_inheritance_emits_ws_consumer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_ruby_actioncable_emission;
+    match detect_ruby_actioncable_emission("ApplicationCable::Channel").unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::WebSocket));
+            assert_eq!(role, ChannelRole::Consumer);
+            assert_eq!(name, "rb.actioncable");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_ruby_actioncable_rejects_non_channel() {
+    use super::resolve::detect_ruby_actioncable_emission;
+    assert!(detect_ruby_actioncable_emission("ApplicationRecord").is_none());
 }

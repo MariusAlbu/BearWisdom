@@ -33,12 +33,20 @@ fn class_decorator_no_args() {
 
 #[test]
 fn class_decorator_with_route_arg() {
+    use crate::types::CallArg;
     let src = r#"@Controller('/api/users')
 class UserController {}"#;
     let dr = decorator_refs(src);
     let ctrl = dr.iter().find(|r| r.target_name == "Controller");
     assert!(ctrl.is_some(), "refs: {dr:?}");
-    assert_eq!(ctrl.unwrap().module, Some("/api/users".to_string()));
+    // r.module is reserved for import sources; decorator first_arg lives
+    // in call_args (CallArg::StringLit) so it doesn't collide with imports.
+    assert_eq!(ctrl.unwrap().module, None);
+    let first_str = ctrl.unwrap().call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) => Some(s.as_str()),
+        _ => None,
+    });
+    assert_eq!(first_str, Some("/api/users"));
 }
 
 #[test]
@@ -58,6 +66,7 @@ fn method_decorator_no_args() {
 
 #[test]
 fn method_decorator_with_path() {
+    use crate::types::CallArg;
     let src = r#"class C {
     @Get(':id')
     findOne() {}
@@ -65,7 +74,12 @@ fn method_decorator_with_path() {
     let dr = decorator_refs(src);
     let get = dr.iter().find(|r| r.target_name == "Get");
     assert!(get.is_some(), "refs: {dr:?}");
-    assert_eq!(get.unwrap().module, Some(":id".to_string()));
+    assert_eq!(get.unwrap().module, None);
+    let first_str = get.unwrap().call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) => Some(s.as_str()),
+        _ => None,
+    });
+    assert_eq!(first_str, Some(":id"));
 }
 
 #[test]

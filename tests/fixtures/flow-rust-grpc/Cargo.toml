@@ -1,0 +1,11 @@
+[package]
+name = "flow-rust-grpc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tonic = "0.12"
+sqlx = "0.8"
+reqwest = "0.12"
+axum = "0.8"
+diesel = "2.3"

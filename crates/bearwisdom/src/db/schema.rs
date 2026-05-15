@@ -238,23 +238,91 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              COMMIT;",
         )?;
     }
+    // v0.13: Add is_publishable to packages. Drives the ExportedApi
+    // entry-point contributor — a non-publishable package's public symbols
+    // are not auto-rooted as library-API entry points. Default 1 preserves
+    // prior behavior; manifest contributors flip to 0 for Cargo
+    // `publish = false`, npm `"private": true`, Maven absent
+    // `<distributionManagement>`, etc.
+    if !column_exists(conn, "packages", "is_publishable") {
+        conn.execute_batch(
+            "ALTER TABLE packages ADD COLUMN is_publishable INTEGER NOT NULL DEFAULT 1"
+        )?;
+    }
     // v0.11: Indexes on FK columns referencing symbols(id) so cascade
     // DELETE doesn't trigger full table scans. On a 280k-symbol index
     // (aspnetcore) deleting 7 symbol rows took 80s without these
-    // indexes — `code_chunks`, `db_mappings`, and `connection_points`
-    // each scanned their entire table per cascading delete because
-    // their `symbol_id` column had no covering index. Adding these
-    // makes incremental save-latency O(rows_per_symbol) instead of
+    // indexes — `code_chunks` and `db_mappings` each scanned their
+    // entire table per cascading delete because their `symbol_id`
+    // column had no covering index. Adding these makes incremental
+    // save-latency O(rows_per_symbol) instead of
     // O(rows_in_table * symbols_deleted).
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_code_chunks_symbol
             ON code_chunks(symbol_id) WHERE symbol_id IS NOT NULL;
          CREATE INDEX IF NOT EXISTS idx_db_mappings_symbol
-            ON db_mappings(symbol_id);
-         CREATE INDEX IF NOT EXISTS idx_connection_points_symbol
-            ON connection_points(symbol_id) WHERE symbol_id IS NOT NULL;"
+            ON db_mappings(symbol_id);"
     )?;
+
+    // Phase H (post-connector-kill): dedup + UNIQUE indexes on flow_edges
+    // and routes. Pre-Phase H pipelines had multiple parallel write paths
+    // (registry matcher + resolver pairer + routes-table bridge) that wrote
+    // the same logical row through different channels; neither table had a
+    // unique constraint so the rows compounded. The DELETE keeps the lowest
+    // id per logical group, then CREATE UNIQUE INDEX locks future writes.
+    // Both statements are idempotent — once the indexes exist the DELETE
+    // becomes a no-op and the CREATE is a no-op.
+    if !index_exists(conn, "idx_flow_edges_unique") {
+        conn.execute_batch(
+            "DELETE FROM flow_edges WHERE id NOT IN (
+                SELECT MIN(id) FROM flow_edges
+                GROUP BY
+                    source_file_id,
+                    COALESCE(source_line, -1),
+                    COALESCE(source_symbol, ''),
+                    COALESCE(target_file_id, -1),
+                    COALESCE(target_line, -1),
+                    COALESCE(target_symbol, ''),
+                    edge_type,
+                    COALESCE(url_pattern, '')
+            );
+            CREATE UNIQUE INDEX idx_flow_edges_unique
+                ON flow_edges(
+                    source_file_id,
+                    COALESCE(source_line, -1),
+                    COALESCE(source_symbol, ''),
+                    COALESCE(target_file_id, -1),
+                    COALESCE(target_line, -1),
+                    COALESCE(target_symbol, ''),
+                    edge_type,
+                    COALESCE(url_pattern, '')
+                );"
+        )?;
+    }
+    if !index_exists(conn, "idx_routes_unique") {
+        conn.execute_batch(
+            "DELETE FROM routes WHERE id NOT IN (
+                SELECT MIN(id) FROM routes
+                GROUP BY
+                    file_id,
+                    http_method,
+                    route_template,
+                    COALESCE(line, -1)
+            );
+            CREATE UNIQUE INDEX idx_routes_unique
+                ON routes(file_id, http_method, route_template, COALESCE(line, -1));"
+        )?;
+    }
     Ok(())
+}
+
+fn index_exists(conn: &Connection, name: &str) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?1",
+        [name],
+        |_| Ok(()),
+    )
+    .is_ok()
 }
 
 fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
@@ -285,18 +353,25 @@ const SCHEMA_SQL: &str = "
 -- Single-project repos leave this table empty.
 
 CREATE TABLE IF NOT EXISTS packages (
-    id            INTEGER PRIMARY KEY,
+    id             INTEGER PRIMARY KEY,
     -- Folder-derived sort key. NOT unique — nested workspaces frequently
     -- have repeating folder names (`apps/routes/`, `packages/routes/`).
     -- Identity is `(path, kind)`. Use `declared_name` to find a package by
     -- its manifest-reported name.
-    name          TEXT    NOT NULL,
-    path          TEXT    NOT NULL,                   -- relative to workspace root
-    kind          TEXT    NOT NULL DEFAULT 'unknown', -- ecosystem hint: npm, cargo, dotnet, go, pub, etc.
-    manifest      TEXT,                               -- relative path to manifest file
-    parent_id     INTEGER REFERENCES packages(id) ON DELETE SET NULL,
-    is_service    INTEGER NOT NULL DEFAULT 0,         -- 1 if a Dockerfile was found in this package
-    declared_name TEXT,                               -- manifest-declared name (@myorg/foo, etc.)
+    name           TEXT    NOT NULL,
+    path           TEXT    NOT NULL,                   -- relative to workspace root
+    kind           TEXT    NOT NULL DEFAULT 'unknown', -- ecosystem hint: npm, cargo, dotnet, go, pub, etc.
+    manifest       TEXT,                               -- relative path to manifest file
+    parent_id      INTEGER REFERENCES packages(id) ON DELETE SET NULL,
+    is_service     INTEGER NOT NULL DEFAULT 0,         -- 1 if a Dockerfile was found in this package
+    declared_name  TEXT,                               -- manifest-declared name (@myorg/foo, etc.)
+    -- Whether this package's public surface is reachable from outside the
+    -- workspace. Cargo `publish = false`, npm `\"private\": true`, Maven
+    -- `<distributionManagement>` absent, etc. flip this to 0. Drives the
+    -- ExportedApi entry-point contributor: a non-publishable package's public
+    -- symbols are NOT auto-rooted as library-API entry points. Default 1
+    -- preserves prior behavior on existing DBs.
+    is_publishable INTEGER NOT NULL DEFAULT 1,
     UNIQUE(path, kind)                                -- polyglot monorepos: same path may host multiple ecosystems
 );
 
@@ -516,6 +591,10 @@ CREATE TABLE IF NOT EXISTS routes (
 
 CREATE INDEX IF NOT EXISTS idx_routes_template ON routes(route_template);
 CREATE INDEX IF NOT EXISTS idx_routes_method   ON routes(http_method, route_template);
+-- `idx_routes_unique` (the dedup constraint) is created by `migrate()` after
+-- a one-time DELETE of duplicate rows — adding a UNIQUE INDEX directly via
+-- CREATE INDEX IF NOT EXISTS would fail on existing DBs whose flow tables
+-- still hold pre-Phase H duplicate inserts.
 
 -- ============================================================
 -- EF CORE DB MAPPINGS  (EF Core connector)
@@ -709,31 +788,81 @@ CREATE INDEX IF NOT EXISTS idx_flow_target ON flow_edges(target_file_id);
 CREATE INDEX IF NOT EXISTS idx_flow_edges_type
     ON flow_edges(edge_type, source_language, target_language);
 CREATE INDEX IF NOT EXISTS idx_flow_url ON flow_edges(url_pattern);
+-- `idx_flow_edges_unique` (the dedup constraint) is created by `migrate()`
+-- after a one-time DELETE of duplicate rows. See routes-table note above.
 
 -- ============================================================
--- CONNECTION POINTS  (connector architecture)
+-- ENTRY POINTS  (reachability-based dead-code: L1)
 -- ============================================================
--- One row per extracted call site or handler, produced by Connector
--- implementations. The resolution engine matches starts to stops
--- within the same protocol to produce flow_edges.
+-- Symbols that anchor reachability — every dead-code-detection BFS
+-- starts from this set. Populated by four contributor classes:
+--   • language plugins      (main, [[bin]], package.json `exports`)
+--   • connector plugins     (Spring @Component, NestJS @Controller, …)
+--   • manifest contributors (publishable-API surface per `is_publishable`)
+--   • user overrides        (.bw/roots.toml, in-source `// bw:keep`)
+--
+-- `kind` is the classification (main|route|event|di|exported|lifecycle|
+-- test|user|reflection). `source` is the contributor identifier — same
+-- symbol can be rooted by multiple contributors and we want to know
+-- which, both for diagnostics and for selectively dropping a class of
+-- roots when re-materializing reachability.
 
-CREATE TABLE IF NOT EXISTS connection_points (
-    id        INTEGER PRIMARY KEY,
-    file_id   INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-    symbol_id INTEGER REFERENCES symbols(id) ON DELETE SET NULL,
-    line      INTEGER NOT NULL,
-    protocol  TEXT    NOT NULL,
-    direction TEXT    NOT NULL,
-    key       TEXT    NOT NULL,
-    method    TEXT    NOT NULL DEFAULT '',
-    framework TEXT    NOT NULL DEFAULT '',
-    metadata  TEXT,
-    UNIQUE(file_id, line, protocol, direction, key, method)
+CREATE TABLE IF NOT EXISTS entry_points (
+    symbol_id   INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    kind        TEXT    NOT NULL,
+    source      TEXT    NOT NULL,
+    confidence  REAL    NOT NULL DEFAULT 1.0,
+    PRIMARY KEY (symbol_id, kind, source)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cp_protocol_dir ON connection_points(protocol, direction);
-CREATE INDEX IF NOT EXISTS idx_cp_key          ON connection_points(key);
-CREATE INDEX IF NOT EXISTS idx_cp_file         ON connection_points(file_id);
+CREATE INDEX IF NOT EXISTS idx_entry_points_kind   ON entry_points(kind);
+CREATE INDEX IF NOT EXISTS idx_entry_points_source ON entry_points(source);
+
+-- ============================================================
+-- REACHABILITY  (reachability-based dead-code: L3)
+-- ============================================================
+-- Materialized result of the BFS from entry_points across edges with
+-- confidence >= tau. Rematerialized once per `finalize_resolution`.
+-- A symbol absent from this table is unreachable from any entry point
+-- and is the canonical dead-code signal, replacing the old
+-- `incoming_edge_count = 0` proxy that conflated zero-incoming with
+-- zero-live-incoming.
+--
+-- `min_distance` is BFS hop count from the nearest entry point.
+-- `path_confidence` is the minimum edge confidence along the best
+-- (lowest-distance, highest-confidence) path. `via_kind` records the
+-- weakest edge kind on that path, surfacing candidates kept alive only
+-- through low-confidence synthesized edges like dispatch_candidate.
+
+CREATE TABLE IF NOT EXISTS reachability (
+    symbol_id        INTEGER PRIMARY KEY REFERENCES symbols(id) ON DELETE CASCADE,
+    min_distance     INTEGER NOT NULL,
+    path_confidence  REAL    NOT NULL,
+    via_kind         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_reachability_distance ON reachability(min_distance);
+
+-- ============================================================
+-- PACKAGE RESOLUTION HEALTH  (reachability-based dead-code: L4)
+-- ============================================================
+-- Per-package resolver health snapshot. Feeds the dead-code confidence
+-- formula:
+--     confidence(sym) = base × scope_resolution_health × …
+-- so a single workspace package with a struggling resolver gets its
+-- candidates dampened without dragging the whole workspace into the
+-- Unsafe trust tier. Rematerialized in `finalize_resolution` alongside
+-- `reachability`.
+
+CREATE TABLE IF NOT EXISTS package_resolution_health (
+    package_id      INTEGER PRIMARY KEY REFERENCES packages(id) ON DELETE CASCADE,
+    resolution_rate REAL    NOT NULL,                          -- 0.0 .. 100.0
+    resolved_refs   INTEGER NOT NULL,
+    unresolved_refs INTEGER NOT NULL,
+    low_conf_edges  INTEGER NOT NULL,
+    trust_tier      TEXT    NOT NULL,                          -- 'trusted'|'review'|'unsafe'
+    updated_at      INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
 
 -- ============================================================
 -- SEARCH HISTORY

@@ -1,19 +1,12 @@
-//! Connector infrastructure — shared types, registry, and matcher.
+//! Shared types and helpers from the legacy connector kill.
 //!
-//! All protocol-specific connector implementations live in their language
-//! plugin directories (`languages/{lang}/connectors.rs`). This module
-//! provides only the shared plumbing:
+//! Phase H removed the matcher / registry / `ConnectionPoint` pipeline. Only
+//! two utilities survive here because their consumers cross plugin boundaries:
 //!
-//! - `traits` — `Connector` trait and `ConnectorDescriptor`
-//! - `types` — `Protocol`, `ConnectionPoint`, `ResolvedFlow`, etc.
-//! - `registry` — `ConnectorRegistry` with detect/extract/match/write pipeline
-//! - `matcher` — `ProtocolMatcher` for generic key-based flow matching
-//! - `connector_db` — SQLite I/O helpers for connection points and flow edges
+//! - `types::Protocol` — string-form protocol family used by dockerfile / HCL
+//!   infrastructure connectors that write `flow_edges` directly.
+//! - `url_pattern::normalize` — URL pattern normaliser used by every resolver
+//!   that emits `FlowEmission::NamedChannel { kind: HttpCall, .. }`.
 
-pub mod connector_db;
-pub mod from_plugins;
-pub mod matcher;
-pub mod registry;
-pub mod traits;
 pub mod types;
 pub mod url_pattern;

@@ -36,7 +36,17 @@ impl LanguageResolver for OcamlResolver {
         file: &ParsedFile,
         _project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
+        // OCaml auto-opens `Stdlib` in every compilation unit. Bare calls
+        // like `close_in oc` or `open_in path` carry no module qualifier
+        // and no explicit `open` ref, so the wildcard-import step in
+        // resolve_common needs an implicit entry pointing at the Stdlib
+        // module file (file stem `stdlib` → ext:ocaml:ocaml/stdlib.ml).
+        let mut imports = vec![ImportEntry {
+            imported_name: "Stdlib".to_string(),
+            module_path: Some("stdlib".to_string()),
+            alias: None,
+            is_wildcard: true,
+        }];
 
         for r in &file.refs {
             if r.kind != EdgeKind::Imports {
@@ -163,4 +173,153 @@ impl LanguageResolver for OcamlResolver {
         // real symbols for declared deps.
         None
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let module = r.module.as_deref().unwrap_or("");
+        let target = r.target_name.as_str();
+        if let Some(em) = detect_ocaml_dream_route(module, target, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_ocaml_cohttp_producer(module, target, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_ocaml_caqti_emission(module, target) {
+            return vec![em];
+        }
+        Vec::new()
+    }
 }
+
+pub(crate) fn detect_ocaml_dream_route(
+    module: &str,
+    target_name: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    // Dream.get "/x" handler / Opium `App.get "/x" handler`.
+    let m_last = module.rsplit('.').next().unwrap_or(module);
+    if !matches!(m_last, "Dream" | "App" | "Opium") {
+        return None;
+    }
+    let method = match target_name {
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "delete" => HttpMethod::Delete,
+        "patch" => HttpMethod::Patch,
+        "head" => HttpMethod::Head,
+        "options" => HttpMethod::Options,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) if s.starts_with('/') => Some(s.as_str()),
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Consumer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_ocaml_cohttp_producer(
+    module: &str,
+    target_name: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    if !module.contains("Cohttp") && !module.contains("Piaf") && !module.contains("Httpaf") {
+        return None;
+    }
+    let method = match target_name {
+        "get" | "call" => HttpMethod::Any,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "delete" => HttpMethod::Delete,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_ocaml_caqti_emission(
+    module: &str,
+    target_name: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    detect_ocaml_caqti_with_imports(module, target_name, &[])
+}
+
+/// Caqti-style query operation detection that recognises module aliases.
+///
+/// OCaml code commonly aliases `Caqti_request.Infix` (or another Caqti
+/// submodule) via `module Q = Caqti_request.Infix` or `open Caqti_lwt`,
+/// and then writes `Db.find Q.find_user param`. The plain `module ==
+/// "Db"` substring check in the original implementation was a known
+/// false-positive source (matches `Database`, `Dbg`, `Adobe.Db`, …).
+///
+/// This variant checks the module name first against canonical Caqti
+/// roots, then against the file's `open <Pkg>`/`module X = <Caqti...>`
+/// alias declarations supplied in `aliases`. Each entry in `aliases`
+/// is `(local_name, resolved_target)` — when `module` matches a
+/// `local_name` whose `resolved_target` contains `Caqti`, treat the
+/// call as a Caqti operation.
+pub(crate) fn detect_ocaml_caqti_with_imports(
+    module: &str,
+    target_name: &str,
+    aliases: &[(String, String)],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    let canonical_match = module.contains("Caqti")
+        || matches!(module, "Db" | "Database" | "Repo" | "Q" | "Conn");
+    let m_root = module.split('.').next().unwrap_or(module);
+    let alias_match = aliases
+        .iter()
+        .any(|(local, target)| local == m_root && target.contains("Caqti"));
+    if !canonical_match && !alias_match {
+        return None;
+    }
+    let op = match target_name {
+        "find" | "find_opt" | "collect_list" | "fold" | "iter" | "rev_collect_list" => {
+            DbQueryOp::Select
+        }
+        "exec" => DbQueryOp::Other,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: "ml.*".to_string(),
+        operation: op,
+    })
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;

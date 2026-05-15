@@ -1,55 +1,18 @@
 // =============================================================================
-// languages/vue/connectors.rs — Vue GraphQL connection points
+// languages/vue/connectors.rs — Vue GraphQL FlowEmission detection
 //
-// Flattened into `VuePlugin::extract_connection_points` — the scan runs at
-// parse time on the in-memory source. The registry-facing `Connector` impl
-// returns empty; its detect still fires so the protocol is considered live.
+// Scans `.vue` sources for embedded GraphQL SDL blocks and Apollo resolver
+// maps, emitting Producer / Consumer `FlowEmission::NamedChannel { kind:
+// GraphQLOp, .. }` entries that the resolve loop pairs into `flow_edges`.
 // =============================================================================
 
-use std::collections::HashMap;
-use std::path::Path;
-
-use anyhow::Result;
 use regex::Regex;
-use rusqlite::Connection;
 
-use crate::connectors::traits::{Connector, ConnectorDescriptor};
-use crate::connectors::types::{ConnectionPoint as DbPoint, Protocol};
-use crate::ecosystem::manifest::ManifestKind;
-use crate::indexer::project_context::ProjectContext;
-use crate::types::{ConnectionKind, ConnectionPoint, ConnectionRole};
-
-pub struct VueGraphQlConnector;
-
-impl Connector for VueGraphQlConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "vue_graphql",
-            protocols: &[Protocol::GraphQl],
-            languages: &["vue"],
-        }
-    }
-
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Npm, "graphql")
-            || ctx.has_dependency(ManifestKind::Npm, "@apollo/client")
-            || ctx.has_dependency(ManifestKind::Npm, "apollo-client")
-            || ctx.has_dependency(ManifestKind::Npm, "@vue/apollo-composable")
-            || ctx.has_dependency(ManifestKind::Npm, "vue-apollo")
-            || ctx.has_dependency(ManifestKind::Npm, "urql")
-            || ctx.has_dependency(ManifestKind::Npm, "@urql/vue")
-    }
-
-    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<DbPoint>> {
-        // Moved into `VuePlugin::extract_connection_points`.
-        Ok(Vec::new())
-    }
-}
+use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
 
 /// Scan a `.vue` source for embedded GraphQL schema definitions and
-/// resolver-map entries. Called during parse from
-/// `VuePlugin::extract_connection_points`.
-pub fn extract_vue_graphql_points(source: &str) -> Vec<ConnectionPoint> {
+/// resolver-map entries.
+pub fn extract_vue_graphql_points(source: &str) -> Vec<(u32, FlowEmission)> {
     let re_type_block =
         Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{").expect("vue gql type block regex");
     let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:").expect("vue gql field regex");
@@ -61,20 +24,20 @@ pub fn extract_vue_graphql_points(source: &str) -> Vec<ConnectionPoint> {
         return Vec::new();
     }
 
-    let mut out: Vec<ConnectionPoint> = Vec::new();
-    let mut current_op_type: Option<String> = None;
+    let mut out: Vec<(u32, FlowEmission)> = Vec::new();
+    let mut in_op_block = false;
     let mut brace_depth: u32 = 0;
 
     for (line_idx, line_text) in source.lines().enumerate() {
         let line_no = (line_idx + 1) as u32;
 
-        if let Some(cap) = re_type_block.captures(line_text) {
-            current_op_type = Some(cap[1].to_lowercase());
+        if re_type_block.is_match(line_text) {
+            in_op_block = true;
             brace_depth = 1;
             continue;
         }
 
-        if current_op_type.is_some() {
+        if in_op_block {
             for ch in line_text.chars() {
                 match ch {
                     '{' => brace_depth += 1,
@@ -85,26 +48,23 @@ pub fn extract_vue_graphql_points(source: &str) -> Vec<ConnectionPoint> {
                 }
             }
             if brace_depth == 0 {
-                current_op_type = None;
+                in_op_block = false;
                 continue;
             }
             if brace_depth == 1 {
                 if let Some(cap) = re_field.captures(line_text) {
                     let field_name = cap[1].to_string();
                     if !field_name.starts_with("__") {
-                        let mut meta = HashMap::new();
-                        if let Some(op) = current_op_type.as_deref() {
-                            meta.insert("method".to_string(), op.to_string());
-                        }
-                        out.push(ConnectionPoint {
-                            kind: ConnectionKind::GraphQL,
-                            role: ConnectionRole::Start,
-                            key: field_name,
-                            line: line_no,
-                            col: 1,
-                            symbol_qname: String::new(),
-                            meta,
-                        });
+                        out.push((
+                            line_no,
+                            FlowEmission::NamedChannel {
+                                kind: NamedChannelKind::GraphQLOp,
+                                name: field_name,
+                                role: ChannelRole::Producer,
+                                method: None,
+                                streaming: None,
+                            },
+                        ));
                     }
                 }
             }
@@ -119,40 +79,21 @@ pub fn extract_vue_graphql_points(source: &str) -> Vec<ConnectionPoint> {
             ) {
                 continue;
             }
-            let mut meta = HashMap::new();
-            meta.insert("framework".to_string(), "apollo".to_string());
-            out.push(ConnectionPoint {
-                kind: ConnectionKind::GraphQL,
-                role: ConnectionRole::Stop,
-                key: name,
-                line: line_no,
-                col: 1,
-                symbol_qname: String::new(),
-                meta,
-            });
+            out.push((
+                line_no,
+                FlowEmission::NamedChannel {
+                    kind: NamedChannelKind::GraphQLOp,
+                    name,
+                    role: ChannelRole::Consumer,
+                    method: None,
+                    streaming: None,
+                },
+            ));
         }
     }
     out
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn emits_nothing_without_gql_marker() {
-        assert!(extract_vue_graphql_points("<template/><script>1</script>").is_empty());
-    }
-
-    #[test]
-    fn emits_start_from_schema_block() {
-        let src = "type Mutation {\n  createUser(input: U): U\n}\n";
-        let points = extract_vue_graphql_points(src);
-        assert_eq!(points.len(), 1);
-        assert_eq!(points[0].key, "createUser");
-        assert_eq!(
-            points[0].meta.get("method").map(String::as_str),
-            Some("mutation"),
-        );
-    }
-}
+#[path = "connectors_tests.rs"]
+mod tests;

@@ -54,15 +54,6 @@ impl LanguagePlugin for PythonPlugin {
         extract::extract(source)
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_python_connection_points(source, file_path)
-    }
-
     fn embedded_regions(
         &self,
         source: &str,
@@ -110,34 +101,13 @@ impl LanguagePlugin for PythonPlugin {
         Some(std::sync::Arc::new(type_checker::PythonChecker))
     }
 
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::DjangoRouteConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::FastApiRouteConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::PythonRestConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::PythonGrpcConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::PythonGraphQlConnector, db, project_root, ctx,
-        ));
-        out
-    }
+    // TODO(routes-dispatch): wire `connectors::discover_django_routes` and
+    // `connectors::discover_fastapi_routes` into the indexer route-population
+    // stage. Both functions now write the `routes` table directly (returning
+    // the insert count) and the routes-table → FlowEmission bridge in
+    // resolve/mod.rs emits the Consumer flows. The `resolve_connection_points`
+    // override was removed because the ConnectionPoint Stop emission was
+    // redundant with that bridge.
 
     fn post_index(
         &self,

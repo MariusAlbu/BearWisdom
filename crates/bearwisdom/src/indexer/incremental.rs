@@ -483,36 +483,24 @@ fn run_incremental_pipeline(
         }
         map
     };
-    let plugin_points = crate::connectors::from_plugins::collect_plugin_connection_points(
-        &parsed,
-        &file_id_map,
-        &symbol_id_map,
-    );
+    let _ = file_id_map;
+    let _ = symbol_id_map;
 
-    let mut resolved_plugin_points: Vec<crate::connectors::types::ConnectionPoint> = Vec::new();
-    for plugin in registry.all() {
-        let points = plugin.resolve_connection_points_incremental(
-            db, project_root, &project_ctx, &changed_paths,
-        );
-        if !points.is_empty() {
-            resolved_plugin_points.extend(points);
-        }
-    }
-
-    let connector_registry = crate::connectors::registry::build_default_registry();
-    // Incremental path: scope per-connector disk scans to changed +
-    // dependent files. The C# DI / event-bus connectors override
-    // `incremental_extract` to skip the full project sweep — saves
-    // ~10k disk reads on a typical save event.
-    if let Err(e) = connector_registry.run_incremental(
-        db.conn(),
-        project_root,
-        &project_ctx,
-        &plugin_points,
-        &resolved_plugin_points,
-        &changed_paths,
-    ) {
-        warn!("Incremental connector pass failed: {e}");
+    // Route discovery: each language's discoverer writes to routes table.
+    // Incremental re-scans the full routes set since route files are small
+    // and discovery is cheap relative to the symbol scan.
+    {
+        let conn = db.conn();
+        let _ = crate::languages::elixir::connectors::discover_phoenix_routes(conn, project_root);
+        let _ = crate::languages::go::connectors::discover_go_routes(conn, project_root, &project_ctx);
+        let _ = crate::languages::java::connectors::discover_spring_routes(conn, project_root);
+        let _ = crate::languages::php::connectors::discover_laravel_routes(conn, project_root, &project_ctx);
+        let _ = crate::languages::python::connectors::discover_django_routes(conn, project_root, &project_ctx);
+        let _ = crate::languages::python::connectors::discover_fastapi_routes(conn, project_root, &project_ctx);
+        let _ = crate::languages::ruby::connectors::discover_rails_routes(conn, project_root, &project_ctx);
+        let _ = crate::languages::typescript::connectors::discover_nestjs_routes(conn, project_root, &project_ctx);
+        let _ = crate::languages::typescript::connectors::discover_nextjs_routes(conn, project_root, &project_ctx);
+        let _ = crate::languages::groovy::connectors::discover_groovy_routes(conn, project_root, &project_ctx);
     }
 
     for plugin in registry.all() {

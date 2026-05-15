@@ -1,0 +1,9 @@
+{
+  "name": "flow-emit-rpc-fixture",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@grpc/grpc-js": "^1.0.0",
+    "@nestjs/microservices": "^10.0.0"
+  }
+}

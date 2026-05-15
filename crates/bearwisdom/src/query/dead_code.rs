@@ -18,6 +18,13 @@ use crate::query::QueryResult;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
+// Re-export the entry-point types & report function from their new
+// home so existing callers (`bearwisdom-cli`, `bearwisdom-mcp`,
+// `bearwisdom-web`, `bearwisdom-mcp/compact`) keep working unchanged.
+pub use crate::query::entry_points::{
+    EntryPoint, EntryPointKind, EntryPointsReport, find_entry_points,
+};
+
 // ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
@@ -98,38 +105,18 @@ pub struct DeadCodeEntry {
     /// or via qualified name). Only set when `potentially_referenced` is true.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unresolved_ref_matches: Option<u32>,
-}
-
-/// Why a symbol was classified as an entry point (and thus excluded).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EntryPointKind {
-    /// `main()`, `Main()`, program entry.
-    Main,
-    /// HTTP route handler (in `routes` table).
-    RouteHandler,
-    /// Event handler, message queue subscriber (in `flow_edges`).
-    EventHandler,
-    /// Test function (in a test file or named test_*).
-    TestFunction,
-    /// Public symbol in a library package.
-    ExportedApi,
-    /// Framework lifecycle hook.
-    LifecycleHook,
-    /// DI-registered service (referenced in `flow_edges` as di_binding).
-    DiRegistered,
-}
-
-/// An identified entry point.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EntryPoint {
-    pub symbol_id: i64,
-    pub name: String,
-    pub qualified_name: String,
-    pub kind: String,
-    pub file_path: String,
-    pub line: u32,
-    pub entry_kind: EntryPointKind,
+    /// Chain of edge kinds from the nearest entry point on this candidate's
+    /// best "alive" path, if one exists below the reachability threshold.
+    /// Always `None` in Phase 3 — populated when Phase 4 introduces
+    /// dispatch_candidate / construct / reflection_root synthesis so callers
+    /// can surface "alive only via synthesized dispatch" hits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reachability_path: Option<Vec<String>>,
+    /// BFS hop count from the nearest entry point, or `None` if unreachable.
+    /// For dead candidates this is always `None` today; Phase 4 widens the
+    /// threshold and lights it up.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry_point_distance: Option<u32>,
 }
 
 /// Trust tier for a dead-code report. Wires the resolution-gate trust
@@ -196,13 +183,6 @@ pub struct DeadCodeReport {
     pub resolution_health: ResolutionHealth,
 }
 
-/// Full entry points report.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EntryPointsReport {
-    pub total: u32,
-    pub entry_points: Vec<EntryPoint>,
-}
-
 // ---------------------------------------------------------------------------
 // Dead code discovery
 // ---------------------------------------------------------------------------
@@ -233,9 +213,41 @@ pub fn find_dead_code(
     // resolver missed something with the same name.
     let unresolved_names = build_unresolved_name_counts(conn, scope_file_ids.as_ref())?;
 
-    // Collect entry point symbol IDs for exclusion.
-    let entry_point_ids = collect_entry_point_ids(conn)?;
+    // L2+L1+L3+L4 of the reachability stack. Lazy: ensures the dispatch
+    // synthesizer, contributors, BFS, and per-package health table have
+    // all run even when the caller bypassed `finalize_resolution` (test
+    // fixtures, partial pipelines). Phase 3+4+7 wired the same calls
+    // into finalize_resolution for production indexes; running them here
+    // a second time after a fresh reindex is cheap (each step is
+    // idempotent and the work is dominated by the row counts in the
+    // tables they read).
+    crate::indexer::resolve::synthesize_dispatch::synthesize_dispatch_edges(db)?;
+    crate::query::entry_points::rebuild_entry_points(db)?;
+    crate::indexer::resolve::reachability::materialize_reachability(db)?;
+    materialize_package_resolution_health(db)?;
+
     let test_file_ids = collect_test_file_ids(conn)?;
+
+    // Count how many entry-point symbols anchor reachability — informational
+    // only, surfaces "this many roots seed the BFS" in the report. The old
+    // `entry_points_excluded` counter (incremented when an entry point also
+    // had zero incoming edges) no longer makes sense under reachability
+    // semantics — entry points are inherently reachable so they never
+    // appear in the dead antijoin to begin with.
+    let entry_points_count: u32 = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT symbol_id) FROM entry_points",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0) as u32;
+
+    // Per-package resolution-health multipliers feed the L4 confidence
+    // formula: a candidate in a struggling package gets its confidence
+    // dampened so high-resolution-rate packages keep their actionable
+    // signal even when other packages drag the global trust tier down.
+    let pkg_health = load_package_health_multipliers(conn)?;
+    let file_to_pkg = load_file_to_package_map(conn)?;
 
     // Default kinds to check.
     let default_kinds = [
@@ -248,13 +260,16 @@ pub fn find_dead_code(
         options.kinds.iter().map(|s| s.as_str()).collect()
     };
 
-    // Build the SQL query based on options.
+    // Build the antijoin query. A symbol is a dead candidate iff it has
+    // no row in `reachability` — i.e. the BFS from entry points never
+    // reached it through edges above the confidence threshold.
     let mut sql = String::from(
-        "SELECT s.id, s.name, s.qualified_name, s.kind, s.visibility,
-                f.path, s.line, s.incoming_edge_count, f.id as file_id
-         FROM symbols s
-         JOIN files f ON f.id = s.file_id
-         WHERE s.incoming_edge_count = 0
+        "SELECT s.id, s.name, s.qualified_name, s.kind, s.visibility, \
+                f.path, s.line, f.id as file_id \
+         FROM symbols s \
+         JOIN files f ON f.id = s.file_id \
+         LEFT JOIN reachability r ON r.symbol_id = s.id \
+         WHERE r.symbol_id IS NULL \
            AND s.origin = 'internal'",
     );
 
@@ -280,10 +295,7 @@ pub fn find_dead_code(
         VisibilityFilter::All => {}
     }
 
-    // Scope filter: prefer the resolved file_id set if scope was provided.
-    // Falls back to a path LIKE for the edge case where scope produces zero
-    // matched files (an unrecognized name) — that yields no candidates
-    // rather than the whole-project list.
+    // Scope filter.
     if let Some(ids) = &scope_file_ids {
         if ids.is_empty() {
             sql.push_str(" AND 0 = 1");
@@ -297,11 +309,13 @@ pub fn find_dead_code(
         }
     }
 
+    // No SQL LIMIT — sort happens in Rust after confidence is computed so
+    // the top-N by confidence wins instead of top-N by file path (the old
+    // SQL-LIMIT-then-sort bug).
     sql.push_str(" ORDER BY f.path, s.line");
 
     let mut stmt = conn.prepare(&sql).context("dead_code: prepare query")?;
 
-    // Bind kind parameters.
     let params: Vec<Box<dyn rusqlite::types::ToSql>> = check_kinds
         .iter()
         .map(|k| Box::new(k.to_string()) as Box<dyn rusqlite::types::ToSql>)
@@ -312,48 +326,40 @@ pub fn find_dead_code(
     let rows = stmt
         .query_map(param_refs.as_slice(), |row| {
             Ok((
-                row.get::<_, i64>(0)?,       // id
-                row.get::<_, String>(1)?,     // name
-                row.get::<_, String>(2)?,     // qualified_name
-                row.get::<_, String>(3)?,     // kind
+                row.get::<_, i64>(0)?,            // id
+                row.get::<_, String>(1)?,          // name
+                row.get::<_, String>(2)?,          // qualified_name
+                row.get::<_, String>(3)?,          // kind
                 row.get::<_, Option<String>>(4)?, // visibility
-                row.get::<_, String>(5)?,     // path
-                row.get::<_, u32>(6)?,        // line
-                row.get::<_, i64>(7)?,        // incoming_edge_count
-                row.get::<_, i64>(8)?,        // file_id
+                row.get::<_, String>(5)?,          // path
+                row.get::<_, u32>(6)?,             // line
+                row.get::<_, i64>(7)?,             // file_id
             ))
         })
         .context("dead_code: execute query")?;
 
     let mut candidates = Vec::new();
     let mut total_checked: u32 = 0;
-    let mut entry_points_excluded: u32 = 0;
     let mut test_symbols_excluded: u32 = 0;
 
     for row in rows {
-        let (id, name, qname, kind, visibility, path, line, _incoming, file_id) =
+        let (id, name, qname, kind, visibility, path, line, file_id) =
             row.context("dead_code: read row")?;
 
         total_checked += 1;
 
-        // Exclude entry points.
-        if entry_point_ids.contains(&id) {
-            entry_points_excluded += 1;
-            continue;
-        }
-
-        // Exclude test files.
+        // Test files excluded by default; reachability already filters
+        // test contributors out of its seed set, so test FUNCTIONS in
+        // non-test files are still candidates unless the user opts in.
         if !options.include_tests && test_file_ids.contains(&file_id) {
             test_symbols_excluded += 1;
             continue;
         }
 
-        // Skip common noise symbols.
         if is_noise_symbol(&name, &kind) {
             continue;
         }
 
-        // Compute base confidence from visibility.
         let mut confidence = match visibility.as_deref() {
             Some("private") | None => 1.0,
             Some("internal") => 0.9,
@@ -361,12 +367,23 @@ pub fn find_dead_code(
             _ => 0.8,
         };
 
-        // Cross-reference against unresolved refs.
-        // If this symbol's name or qualified name appears as an unresolved target,
-        // it may still be referenced — lower confidence and flag it.
-        let unresolved_match_count = unresolved_names.get(qname.as_str())
+        // L4: per-package resolution-health multiplier. A candidate in a
+        // package whose resolver only resolved 60% of refs is much less
+        // trustworthy than one in a 99%-resolved package — even if the
+        // global trust tier hasn't tipped over to Unsafe.
+        if let Some(pid) = file_to_pkg.get(&file_id) {
+            if let Some(&mult) = pkg_health.get(pid) {
+                confidence *= mult;
+            }
+        }
+
+        // Cross-reference against unresolved refs — same heuristic as
+        // before: if something tried to reference this symbol's name and
+        // the resolver couldn't pin it down, treat the candidate with
+        // suspicion (halve confidence + flag).
+        let unresolved_match_count = unresolved_names
+            .get(qname.as_str())
             .or_else(|| {
-                // Only match by simple name if it's not a generic name
                 if !is_generic_name(&name) {
                     unresolved_names.get(name.as_str())
                 } else {
@@ -378,7 +395,6 @@ pub fn find_dead_code(
 
         let potentially_referenced = unresolved_match_count > 0;
         if potentially_referenced {
-            // Halve confidence — this symbol might be alive
             confidence *= 0.5;
         }
 
@@ -398,38 +414,13 @@ pub fn find_dead_code(
             } else {
                 None
             },
+            reachability_path: None,
+            entry_point_distance: None,
         });
-
-        if candidates.len() >= options.max_results {
-            break;
-        }
     }
 
-    // Also find symbols with ONLY low-confidence edges (if room remains).
-    if candidates.len() < options.max_results {
-        let remaining = options.max_results - candidates.len();
-        let existing_ids: std::collections::HashSet<i64> =
-            candidates.iter().map(|c| c.symbol_id).collect();
-
-        let low_conf = find_low_confidence_only(
-            conn,
-            &entry_point_ids,
-            &test_file_ids,
-            &options,
-            remaining,
-        )?;
-
-        for entry in low_conf {
-            if !existing_ids.contains(&entry.symbol_id) {
-                candidates.push(entry);
-            }
-        }
-    }
-
-    // Resolution-gate trust tier: in `Unsafe`, suppress the high-confidence
-    // signal so callers can't act on the report as if it were ground truth.
-    // Cap every candidate at 0.5 — they're informational only at that
-    // resolution level. See research/.../01-resolution-gate-plan.md §5.
+    // Trust-tier clamp — same semantics as v0: in Unsafe, cap every
+    // candidate at 0.5 so callers can't treat the report as ground truth.
     if resolution_health.trust_tier == TrustTier::Unsafe {
         for c in &mut candidates {
             if c.confidence > 0.5 {
@@ -438,7 +429,8 @@ pub fn find_dead_code(
         }
     }
 
-    // Sort: non-potentially-referenced first, then by confidence descending.
+    // Sort BEFORE truncating to max_results — gives the user the
+    // highest-confidence candidates, not the alphabetically-first ones.
     candidates.sort_by(|a, b| {
         a.potentially_referenced
             .cmp(&b.potentially_referenced)
@@ -448,6 +440,9 @@ pub fn find_dead_code(
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
     });
+    if candidates.len() > options.max_results {
+        candidates.truncate(options.max_results);
+    }
 
     let potentially_referenced_count = candidates
         .iter()
@@ -457,7 +452,7 @@ pub fn find_dead_code(
     Ok(DeadCodeReport {
         total_symbols_checked: total_checked,
         dead_candidates: candidates,
-        entry_points_excluded,
+        entry_points_excluded: entry_points_count,
         test_symbols_excluded,
         potentially_referenced_count,
         resolution_health,
@@ -465,301 +460,8 @@ pub fn find_dead_code(
 }
 
 // ---------------------------------------------------------------------------
-// Entry point discovery
+// Internal helpers (entry-point discovery lives in crate::query::entry_points)
 // ---------------------------------------------------------------------------
-
-/// Find all entry points in the project.
-pub fn find_entry_points(db: &Database) -> QueryResult<EntryPointsReport> {
-    let _timer = db.timer("entry_points");
-    let conn = db.conn();
-    let mut entry_points = Vec::new();
-
-    // 1. Main functions
-    {
-        let mut stmt = conn
-            .prepare(
-                "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
-                 FROM symbols s
-                 JOIN files f ON f.id = s.file_id
-                 WHERE s.name IN ('main', 'Main', 'Program.Main')
-                   AND s.kind IN ('function', 'method')
-                   AND s.origin = 'internal'",
-            )
-            .context("entry_points: prepare main query")?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(EntryPoint {
-                    symbol_id: row.get(0)?,
-                    name: row.get(1)?,
-                    qualified_name: row.get(2)?,
-                    kind: row.get(3)?,
-                    file_path: row.get(4)?,
-                    line: row.get(5)?,
-                    entry_kind: EntryPointKind::Main,
-                })
-            })
-            .context("entry_points: execute main query")?;
-
-        for row in rows.flatten() {
-            entry_points.push(row);
-        }
-    }
-
-    // 2. Route handlers
-    {
-        let mut stmt = conn
-            .prepare(
-                "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
-                 FROM routes r
-                 JOIN symbols s ON s.id = r.symbol_id
-                 JOIN files f ON f.id = s.file_id
-                 WHERE r.symbol_id IS NOT NULL",
-            )
-            .context("entry_points: prepare route query")?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(EntryPoint {
-                    symbol_id: row.get(0)?,
-                    name: row.get(1)?,
-                    qualified_name: row.get(2)?,
-                    kind: row.get(3)?,
-                    file_path: row.get(4)?,
-                    line: row.get(5)?,
-                    entry_kind: EntryPointKind::RouteHandler,
-                })
-            })
-            .context("entry_points: execute route query")?;
-
-        for row in rows.flatten() {
-            entry_points.push(row);
-        }
-    }
-
-    // 3. Event handlers / DI bindings (from flow_edges)
-    {
-        let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT s.id, s.name, s.qualified_name, s.kind, f.path, s.line,
-                        fe.edge_type
-                 FROM flow_edges fe
-                 JOIN files f ON f.id = fe.target_file_id
-                 JOIN symbols s ON s.file_id = f.id
-                   AND s.line BETWEEN fe.target_line - 2 AND fe.target_line + 2
-                 WHERE fe.edge_type IN ('event_handler', 'di_binding')",
-            )
-            .context("entry_points: prepare event/DI query")?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                let edge_type: String = row.get(6)?;
-                let entry_kind = if edge_type == "di_binding" {
-                    EntryPointKind::DiRegistered
-                } else {
-                    EntryPointKind::EventHandler
-                };
-                Ok(EntryPoint {
-                    symbol_id: row.get(0)?,
-                    name: row.get(1)?,
-                    qualified_name: row.get(2)?,
-                    kind: row.get(3)?,
-                    file_path: row.get(4)?,
-                    line: row.get(5)?,
-                    entry_kind,
-                })
-            })
-            .context("entry_points: execute event/DI query")?;
-
-        for row in rows.flatten() {
-            entry_points.push(row);
-        }
-    }
-
-    // 4. Exported library API — public-visibility symbols inside packages
-    //    that declare a manifest name. The presence of `declared_name` is
-    //    the signal that this package is reachable as a library (Cargo
-    //    crates with `[package].name`, npm packages, etc.), so its public
-    //    surface is reachable from outside the workspace even when nothing
-    //    inside the workspace calls it.
-    {
-        let mut stmt = conn
-            .prepare(
-                "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
-                 FROM symbols s
-                 JOIN files f ON f.id = s.file_id
-                 JOIN packages p ON p.id = f.package_id
-                 WHERE s.visibility = 'public'
-                   AND s.origin = 'internal'
-                   AND p.declared_name IS NOT NULL
-                   AND p.declared_name != ''
-                   AND s.kind IN ('function','method','class','struct',
-                                  'interface','enum','type_alias','trait',
-                                  'protocol','module')",
-            )
-            .context("entry_points: prepare exported-api query")?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(EntryPoint {
-                    symbol_id: row.get(0)?,
-                    name: row.get(1)?,
-                    qualified_name: row.get(2)?,
-                    kind: row.get(3)?,
-                    file_path: row.get(4)?,
-                    line: row.get(5)?,
-                    entry_kind: EntryPointKind::ExportedApi,
-                })
-            })
-            .context("entry_points: execute exported-api query")?;
-
-        for row in rows.flatten() {
-            entry_points.push(row);
-        }
-    }
-
-    // 5. Test functions (in test files or named test_*)
-    {
-        let mut stmt = conn
-            .prepare(
-                "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
-                 FROM symbols s
-                 JOIN files f ON f.id = s.file_id
-                 WHERE s.kind IN ('function', 'method', 'test')
-                   AND s.origin = 'internal'
-                   AND (s.name LIKE 'test_%'
-                     OR s.name LIKE 'Test%'
-                     OR s.kind = 'test'
-                     OR f.path LIKE '%/test/%'
-                     OR f.path LIKE '%/tests/%'
-                     OR f.path LIKE '%/__tests__/%'
-                     OR f.path LIKE '%.test.%'
-                     OR f.path LIKE '%.spec.%'
-                     OR f.path LIKE '%_test.%')",
-            )
-            .context("entry_points: prepare test query")?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(EntryPoint {
-                    symbol_id: row.get(0)?,
-                    name: row.get(1)?,
-                    qualified_name: row.get(2)?,
-                    kind: row.get(3)?,
-                    file_path: row.get(4)?,
-                    line: row.get(5)?,
-                    entry_kind: EntryPointKind::TestFunction,
-                })
-            })
-            .context("entry_points: execute test query")?;
-
-        for row in rows.flatten() {
-            entry_points.push(row);
-        }
-    }
-
-    // Deduplicate by symbol_id (a symbol can match multiple categories).
-    let mut seen = std::collections::HashSet::new();
-    entry_points.retain(|ep| seen.insert(ep.symbol_id));
-
-    let total = entry_points.len() as u32;
-    Ok(EntryPointsReport {
-        total,
-        entry_points,
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/// Collect all symbol IDs that are entry points (for exclusion from dead code).
-fn collect_entry_point_ids(
-    conn: &rusqlite::Connection,
-) -> QueryResult<std::collections::HashSet<i64>> {
-    let mut ids = std::collections::HashSet::new();
-
-    // Main functions
-    let mut stmt = conn
-        .prepare(
-            "SELECT id FROM symbols
-             WHERE name IN ('main', 'Main', 'Program.Main')
-               AND kind IN ('function', 'method')
-               AND origin = 'internal'",
-        )
-        .context("entry_point_ids: main")?;
-    for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
-        ids.insert(row);
-    }
-
-    // Route handlers
-    let mut stmt = conn
-        .prepare("SELECT DISTINCT symbol_id FROM routes WHERE symbol_id IS NOT NULL")
-        .context("entry_point_ids: routes")?;
-    for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
-        ids.insert(row);
-    }
-
-    // Flow edge targets (event handlers, DI bindings)
-    let mut stmt = conn
-        .prepare(
-            "SELECT DISTINCT s.id
-             FROM flow_edges fe
-             JOIN files f ON f.id = fe.target_file_id
-             JOIN symbols s ON s.file_id = f.id
-               AND s.line BETWEEN fe.target_line - 2 AND fe.target_line + 2
-             WHERE fe.edge_type IN ('event_handler', 'di_binding')",
-        )
-        .context("entry_point_ids: flow_edges")?;
-    for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
-        ids.insert(row);
-    }
-
-    // Exported library API — public symbols in packages with a declared
-    // manifest name (mirror of EntryPointKind::ExportedApi emission in
-    // `find_entry_points`).
-    let mut stmt = conn
-        .prepare(
-            "SELECT s.id FROM symbols s
-             JOIN files f ON f.id = s.file_id
-             JOIN packages p ON p.id = f.package_id
-             WHERE s.visibility = 'public'
-               AND s.origin = 'internal'
-               AND p.declared_name IS NOT NULL
-               AND p.declared_name != ''
-               AND s.kind IN ('function','method','class','struct',
-                              'interface','enum','type_alias','trait',
-                              'protocol','module')",
-        )
-        .context("entry_point_ids: exported_api")?;
-    for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
-        ids.insert(row);
-    }
-
-    // Lifecycle hooks — common framework patterns
-    let mut stmt = conn
-        .prepare(
-            "SELECT id FROM symbols
-             WHERE name IN (
-                 'OnInit', 'OnDestroy', 'OnChanges', 'AfterViewInit',
-                 'ngOnInit', 'ngOnDestroy', 'ngOnChanges', 'ngAfterViewInit',
-                 'componentDidMount', 'componentWillUnmount', 'componentDidUpdate',
-                 'connectedCallback', 'disconnectedCallback',
-                 'Configure', 'ConfigureServices',
-                 'setUp', 'tearDown', 'setUpAll', 'tearDownAll',
-                 'initState', 'dispose', 'build',
-                 'setup', 'created', 'mounted', 'unmounted', 'beforeDestroy'
-             )
-             AND kind IN ('function', 'method')
-             AND origin = 'internal'",
-        )
-        .context("entry_point_ids: lifecycle")?;
-    for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
-        ids.insert(row);
-    }
-
-    Ok(ids)
-}
 
 /// Collect file IDs that are test files.
 fn collect_test_file_ids(
@@ -778,83 +480,6 @@ fn collect_test_file_ids(
         }
     }
     Ok(ids)
-}
-
-/// Find symbols whose ONLY incoming edges are low-confidence (<0.7).
-fn find_low_confidence_only(
-    conn: &rusqlite::Connection,
-    entry_point_ids: &std::collections::HashSet<i64>,
-    test_file_ids: &std::collections::HashSet<i64>,
-    options: &DeadCodeOptions,
-    limit: usize,
-) -> QueryResult<Vec<DeadCodeEntry>> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT s.id, s.name, s.qualified_name, s.kind, s.visibility,
-                    f.path, s.line, s.incoming_edge_count, f.id
-             FROM symbols s
-             JOIN files f ON f.id = s.file_id
-             WHERE s.incoming_edge_count > 0
-               AND s.origin = 'internal'
-               AND s.kind IN ('function', 'method', 'class', 'struct', 'interface', 'enum')
-               AND EXISTS (
-                   SELECT 1 FROM edges e WHERE e.target_id = s.id
-               )
-               AND NOT EXISTS (
-                   SELECT 1 FROM edges e
-                   WHERE e.target_id = s.id AND e.confidence >= 0.7
-               )
-             ORDER BY s.incoming_edge_count ASC
-             LIMIT ?1",
-        )
-        .context("low_confidence: prepare")?;
-
-    let rows = stmt
-        .query_map([limit as i64], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, u32>(6)?,
-                row.get::<_, i64>(7)?,
-                row.get::<_, i64>(8)?,
-            ))
-        })
-        .context("low_confidence: execute")?;
-
-    let mut results = Vec::new();
-    for row in rows.flatten() {
-        let (id, name, qname, kind, visibility, path, line, _incoming, file_id) = row;
-
-        if entry_point_ids.contains(&id) {
-            continue;
-        }
-        if !options.include_tests && test_file_ids.contains(&file_id) {
-            continue;
-        }
-        if is_noise_symbol(&name, &kind) {
-            continue;
-        }
-
-        results.push(DeadCodeEntry {
-            symbol_id: id,
-            name,
-            qualified_name: qname,
-            kind,
-            visibility,
-            file_path: path,
-            line,
-            confidence: 0.3,
-            reason: DeadCodeReason::OnlyLowConfidenceEdges,
-            potentially_referenced: false,
-            unresolved_ref_matches: None,
-        });
-    }
-
-    Ok(results)
 }
 
 /// Skip symbols that are noise — constructors, getters/setters, operators, etc.
@@ -1002,6 +627,160 @@ fn compute_resolution_health(
         trust_tier,
         assessment,
     })
+}
+
+/// Materialize per-package resolution health into the
+/// `package_resolution_health` table. One row per workspace package.
+/// Folded into `find_dead_code`'s confidence calculation so a single
+/// struggling package's candidates get dampened without pulling the
+/// whole workspace into the Unsafe trust tier.
+///
+/// Wired into `resolve::finalize_resolution` alongside reachability.
+/// Idempotent — `INSERT OR REPLACE` keyed on `package_id`.
+pub fn materialize_package_resolution_health(db: &Database) -> QueryResult<()> {
+    let conn = db.conn();
+    let low_conf_threshold = crate::query::diagnostics::LOW_CONFIDENCE_THRESHOLD;
+
+    // Iterate packages; per-package counts via parameterized queries
+    // (one prepare + N executes). For a 100-package workspace this is
+    // <10ms — cheap relative to the BFS materialization.
+    let mut pkg_stmt = conn
+        .prepare("SELECT id FROM packages")
+        .context("pkg_health: list packages")?;
+    let package_ids: Vec<i64> = pkg_stmt
+        .query_map([], |r| r.get::<_, i64>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut edges_stmt = conn
+        .prepare(
+            "SELECT COUNT(*) FROM edges e \
+             JOIN symbols s ON s.id = e.source_id \
+             JOIN files   f ON f.id = s.file_id \
+             WHERE f.origin = 'internal' AND f.package_id = ?1",
+        )
+        .context("pkg_health: prepare edges count")?;
+    let mut unresolved_stmt = conn
+        .prepare(&format!(
+            "SELECT COUNT(*) FROM unresolved_refs u \
+             JOIN symbols s ON s.id = u.source_id \
+             JOIN files   f ON f.id = s.file_id \
+             WHERE f.origin = 'internal' AND f.package_id = ?1 AND {filter}",
+            filter = crate::query::stats::CODE_REF_FILTER
+        ))
+        .context("pkg_health: prepare unresolved count")?;
+    let mut low_conf_stmt = conn
+        .prepare(
+            "SELECT COUNT(*) FROM edges e \
+             JOIN symbols s ON s.id = e.source_id \
+             JOIN files   f ON f.id = s.file_id \
+             WHERE f.origin = 'internal' AND f.package_id = ?1 AND e.confidence < ?2",
+        )
+        .context("pkg_health: prepare low_conf count")?;
+
+    let tx = conn
+        .unchecked_transaction()
+        .context("pkg_health: begin transaction")?;
+    tx.execute("DELETE FROM package_resolution_health", [])
+        .context("pkg_health: clear table")?;
+    let mut insert_stmt = tx
+        .prepare(
+            "INSERT INTO package_resolution_health \
+             (package_id, resolution_rate, resolved_refs, unresolved_refs, \
+              low_conf_edges, trust_tier, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s','now'))",
+        )
+        .context("pkg_health: prepare insert")?;
+
+    for pid in package_ids {
+        let edges: u64 = edges_stmt
+            .query_row([pid], |r| r.get(0))
+            .unwrap_or(0);
+        let unresolved: u64 = unresolved_stmt
+            .query_row([pid], |r| r.get(0))
+            .unwrap_or(0);
+        let low_conf: u64 = low_conf_stmt
+            .query_row(rusqlite::params![pid, low_conf_threshold], |r| r.get(0))
+            .unwrap_or(0);
+
+        let total = edges + unresolved;
+        let rate = if total > 0 {
+            (edges as f64 / total as f64) * 100.0
+        } else {
+            100.0
+        };
+        let rate = (rate * 10.0).round() / 10.0;
+        let low_conf_ratio = if edges > 0 {
+            low_conf as f64 / edges as f64
+        } else {
+            0.0
+        };
+        let trust_tier = if rate >= 99.0 && low_conf_ratio < 0.05 {
+            TrustTier::Trusted
+        } else if rate >= 95.0 && low_conf_ratio < 0.15 {
+            TrustTier::Review
+        } else {
+            TrustTier::Unsafe
+        };
+
+        insert_stmt
+            .execute(rusqlite::params![
+                pid,
+                rate,
+                edges as i64,
+                unresolved as i64,
+                low_conf as i64,
+                trust_tier.as_str(),
+            ])
+            .context("pkg_health: insert row")?;
+    }
+    drop(insert_stmt);
+    tx.commit().context("pkg_health: commit")?;
+    Ok(())
+}
+
+/// Load per-package resolution rates as a multiplier in [0.5, 1.0]. A
+/// package with resolution_rate = 100% returns 1.0; one with 95% returns
+/// 0.95; below ~50% it floors at 0.5 so a single struggling package's
+/// confidence dampening stays bounded. Missing packages return 1.0
+/// (no penalty applied).
+fn load_package_health_multipliers(
+    conn: &rusqlite::Connection,
+) -> QueryResult<std::collections::HashMap<i64, f64>> {
+    let mut map = std::collections::HashMap::new();
+    let mut stmt = conn
+        .prepare(
+            "SELECT package_id, resolution_rate \
+             FROM package_resolution_health",
+        )
+        .context("pkg_health: load multipliers")?;
+    for row in stmt
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))?
+        .flatten()
+    {
+        let (pid, rate) = row;
+        let mult = (rate / 100.0).max(0.5).min(1.0);
+        map.insert(pid, mult);
+    }
+    Ok(map)
+}
+
+/// Build a map of `file_id → package_id` for fast per-symbol lookup in
+/// `find_dead_code`. Files with no package_id are omitted.
+fn load_file_to_package_map(
+    conn: &rusqlite::Connection,
+) -> QueryResult<std::collections::HashMap<i64, i64>> {
+    let mut map = std::collections::HashMap::new();
+    let mut stmt = conn
+        .prepare("SELECT id, package_id FROM files WHERE package_id IS NOT NULL")
+        .context("pkg_health: file→pkg map")?;
+    for row in stmt
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?
+        .flatten()
+    {
+        map.insert(row.0, row.1);
+    }
+    Ok(map)
 }
 
 /// Build a map of unresolved ref target names → count.

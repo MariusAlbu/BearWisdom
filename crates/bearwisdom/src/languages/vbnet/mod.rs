@@ -13,9 +13,12 @@
 //! - `imports_statement` → Imports edge
 //! - `inherits_clause` → Inherits edge
 
-pub(crate) mod connectors;
 pub(crate) mod keywords;
 pub mod extract;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -79,20 +82,4 @@ impl LanguagePlugin for VbNetPlugin {
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(crate::languages::csharp::resolve::CSharpResolver))
     }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        crate::languages::drive_connector(
-            &connectors::VbNetDiConnector, db, project_root, ctx,
-        )
-    }
-
 }

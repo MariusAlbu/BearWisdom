@@ -3,9 +3,61 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use std::collections::HashMap;
 use tree_sitter::Node;
+
+/// Extract positional arguments from a Python `call` node's `argument_list`.
+/// Captures string literals (including triple-quoted forms), bare
+/// identifiers, integer / float / `True` / `False` / `None`, and lists of
+/// string literals (used by Flask's `methods=['GET']`). Keyword args and
+/// complex expressions become `CallArg::Other`.
+pub(super) fn extract_call_args(call_node: &Node, src: &str) -> Vec<CallArg> {
+    let Some(args_node) = call_node.child_by_field_name("arguments") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        let arg = match child.kind() {
+            "string" => CallArg::StringLit(strip_python_string(&node_text(&child, src))),
+            "concatenated_string" => CallArg::StringLit(
+                node_text(&child, src)
+                    .replace('"', "")
+                    .replace('\'', "")
+                    .replace("\\n", ""),
+            ),
+            "identifier" => CallArg::Ident(node_text(&child, src)),
+            "integer" | "float" => CallArg::Literal(node_text(&child, src)),
+            "true" | "false" | "none" => CallArg::Literal(node_text(&child, src)),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
+
+/// Strip surrounding quotes (single, double, triple-single, triple-double)
+/// from a Python string literal's source text. Leaves `b`/`r`/`f` prefixes
+/// intact since those don't appear in route URLs / call arg values where
+/// this matters.
+fn strip_python_string(raw: &str) -> String {
+    let trimmed = raw
+        .trim_start_matches('b')
+        .trim_start_matches('r')
+        .trim_start_matches('f')
+        .trim_start_matches('B')
+        .trim_start_matches('R')
+        .trim_start_matches('F');
+    trimmed
+        .trim_start_matches("\"\"\"")
+        .trim_end_matches("\"\"\"")
+        .trim_start_matches("'''")
+        .trim_end_matches("'''")
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string()
+}
 
 // ---------------------------------------------------------------------------
 // Import map builder
@@ -159,6 +211,7 @@ pub(super) fn extract_calls_from_body(
 
                 crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
                 if let Some(target_name) = target_name {
+                    let call_args = extract_call_args(&child, source);
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name,
@@ -168,7 +221,7 @@ pub(super) fn extract_calls_from_body(
                         chain,
                         byte_offset: func_node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
+                                            call_args,
 });
                 }
             }

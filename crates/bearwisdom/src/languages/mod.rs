@@ -132,75 +132,6 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         Vec::new()
     }
 
-    /// Detect cross-service / cross-module wiring points (HTTP routes, client
-    /// calls, DI registrations, IPC commands, event pub/sub, message-queue
-    /// bindings, GraphQL resolvers) during extraction. Each plugin emits
-    /// connection points for the frameworks its language typically hosts —
-    /// e.g. Go plugin emits gin/echo/net-http routes, C# plugin emits
-    /// ASP.NET `[HttpGet]` handlers and `IMediator.Send` calls.
-    ///
-    /// This is the per-plugin half of the "connectors flattened into
-    /// language plugins" refactor. Stage 3 of the pipeline folds the
-    /// emitted connection points into `flow_edges` by matching
-    /// `(kind, key)` pairs with one Start and one Stop role. No DB
-    /// round-trip, no connector re-parse.
-    ///
-    /// Default impl returns an empty vec; languages migrate connector
-    /// detection into this hook one framework at a time. The global
-    /// `connectors/registry.rs` eager path keeps firing for un-migrated
-    /// connectors so behavior is preserved during the rollout.
-    ///
-    /// Called by `indexer/full::parse_file` AFTER `extract()` returns, so
-    /// a host extractor that already parsed the source can cache its
-    /// tree-sitter tree across both calls if needed.
-    fn extract_connection_points(
-        &self,
-        _source: &str,
-        _file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        Vec::new()
-    }
-
-    /// Post-parse hook for connectors that need cross-file joins (class
-    /// inheritance lookups, DI-container resolution, method enumeration by
-    /// kind under a given parent class). Called AFTER symbols + edges have
-    /// been written to the DB, so plugins can query the indexed graph.
-    ///
-    /// Returned points go through the same `(file_id, line, protocol,
-    /// direction, key, method)` dedupe as plugin-emitted points from
-    /// `extract_connection_points` and registry-emitted points from
-    /// `Connector::extract`.
-    ///
-    /// Default impl returns empty. Plugins with DB-dependent connectors
-    /// (`*Server` inheritance for gRPC stops, class+method joins for
-    /// REST route controllers, DI registration chains) override this
-    /// instead of registering `Connector::extract` impls at the registry
-    /// level.
-    fn resolve_connection_points(
-        &self,
-        _db: &crate::db::Database,
-        _project_root: &std::path::Path,
-        _ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        Vec::new()
-    }
-
-    /// Incremental variant — pass `changed_paths` so plugins owning
-    /// connectors with disk-read scans (e.g. C# DI / event-handler regex
-    /// sweeps) can scope to changed files. Default falls back to the
-    /// full `resolve_connection_points` for plugins that don't
-    /// distinguish.
-    fn resolve_connection_points_incremental(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-        _changed_paths: &std::collections::HashSet<String>,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        self.resolve_connection_points(db, project_root, ctx)
-    }
-
     /// Node kinds that SHOULD produce symbols, per the extraction rules.
     /// Used by `bw coverage` to measure extraction completeness.
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
@@ -248,15 +179,10 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Trait surface stays minimal until subsequent PRs port behavior in.
     fn type_checker(&self) -> Option<Arc<dyn crate::type_checker::TypeChecker>> { None }
 
-    /// Return language-specific connectors provided by this plugin.
-    ///
-    /// Each connector implements the full `Connector` trait (detect/extract/match).
-    /// The registry collects these from all plugins alongside any remaining
-    /// cross-cutting connectors.
-    ///
-    /// This is the primary mechanism for adding connector support to a language —
-    /// all detection, extraction, and matching logic lives in the plugin directory.
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> { vec![] }
+    // `connectors()` trait method removed (Phase H) — no `impl Connector for X`
+    // blocks remain. Per-language flow detection now lives either in resolver
+    // FlowEmission emissions or in free `discover_*` functions called from
+    // `resolve_connection_points` hooks.
 
     /// Post-index hook for language-specific enrichment that writes to tables
     /// other than `flow_edges` (e.g. `db_mappings`, `concepts`).
@@ -269,6 +195,25 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _project_root: &std::path::Path,
         _ctx: &crate::indexer::project_context::ProjectContext,
     ) {}
+
+    /// Contribute reachability entry-points for this language. Each row
+    /// names a symbol that anchors the dead-code BFS — `main`, exported
+    /// library APIs, Rust `[[bin]]` targets, Python `__main__` blocks,
+    /// `package.json` `bin`/`exports` entries, etc.
+    ///
+    /// Default returns empty. Cross-cutting entry-point sources (HTTP
+    /// routes, event handlers, DI bindings, framework lifecycle hooks)
+    /// live in `crate::query::entry_points` central contributors so
+    /// every language gets them for free; plugin-level entry points are
+    /// for language-natural roots that only a per-language plugin can
+    /// recognize.
+    fn entry_points(
+        &self,
+        _db: &crate::db::Database,
+        _ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::types::EntryPointRow> {
+        Vec::new()
+    }
 
     /// R5 per-file flow-typing configuration. Return `Some(&FLOW_CONFIG)` to
     /// opt into forward inference, conditional narrowing, and call-site
@@ -544,68 +489,11 @@ pub fn default_resolvers() -> Vec<Arc<dyn LanguageResolver>> {
         .collect()
 }
 
-/// Collect language-specific connectors from all registered plugins.
-///
-/// Derived from `LanguagePlugin::connectors()` — no separate list to maintain.
-/// The registry calls this to discover plugin-provided connectors alongside
-/// any remaining cross-cutting connectors.
-pub fn collect_plugin_connectors() -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-    default_registry()
-        .all()
-        .iter()
-        .flat_map(|plugin| plugin.connectors())
-        .collect()
-}
-
-/// Drive a legacy `Connector` (with `detect` + `extract`) from inside a
-/// plugin's `resolve_connection_points` impl. Keeps the existing per-connector
-/// bodies while moving invocation ownership from the registry to the plugin.
-/// Returns empty Vec when the connector's detect returns false OR its extract
-/// errors (logged, non-fatal).
-pub fn drive_connector(
-    c: &dyn crate::connectors::traits::Connector,
-    db: &crate::db::Database,
-    project_root: &std::path::Path,
-    ctx: &crate::indexer::project_context::ProjectContext,
-) -> Vec<crate::connectors::types::ConnectionPoint> {
-    if !c.detect(ctx) {
-        return Vec::new();
-    }
-    match c.extract(db.conn(), project_root) {
-        Ok(pts) => pts,
-        Err(e) => {
-            tracing::warn!(
-                "connector {}: resolve_connection_points failed: {e}",
-                c.descriptor().name
-            );
-            Vec::new()
-        }
-    }
-}
-
-/// Incremental variant of `drive_connector` — routes to the connector's
-/// `incremental_extract` so disk scans get scoped to `changed_paths`.
-pub fn drive_connector_incremental(
-    c: &dyn crate::connectors::traits::Connector,
-    db: &crate::db::Database,
-    project_root: &std::path::Path,
-    ctx: &crate::indexer::project_context::ProjectContext,
-    changed_paths: &std::collections::HashSet<String>,
-) -> Vec<crate::connectors::types::ConnectionPoint> {
-    if !c.detect(ctx) {
-        return Vec::new();
-    }
-    match c.incremental_extract(db.conn(), project_root, changed_paths) {
-        Ok(pts) => pts,
-        Err(e) => {
-            tracing::warn!(
-                "connector {}: incremental_resolve_connection_points failed: {e}",
-                c.descriptor().name
-            );
-            Vec::new()
-        }
-    }
-}
+// collect_plugin_connectors / drive_connector / drive_connector_incremental
+// removed — all `impl Connector for X` blocks across language plugins were
+// deleted or migrated to free `discover_*` functions during the connectors
+// kill (Phases A–G). The legacy Connector trait is also slated for deletion
+// in Phase H once the matcher + ConnectionPoint type are gone.
 
 // ---------------------------------------------------------------------------
 // Generic fallback plugin

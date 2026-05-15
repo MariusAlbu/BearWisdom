@@ -4,8 +4,46 @@
 
 use super::decorators::extract_match_patterns;
 use super::helpers::{call_target_name, node_text};
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
+
+pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
+    let mut args_node: Option<Node> = None;
+    let mut cursor = call_node.walk();
+    for c in call_node.children(&mut cursor) {
+        if c.kind() == "arguments" || c.kind() == "argument_list" {
+            args_node = Some(c);
+            break;
+        }
+    }
+    let Some(args) = args_node else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut ac = args.walk();
+    for child in args.named_children(&mut ac) {
+        let arg = match child.kind() {
+            "string" | "string_literal" | "interpolated_string_expression" => {
+                let raw = node_text(child, src);
+                CallArg::StringLit(strip_scala_string(&raw))
+            }
+            "identifier" | "stable_identifier" => CallArg::Ident(node_text(child, src)),
+            "integer_literal" | "floating_point_literal" => {
+                CallArg::Literal(node_text(child, src))
+            }
+            "boolean_literal" | "null_literal" => CallArg::Literal(child.kind().to_string()),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
+
+fn strip_scala_string(raw: &str) -> String {
+    let s = raw.trim();
+    let s = s.trim_start_matches("\"\"\"").trim_end_matches("\"\"\"");
+    let s = s.trim_start_matches('"').trim_end_matches('"');
+    let s = if let Some(rest) = s.strip_prefix("s\"") { rest.trim_end_matches('"') } else { s };
+    s.to_string()
+}
 
 pub(super) fn extract_calls_from_body(
     node: &Node,
@@ -30,6 +68,7 @@ pub(super) fn extract_calls_from_body(
                         .unwrap_or_else(|| call_target_name(&callee, src));
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !target_name.is_empty() {
+                        let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name,
@@ -38,9 +77,9 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: callee.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);

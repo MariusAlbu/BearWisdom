@@ -14,7 +14,7 @@
 // emit (based on what the chain walker resolved), but the SHAPE is universal.
 // =============================================================================
 
-/// The HTTP verb for `NamedChannel { kind: HttpCall }`.
+/// The HTTP verb for `NamedChannel { kind: HttpCall, .. }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
     Get,
@@ -88,6 +88,11 @@ pub enum NamedChannelKind {
     Mailer,
     /// Pub/sub topic publish / subscribe.
     MessageQueue,
+    /// Application-level event bus (MediatR `IRequestHandler<T>` /
+    /// `INotificationHandler<T>`, MassTransit `IConsumer<T>`, Symfony
+    /// EventSubscriberInterface, etc.) — handler type is the pairing key,
+    /// distinct from `MessageQueue` which keys on broker topic.
+    EventBus,
 }
 
 impl NamedChannelKind {
@@ -102,6 +107,7 @@ impl NamedChannelKind {
             NamedChannelKind::BgJob => "bg_job",
             NamedChannelKind::Mailer => "mailer",
             NamedChannelKind::MessageQueue => "message_queue",
+            NamedChannelKind::EventBus => "event_bus",
         }
     }
 
@@ -116,7 +122,72 @@ impl NamedChannelKind {
             NamedChannelKind::BgJob => "bg_job",
             NamedChannelKind::Mailer => "mailer",
             NamedChannelKind::MessageQueue => "message_queue",
+            NamedChannelKind::EventBus => "event_bus",
         }
+    }
+}
+
+/// The streaming kind for a `NamedChannel { kind: RpcCall, .. }` emission.
+///
+/// Defaults to `Unary` for the common case (single request / single response).
+/// Streaming gRPC methods (server-streaming, client-streaming, bidi) carry
+/// the specific variant so the pairer can avoid matching a unary call site
+/// against a streaming handler.
+///
+/// Carried only on RPC emissions. For non-RPC kinds (HTTP, WebSocket, IPC,
+/// BgJob, Mailer, MessageQueue) the `streaming` field is left as `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamKind {
+    Unary,
+    ServerStreaming,
+    ClientStreaming,
+    BidiStreaming,
+}
+
+impl StreamKind {
+    /// The string written to `flow_edges.metadata` for an RPC streaming
+    /// emission. Pair-keys never compare across these strings — a
+    /// `unary` Producer pair only matches a `unary` Consumer.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StreamKind::Unary => "unary",
+            StreamKind::ServerStreaming => "server_streaming",
+            StreamKind::ClientStreaming => "client_streaming",
+            StreamKind::BidiStreaming => "bidi_streaming",
+        }
+    }
+
+    /// Heuristic mapping from a gRPC method name to `StreamKind`.
+    ///
+    /// Proto naming conventions favour `stream_*`, `subscribe_*`, `watch_*`
+    /// for server-streaming methods, `record_*`, `upload_*`, `collect_*`
+    /// for client-streaming, and `chat`/`dialog` or any name containing
+    /// `bidi` for bidirectional streams. When no convention matches,
+    /// defaults to `Unary` — pair matching treats `None` and
+    /// `Some(Unary)` as equivalent.
+    pub fn from_method_name(method: &str) -> Self {
+        let lower = method.to_ascii_lowercase();
+        if lower.starts_with("stream_")
+            || lower.starts_with("subscribe_")
+            || lower.starts_with("watch_")
+            || lower.ends_with("_stream")
+            || lower.starts_with("streamserver")
+            || lower.starts_with("streamserver_")
+        {
+            return StreamKind::ServerStreaming;
+        }
+        if lower.starts_with("record_")
+            || lower.starts_with("upload_")
+            || lower.starts_with("collect_")
+            || lower.starts_with("streamclient")
+            || lower.starts_with("streamclient_")
+        {
+            return StreamKind::ClientStreaming;
+        }
+        if lower.starts_with("chat") || lower.starts_with("dialog") || lower.contains("bidi") {
+            return StreamKind::BidiStreaming;
+        }
+        StreamKind::Unary
     }
 }
 
@@ -230,6 +301,12 @@ pub enum FlowEmission {
         role: ChannelRole,
         /// HTTP method when `kind == HttpCall`, None for other kinds.
         method: Option<HttpMethod>,
+        /// Streaming kind when `kind == RpcCall`, None for non-RPC kinds and
+        /// for unary RPC calls (the pairer treats `None` and `Some(Unary)`
+        /// as equivalent). Server-streaming, client-streaming, and bidi
+        /// emissions carry the specific variant so the pairer can avoid
+        /// matching a unary call against a streaming handler.
+        streaming: Option<StreamKind>,
     },
 
     /// A class declaration that is a persisted entity (ORM model, schema, document).
@@ -334,6 +411,20 @@ impl FlowEmission {
             FlowEmission::NamedChannel { kind: NamedChannelKind::HttpCall, method, .. } => {
                 method.map(|m| m.as_str())
             }
+            _ => None,
+        }
+    }
+
+    /// The gRPC streaming kind string, if applicable. Returns `None` for
+    /// non-RPC emissions and for unary RPC calls (the default). Streaming
+    /// variants return their canonical metadata string.
+    pub fn streaming_str(&self) -> Option<&'static str> {
+        match self {
+            FlowEmission::NamedChannel {
+                kind: NamedChannelKind::RpcCall,
+                streaming: Some(s),
+                ..
+            } if *s != StreamKind::Unary => Some(s.as_str()),
             _ => None,
         }
     }

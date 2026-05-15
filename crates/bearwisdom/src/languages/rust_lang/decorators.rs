@@ -50,27 +50,52 @@ pub(super) fn extract_decorators(
     collected.reverse();
 
     for attr_item in collected {
-        if let Some((name, _first_arg)) = parse_attribute_item(&attr_item, source) {
+        if let Some((name, first_arg)) = parse_attribute_item(&attr_item, source) {
             // The bare attribute name (`prost`, `serde`, `tokio`, `tracing`, ...)
             // is decorator metadata, not a type or call reference. Emitting it as
             // a TypeRef edge produces unresolved entries with no consumer:
             //   * the resolver only reads EdgeKind::Imports for scope building
-            //     (see resolve.rs `build_file_context`),
-            //   * connectors source-scan the AST directly (`extract_rust_connection_points`),
-            //     they don't read TypeRef edges.
-            // The previous-shape entry pushed `target_name = name, module = first_arg`
-            // — `first_arg` was the first string literal in the attribute token tree
-            // (e.g. `"/api/users"` from `#[route("/api/users")]`). No code path
-            // consumed that pairing either; route connectors do their own source
-            // scan.
+            //     (see resolve.rs `build_file_context`).
             //
             // For `#[derive(...)]` we still need the inner trait names — those ARE
             // real type references that participate in inheritance/impl edges.
             if name == "derive" {
                 extract_derive_trait_refs(&attr_item, source, source_symbol_index, refs);
+                continue;
+            }
+            // HTTP-method route attributes (actix-web `#[get("/x")]`, Rocket
+            // `#[post("/x")]`, etc.) — emit a TypeRef with the URL carried in
+            // `module` so the resolver's flow-emission step can lift it to a
+            // Consumer HttpCall. Restricted to the canonical verb set so we
+            // don't flood unresolved-refs with arbitrary attribute names.
+            // Tauri `#[command]` is also handled here (no URL arg required).
+            if is_http_verb_attr(&name) {
+                let url_or_none = first_arg.as_deref();
+                let url_ok = url_or_none.map_or(name == "command", |u| u.starts_with('/'));
+                if url_ok {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name.clone(),
+                        kind: EdgeKind::TypeRef,
+                        line: attr_item.start_position().row as u32,
+                        module: url_or_none.map(String::from),
+                        chain: None,
+                        byte_offset: 0,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
             }
         }
     }
+}
+
+fn is_http_verb_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "get" | "post" | "put" | "patch" | "delete" | "head" | "options" | "route"
+            | "command"
+    )
 }
 
 // ---------------------------------------------------------------------------

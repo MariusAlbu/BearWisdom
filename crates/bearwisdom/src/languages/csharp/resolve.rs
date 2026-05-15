@@ -373,6 +373,446 @@ impl LanguageResolver for CSharpResolver {
             _ => true,
         }
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+
+        // Refit interface methods: `[Get("/x")] Task<Foo> GetFoo();` lands
+        // as a TypeRef attribute ref whose `target_name` is the HTTP verb
+        // and `module` carries the route URL. Emit a Producer HttpCall
+        // keyed on the normalized URL with `method` parsed from the
+        // attribute name. The same `Get`/`Post`/… attribute names are
+        // also used by ASP.NET (`[HttpGet]`) but those are
+        // `[Http*]`-prefixed — the per-file ExtractedRoute adapter
+        // handles those on the Consumer side.
+        if r.kind == EdgeKind::TypeRef {
+            if let Some(emission) = detect_refit_attribute_emission(
+                r.target_name.as_str(),
+                r.module.as_deref(),
+            ) {
+                return vec![emission];
+            }
+            // HotChocolate GraphQL: `[QueryType]`, `[MutationType]`,
+            // `[Query]`, `[Mutation]`, `[Subscription]`, `[GraphQLName(...)]`.
+            // Annotates a class or method as a GraphQL operation root.
+            if let Some(emission) = detect_csharp_hotchocolate_emission(
+                r.target_name.as_str(),
+            ) {
+                return vec![emission];
+            }
+            return Vec::new();
+        }
+
+        // SignalR Hub inheritance — `public class ChatHub : Hub` /
+        // `: Hub<IClient>`. Emit single-ended Consumer WebSocket so the
+        // architecture overview clusters SignalR hubs with the ws_call edges.
+        if r.kind == EdgeKind::Inherits {
+            if let Some(emission) = detect_csharp_signalr_hub_emission(
+                r.target_name.as_str(),
+            ) {
+                return vec![emission];
+            }
+            // Integration event class — `class FooEvent : IntegrationEvent`.
+            // Emits Producer EventBus keyed on the event class name.
+            if let Some(emission) = detect_csharp_integration_event_emission(
+                r.target_name.as_str(),
+                &ref_ctx.source_symbol.name,
+            ) {
+                return vec![emission];
+            }
+            // Integration event handler — `class FooHandler :
+            // IIntegrationEventHandler<FooEvent>`. Emits Consumer EventBus
+            // keyed on `T` (the event type) so it pairs with the matching
+            // Producer emitted by the event class above.
+            if let Some(emission) = detect_csharp_integration_event_handler_emission(
+                r.target_name.as_str(),
+                ref_ctx.source_symbol.signature.as_deref(),
+                &ref_ctx.source_symbol.name,
+            ) {
+                return vec![emission];
+            }
+            return Vec::new();
+        }
+
+        // Chain-call detection: HttpClient + RestSharp + Dapper + EF Core.
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let Some(chain_ref) = r.chain.as_ref() else {
+            return Vec::new();
+        };
+        if let Some(emission) = detect_csharp_http_chain_emission(chain_ref, &r.call_args) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_csharp_db_query_emission(chain_ref, &r.call_args) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_csharp_mailer_emission(chain_ref) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_csharp_hangfire_bg_emission(chain_ref) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_dotnet_di_chain_emission(chain_ref) {
+            return vec![emission];
+        }
+        Vec::new()
+    }
+}
+
+/// Hangfire: `BackgroundJob.Enqueue(...)`, `RecurringJob.AddOrUpdate(...)`.
+pub(crate) fn detect_csharp_hangfire_bg_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let segs = &chain.segments;
+    if segs.len() < 2 {
+        return None;
+    }
+    let root = segs[0].name.as_str();
+    let leaf = segs.last()?.name.as_str();
+    if !matches!(root, "BackgroundJob" | "RecurringJob" | "BatchJob") {
+        return None;
+    }
+    if !matches!(leaf, "Enqueue" | "Schedule" | "AddOrUpdate" | "ContinueWith") {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::BgJob,
+        name: format!("cs.{}", root),
+        role: ChannelRole::Producer,
+        method: None,
+    streaming: None,
+    })
+}
+
+/// HotChocolate GraphQL attribute markers. Annotates class/method as
+/// GraphQL Query / Mutation / Subscription roots. Emits Consumer
+/// GraphQLOp keyed on the marker so the architecture overview clusters
+/// HotChocolate types alongside other GraphQL emissions.
+pub(crate) fn detect_csharp_hotchocolate_emission(
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let kind = match target {
+        "QueryType" | "Query" | "ExtendObjectType" => "query",
+        "MutationType" | "Mutation" => "mutation",
+        "SubscriptionType" | "Subscription" => "subscription",
+        _ => return None,
+    };
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::GraphQLOp,
+        name: format!("cs.hotchocolate.{}", kind),
+        role: ChannelRole::Consumer,
+        method: None,
+    streaming: None,
+    })
+}
+
+/// Match `: Hub`, `: Hub<TClient>`, `: DynamicHub` — SignalR base classes.
+/// Emits Consumer WebSocket so the hub clusters as a WS endpoint.
+pub(crate) fn detect_csharp_signalr_hub_emission(
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let base = target.split('<').next().unwrap_or(target).trim();
+    if !matches!(base, "Hub" | "DynamicHub") {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::WebSocket,
+        name: "cs.signalr".to_string(),
+        role: ChannelRole::Consumer,
+        method: None,
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_csharp_mailer_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let segs = &chain.segments;
+    if segs.len() < 2 {
+        return None;
+    }
+    let root = segs[0].name.as_str();
+    let leaf = segs.last()?.name.as_str();
+    // SmtpClient / MailKit SmtpClient / SendGrid Client.
+    if !matches!(
+        root,
+        "smtp" | "smtpClient" | "_smtpClient" | "_emailService" | "emailService" | "mailService" | "_mailService" | "_sendGridClient" | "sendGridClient"
+    ) {
+        return None;
+    }
+    if !matches!(
+        leaf,
+        "Send" | "SendAsync" | "SendMailAsync" | "SendEmailAsync"
+    ) {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::Mailer,
+        name: format!("cs.{}", root),
+        role: ChannelRole::Producer,
+        method: None,
+    streaming: None,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// DbQuery detection — EF Core + Dapper
+// ---------------------------------------------------------------------------
+
+/// Recognise EF Core LINQ chains and Dapper extension calls. Emits a
+/// `DbQuery` keyed on the discovered entity name and operation.
+///
+/// Shapes handled:
+/// - **EF Core LINQ**: `<context>.<EntitySet>.<op>(...)` where
+///   `EntitySet` is PascalCase and `op` is one of the recognised
+///   query / mutation methods (`Where`, `FirstOrDefault`, `ToListAsync`,
+///   `Add`, `Update`, `Remove`, etc.).
+/// - **EF Core SaveChanges**: `<context>.SaveChanges` / `SaveChangesAsync`
+///   emits a single DbQuery with a `*` entity name (commits all queued
+///   work — entity is unknown statically).
+/// - **EF Core Set<T>()**: chain whose leaf is `Set` (generic method) is
+///   too type-info-dependent to recover the entity without type-arg
+///   capture; skipped.
+/// - **Dapper**: `<connection>.Query` / `QueryAsync` / `QueryFirstOrDefault`
+///   / `QuerySingle` / `Execute` / `ExecuteAsync` / `ExecuteScalar`. SQL
+///   text parsed from the first string-literal arg for `FROM <table>` /
+///   `UPDATE <table>` / `INSERT INTO <table>` / `DELETE FROM <table>`
+///   clauses.
+pub(crate) fn detect_csharp_db_query_emission(
+    chain: &crate::types::MemberChain,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use crate::types::CallArg;
+
+    let segs = &chain.segments;
+    let leaf = segs.last()?.name.as_str();
+
+    // EF Core SaveChanges — entity unknown.
+    if matches!(leaf, "SaveChanges" | "SaveChangesAsync") {
+        return Some(FlowEmission::DbQuery {
+            entity_name: "cs.*".to_string(),
+            operation: DbQueryOp::Other,
+        });
+    }
+
+    // Dapper extensions. First positional arg is the SQL string.
+    if let Some(op) = parse_dapper_verb(leaf) {
+        let sql = match call_args.first()? {
+            CallArg::StringLit(s) | CallArg::TemplateLit(s) => s.clone(),
+            _ => return None,
+        };
+        if let Some((entity, sql_op)) = parse_csharp_sql_entity(&sql) {
+            return Some(FlowEmission::DbQuery {
+                entity_name: format!("cs.{}", entity),
+                operation: match (op, sql_op) {
+                    (DbQueryOp::Other, sql) => sql,
+                    (forced, _) => forced,
+                },
+            });
+        }
+        return None;
+    }
+
+    // EF Core LINQ chain: `<context>.<EntitySet>.<op>(...)` — 3+ segments
+    // with a PascalCase middle (DbSet property name) and a recognised
+    // LINQ-ish op leaf.
+    if segs.len() >= 3 {
+        let entity = segs[segs.len() - 2].name.as_str();
+        if !is_pascal_case_first_cs(entity) {
+            return None;
+        }
+        if let Some(op) = parse_efcore_linq_op(leaf) {
+            return Some(FlowEmission::DbQuery {
+                entity_name: format!("cs.{}", entity),
+                operation: op,
+            });
+        }
+    }
+
+    None
+}
+
+fn parse_dapper_verb(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
+    use crate::indexer::resolve::flow_emit::DbQueryOp;
+    Some(match name {
+        "Query" | "QueryAsync" | "QueryFirstOrDefault" | "QueryFirstOrDefaultAsync"
+        | "QuerySingle" | "QuerySingleAsync" | "QuerySingleOrDefault"
+        | "QuerySingleOrDefaultAsync" | "QueryMultiple" | "QueryMultipleAsync" => {
+            DbQueryOp::Select
+        }
+        "Execute" | "ExecuteAsync" | "ExecuteScalar" | "ExecuteScalarAsync" => DbQueryOp::Other,
+        _ => return None,
+    })
+}
+
+fn parse_efcore_linq_op(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
+    use crate::indexer::resolve::flow_emit::DbQueryOp;
+    Some(match name {
+        // Read operations.
+        "Where" | "FirstOrDefault" | "FirstOrDefaultAsync" | "First" | "FirstAsync"
+        | "Single" | "SingleAsync" | "SingleOrDefault" | "SingleOrDefaultAsync"
+        | "ToList" | "ToListAsync" | "ToArray" | "ToArrayAsync" | "Find" | "FindAsync"
+        | "Count" | "CountAsync" | "LongCount" | "LongCountAsync" | "Any" | "AnyAsync"
+        | "All" | "AllAsync" | "Sum" | "SumAsync" | "Min" | "MinAsync" | "Max" | "MaxAsync"
+        | "Average" | "AverageAsync" | "Contains" | "ContainsAsync" | "Include"
+        | "ThenInclude" | "OrderBy" | "OrderByDescending" | "GroupBy" | "Select"
+        | "AsNoTracking" | "AsTracking" | "ToDictionary" | "ToDictionaryAsync"
+        | "ToHashSet" | "ToHashSetAsync" => DbQueryOp::Select,
+        // Write operations on DbSet.
+        "Add" | "AddAsync" | "AddRange" | "AddRangeAsync" => DbQueryOp::Insert,
+        "Update" | "UpdateRange" => DbQueryOp::Update,
+        "Remove" | "RemoveRange" => DbQueryOp::Delete,
+        "Attach" | "AttachRange" => DbQueryOp::Other,
+        _ => return None,
+    })
+}
+
+fn is_pascal_case_first_cs(name: &str) -> bool {
+    name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+}
+
+/// Parse a SQL string to identify the entity (table) name and operation.
+/// Returns `(table_name, op)` when a recognised clause is found.
+fn parse_csharp_sql_entity(
+    sql: &str,
+) -> Option<(String, crate::indexer::resolve::flow_emit::DbQueryOp)> {
+    use crate::indexer::resolve::flow_emit::DbQueryOp;
+    let upper = sql.trim().to_ascii_uppercase();
+    let (op, after) = if let Some(i) = upper.find("INSERT INTO ") {
+        (DbQueryOp::Insert, i + 12)
+    } else if let Some(i) = upper.find("UPDATE ") {
+        (DbQueryOp::Update, i + 7)
+    } else if let Some(i) = upper.find("DELETE FROM ") {
+        (DbQueryOp::Delete, i + 12)
+    } else if let Some(i) = upper.find(" FROM ") {
+        (DbQueryOp::Select, i + 6)
+    } else if upper.starts_with("FROM ") {
+        (DbQueryOp::Select, 5)
+    } else {
+        return None;
+    };
+    let slice = sql.get(after..)?;
+    let token = slice.split_whitespace().next()?;
+    let entity: String = token
+        .trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.')
+        .to_string();
+    if entity.is_empty() {
+        return None;
+    }
+    // Drop schema qualifier (`dbo.Users` → `Users`).
+    let final_entity = entity.rsplit('.').next().unwrap_or(entity.as_str()).to_string();
+    Some((final_entity, op))
+}
+
+// ---------------------------------------------------------------------------
+// HTTP Producer detection — HttpClient + RestSharp chain-call shapes
+// ---------------------------------------------------------------------------
+
+/// Recognise `<httpClient>.GetAsync("/x")` / `PostAsync` / `PutAsync` /
+/// `DeleteAsync` / `PatchAsync` / `SendAsync` chain calls (HttpClient) and
+/// `<restClient>.ExecuteAsync` / `<restClient>.<Verb>Async` /
+/// `<restClient>.ExecuteAsync<T>` (RestSharp). Emits a Producer
+/// `NamedChannel { kind: HttpCall, .. }` keyed on the first string-literal
+/// argument, normalized via `url_pattern::normalize`.
+///
+/// The detector requires the chain leaf to be a recognised verb-suffixed
+/// method AND the first argument to be a captured string/template literal
+/// — calls whose URL is in a variable don't get a static pairing key.
+pub(crate) fn detect_csharp_http_chain_emission(
+    chain: &crate::types::MemberChain,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+
+    let leaf = chain.segments.last()?.name.as_str();
+    let method = parse_csharp_http_verb(leaf)?;
+    let url_raw = match call_args.first()? {
+        CallArg::StringLit(s) | CallArg::TemplateLit(s) => s.clone(),
+        _ => return None,
+    };
+    if url_raw.is_empty() {
+        return None;
+    }
+    let name = crate::connectors::url_pattern::normalize(&url_raw);
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name,
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+/// Parse the trailing HTTP-verb token from a HttpClient/RestSharp method
+/// name. Returns `Any` for non-verb methods like `ExecuteAsync` (RestSharp
+/// dispatches internally on the request's method, so the static call
+/// shape doesn't carry a verb).
+fn parse_csharp_http_verb(name: &str) -> Option<crate::indexer::resolve::flow_emit::HttpMethod> {
+    use crate::indexer::resolve::flow_emit::HttpMethod;
+    Some(match name {
+        "GetAsync" | "GetStringAsync" | "GetByteArrayAsync" | "GetStreamAsync" => HttpMethod::Get,
+        "PostAsync" | "PostAsJsonAsync" => HttpMethod::Post,
+        "PutAsync" | "PutAsJsonAsync" => HttpMethod::Put,
+        "PatchAsync" | "PatchAsJsonAsync" => HttpMethod::Patch,
+        "DeleteAsync" | "DeleteFromJsonAsync" => HttpMethod::Delete,
+        "SendAsync" | "ExecuteAsync" | "ExecuteGetAsync" | "ExecutePostAsync" => HttpMethod::Any,
+        _ => return None,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Refit attribute emission — `[Get("/x")]` / `[Post("/x")]` on an interface method
+// ---------------------------------------------------------------------------
+
+/// Emit Producer HttpCall when an attribute ref's `target_name` is a Refit
+/// HTTP-verb attribute. The decorator's first string arg (`r.module` in
+/// the C# extractor's encoding) carries the route URL. Refit ships with
+/// `[Get]`/`[Post]`/etc. attributes that look identical to ASP.NET's
+/// `[HttpGet]` family except for the `Http` prefix — the prefix is the
+/// disambiguator that lets us emit Producer for one and Consumer for the
+/// other (the ExtractedRoute adapter handles the `[Http*]` Consumer side).
+pub(crate) fn detect_refit_attribute_emission(
+    attr_name: &str,
+    first_arg: Option<&str>,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    let method = match attr_name {
+        "Get" => HttpMethod::Get,
+        "Post" => HttpMethod::Post,
+        "Put" => HttpMethod::Put,
+        "Patch" => HttpMethod::Patch,
+        "Delete" => HttpMethod::Delete,
+        "Head" => HttpMethod::Head,
+        "Options" => HttpMethod::Options,
+        _ => return None,
+    };
+    let url = first_arg?;
+    if url.is_empty() {
+        return None;
+    }
+    let name = crate::connectors::url_pattern::normalize(url);
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name,
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -435,6 +875,99 @@ fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> bool {
         return false;
     }
     false
+}
+
+// ---------------------------------------------------------------------------
+// Integration event bus — `IntegrationEvent` base class +
+// `IIntegrationEventHandler<T>` handler interface inheritance shapes.
+// ---------------------------------------------------------------------------
+
+/// Match a class whose base type is `IntegrationEvent`. Emits Producer
+/// EventBus keyed on the event class name; the matching Consumer is
+/// emitted by `detect_csharp_integration_event_handler_emission` when the
+/// same `T` appears in `IIntegrationEventHandler<T>`.
+pub(crate) fn detect_csharp_integration_event_emission(
+    target: &str,
+    source_symbol_name: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let base = target.split('<').next().unwrap_or(target).trim();
+    if base != "IntegrationEvent" {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::EventBus,
+        name: source_symbol_name.to_string(),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: None,
+    })
+}
+
+/// Match a class whose base type is `IIntegrationEventHandler<T>`. Emits
+/// Consumer EventBus keyed on `T`. The `T` is recovered (in order) from:
+/// the target_name itself if the extractor preserved generics, the source
+/// symbol's signature when present, otherwise the handler class name as a
+/// last-resort placeholder.
+pub(crate) fn detect_csharp_integration_event_handler_emission(
+    target: &str,
+    source_symbol_signature: Option<&str>,
+    source_symbol_name: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let base = target.split('<').next().unwrap_or(target).trim();
+    if base != "IIntegrationEventHandler" {
+        return None;
+    }
+    let event_name = extract_event_handler_t(target)
+        .or_else(|| source_symbol_signature.and_then(extract_event_handler_t))
+        .unwrap_or_else(|| source_symbol_name.to_string());
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::EventBus,
+        name: event_name,
+        role: ChannelRole::Consumer,
+        method: None,
+        streaming: None,
+    })
+}
+
+/// Extract `T` from a string containing `IIntegrationEventHandler<T>`.
+fn extract_event_handler_t(s: &str) -> Option<String> {
+    let start = s.find("IIntegrationEventHandler")?;
+    let after = &s[start + "IIntegrationEventHandler".len()..];
+    let lt = after.find('<')?;
+    let gt = after.find('>')?;
+    if gt <= lt {
+        return None;
+    }
+    Some(after[lt + 1..gt].trim().to_string())
+}
+
+// ---------------------------------------------------------------------------
+// .NET DI registration — `services.AddScoped<I, Impl>()` style.
+// ---------------------------------------------------------------------------
+
+/// Match `AddScoped` / `AddTransient` / `AddSingleton` chain leaves and
+/// emit a `DiBinding` with `container = "dotnet"`. When the chain segment
+/// carries generic `type_args`, the first arg becomes the service symbol
+/// hint via name lookup at flow-write time; otherwise the binding is
+/// emitted with `service_symbol_id = 0` (single-ended marker that still
+/// clusters in the architecture overview).
+pub(crate) fn detect_dotnet_di_chain_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    let leaf = chain.segments.last()?;
+    if !matches!(
+        leaf.name.as_str(),
+        "AddScoped" | "AddTransient" | "AddSingleton"
+    ) {
+        return None;
+    }
+    Some(FlowEmission::DiBinding {
+        service_symbol_id: 0,
+        container: Some("dotnet".to_string()),
+    })
 }
 
 // ---------------------------------------------------------------------------

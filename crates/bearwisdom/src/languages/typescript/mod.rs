@@ -95,15 +95,6 @@ impl LanguagePlugin for TypeScriptPlugin {
         result
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_typescript_connection_points(source, file_path)
-    }
-
     fn extract_with_demand(
         &self,
         source: &str,
@@ -166,28 +157,13 @@ impl LanguagePlugin for TypeScriptPlugin {
         Some(std::sync::Arc::new(type_checker::TypeScriptChecker))
     }
 
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::NestjsRouteConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::NextjsRouteConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::TypeScriptRestConnector, db, project_root, ctx,
-        ));
-        out
-    }
+    // TODO(routes-dispatch): wire `connectors::discover_nestjs_routes` and
+    // `connectors::discover_nextjs_routes` into the indexer route-population
+    // stage. Both functions now write the `routes` table directly (returning
+    // the insert count) and the routes-table → FlowEmission bridge in
+    // resolve/mod.rs emits the Consumer flows. The `resolve_connection_points`
+    // override was removed because the ConnectionPoint Stop emission was
+    // redundant with that bridge.
 
     fn post_index(
         &self,

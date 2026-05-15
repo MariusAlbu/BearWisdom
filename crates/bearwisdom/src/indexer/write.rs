@@ -591,8 +591,7 @@ pub fn delete_files(db: &Database, paths: &[String]) -> Result<Vec<(i64, String)
         .context("Failed to begin delete transaction")?;
 
     for (file_id, rel_path) in &file_ids {
-        // CASCADE handles symbols, edges, imports, routes, code_chunks,
-        // connection_points, etc.
+        // CASCADE handles symbols, edges, imports, routes, code_chunks, etc.
         tx.execute("DELETE FROM files WHERE id = ?1", [file_id])?;
 
         // Manual cleanup for tables without FK to files.
@@ -633,12 +632,13 @@ pub fn write_packages(
         let kind_value = pkg.kind.clone().unwrap_or_else(|| "unknown".to_string());
         let id: i64 = conn
             .prepare_cached(
-                "INSERT INTO packages (name, path, kind, manifest, declared_name)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO packages (name, path, kind, manifest, declared_name, is_publishable)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(path, kind) DO UPDATE SET
                    name = excluded.name,
                    manifest = excluded.manifest,
-                   declared_name = excluded.declared_name
+                   declared_name = excluded.declared_name,
+                   is_publishable = excluded.is_publishable
                  RETURNING id",
             )?
             .query_row(
@@ -648,6 +648,7 @@ pub fn write_packages(
                     kind_value,
                     pkg.manifest,
                     pkg.declared_name,
+                    pkg.is_publishable as i64,
                 ],
                 |r| r.get(0),
             )
@@ -660,6 +661,7 @@ pub fn write_packages(
             kind: Some(kind_value),
             manifest: pkg.manifest.clone(),
             declared_name: pkg.declared_name.clone(),
+            is_publishable: pkg.is_publishable,
         });
     }
 
@@ -783,7 +785,7 @@ pub fn write_package_deps(
 /// files without re-running full package detection.
 pub fn load_packages_from_db(db: &Database) -> Result<Vec<crate::types::PackageInfo>> {
     let mut stmt = db.conn().prepare(
-        "SELECT id, name, path, kind, manifest, declared_name FROM packages",
+        "SELECT id, name, path, kind, manifest, declared_name, is_publishable FROM packages",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok(crate::types::PackageInfo {
@@ -793,6 +795,7 @@ pub fn load_packages_from_db(db: &Database) -> Result<Vec<crate::types::PackageI
             kind: r.get::<_, Option<String>>(3)?,
             manifest: r.get::<_, Option<String>>(4)?,
             declared_name: r.get::<_, Option<String>>(5)?,
+            is_publishable: r.get::<_, i64>(6)? != 0,
         })
     })?;
     let mut packages = Vec::new();

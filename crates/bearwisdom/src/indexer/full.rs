@@ -126,14 +126,13 @@ pub fn full_index(
 
             // Drop core tables (FK-ordered: dependents first).
             // Disable FK enforcement so we can drop in any order.
-            // Derived tables (routes, flow_edges, connection_points, db_mappings,
-            // code_chunks, lsp_edge_meta) must also be cleared — they reference
-            // file/symbol IDs that become stale after DROP TABLE files/symbols.
+            // Derived tables (routes, flow_edges, db_mappings, code_chunks,
+            // lsp_edge_meta) must also be cleared — they reference file/symbol
+            // IDs that become stale after DROP TABLE files/symbols.
             let _ = db.conn().execute_batch(
                 "PRAGMA foreign_keys = OFF;
                  DROP TABLE IF EXISTS lsp_edge_meta;
                  DROP TABLE IF EXISTS flow_edges;
-                 DROP TABLE IF EXISTS connection_points;
                  DROP TABLE IF EXISTS routes;
                  DROP TABLE IF EXISTS db_mappings;
                  DROP TABLE IF EXISTS code_chunks;
@@ -402,12 +401,14 @@ pub fn full_index(
 
             // Slim down: drop the big per-file fields whose only consumers
             // (write / FTS / chunks) have already read them. `symbols`,
-            // `refs`, `flow`, `connection_points`, and the origin vectors
-            // stay — resolution, connector detection, and flow matching
-            // read them downstream.
+            // `refs`, `flow`, and the origin vectors stay — resolution and
+            // flow matching read them downstream. `routes` and `db_sets`
+            // are kept because
+            // the cross-language flow adapter (see
+            // `extracted_routes_to_emissions` and `extracted_db_sets_to_emissions`)
+            // reads them during the resolve pass to emit HttpCall Consumer
+            // and DbEntity edges respectively.
             pf.content = None;
-            pf.routes = Vec::new();
-            pf.db_sets = Vec::new();
 
             if is_vendored_c {
                 vendored_c_parsed.push(pf);
@@ -791,11 +792,10 @@ pub fn full_index(
     // --- Step 5c: Release resolve-only fields. ---
     //
     // Resolution + flow inference are the last consumers of `symbols`,
-    // `refs`, `flow`, and the parallel origin / snippet vectors. The
-    // connector pass below only reads `path`, `language`, `package_id`,
-    // and `connection_points`; freeing the heavy vectors now strips each
-    // `ParsedFile` down to <1 KB of residual state so memory pressure
-    // doesn't stack with the connector registry's own allocations.
+    // `refs`, `flow`, and the parallel origin / snippet vectors. Freeing
+    // the heavy vectors now strips each `ParsedFile` down to <1 KB of
+    // residual state so memory pressure doesn't stack with downstream
+    // allocations.
     for pf in parsed.iter_mut() {
         pf.symbols = Vec::new();
         pf.refs = Vec::new();
@@ -807,72 +807,59 @@ pub fn full_index(
     }
     mem_probe::probe("13_parsed_slim");
 
-    // --- Step 7a: Flow connectors (registry pipeline) ---
+    // --- Step 7a: Route discoverers ---
     //
-    // All cross-framework flow connectors run through the ConnectorRegistry:
-    //   detect → extract ConnectionPoints → match start↔stop → write flow_edges
-    //
-    // 18 connectors: REST, gRPC, MQ, GraphQL, events, IPC (Tauri + Electron),
-    // DI (.NET + Angular + Spring), routes (Spring, Django, FastAPI, Go, Rails,
-    // Laravel, NestJS, Next.js).
+    // Each language populates the `routes` table directly. The routes-table →
+    // FlowEmission bridge below (`append_db_route_consumer_emissions`) emits
+    // Consumer flows from those rows; resolver-side HttpCall emissions provide
+    // the matching Producers.
     emit("connectors", 0.0, Some("Running connectors"));
     let connector_start = Instant::now();
-
-    // Note: `resolved_route` is now written inline at extract time (see
-    // `write::write_parsed_files`). The post-parse UPDATE that used to run
-    // here is no longer needed — connectors that later rewrite the full
-    // controller-prefix-joined path still do so via per-connector UPDATEs.
-
-    // Collect connection points emitted during extraction by
-    // `LanguagePlugin::extract_connection_points`. Each plugin's
-    // in-memory `crate::types::ConnectionPoint`s get joined to their
-    // DB `file_id` / `symbol_id` here and handed to the matcher alongside
-    // the points legacy `Connector::extract` impls pull from the DB.
-    // Plugins that haven't yet migrated their connector detection emit
-    // nothing here — the old path still fires for them.
-    let plugin_points = crate::connectors::from_plugins::collect_plugin_connection_points(
-        &parsed,
-        &file_id_map,
-        &symbol_id_map,
-    );
-    if !plugin_points.is_empty() {
-        info!(
-            "Collected {} plugin-emitted connection points",
-            plugin_points.len()
-        );
-    }
-
-    // Plugin-owned post-parse connector hook: lets each language plugin emit
-    // connection points that need the fully-written DB (class-inheritance
-    // lookups, method-by-parent joins, DI-container resolution).
-    let mut resolved_plugin_points: Vec<crate::connectors::types::ConnectionPoint> = Vec::new();
-    for plugin in registry.all() {
-        let points = plugin.resolve_connection_points(db, project_root, &project_ctx);
-        if !points.is_empty() {
+    {
+        let conn = db.conn();
+        let n_elixir = crate::languages::elixir::connectors::discover_phoenix_routes(conn, project_root);
+        let n_go = crate::languages::go::connectors::discover_go_routes(conn, project_root, &project_ctx);
+        let n_java = crate::languages::java::connectors::discover_spring_routes(conn, project_root);
+        let n_php = crate::languages::php::connectors::discover_laravel_routes(conn, project_root, &project_ctx);
+        let n_django = crate::languages::python::connectors::discover_django_routes(conn, project_root, &project_ctx);
+        let n_fastapi = crate::languages::python::connectors::discover_fastapi_routes(conn, project_root, &project_ctx);
+        let n_rails = crate::languages::ruby::connectors::discover_rails_routes(conn, project_root, &project_ctx);
+        let n_nestjs = crate::languages::typescript::connectors::discover_nestjs_routes(conn, project_root, &project_ctx);
+        let n_nextjs = crate::languages::typescript::connectors::discover_nextjs_routes(conn, project_root, &project_ctx);
+        let n_groovy = crate::languages::groovy::connectors::discover_groovy_routes(conn, project_root, &project_ctx);
+        let total = n_elixir + n_go + n_java + n_php + n_django + n_fastapi + n_rails + n_nestjs + n_nextjs + n_groovy;
+        if total > 0 {
             info!(
-                "Plugin {}::resolve_connection_points: {} points",
-                plugin.id(),
-                points.len()
+                "Route discovery: phoenix={n_elixir} go={n_go} spring={n_java} laravel={n_php} django={n_django} fastapi={n_fastapi} rails={n_rails} nestjs={n_nestjs} nextjs={n_nextjs} groovy={n_groovy} in {:.2}s",
+                connector_start.elapsed().as_secs_f64()
             );
-            resolved_plugin_points.extend(points);
         }
     }
-
-    let connector_registry = crate::connectors::registry::build_default_registry();
-    match connector_registry.run_with_plugin_points(
-        db.conn(),
-        project_root,
-        &project_ctx,
-        &plugin_points,
-        &resolved_plugin_points,
-    ) {
-        Ok(flow_count) => info!(
-            "Connectors: {flow_count} flow edges in {:.2}s",
-            connector_start.elapsed().as_secs_f64()
-        ),
-        Err(e) => warn!("Connector registry failed: {e}"),
-    }
     mem_probe::probe("14_connectors_done");
+
+    // Cross-language route → flow-edge adapter. Languages whose route
+    // detection is implemented as a project-wide `Connector` (Go chi/gin,
+    // Java Spring, Elixir Phoenix) populate the `routes` table during the
+    // connector phase above — too late for the per-file flow emitter in
+    // resolve. Materialise those rows now as Consumer NamedChannel
+    // HttpCall flow edges so they pair against TS/C# producer-side
+    // calls.
+    {
+        let mut emissions: Vec<(String, u32, crate::indexer::resolve::flow_emit::FlowEmission)> =
+            Vec::new();
+        if let Err(e) = crate::indexer::resolve::append_db_route_consumer_emissions(
+            db.conn(),
+            &mut emissions,
+        ) {
+            warn!("DB-route flow adapter failed: {e}");
+        } else if !emissions.is_empty() {
+            match crate::indexer::resolve::flush_flow_emissions_public(db.conn(), &emissions) {
+                Ok(n) if n > 0 => info!("Cross-language route flow edges: {n}"),
+                Err(e) => warn!("DB-route flow flush failed: {e}"),
+                _ => {}
+            }
+        }
+    }
 
     // --- Step 7b: Non-flow post-index hooks ---
     //
@@ -1028,10 +1015,10 @@ pub(crate) fn parse_file_with_demand(
             content: Some(content),
             has_errors: false,
             flow: crate::types::FlowMeta::default(),
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
+            plugin_flow_emissions: Vec::new(),
         });
     }
 
@@ -1103,12 +1090,38 @@ pub(crate) fn parse_file_with_demand(
         crate::types::FlowMeta::default()
     };
 
-    // Cross-service wiring datapoints emitted by the plugin. Default impl
-    // returns empty; plugins fill this in one framework at a time. Stage 3
-    // pairs Start/Stop points across files into `flow_edges` rows without
-    // touching the DB.
-    let connection_points =
-        plugin.extract_connection_points(&content, &walked.relative_path, walked.language);
+    // Extractor-time `FlowEmission`s for plugins whose flow detection is
+    // file-structure-based (SDL parsing, `.proto` file scan) and can't move
+    // to chain-walk resolver-time emission. The `indexer/resolve/mod.rs`
+    // adapter flushes these alongside resolver-emitted flows.
+    let plugin_flow_emissions: Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> =
+        match walked.language {
+            "graphql" => {
+                crate::languages::graphql::connectors::extract_schema_starts(&content)
+            }
+            "vue" => {
+                crate::languages::vue::connectors::extract_vue_graphql_points(&content)
+            }
+            "svelte" => {
+                crate::languages::svelte::connectors::extract_svelte_graphql_points(&content)
+            }
+            "ruby" => crate::languages::ruby::connectors::extract_ruby_graphql(
+                &content,
+                &walked.relative_path,
+            ),
+            "python" => {
+                crate::languages::python::connectors::extract_python_graphql(&content)
+            }
+            "typescript" | "tsx" | "javascript" | "jsx" => {
+                crate::languages::typescript::connectors::extract_typescript_graphql(
+                    &content,
+                )
+            }
+            "proto" => {
+                crate::languages::proto::connectors::extract_proto_grpc_starts(&content)
+            }
+            _ => Vec::new(),
+        };
 
     // Angular @Component selector metadata — populated for TypeScript and
     // Angular files so the resolver can map kebab-case template tags to real
@@ -1138,10 +1151,10 @@ pub(crate) fn parse_file_with_demand(
         content: Some(content),
         has_errors: r.has_errors,
         flow: flow_meta,
-        connection_points,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors,
+        plugin_flow_emissions,
     })
 }
 

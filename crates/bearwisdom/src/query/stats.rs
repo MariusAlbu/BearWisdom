@@ -124,17 +124,12 @@ pub struct FlowEdgeBreakdown {
     pub count: u32,
 }
 
-/// Count connection_points with direction='start' that have no matching flow_edge.
+/// Count flow_edges rows whose target side never resolved (single-ended
+/// producers — the post-Phase H equivalent of "unmatched starts").
 pub fn unresolved_flow_count(db: &Database) -> QueryResult<u32> {
     let _timer = db.timer("unresolved_flow_count");
     let count: u32 = db.conn().query_row(
-        "SELECT COUNT(*) FROM connection_points cp
-         WHERE cp.direction = 'start'
-           AND NOT EXISTS (
-               SELECT 1 FROM flow_edges fe
-               WHERE fe.source_file_id = cp.file_id
-                 AND fe.source_line    = cp.line
-           )",
+        "SELECT COUNT(*) FROM flow_edges WHERE target_file_id IS NULL",
         [],
         |r| r.get(0),
     )?;

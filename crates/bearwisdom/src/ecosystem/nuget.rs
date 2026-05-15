@@ -848,10 +848,11 @@ fn parse_dotnet_dll(
         content: None,
         has_errors: false,
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     })
 }
 
@@ -1205,10 +1206,11 @@ fn parse_cs_source_file(
         content: None,
         has_errors: false,
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     })
 }
 

@@ -1,6 +1,6 @@
 use super::resolve::GoResolver;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, FileContext, LanguageResolver, RefContext, SymbolIndex, SymbolInfo};
+use crate::indexer::resolve::engine::{build_scope_chain, FileContext, ImportEntry, LanguageResolver, RefContext, SymbolIndex, SymbolInfo};
 use crate::types::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -83,10 +83,11 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 
@@ -119,10 +120,11 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
             flow: crate::types::FlowMeta::default(),
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
+
+            plugin_flow_emissions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -1184,4 +1186,407 @@ fn test_instantiates_ref_resolution() {
             .get(&("handlers/user.go".to_string(), "handlers.UserHandler".to_string()))
             .unwrap()
     );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP Producer + DbQuery + gRPC flow detection (Goal 14)
+// ---------------------------------------------------------------------------
+
+fn make_chain(segments: &[&str]) -> MemberChain {
+    MemberChain {
+        segments: segments
+            .iter()
+            .enumerate()
+            .map(|(i, name)| ChainSegment {
+                name: name.to_string(),
+                node_kind: if i == 0 {
+                    "identifier".to_string()
+                } else {
+                    "field_identifier".to_string()
+                },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn test_go_http_get_emits_producer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use super::resolve::detect_go_http_chain_emission;
+
+    let chain = make_chain(&["http", "Get"]);
+    let call_args = vec![CallArg::StringLit("/api/users".to_string())];
+    match detect_go_http_chain_emission(&chain, &call_args).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+            assert_eq!(kind, NamedChannelKind::HttpCall);
+            assert_eq!(role, ChannelRole::Producer);
+            assert_eq!(name, "/api/users");
+            assert_eq!(method, Some(HttpMethod::Get));
+        }
+        other => panic!("expected NamedChannel HttpCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_go_http_new_request_uses_method_arg() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
+    use super::resolve::detect_go_http_chain_emission;
+
+    let chain = make_chain(&["http", "NewRequest"]);
+    let call_args = vec![
+        CallArg::StringLit("POST".to_string()),
+        CallArg::StringLit("/api/login".to_string()),
+        CallArg::Ident("body".to_string()),
+    ];
+    match detect_go_http_chain_emission(&chain, &call_args).unwrap() {
+        FlowEmission::NamedChannel { method, name, .. } => {
+            assert_eq!(method, Some(HttpMethod::Post));
+            assert_eq!(name, "/api/login");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_resty_client_chain_emits_producer() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
+    use super::resolve::detect_go_http_chain_emission;
+
+    let chain = make_chain(&["client", "R", "Get"]);
+    let call_args = vec![CallArg::StringLit("/api/x".to_string())];
+    match detect_go_http_chain_emission(&chain, &call_args).unwrap() {
+        FlowEmission::NamedChannel { method, name, .. } => {
+            assert_eq!(method, Some(HttpMethod::Get));
+            assert_eq!(name, "/api/x");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_http_no_emit_when_url_is_not_literal() {
+    use super::resolve::detect_go_http_chain_emission;
+
+    let chain = make_chain(&["http", "Get"]);
+    let call_args = vec![CallArg::Ident("url".to_string())];
+    assert!(detect_go_http_chain_emission(&chain, &call_args).is_none());
+}
+
+#[test]
+fn test_go_db_query_parses_sql_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_go_db_query_emission;
+
+    let chain = make_chain(&["db", "Query"]);
+    let call_args = vec![
+        CallArg::StringLit("SELECT * FROM users WHERE id = $1".to_string()),
+    ];
+    match detect_go_db_query_emission(&chain, &call_args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "go.users");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_go_db_exec_parses_sql_update() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_go_db_query_emission;
+
+    let chain = make_chain(&["db", "Exec"]);
+    let call_args = vec![
+        CallArg::StringLit("UPDATE accounts SET balance = $1 WHERE id = $2".to_string()),
+    ];
+    match detect_go_db_query_emission(&chain, &call_args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "go.accounts");
+            assert_eq!(operation, DbQueryOp::Update);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_go_gorm_first_emits_dbquery_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_go_db_query_emission;
+
+    let chain = make_chain(&["db", "First"]);
+    let call_args = vec![CallArg::Ident("User".to_string())];
+    match detect_go_db_query_emission(&chain, &call_args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "go.User");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_go_gorm_create_emits_insert() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_go_db_query_emission;
+
+    let chain = make_chain(&["db", "Create"]);
+    let call_args = vec![CallArg::Ident("Poll".to_string())];
+    match detect_go_db_query_emission(&chain, &call_args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "go.Poll");
+            assert_eq!(operation, DbQueryOp::Insert);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_go_db_no_emit_for_unknown_leaf() {
+    use super::resolve::detect_go_db_query_emission;
+
+    let chain = make_chain(&["db", "Ping"]);
+    let call_args: Vec<CallArg> = vec![];
+    assert!(detect_go_db_query_emission(&chain, &call_args).is_none());
+}
+
+#[test]
+fn test_go_grpc_three_segment_chain_emits_producer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_go_grpc_chain_emission;
+
+    let file_ctx = FileContext {
+        file_path: "client.go".to_string(),
+        language: "go".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "pb".to_string(),
+            module_path: Some("github.com/example/api/proto/userpb".to_string()),
+            alias: None,
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    };
+    let chain = make_chain(&["client", "UserService", "GetUser"]);
+    match detect_go_grpc_chain_emission(&chain, &file_ctx).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::RpcCall);
+            assert_eq!(role, ChannelRole::Producer);
+            assert_eq!(name, "user/getuser");
+        }
+        _ => panic!("expected NamedChannel RpcCall"),
+    }
+}
+
+#[test]
+fn test_go_grpc_two_segment_client_chain_emits_producer() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_go_grpc_chain_emission;
+
+    let file_ctx = FileContext {
+        file_path: "client.go".to_string(),
+        language: "go".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "userpb".to_string(),
+            module_path: Some("github.com/example/api/proto/userpb".to_string()),
+            alias: None,
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    };
+    let chain = make_chain(&["UserServiceClient", "GetUser"]);
+    match detect_go_grpc_chain_emission(&chain, &file_ctx).unwrap() {
+        FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "user/getuser"),
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_grpc_no_emit_without_proto_import() {
+    use super::resolve::detect_go_grpc_chain_emission;
+
+    let file_ctx = FileContext {
+        file_path: "client.go".to_string(),
+        language: "go".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "fmt".to_string(),
+            module_path: Some("fmt".to_string()),
+            alias: None,
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    };
+    let chain = make_chain(&["client", "UserService", "GetUser"]);
+    assert!(detect_go_grpc_chain_emission(&chain, &file_ctx).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Mailer / BgJob / MQ / Redis / UDS detectors
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_go_smtp_send_mail_emits_mailer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_go_mailer_emission;
+    let chain = make_chain(&["smtp", "SendMail"]);
+    match detect_go_mailer_emission(&chain, &[]).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::Mailer);
+            assert_eq!(role, ChannelRole::Producer);
+            assert_eq!(name, "go.smtp");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_gomail_dial_and_send_emits_mailer() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_go_mailer_emission;
+    let chain = make_chain(&["d", "DialAndSend"]);
+    match detect_go_mailer_emission(&chain, &[]).unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::Mailer);
+            assert_eq!(name, "go.gomail");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_asynq_enqueue_emits_bgjob() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_go_bgjob_emission;
+    let chain = make_chain(&["client", "Enqueue"]);
+    match detect_go_bgjob_emission(&chain).unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::BgJob);
+            assert_eq!(name, "go.asynq");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_kafka_send_message_emits_mq() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_go_mq_emission;
+    let chain = make_chain(&["producer", "SendMessage"]);
+    match detect_go_mq_emission(&chain, &[]).unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::MessageQueue);
+            assert_eq!(name, "go.kafka");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_nats_publish_captures_subject() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_go_mq_emission;
+    let chain = make_chain(&["nc", "Publish"]);
+    let args = vec![
+        CallArg::StringLit("orders.created".to_string()),
+        CallArg::Ident("data".to_string()),
+    ];
+    match detect_go_mq_emission(&chain, &args).unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::MessageQueue);
+            assert_eq!(name, "orders.created");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_redis_get_emits_config_lookup() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_go_redis_config_lookup;
+    let chain = make_chain(&["rdb", "Get"]);
+    let args = vec![
+        CallArg::Ident("ctx".to_string()),
+        CallArg::StringLit("feature:enabled".to_string()),
+    ];
+    match detect_go_redis_config_lookup(&chain, &args).unwrap() {
+        FlowEmission::ConfigLookup { key } => assert_eq!(key, "redis:feature:enabled"),
+        _ => panic!("expected ConfigLookup"),
+    }
+}
+
+#[test]
+fn test_go_uds_listen_emits_ipc_consumer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_go_uds_emission;
+    let chain = make_chain(&["net", "Listen"]);
+    let args = vec![
+        CallArg::StringLit("unix".to_string()),
+        CallArg::StringLit("/tmp/app.sock".to_string()),
+    ];
+    match detect_go_uds_emission(&chain, &args).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert_eq!(kind, NamedChannelKind::IpcCall);
+            assert_eq!(role, ChannelRole::Consumer);
+            assert_eq!(name, "/tmp/app.sock");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_uds_dial_emits_ipc_producer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
+    use super::resolve::detect_go_uds_emission;
+    let chain = make_chain(&["net", "Dial"]);
+    let args = vec![
+        CallArg::StringLit("unix".to_string()),
+        CallArg::StringLit("/tmp/app.sock".to_string()),
+    ];
+    match detect_go_uds_emission(&chain, &args).unwrap() {
+        FlowEmission::NamedChannel { role, .. } => assert_eq!(role, ChannelRole::Producer),
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_uds_rejects_tcp_network() {
+    use super::resolve::detect_go_uds_emission;
+    let chain = make_chain(&["net", "Listen"]);
+    let args = vec![
+        CallArg::StringLit("tcp".to_string()),
+        CallArg::StringLit(":8080".to_string()),
+    ];
+    assert!(detect_go_uds_emission(&chain, &args).is_none());
+}
+
+#[test]
+fn test_go_gorilla_upgrader_emits_ws_consumer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_go_gorilla_ws_consumer;
+    let chain = make_chain(&["upgrader", "Upgrade"]);
+    match detect_go_gorilla_ws_consumer(&chain).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::WebSocket));
+            assert_eq!(role, ChannelRole::Consumer);
+            assert_eq!(name, "go.gorilla.ws");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_go_nhooyr_accept_emits_ws_consumer() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_go_gorilla_ws_consumer;
+    let chain = make_chain(&["websocket", "Accept"]);
+    match detect_go_gorilla_ws_consumer(&chain).unwrap() {
+        FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "go.nhooyr.ws"),
+        _ => panic!("expected NamedChannel"),
+    }
 }

@@ -3,8 +3,74 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind};
 use tree_sitter::Node;
+
+/// Extract positional arguments from a Go `call_expression`'s
+/// `argument_list`. Captures interpreted/raw string literals, identifiers
+/// (incl. `&entity` unary-pointer wrappers), integers, floats, and
+/// booleans. The address-of unary expression (`&User{}`) is detected and
+/// stored as `Ident(name)` to support gorm model-pointer extraction.
+pub(super) fn extract_call_args(call_node: &Node, src: &str) -> Vec<CallArg> {
+    let Some(args_node) = call_node.child_by_field_name("arguments") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        let arg = match child.kind() {
+            "interpreted_string_literal" | "raw_string_literal" => {
+                let raw = node_text(&child, src);
+                CallArg::StringLit(strip_go_string(&raw))
+            }
+            "identifier" | "type_identifier" => CallArg::Ident(node_text(&child, src)),
+            // `&User{...}` — address-of a composite literal. Extract the
+            // type name so gorm `db.First(&user)` style detection can
+            // resolve to the model.
+            "unary_expression" => {
+                if let Some(operand) = (0..child.named_child_count())
+                    .find_map(|i| child.named_child(i))
+                {
+                    match operand.kind() {
+                        "composite_literal" => {
+                            if let Some(type_node) = operand.child_by_field_name("type") {
+                                CallArg::Ident(node_text(&type_node, src))
+                            } else {
+                                CallArg::Other
+                            }
+                        }
+                        "identifier" => CallArg::Ident(node_text(&operand, src)),
+                        _ => CallArg::Other,
+                    }
+                } else {
+                    CallArg::Other
+                }
+            }
+            // `&[]User{}` — slice address-of. Operand is composite_literal
+            // whose type is a slice_type.
+            "composite_literal" => {
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    let raw = node_text(&type_node, src);
+                    CallArg::Ident(raw)
+                } else {
+                    CallArg::Other
+                }
+            }
+            "int_literal" | "float_literal" | "imaginary_literal" => {
+                CallArg::Literal(node_text(&child, src))
+            }
+            "true" | "false" | "nil" => CallArg::Literal(child.kind().to_string()),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
+
+fn strip_go_string(raw: &str) -> String {
+    // Interpreted strings use `"..."` (with escapes); raw strings use `` `...` ``.
+    raw.trim_matches('"').trim_matches('`').to_string()
+}
 
 // ---------------------------------------------------------------------------
 // Body traversal — refs + local variable symbols
@@ -668,6 +734,7 @@ fn extract_call_ref(
     }
 
     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+    let call_args = extract_call_args(&node, source);
     refs.push(ExtractedRef {
         source_symbol_index,
         target_name,
@@ -677,7 +744,7 @@ fn extract_call_ref(
         chain,
         byte_offset: func_node.start_byte() as u32,
             namespace_segments: Vec::new(),
-            call_args: Vec::new(),
+            call_args,
 });
 }
 

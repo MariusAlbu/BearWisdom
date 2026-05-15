@@ -57,15 +57,6 @@ impl LanguagePlugin for JavaPlugin {
         extract::extract(source)
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_java_connection_points(source, file_path)
-    }
-
     fn embedded_regions(
         &self,
         source: &str,
@@ -120,32 +111,6 @@ impl LanguagePlugin for JavaPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::JavaChecker))
-    }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::SpringRouteConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::SpringDiConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::JavaRestConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::JavaGrpcConnector, db, project_root, ctx,
-        ));
-        out
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

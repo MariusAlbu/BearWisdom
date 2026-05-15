@@ -1,0 +1,8 @@
+{
+  "name": "flow-emit-mq-fixture",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "nats": "^2.0.0"
+  }
+}

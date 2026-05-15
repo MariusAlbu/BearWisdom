@@ -56,17 +56,6 @@ impl LanguagePlugin for CSharpPlugin {
         result
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        _file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        connectors::extract_csharp_mq_src(source, &mut out);
-        out
-    }
-
     fn embedded_regions(
         &self,
         source: &str,
@@ -129,68 +118,6 @@ impl LanguagePlugin for CSharpPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::CSharpChecker))
-    }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        // MQ migrated to source-scan via `extract_connection_points`.
-        // DI / EventBus / gRPC / GraphQL / REST need DB joins and run
-        // from `resolve_connection_points` below.
-        vec![Box::new(connectors::CSharpMqConnector)]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::DotnetDiConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::EventBusConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::CSharpGrpcConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::CSharpGraphQlConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::CsharpRestConnector, db, project_root, ctx,
-        ));
-        out
-    }
-
-    fn resolve_connection_points_incremental(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-        changed_paths: &std::collections::HashSet<String>,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        // DI + event-bus scans the disk; scope to `changed_paths` so we
-        // don't read 10k .cs files on every save. The DB-only scans
-        // (gRPC, GraphQL, REST attribute-based) stay full-scope — they
-        // only do indexed JOINs and need cross-file coverage.
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector_incremental(
-            &connectors::DotnetDiConnector, db, project_root, ctx, changed_paths,
-        ));
-        out.extend(crate::languages::drive_connector_incremental(
-            &connectors::EventBusConnector, db, project_root, ctx, changed_paths,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::CSharpGrpcConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::CSharpGraphQlConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::CsharpRestConnector, db, project_root, ctx,
-        ));
-        out
     }
 
     fn post_index(

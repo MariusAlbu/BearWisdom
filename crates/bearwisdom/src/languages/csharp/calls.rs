@@ -6,11 +6,108 @@ use super::helpers::node_text;
 use super::types::simple_type_name;
 use crate::parser::scope_tree::{self, ScopeTree};
 use crate::types::{
-    ChainSegment, EdgeKind, ExtractedRef, ExtractedRoute, ExtractedSymbol, MemberChain,
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedRoute, ExtractedSymbol, MemberChain,
     SegmentKind, SymbolKind,
 };
 use std::collections::HashMap;
 use tree_sitter::Node;
+
+/// Extract positional arguments from a C# `invocation_expression`'s
+/// `argument_list`. Each `argument` named child wraps the value
+/// expression. Captures string literals, verbatim strings, interpolated
+/// strings without interpolation, identifiers, and number / bool / null
+/// literals. Anything else (object initializers, lambdas, complex
+/// expressions) becomes `CallArg::Other`.
+pub(super) fn extract_call_args(invocation: &Node, src: &[u8]) -> Vec<CallArg> {
+    let Some(args_node) = invocation.child_by_field_name("arguments") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        if child.kind() != "argument" {
+            continue;
+        }
+        // `argument` wraps an expression. Take the first named child.
+        let mut inner_cursor = child.walk();
+        let Some(expr) = child.named_children(&mut inner_cursor).next() else {
+            out.push(CallArg::Other);
+            continue;
+        };
+        let arg = match expr.kind() {
+            "string_literal" | "verbatim_string_literal" | "raw_string_literal" => {
+                let raw = node_text(expr, src);
+                let stripped = raw
+                    .trim_start_matches('@')
+                    .trim_start_matches('$')
+                    .trim_start_matches(['"', '\''])
+                    .trim_end_matches(['"', '\''])
+                    .to_string();
+                CallArg::StringLit(stripped)
+            }
+            "interpolated_string_expression" => {
+                // C# interpolated strings: `$"..."` (verbatim: `$@"..."`).
+                // Strip the leading `$`, optional `@`, and surrounding
+                // quotes; then replace any `{...}` interpolation holes
+                // with `{}` placeholders. Pure-literal flat strings
+                // become `StringLit`; those with at least one
+                // interpolation become `TemplateLit`.
+                let raw = node_text(expr, src);
+                let inner = raw
+                    .trim_start_matches('$')
+                    .trim_start_matches('@')
+                    .trim_start_matches('$')
+                    .trim_start_matches(['"', '\''])
+                    .trim_end_matches(['"', '\''])
+                    .to_string();
+                let has_interp = (0..expr.child_count()).any(|i| {
+                    expr.child(i)
+                        .map(|c| c.kind() == "interpolation")
+                        .unwrap_or(false)
+                });
+                if has_interp {
+                    CallArg::TemplateLit(replace_csharp_interpolations(&inner))
+                } else {
+                    CallArg::StringLit(inner)
+                }
+            }
+            "identifier" => CallArg::Ident(node_text(expr, src)),
+            "integer_literal" | "real_literal" => CallArg::Literal(node_text(expr, src)),
+            "boolean_literal" | "null_literal" => CallArg::Literal(node_text(expr, src)),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
+
+/// Replace `{...}` interpolation holes in a C# interpolated string with
+/// `{}` placeholders so the result can be used as a normalized URL pattern.
+fn replace_csharp_interpolations(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '{' && chars.peek() != Some(&'{') {
+            let mut depth = 1usize;
+            for inner in chars.by_ref() {
+                match inner {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            out.push_str("{}");
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
 
 // ---------------------------------------------------------------------------
 // Call extraction
@@ -35,6 +132,7 @@ pub(super) fn extract_calls_from_body(
                         .unwrap_or_else(|| callee_name(callee, src));
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !name.is_empty() && !is_csharp_keyword(&name) {
+                        let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name: name,
@@ -44,7 +142,7 @@ pub(super) fn extract_calls_from_body(
                             chain,
                             byte_offset: callee.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
+                                                    call_args,
 });
                     }
                 }

@@ -1,8 +1,9 @@
 use super::{
-    CabalEcosystem, Ecosystem, EcosystemKind, ExternalSourceLocator,
+    CabalEcosystem, CabalManifest, Ecosystem, EcosystemKind, ExternalSourceLocator,
     GHC_BOOT_PACKAGES, find_haskell_cabal_get_deps_in_dir,
     parse_cabal_build_depends, path_to_haskell_module, shared_locator,
 };
+use crate::ecosystem::manifest::ManifestReader;
 use std::sync::Arc;
 
 #[test]
@@ -194,6 +195,70 @@ data SResponse = SResponse
     assert!(names.iter().any(|n| n == "simpleStatus"), "expected simpleStatus field; got: {names:?}");
     assert!(names.iter().any(|n| n == "simpleHeaders"), "expected simpleHeaders field; got: {names:?}");
     assert!(names.iter().any(|n| n == "simpleBody"), "expected simpleBody field; got: {names:?}");
+}
+
+#[test]
+fn manifest_reader_finds_cabal_files_in_subdirs() {
+    // Cabal monorepos (shakespeare-monaba) keep `.cabal` files inside
+    // per-package subdirectories, not at the workspace root. The manifest
+    // reader must walk subdirs so activation fires and externals are
+    // discovered.
+    let tmp = std::env::temp_dir().join("bw-test-cabal-monorepo");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let pkg_a = tmp.join("package-a");
+    let pkg_b = tmp.join("subdir").join("package-b");
+    std::fs::create_dir_all(&pkg_a).unwrap();
+    std::fs::create_dir_all(&pkg_b).unwrap();
+    std::fs::write(pkg_a.join("a.cabal"), r#"
+name: package-a
+build-depends:
+    aeson,
+    text
+"#).unwrap();
+    std::fs::write(pkg_b.join("b.cabal"), r#"
+name: package-b
+build-depends:
+    bytestring,
+    aeson
+"#).unwrap();
+    let data = CabalManifest.read(&tmp).expect("manifest should be detected");
+    let mut deps: Vec<&String> = data.dependencies.iter().collect();
+    deps.sort();
+    assert_eq!(
+        deps,
+        vec![&"aeson".to_string(), &"bytestring".to_string(), &"text".to_string()],
+        "expected unioned, deduped deps from nested .cabal files"
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn cabal_get_root_detected_anywhere_in_path() {
+    // cabal-get directory may sit under %LOCALAPPDATA%/cabal/cabal-get/,
+    // ~/.cabal/cabal-get/, or any other location. The detection walks
+    // ancestors looking for a `cabal-get` segment.
+    use std::path::PathBuf;
+    let pkg = PathBuf::from("/home/u/.cabal/cabal-get/persistent-2.18.1.0/src");
+    assert!(super::is_cabal_get_root(&pkg));
+    let win = PathBuf::from("C:/Users/x/AppData/Local/cabal/cabal-get/yesod-1.6.2.1");
+    assert!(super::is_cabal_get_root(&win));
+    let store = PathBuf::from("/home/u/.cabal/store/ghc-9.12/persistent-2.18.1.0-abc");
+    assert!(!super::is_cabal_get_root(&store), "cabal store is NOT cabal-get");
+    let arbitrary = PathBuf::from("/tmp/some/path");
+    assert!(!super::is_cabal_get_root(&arbitrary));
+}
+
+#[test]
+fn manifest_reader_returns_none_for_pruned_dirs() {
+    // Dirs we want pruned: dist, dist-newstyle, .stack-work, and any dotdir.
+    let tmp = std::env::temp_dir().join("bw-test-cabal-pruned");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let pruned = tmp.join("dist-newstyle").join("nested");
+    std::fs::create_dir_all(&pruned).unwrap();
+    std::fs::write(pruned.join("ignored.cabal"), "build-depends: ignored\n").unwrap();
+    let result = CabalManifest.read(&tmp);
+    assert!(result.is_none(), "build artifacts must not produce manifest data");
+    let _ = std::fs::remove_dir_all(&tmp);
 }
 
 #[test]

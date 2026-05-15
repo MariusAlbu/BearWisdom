@@ -74,10 +74,11 @@ fn make_file(path: &str, lang: &str, syms: Vec<ExtractedSymbol>, refs: Vec<Extra
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
         flow: FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 

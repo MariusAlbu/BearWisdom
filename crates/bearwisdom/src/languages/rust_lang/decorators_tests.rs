@@ -49,18 +49,17 @@ fn bare_test_attribute_not_emitted() {
 }
 
 #[test]
-fn route_attribute_with_string_arg_not_emitted() {
-    // The previous shape paired `target_name = "route"` with
-    // `module = Some("/api/users")`. No downstream consumer used that
-    // pairing — REST connectors source-scan directly. The whole pair is
-    // gone now.
+fn route_attribute_with_string_arg_emitted_for_flow() {
+    // HTTP-verb / `route` attributes carry a URL path. The decorator
+    // extractor emits a TypeRef with `target_name = verb` and
+    // `module = url` so the resolver's flow-emission step can lift it to
+    // a Consumer HttpCall.
     let src = r#"#[route("/api/users")]
 fn users() {}"#;
     let dr = decorator_refs(src);
-    assert!(
-        !dr.iter().any(|(n, _)| n == "route"),
-        "bare `route` attribute should not be emitted; refs: {dr:?}"
-    );
+    let found = dr.iter().find(|(n, _)| n == "route");
+    assert!(found.is_some(), "route attribute should be emitted; refs: {dr:?}");
+    assert_eq!(found.unwrap().1.as_deref(), Some("/api/users"));
 }
 
 #[test]

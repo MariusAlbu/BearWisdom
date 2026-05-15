@@ -261,10 +261,11 @@ pub(crate) fn synthesise_hexo_helpers(project_root: &Path) -> Vec<ParsedFile> {
         content: None,
         has_errors: false,
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }]
 }
 

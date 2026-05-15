@@ -1,0 +1,8 @@
+{
+  "name": "flow-emit-bgjob-fixture",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "bullmq": "^5.0.0"
+  }
+}

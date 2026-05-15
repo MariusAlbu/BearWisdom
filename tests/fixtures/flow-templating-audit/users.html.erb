@@ -1,0 +1,6 @@
+<%
+  user = User.where(active: true).first
+%>
+
+<h1>Users</h1>
+<%= user.name %>

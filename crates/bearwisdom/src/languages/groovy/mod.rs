@@ -53,15 +53,6 @@ impl LanguagePlugin for GroovyPlugin {
         extract::extract(source)
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_groovy_connection_points(source, file_path)
-    }
-
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class_declaration",
@@ -84,10 +75,6 @@ impl LanguagePlugin for GroovyPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::GroovyResolver))
-    }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
     }
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {

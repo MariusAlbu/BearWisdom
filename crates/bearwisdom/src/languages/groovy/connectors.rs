@@ -1,69 +1,99 @@
 // =============================================================================
-// languages/groovy/connectors.rs — Groovy-specific flow connectors
+// languages/groovy/connectors.rs — Groovy Spring route discoverer
 //
-// GroovySpringRouteConnector:
-//   Scans indexed Groovy files for Spring Web MVC route annotations
-//   (@GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @PatchMapping,
-//   @RequestMapping) and emits REST Stop connection points.
-//
-// Flattened into `GroovyPlugin::extract_connection_points` at parse time.
-// The legacy `Connector::extract` returns empty so the point isn't emitted
-// twice. The symbol_id lookup that used to live in the DB path is dropped —
-// the route's `symbol_qname` is empty, so the bridge won't try to map it.
+// Scans indexed Groovy files for Spring Web MVC route annotations
+// (@GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @PatchMapping,
+// @RequestMapping) and writes them to the `routes` table. The
+// routes-table → FlowEmission bridge in resolve/mod.rs emits Consumer flows.
 // =============================================================================
 
-use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::Result;
 use regex::Regex;
 use rusqlite::Connection;
 
-use crate::connectors::traits::{Connector, ConnectorDescriptor};
-use crate::connectors::types::{ConnectionPoint, Protocol};
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{
-    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
-};
 
 // ===========================================================================
-// Plugin-facing composer
+// Public entry point
 // ===========================================================================
 
-pub fn extract_groovy_connection_points(source: &str, _file_path: &str) -> Vec<AbstractPoint> {
-    let mut out = Vec::new();
-    extract_groovy_spring_routes_src(source, &mut out);
-    out
-}
+/// Scan indexed Groovy files for Spring @*Mapping annotations and INSERT
+/// rows into the `routes` table. Returns the count of newly-inserted routes.
+pub fn discover_groovy_routes(
+    conn: &Connection,
+    project_root: &Path,
+    _ctx: &ProjectContext,
+) -> u32 {
+    let mut stmt = match conn.prepare(
+        "SELECT id, path FROM files WHERE language = 'groovy'",
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("groovy routes: prepare files failed: {e}");
+            return 0;
+        }
+    };
 
-// ===========================================================================
-// GroovySpringRouteConnector — neutered (detect still gates; emission is at
-// parse time via `extract_groovy_spring_routes_src`).
-// ===========================================================================
+    let files: Vec<(i64, String)> = match stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>())
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("groovy routes: query files failed: {e}");
+            return 0;
+        }
+    };
 
-pub struct GroovySpringRouteConnector;
+    let re_method = build_method_mapping_regex();
+    let re_request = build_request_mapping_regex();
+    let mut inserted: u32 = 0;
 
-impl Connector for GroovySpringRouteConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "groovy_spring_routes",
-            protocols: &[Protocol::Rest],
-            languages: &["groovy"],
+    for (file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if !source.contains("Mapping") {
+            continue;
+        }
+
+        let routes = scan_groovy_file(&source, &re_method, &re_request);
+
+        if let Ok(mut ins) = conn.prepare_cached(
+            "INSERT OR IGNORE INTO routes \
+             (file_id, symbol_id, http_method, route_template, resolved_route, line) \
+             VALUES (?1, NULL, ?2, ?3, ?3, ?4)",
+        ) {
+            for r in &routes {
+                if let Ok(n) = ins.execute(rusqlite::params![
+                    file_id,
+                    r.http_method,
+                    r.path,
+                    r.line as i64,
+                ]) {
+                    if n > 0 {
+                        inserted += 1;
+                    }
+                }
+            }
         }
     }
 
-    fn detect(&self, _ctx: &ProjectContext) -> bool {
-        true
-    }
-
-    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        Ok(Vec::new())
-    }
+    inserted
 }
 
 // ---------------------------------------------------------------------------
-// Detection
+// Per-file scan
 // ---------------------------------------------------------------------------
+
+struct GroovyRoute {
+    http_method: String,
+    path: String,
+    line: u32,
+}
 
 fn build_method_mapping_regex() -> Regex {
     Regex::new(
@@ -79,18 +109,11 @@ fn build_request_mapping_regex() -> Regex {
     .expect("groovy request mapping regex")
 }
 
-pub fn extract_groovy_spring_routes_src(source: &str, out: &mut Vec<AbstractPoint>) {
-    if !source.contains("Mapping") && !source.contains("RequestMapping") {
-        return;
-    }
-
-    let re_method = build_method_mapping_regex();
-    let re_request = build_request_mapping_regex();
-
+fn scan_groovy_file(source: &str, re_method: &Regex, re_request: &Regex) -> Vec<GroovyRoute> {
     let lines: Vec<&str> = source.lines().collect();
     let mut class_prefix = String::new();
+    let mut out = Vec::new();
 
-    // First pass: find class-level @RequestMapping for the prefix.
     for (idx, line) in lines.iter().enumerate() {
         if let Some(cap) = re_request.captures(line) {
             let is_class_level = lines[idx + 1..]
@@ -110,7 +133,7 @@ pub fn extract_groovy_spring_routes_src(source: &str, out: &mut Vec<AbstractPoin
         if let Some(cap) = re_method.captures(line_text) {
             let verb = cap[1].to_uppercase();
             let path = format!("{}{}", class_prefix, &cap[2]);
-            push(out, path, verb, line_no);
+            out.push(GroovyRoute { http_method: verb, path, line: line_no });
             continue;
         }
 
@@ -125,51 +148,14 @@ pub fn extract_groovy_spring_routes_src(source: &str, out: &mut Vec<AbstractPoin
                     .map(|m| m.as_str().to_uppercase())
                     .unwrap_or_else(|| "GET".to_string());
                 let path = format!("{}{}", class_prefix, &cap[1]);
-                push(out, path, verb, line_no);
+                out.push(GroovyRoute { http_method: verb, path, line: line_no });
             }
         }
     }
-}
 
-fn push(out: &mut Vec<AbstractPoint>, key: String, method: String, line: u32) {
-    let mut meta = HashMap::new();
-    meta.insert("method".to_string(), method);
-    meta.insert("framework".to_string(), "spring".to_string());
-    out.push(AbstractPoint {
-        kind: ConnectionKind::Rest,
-        role: ConnectionRole::Stop,
-        key,
-        line,
-        col: 1,
-        symbol_qname: String::new(),
-        meta,
-    });
+    out
 }
 
 #[cfg(test)]
-mod plugin_source_scan_tests {
-    use super::*;
-
-    #[test]
-    fn groovy_get_mapping_emits_stop() {
-        let src = r#"@GetMapping("/api/users")\ndef list() {}"#;
-        let mut out = Vec::new();
-        extract_groovy_spring_routes_src(src, &mut out);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].key, "/api/users");
-        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("GET"));
-        assert_eq!(out[0].role, ConnectionRole::Stop);
-    }
-
-    #[test]
-    fn groovy_class_level_request_mapping_prefixes_method_path() {
-        let src = r#"@RequestMapping("/api")
-class UsersController {
-    @GetMapping("/users") def list() {}
-}"#;
-        let mut out = Vec::new();
-        extract_groovy_spring_routes_src(src, &mut out);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].key, "/api/users");
-    }
-}
+#[path = "connectors_tests.rs"]
+mod tests;

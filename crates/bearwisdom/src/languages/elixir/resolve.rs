@@ -540,7 +540,236 @@ impl LanguageResolver for ElixirResolver {
 
         None
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        // Phoenix Channel macro: `use Phoenix.Channel` lands as an Imports
+        // ref. The presence of the macro marks the surrounding module as
+        // a WebSocket Consumer endpoint.
+        if r.kind == EdgeKind::Imports {
+            if let Some(em) = detect_elixir_phoenix_channel_use(
+                r.target_name.as_str(),
+                r.module.as_deref(),
+            ) {
+                return vec![em];
+            }
+            return Vec::new();
+        }
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let module = r.module.as_deref().unwrap_or("");
+        let target = r.target_name.as_str();
+
+        // Ecto DbQuery — `Repo.get(User, id)`, `Repo.all(query)`,
+        // `Repo.insert(struct)`, etc.
+        if let Some(em) = detect_elixir_ecto_emission(module, target) {
+            return vec![em];
+        }
+        // HTTP Producer — HTTPoison/Tesla/Req `.get/post/...`.
+        if let Some(em) = detect_elixir_http_emission(module, target, &r.call_args) {
+            return vec![em];
+        }
+        // gRPC stub.
+        if let Some(em) = detect_elixir_grpc_emission(module, target) {
+            return vec![em];
+        }
+        // BgJob — `Oban.insert(MyWorker.new(args))`.
+        if let Some(em) = detect_elixir_oban_emission(module, target, &r.call_args) {
+            return vec![em];
+        }
+        // Mailer — `Bamboo.deliver_now(email)` / `Mailer.deliver(email)` (Swoosh).
+        if let Some(em) = detect_elixir_mailer_emission(module, target) {
+            return vec![em];
+        }
+        Vec::new()
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Elixir flow emission detectors
+// ---------------------------------------------------------------------------
+
+pub(crate) fn detect_elixir_ecto_emission(
+    module: &str,
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    // Common Ecto repo modules.
+    let mod_last = module.rsplit('.').next().unwrap_or(module);
+    if !matches!(mod_last, "Repo" | "Repos" | "TenantRepo") && !module.ends_with(".Repo") {
+        return None;
+    }
+    let op = match target {
+        "get" | "get!" | "get_by" | "get_by!" | "one" | "one!" | "all" | "stream"
+        | "exists?" | "aggregate" | "preload" => DbQueryOp::Select,
+        "insert" | "insert!" | "insert_all" | "insert_or_update" | "insert_or_update!" => {
+            DbQueryOp::Insert
+        }
+        "update" | "update!" | "update_all" => DbQueryOp::Update,
+        "delete" | "delete!" | "delete_all" => DbQueryOp::Delete,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: "ex.*".to_string(),
+        operation: op,
+    })
+}
+
+pub(crate) fn detect_elixir_http_emission(
+    module: &str,
+    target: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let mod_last = module.rsplit('.').next().unwrap_or(module);
+    if !matches!(mod_last, "HTTPoison" | "Tesla" | "Req" | "Finch" | "Mojito") {
+        return None;
+    }
+    let method = match target {
+        "get" | "get!" => HttpMethod::Get,
+        "post" | "post!" => HttpMethod::Post,
+        "put" | "put!" => HttpMethod::Put,
+        "patch" | "patch!" => HttpMethod::Patch,
+        "delete" | "delete!" => HttpMethod::Delete,
+        "head" | "head!" => HttpMethod::Head,
+        "request" | "request!" => HttpMethod::Any,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    })?;
+    let name = crate::connectors::url_pattern::normalize(url);
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name,
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_elixir_grpc_emission(
+    module: &str,
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    // grpc-elixir generated stubs: `MyApp.UserService.Stub.get_user(...)`.
+    let mod_last = module.rsplit('.').next().unwrap_or(module);
+    if mod_last != "Stub" {
+        return None;
+    }
+    // Skip Stub utility methods.
+    if matches!(target, "start_link" | "init" | "stop") {
+        return None;
+    }
+    // Service is the segment before "Stub".
+    let parts: Vec<&str> = module.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let service = parts[parts.len() - 2];
+    use crate::indexer::resolve::flow_emit::StreamKind;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::RpcCall,
+        name: format!("{}.{}", service, target),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: Some(StreamKind::from_method_name(target)),
+    })
+}
+
+pub(crate) fn detect_elixir_oban_emission(
+    module: &str,
+    target: &str,
+    _call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let mod_last = module.rsplit('.').next().unwrap_or(module);
+    if mod_last != "Oban" || !matches!(target, "insert" | "insert_all") {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::BgJob,
+        name: "oban.job".to_string(),
+        role: ChannelRole::Producer,
+        method: None,
+    streaming: None,
+    })
+}
+
+/// `use Phoenix.Channel` declares the surrounding module as a Phoenix
+/// Channel WebSocket Consumer. The extractor emits this as an Imports
+/// edge with the module path on either `target_name` or `module`. Both
+/// arms are checked so the detection is robust to extractor changes.
+pub(crate) fn detect_elixir_phoenix_channel_use(
+    target_name: &str,
+    module: Option<&str>,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let canonical = module.unwrap_or(target_name);
+    if !matches!(canonical, "Phoenix.Channel" | "Phoenix.LiveView")
+        && !canonical.ends_with(".Channel")
+        && !canonical.ends_with(".LiveView")
+    {
+        return None;
+    }
+    if !canonical.starts_with("Phoenix") {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::WebSocket,
+        name: format!("ex.{}", canonical),
+        role: ChannelRole::Consumer,
+        method: None,
+    streaming: None,
+    })
+}
+
+/// Bamboo `MyMailer.deliver_now(email)` and Swoosh `MyMailer.deliver(email)`.
+///
+/// The module name is project-specific (`MyApp.Mailer`, `MyApp.UserMailer`),
+/// but the leaf call shape is stable: `deliver`, `deliver_now`, `deliver_later`
+/// across both libraries. Match the leaf; flag as Mailer Producer.
+pub(crate) fn detect_elixir_mailer_emission(
+    module: &str,
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    if !matches!(
+        target,
+        "deliver" | "deliver_now" | "deliver_later" | "deliver_now!" | "deliver_later!"
+    ) {
+        return None;
+    }
+    let mod_last = module.rsplit('.').next().unwrap_or(module);
+    if !mod_last.ends_with("Mailer") && mod_last != "Bamboo" && mod_last != "Swoosh" {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::Mailer,
+        name: format!("ex.{}", mod_last),
+        role: ChannelRole::Producer,
+        method: None,
+    streaming: None,
+    })
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;
 
 // ---------------------------------------------------------------------------
 // Private helpers

@@ -46,56 +46,52 @@ use regex::Regex;
 use rusqlite::Connection;
 use tracing::{debug, info};
 
-use crate::connectors::traits::{Connector, ConnectorDescriptor};
-use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{
-    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
-};
 
 // ===========================================================================
 // LaravelRouteConnector — LanguagePlugin entry point
 // ===========================================================================
 
-pub struct LaravelRouteConnector;
+/// Laravel routes/*.php scan + `routes` table population. The
+/// routes-table → FlowEmission bridge in resolve/mod.rs handles downstream
+/// flow_edges emission.
+///
+/// Returns the count of routes written to the `routes` table.
+pub fn discover_laravel_routes(
+    conn: &Connection,
+    project_root: &Path,
+    ctx: &ProjectContext,
+) -> u32 {
+    if !ctx
+        .manifest(ManifestKind::Composer)
+        .map_or(false, |m| m.dependencies.iter().any(|p| p.contains("laravel")))
+    {
+        return 0;
+    }
+    let routes = match extract_laravel_routes_pub(conn, project_root) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("Laravel route detection failed: {e}");
+            return 0;
+        }
+    };
 
-impl Connector for LaravelRouteConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "laravel_routes",
-            protocols: &[Protocol::Rest],
-            languages: &["php"],
+    let mut inserted: u32 = 0;
+    for r in &routes {
+        if insert_route(
+            conn,
+            r.file_id,
+            r.symbol_id,
+            &r.http_method,
+            &r.resolved_route,
+            &r.resolved_route,
+            r.line,
+        ) {
+            inserted += 1;
         }
     }
-
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.manifest(ManifestKind::Composer).map_or(false, |m| m.dependencies.iter().any(|p| p.contains("laravel")))
-    }
-
-    fn extract(
-        &self,
-        conn: &Connection,
-        project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
-        let routes = extract_laravel_routes_pub(conn, project_root)
-            .context("Laravel route detection failed")?;
-
-        Ok(routes
-            .into_iter()
-            .map(|r| ConnectionPoint {
-                file_id: r.file_id,
-                symbol_id: r.symbol_id,
-                line: r.line,
-                protocol: Protocol::Rest,
-                direction: FlowDirection::Stop,
-                key: r.resolved_route,
-                method: r.http_method,
-                framework: "laravel".to_string(),
-                metadata: None,
-            })
-            .collect())
-    }
+    inserted
 }
 
 // ---------------------------------------------------------------------------
@@ -676,158 +672,8 @@ pub fn connect(conn: &Connection, project_root: &Path) -> Result<u32> {
     Ok(total)
 }
 
-// ===========================================================================
-// PhpRestConnector — HTTP client call starts + route stops for PHP
-// ===========================================================================
-
-pub struct PhpRestConnector;
-
-impl Connector for PhpRestConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "php_rest",
-            protocols: &[Protocol::Rest],
-            languages: &["php"],
-        }
-    }
-
-    fn detect(&self, _ctx: &ProjectContext) -> bool {
-        true
-    }
-
-    fn extract(
-        &self,
-        conn: &Connection,
-        _project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
-        // Starts (Guzzle/Http) migrated into `extract_php_rest_starts_src`.
-        let mut points = Vec::new();
-        extract_php_rest_stops(conn, &mut points)?;
-        Ok(points)
-    }
-}
-
-fn extract_php_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> Result<()> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT r.file_id, r.symbol_id, r.line, r.http_method,
-                    COALESCE(r.resolved_route, r.route_template)
-             FROM routes r
-             JOIN files f ON f.id = r.file_id
-             WHERE f.language = 'php'
-               AND r.http_method != '' AND r.route_template != ''",
-        )
-        .context("Failed to prepare PHP REST stops query")?;
-
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<i64>>(1)?,
-                row.get::<_, Option<u32>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })
-        .context("Failed to query PHP routes")?;
-
-    for row in rows {
-        let (file_id, symbol_id, line, method, route) =
-            row.context("Failed to read PHP route row")?;
-        out.push(ConnectionPoint {
-            file_id,
-            symbol_id,
-            line: line.unwrap_or(0),
-            protocol: Protocol::Rest,
-            direction: FlowDirection::Stop,
-            key: route,
-            method: method.to_uppercase(),
-            framework: String::new(),
-            metadata: None,
-        });
-    }
-    Ok(())
-}
-
-// ===========================================================================
-// Plugin-facing composer
-// ===========================================================================
-
-pub fn extract_php_connection_points(source: &str, file_path: &str) -> Vec<AbstractPoint> {
-    let mut out = Vec::new();
-    extract_php_rest_starts_src(source, file_path, &mut out);
-    out
-}
-
-/// PHP REST client-call starts: Guzzle `$client->get(...)`, Laravel Http facade.
-pub fn extract_php_rest_starts_src(
-    source: &str,
-    file_path: &str,
-    out: &mut Vec<AbstractPoint>,
-) {
-    if php_rest_is_test_file(file_path) {
-        return;
-    }
-    if !source.contains("->") && !source.contains("Http::") {
-        return;
-    }
-
-    let re = regex::Regex::new(
-        r#"(?:\$\w+|Http)\s*->\s*(?P<method>get|post|put|delete|patch|head)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
-    )
-    .expect("php http client regex");
-
-    for (line_idx, line_text) in source.lines().enumerate() {
-        let line_no = (line_idx + 1) as u32;
-        for cap in re.captures_iter(line_text) {
-            let raw_url = cap
-                .name("url1")
-                .or_else(|| cap.name("url2"))
-                .map(|m| m.as_str().to_string());
-            let Some(raw_url) = raw_url else { continue };
-            if !php_rest_looks_like_api_url(&raw_url) {
-                continue;
-            }
-            let method = cap
-                .name("method")
-                .map(|m| m.as_str().to_uppercase())
-                .unwrap_or_else(|| "GET".to_string());
-            let url_pattern = rest_normalise_url_pattern(&raw_url);
-            let mut meta = HashMap::new();
-            meta.insert("method".to_string(), method);
-            out.push(AbstractPoint {
-                kind: ConnectionKind::Rest,
-                role: ConnectionRole::Start,
-                key: url_pattern,
-                line: line_no,
-                col: 1,
-                symbol_qname: String::new(),
-                meta,
-            });
-        }
-    }
-}
-
-fn php_rest_is_test_file(rel_path: &str) -> bool {
-    let lower = rel_path.to_lowercase();
-    lower.contains("test") || lower.contains("spec")
-}
-
-fn php_rest_looks_like_api_url(s: &str) -> bool {
-    if s.starts_with("http://") || s.starts_with("https://") {
-        let after = s.find("://").map(|i| &s[i + 3..]).unwrap_or(s);
-        let path = after.find('/').map(|i| &after[i..]).unwrap_or("");
-        if path.is_empty() { return false; }
-        return php_rest_looks_like_api_url(path);
-    }
-    s.starts_with('/') || s.contains("/api/") || s.contains("/v1/") || s.contains("/v2/") || s.contains("/{")
-}
-
-fn rest_normalise_url_pattern(raw: &str) -> String {
-    let without_query = raw.split('?').next().unwrap_or(raw);
-    let re_tmpl = regex::Regex::new(r"\$\{[^}]+\}").expect("template regex");
-    re_tmpl.replace_all(without_query, "{param}").into_owned()
-}
+// PhpRestConnector removed — php resolver emits HttpCall during chain walking,
+// routes-table → FlowEmission bridge emits Consumer for any row in `routes`.
 
 // ---------------------------------------------------------------------------
 // Tests

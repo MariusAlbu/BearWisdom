@@ -1,7 +1,6 @@
 //! rust_lang language plugin.
 
 mod calls;
-pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod embedded;
 mod flow;
@@ -65,15 +64,6 @@ impl LanguagePlugin for RustLangPlugin {
         extract::extract(source)
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_rust_connection_points(source, file_path)
-    }
-
     fn embedded_regions(
         &self,
         source: &str,
@@ -135,26 +125,6 @@ impl LanguagePlugin for RustLangPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::RustChecker))
-    }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::RustRestConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::RustGrpcConnector, db, project_root, ctx,
-        ));
-        out
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

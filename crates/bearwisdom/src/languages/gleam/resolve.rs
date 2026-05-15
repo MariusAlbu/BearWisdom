@@ -154,7 +154,87 @@ impl LanguageResolver for GleamResolver {
         // walkers emit real symbols for declared deps.
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, |_| false)
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let module = r.module.as_deref().unwrap_or("");
+        let target = r.target_name.as_str();
+        if let Some(em) = detect_gleam_http_producer(module, target, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_gleam_pgo_emission(module, target, &r.call_args) {
+            return vec![em];
+        }
+        Vec::new()
+    }
 }
+
+pub(crate) fn detect_gleam_http_producer(
+    module: &str,
+    target: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    if !module.contains("httpc") && !module.contains("gleam/http") {
+        return None;
+    }
+    let method = match target {
+        "send" => HttpMethod::Any,
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    });
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: url
+            .map(crate::connectors::url_pattern::normalize)
+            .unwrap_or_else(|| "*".to_string()),
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_gleam_pgo_emission(
+    module: &str,
+    target: &str,
+    _call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    if !module.contains("pgo") && !module.contains("pog") && !module.contains("sqlight") {
+        return None;
+    }
+    let op = match target {
+        "execute" | "query" => DbQueryOp::Other,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: "gleam.*".to_string(),
+        operation: op,
+    })
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;
 
 /// Gleam binary operators emitted by the extractor as Calls refs.
 /// These are language-level operators — not project symbols.

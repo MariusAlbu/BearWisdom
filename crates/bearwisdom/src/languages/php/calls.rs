@@ -3,8 +3,95 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
+
+// ---------------------------------------------------------------------------
+// Argument extraction
+// ---------------------------------------------------------------------------
+
+/// Extract positional arguments from a PHP `arguments` node belonging to a
+/// member_call / static_call / function_call. Captures string and encapsed
+/// string literals, name and qualified_name identifiers (so chains like
+/// `Model::class` resolve to the bare class name), numeric and boolean
+/// literals. Anything else is `CallArg::Other`.
+pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
+    let args_node = match call_node.child_by_field_name("arguments") {
+        Some(n) => n,
+        None => {
+            let mut cursor = call_node.walk();
+            let found = call_node
+                .children(&mut cursor)
+                .find(|c| c.kind() == "arguments");
+            match found {
+                Some(n) => n,
+                None => return Vec::new(),
+            }
+        }
+    };
+    let mut out = Vec::new();
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        // PHP grammar wraps each positional value in an `argument` node.
+        let value_node = if child.kind() == "argument" {
+            let mut ac = child.walk();
+            let mut inner = None;
+            for v in child.named_children(&mut ac) {
+                if v.kind() != "name" || node_text(&v, src) != "name" {
+                    inner = Some(v);
+                    break;
+                }
+            }
+            match inner {
+                Some(n) => n,
+                None => continue,
+            }
+        } else {
+            child
+        };
+        let arg = match value_node.kind() {
+            "string" => CallArg::StringLit(strip_php_string(&node_text(&value_node, src))),
+            "encapsed_string" => {
+                CallArg::TemplateLit(strip_php_string(&node_text(&value_node, src)))
+            }
+            "integer" | "float" => CallArg::Literal(node_text(&value_node, src)),
+            "true" | "false" | "null" => CallArg::Literal(value_node.kind().to_string()),
+            "name" | "identifier" | "qualified_name" => {
+                let raw = node_text(&value_node, src);
+                let simple = raw.rsplit('\\').next().unwrap_or(&raw).to_string();
+                CallArg::Ident(simple)
+            }
+            // `User::class` — class_constant_access_expression (PHP 8 grammar).
+            "class_constant_access_expression" | "scoped_property_access_expression" => {
+                let class_node = value_node
+                    .child_by_field_name("scope")
+                    .or_else(|| value_node.child_by_field_name("class"));
+                if let Some(cn) = class_node {
+                    let raw = node_text(&cn, src);
+                    let simple = raw.rsplit('\\').next().unwrap_or(&raw).to_string();
+                    CallArg::Ident(simple)
+                } else {
+                    CallArg::Other
+                }
+            }
+            "variable_name" => {
+                let raw = node_text(&value_node, src);
+                CallArg::Ident(raw.trim_start_matches('$').to_string())
+            }
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
+
+fn strip_php_string(raw: &str) -> String {
+    raw.trim_start_matches('"')
+        .trim_end_matches('"')
+        .trim_start_matches('\'')
+        .trim_end_matches('\'')
+        .to_string()
+}
 
 // ---------------------------------------------------------------------------
 // Call extraction
@@ -28,6 +115,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let callee = node_text(&name_node, src);
                     let chain = build_chain(&child, src);
+                    let call_args = extract_call_args(&child, src);
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
                     refs.push(ExtractedRef {
                         source_symbol_index,
@@ -37,9 +125,9 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain,
                         byte_offset: name_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args,
+                    });
                 }
                 // Recurse into the object expression and arguments to find nested calls.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -50,6 +138,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let callee = node_text(&name_node, src);
                     let chain = build_chain(&child, src);
+                    let call_args = extract_call_args(&child, src);
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
                     refs.push(ExtractedRef {
                         source_symbol_index,
@@ -59,9 +148,9 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain,
                         byte_offset: name_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args,
+                    });
                 }
                 // Recurse into arguments to find nested calls.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -106,6 +195,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(fn_node) = child.child_by_field_name("function") {
                     let callee = node_text(&fn_node, src);
                     let simple = callee.rsplit('\\').next().unwrap_or(&callee).to_string();
+                    let call_args = extract_call_args(&child, src);
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name: simple,
@@ -114,9 +204,9 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args,
+                    });
                 }
             }
 

@@ -186,6 +186,93 @@ impl LanguageResolver for PascalResolver {
 
         None
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let target = r.target_name.as_str();
+        if let Some(em) = detect_pascal_http_producer(target, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_pascal_db_query(target, &r.call_args) {
+            return vec![em];
+        }
+        Vec::new()
+    }
+}
+
+pub(crate) fn detect_pascal_http_producer(
+    target: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    // TIdHTTP / TNetHTTPClient / THttpClient methods.
+    let method = match target {
+        "Get" => HttpMethod::Get,
+        "Post" => HttpMethod::Post,
+        "Put" => HttpMethod::Put,
+        "Patch" => HttpMethod::Patch,
+        "Delete" => HttpMethod::Delete,
+        "Head" => HttpMethod::Head,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_pascal_db_query(
+    target: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use crate::types::CallArg;
+    // FireDAC / ZeosLib / TADOQuery `.Open` / `.ExecSQL` with `.SQL.Text := 'SELECT ...'`.
+    // Cheap heuristic: if any arg is a SQL-shaped string, emit.
+    if !matches!(target, "ExecSQL" | "Open" | "Execute" | "Query") {
+        return None;
+    }
+    let sql = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) => Some(s.as_str()),
+        _ => None,
+    })?;
+    let upper = sql.to_ascii_uppercase();
+    let op = if upper.contains("INSERT INTO") {
+        DbQueryOp::Insert
+    } else if upper.contains("UPDATE ") {
+        DbQueryOp::Update
+    } else if upper.contains("DELETE FROM") {
+        DbQueryOp::Delete
+    } else if upper.contains(" FROM ") || upper.starts_with("SELECT") {
+        DbQueryOp::Select
+    } else {
+        return None;
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: "pas.*".to_string(),
+        operation: op,
+    })
 }
 
 /// Returns `true` when the file's imports include at least one Delphi

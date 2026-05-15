@@ -12,6 +12,7 @@ fn declared_name_round_trips_through_db() {
             kind: Some("npm".into()),
             manifest: Some("web/package.json".into()),
             declared_name: Some("@myorg/web".into()),
+            is_publishable: true,
         },
         PackageInfo {
             id: None,
@@ -20,6 +21,7 @@ fn declared_name_round_trips_through_db() {
             kind: Some("npm".into()),
             manifest: Some("shared/package.json".into()),
             declared_name: Some("@myorg/shared".into()),
+            is_publishable: true,
         },
     ];
 
@@ -43,6 +45,7 @@ fn declared_name_nullable_when_absent() {
         kind: None,
         manifest: None,
         declared_name: None,
+        is_publishable: true,
     }];
     write_packages(&db, &packages).unwrap();
     let loaded = load_packages_from_db(&db).unwrap();
@@ -69,10 +72,11 @@ fn pf(path: &str) -> crate::types::ParsedFile {
         content: None,
         has_errors: false,
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 
@@ -88,6 +92,7 @@ fn assign_package_ids_root_package_claims_all_files() {
         kind: Some("cargo".into()),
         manifest: Some("Cargo.toml".into()),
         declared_name: Some("root".into()),
+        is_publishable: true,
     }];
 
     let mut parsed = vec![pf("src/lib.rs"), pf("examples/demo.rs"), pf("Cargo.toml")];
@@ -111,6 +116,7 @@ fn assign_package_ids_deeper_prefix_beats_root() {
             kind: Some("npm".into()),
             manifest: Some("package.json".into()),
             declared_name: Some("root".into()),
+            is_publishable: true,
         },
         PackageInfo {
             id: Some(2),
@@ -119,6 +125,7 @@ fn assign_package_ids_deeper_prefix_beats_root() {
             kind: Some("npm".into()),
             manifest: Some("apps/web/package.json".into()),
             declared_name: Some("@org/web".into()),
+            is_publishable: true,
         },
     ];
 

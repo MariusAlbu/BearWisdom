@@ -818,10 +818,11 @@ pub fn synth_ctx_api() -> ParsedFile {
         content: None,
         has_errors: false,
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 
@@ -892,10 +893,11 @@ pub fn synth_env_api() -> ParsedFile {
         content: None,
         has_errors: false,
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 
@@ -969,10 +971,11 @@ pub fn synth_builtin_rules() -> ParsedFile {
         content: None,
         has_errors: false,
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 

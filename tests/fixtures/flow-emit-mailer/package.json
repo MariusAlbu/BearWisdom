@@ -1,0 +1,8 @@
+{
+  "name": "flow-emit-mailer-fixture",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "nodemailer": "^6.0.0"
+  }
+}

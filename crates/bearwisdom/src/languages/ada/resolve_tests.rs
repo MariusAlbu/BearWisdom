@@ -675,3 +675,62 @@ fn used_package_variable_type_dispatch_resolves_dotted_call() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Goal 40 — Ada flow emission (SQL via GNATCOLL.SQL / AdaSQL)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_ada_exec_select_emits_db_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use crate::types::CallArg;
+    let r = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "Exec".to_string(),
+        kind: EdgeKind::Calls,
+        line: 1,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+        call_args: vec![CallArg::Other, CallArg::StringLit("SELECT id FROM users".to_string())],
+    };
+    let sym = ExtractedSymbol {
+        name: "main".to_string(), qualified_name: "main".to_string(),
+        kind: SymbolKind::Function, visibility: Some(crate::types::Visibility::Public),
+        start_line: 1, end_line: 1, start_col: 0, end_col: 0,
+        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+    };
+    let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
+    let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
+    let em = AdaResolver.detect_flow_emission(&fc, &rc);
+    match em.first().unwrap() {
+        FlowEmission::DbQuery { operation, .. } => assert_eq!(*operation, DbQueryOp::Select),
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_ada_no_emit_for_non_sql() {
+    use crate::types::CallArg;
+    let r = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "Put_Line".to_string(),
+        kind: EdgeKind::Calls,
+        line: 1,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+        call_args: vec![CallArg::StringLit("hello".to_string())],
+    };
+    let sym = ExtractedSymbol {
+        name: "main".to_string(), qualified_name: "main".to_string(),
+        kind: SymbolKind::Function, visibility: Some(crate::types::Visibility::Public),
+        start_line: 1, end_line: 1, start_col: 0, end_col: 0,
+        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+    };
+    let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
+    let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
+    assert!(AdaResolver.detect_flow_emission(&fc, &rc).is_empty());
+}
+

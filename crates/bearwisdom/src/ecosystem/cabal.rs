@@ -131,7 +131,12 @@ impl crate::ecosystem::manifest::ManifestReader for CabalManifest {
     }
 
     fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
-        let deps = parse_cabal_build_depends(project_root);
+        // Walk subdirs — cabal monorepos keep `.cabal` files per package,
+        // not at the workspace root. Activation must see them.
+        let mut deps: Vec<String> = Vec::new();
+        discover_cabal_build_depends_recursive(project_root, &mut deps, 0);
+        deps.sort();
+        deps.dedup();
         if deps.is_empty() { return None }
         let mut data = crate::ecosystem::manifest::ManifestData::default();
         data.dependencies = deps.into_iter().collect();
@@ -144,7 +149,16 @@ impl crate::ecosystem::manifest::ManifestReader for CabalManifest {
 // ===========================================================================
 
 pub fn discover_haskell_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
-    let declared = parse_cabal_build_depends(project_root);
+    // Cabal monorepos (shakespeare-monaba, pandoc, the cabal repo itself)
+    // commonly keep the workspace root free of `.cabal` files and place
+    // them inside per-package subdirs (`monaba/Monaba.cabal`,
+    // `captcha/MonabaCaptcha.cabal`). Scanning only the project root
+    // misses every dep these projects declare. Walk the tree at bounded
+    // depth, pruning build output and VCS dirs, and union all build-depends.
+    let mut declared: Vec<String> = Vec::new();
+    discover_cabal_build_depends_recursive(project_root, &mut declared, 0);
+    declared.sort();
+    declared.dedup();
     if declared.is_empty() { return Vec::new() }
 
     let user_imports: Vec<String> = collect_haskell_user_imports(project_root)
@@ -257,6 +271,45 @@ fn ghc_libdir() -> Option<PathBuf> {
         if let Some(p) = probe("ghc.bat") { return Some(p); }
     }
     None
+}
+
+/// Bounded recursive walk for `.cabal` files. Visits up to `MAX_CABAL_DEPTH`
+/// levels below `dir`, accumulating every `build-depends` entry into `out`.
+/// Prunes build output (`dist`, `dist-newstyle`, `.stack-work`), VCS dirs,
+/// and any directory whose name starts with `.`.
+fn discover_cabal_build_depends_recursive(
+    dir: &Path,
+    out: &mut Vec<String>,
+    depth: usize,
+) {
+    const MAX_CABAL_DEPTH: usize = 4;
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_file() {
+            if path.extension().and_then(|x| x.to_str()) == Some("cabal") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    for dep in parse_dep_names_from_cabal_content(&content) {
+                        out.push(dep);
+                    }
+                }
+            }
+        } else if ft.is_dir() && depth < MAX_CABAL_DEPTH {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "dist" | "dist-newstyle" | ".stack-work")
+                    || name.starts_with('.')
+                {
+                    continue;
+                }
+            }
+            subdirs.push(path);
+        }
+    }
+    for sub in subdirs {
+        discover_cabal_build_depends_recursive(&sub, out, depth + 1);
+    }
 }
 
 pub fn parse_cabal_build_depends(project_root: &Path) -> Vec<String> {
@@ -600,9 +653,30 @@ fn haskell_module_to_path_tail(module: &str) -> Option<String> {
 /// operators. Walk these packages in full.
 const GHC_BOOT_PACKAGES: &[&str] = &["ghc-internal", "ghc-prim", "ghc-bignum", "rts"];
 
+/// True when the dep root points into a `cabal-get/` directory — these are
+/// pre-extracted source tarballs (`cabal get <pkg>` output), source-only and
+/// small, where the narrowed tail-match misses re-exported symbols. See
+/// `walk_haskell_narrowed` for why a full walk is correct here.
+fn is_cabal_get_root(root: &Path) -> bool {
+    root.ancestors().any(|p| {
+        p.file_name().and_then(|n| n.to_str()) == Some("cabal-get")
+    })
+}
+
 fn walk_haskell_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     // GHC boot libs use a path layout that doesn't match user import names.
     if GHC_BOOT_PACKAGES.contains(&dep.module_path.as_str()) {
+        return walk_haskell_root(dep);
+    }
+    // cabal-get packages are pre-extracted source-only tarballs, small enough
+    // (~1-5MB) that a full walk is cheap and necessary: user code imports the
+    // top-level re-export module (e.g. `Database.Persist`) but the symbols
+    // live behind `Database/Persist/Class/PersistQuery.hs` via `module .. (..)
+    // where; import Database.Persist.Class.PersistQuery` chains. Tail-matching
+    // never reaches the implementation files. The cabal store path, by
+    // contrast, holds compiled artifacts beside source — narrowing matters
+    // there to skip the big build outputs.
+    if is_cabal_get_root(&dep.root) {
         return walk_haskell_root(dep);
     }
     if dep.requested_imports.is_empty() { return walk_haskell_root(dep); }

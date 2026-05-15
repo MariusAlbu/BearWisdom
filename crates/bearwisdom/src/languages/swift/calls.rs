@@ -24,6 +24,7 @@ pub(super) fn extract_calls_from_body(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| call_target_name(&callee, src));
+                    let call_args = extract_swift_call_args(&child, src);
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {
@@ -34,9 +35,9 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -406,4 +407,39 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
 
         _ => None,
     }
+}
+
+pub(super) fn extract_swift_call_args(call_node: &Node, src: &[u8]) -> Vec<crate::types::CallArg> {
+    use crate::types::CallArg;
+    let mut args_node: Option<Node> = None;
+    let mut cursor = call_node.walk();
+    for c in call_node.children(&mut cursor) {
+        if c.kind() == "call_suffix" || c.kind() == "value_arguments" {
+            args_node = Some(c);
+            break;
+        }
+    }
+    let Some(args) = args_node else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut ac = args.walk();
+    for child in args.named_children(&mut ac) {
+        let inner = if child.kind() == "value_argument" {
+            let mut vc = child.walk();
+            child.named_children(&mut vc).last().unwrap_or(child)
+        } else {
+            child
+        };
+        let arg = match inner.kind() {
+            "line_string_literal" | "raw_string_literal" | "string_literal" => {
+                let raw = node_text(inner, src);
+                CallArg::StringLit(raw.trim_matches('"').to_string())
+            }
+            "simple_identifier" | "identifier" => CallArg::Ident(node_text(inner, src)),
+            "integer_literal" | "real_literal" => CallArg::Literal(node_text(inner, src)),
+            "boolean_literal" | "nil_literal" | "nil" => CallArg::Literal(inner.kind().to_string()),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
 }

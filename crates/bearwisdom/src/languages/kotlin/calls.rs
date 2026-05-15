@@ -4,8 +4,64 @@
 
 use super::decorators::extract_when_patterns;
 use super::helpers::{call_target_name, node_text};
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
+
+/// Extract positional args from a Kotlin `call_expression` / navigation call.
+/// Captures string-literal, identifier, integer/float, boolean literals.
+/// Tree-sitter-kotlin wraps args in `value_arguments` with nested
+/// `value_argument` children that contain the expression.
+pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
+    let mut args_node: Option<Node> = None;
+    let mut cursor = call_node.walk();
+    for c in call_node.children(&mut cursor) {
+        if c.kind() == "value_arguments" {
+            args_node = Some(c);
+            break;
+        }
+    }
+    let Some(args) = args_node else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut ac = args.walk();
+    for child in args.named_children(&mut ac) {
+        let value_node = if child.kind() == "value_argument" {
+            let mut found: Option<Node> = None;
+            let mut vc = child.walk();
+            for v in child.named_children(&mut vc) {
+                if v.kind() != "simple_identifier" || found.is_some() {
+                    found = Some(v);
+                    break;
+                }
+                found = Some(v);
+            }
+            match found {
+                Some(n) => n,
+                None => continue,
+            }
+        } else {
+            child
+        };
+        let arg = match value_node.kind() {
+            "string_literal" | "line_string_literal" | "multi_line_string_literal" => {
+                let raw = node_text(value_node, src);
+                CallArg::StringLit(strip_kt_string(&raw))
+            }
+            "simple_identifier" | "identifier" => CallArg::Ident(node_text(value_node, src)),
+            "integer_literal" | "long_literal" | "real_literal" | "hex_literal"
+            | "bin_literal" | "unsigned_literal" => CallArg::Literal(node_text(value_node, src)),
+            "boolean_literal" | "null_literal" => CallArg::Literal(value_node.kind().to_string()),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
+
+fn strip_kt_string(raw: &str) -> String {
+    let s = raw.trim();
+    let s = s.trim_start_matches("\"\"\"").trim_end_matches("\"\"\"");
+    s.trim_start_matches('"').trim_end_matches('"').to_string()
+}
 
 pub(super) fn extract_calls_from_body(
     node: &Node,
@@ -24,6 +80,7 @@ pub(super) fn extract_calls_from_body(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| call_target_name(&callee, src));
+                    let call_args = extract_call_args(&child, src);
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {
@@ -34,9 +91,9 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: callee.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 // Recurse only into argument nodes — NOT into the callee itself.
@@ -58,6 +115,7 @@ pub(super) fn extract_calls_from_body(
             // `method` as separate Calls refs instead of just `method`).
             "navigation_expression" => {
                 let chain = build_chain(&child, src);
+                let call_args = extract_call_args(&child, src);
                 if let Some(ref c) = chain {
                     if let Some(seg) = c.segments.last() {
                         let target = seg.name.clone();
@@ -71,9 +129,9 @@ pub(super) fn extract_calls_from_body(
                                 module: None,
                                 chain,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args,
+                            });
                         }
                     }
                 }

@@ -23,12 +23,186 @@ fn schema_creates_all_tables() {
         "files", "symbols", "edges", "unresolved_refs", "external_refs", "imports",
         "routes", "db_mappings", "annotations", "concepts", "concept_members",
         "lsp_edge_meta", "code_chunks", "flow_edges", "search_history",
+        "entry_points", "reachability", "package_resolution_health",
     ] {
         assert!(
             tables.contains(&expected.to_string()),
             "Missing table: {expected}. Found: {tables:?}"
         );
     }
+}
+
+#[test]
+fn packages_has_is_publishable_default_true() {
+    let conn = make_db();
+    conn.execute(
+        "INSERT INTO packages (name, path, kind) VALUES ('pkg', 'crates/pkg', 'cargo')",
+        [],
+    )
+    .unwrap();
+    let v: i64 = conn
+        .query_row(
+            "SELECT is_publishable FROM packages WHERE name = 'pkg'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(v, 1, "is_publishable must default to 1 (publishable) for back-compat");
+}
+
+#[test]
+fn entry_points_composite_pk_allows_multi_contributor_rooting() {
+    let conn = make_db();
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) \
+         VALUES ('src/main.rs', 'h', 'rust', 0)",
+        [],
+    )
+    .unwrap();
+    let file_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) \
+         VALUES (?1, 'handler', 'app::handler', 'function', 10, 0)",
+        [file_id],
+    )
+    .unwrap();
+    let sym = conn.last_insert_rowid();
+
+    // Same symbol rooted by two different contributors with different kinds.
+    conn.execute(
+        "INSERT INTO entry_points (symbol_id, kind, source, confidence) \
+         VALUES (?1, 'route', 'axum-connector', 0.9)",
+        [sym],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO entry_points (symbol_id, kind, source, confidence) \
+         VALUES (?1, 'user', 'user-roots-toml', 1.0)",
+        [sym],
+    )
+    .unwrap();
+
+    // Duplicate (symbol_id, kind, source) must fail.
+    let dup = conn.execute(
+        "INSERT INTO entry_points (symbol_id, kind, source) \
+         VALUES (?1, 'route', 'axum-connector')",
+        [sym],
+    );
+    assert!(dup.is_err(), "(symbol_id, kind, source) must be unique");
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entry_points WHERE symbol_id = ?1", [sym], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn entry_points_cascade_when_symbol_deleted() {
+    let conn = make_db();
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) \
+         VALUES ('lib.rs', 'h', 'rust', 0)",
+        [],
+    )
+    .unwrap();
+    let file_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) \
+         VALUES (?1, 'main', 'main', 'function', 1, 0)",
+        [file_id],
+    )
+    .unwrap();
+    let sym = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO entry_points (symbol_id, kind, source) VALUES (?1, 'main', 'rust-plugin')",
+        [sym],
+    )
+    .unwrap();
+
+    conn.execute("DELETE FROM symbols WHERE id = ?1", [sym]).unwrap();
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entry_points", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0, "entry_points must cascade when symbol is deleted");
+}
+
+#[test]
+fn reachability_round_trip() {
+    let conn = make_db();
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) \
+         VALUES ('lib.rs', 'h', 'rust', 0)",
+        [],
+    )
+    .unwrap();
+    let file_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) \
+         VALUES (?1, 'foo', 'app::foo', 'function', 1, 0)",
+        [file_id],
+    )
+    .unwrap();
+    let sym = conn.last_insert_rowid();
+
+    conn.execute(
+        "INSERT INTO reachability (symbol_id, min_distance, path_confidence, via_kind) \
+         VALUES (?1, 3, 0.7, 'dispatch_candidate')",
+        [sym],
+    )
+    .unwrap();
+
+    let (dist, conf, via): (i64, f64, Option<String>) = conn
+        .query_row(
+            "SELECT min_distance, path_confidence, via_kind FROM reachability WHERE symbol_id = ?1",
+            [sym],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(dist, 3);
+    assert!((conf - 0.7).abs() < 1e-9);
+    assert_eq!(via.as_deref(), Some("dispatch_candidate"));
+
+    // Symbol delete must cascade.
+    conn.execute("DELETE FROM symbols WHERE id = ?1", [sym]).unwrap();
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM reachability", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn package_resolution_health_round_trip() {
+    let conn = make_db();
+    conn.execute(
+        "INSERT INTO packages (name, path, kind) VALUES ('p', 'crates/p', 'cargo')",
+        [],
+    )
+    .unwrap();
+    let pkg = conn.last_insert_rowid();
+
+    conn.execute(
+        "INSERT INTO package_resolution_health \
+         (package_id, resolution_rate, resolved_refs, unresolved_refs, low_conf_edges, trust_tier) \
+         VALUES (?1, 97.5, 9750, 250, 100, 'review')",
+        [pkg],
+    )
+    .unwrap();
+
+    let (rate, tier): (f64, String) = conn
+        .query_row(
+            "SELECT resolution_rate, trust_tier FROM package_resolution_health WHERE package_id = ?1",
+            [pkg],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!((rate - 97.5).abs() < 1e-9);
+    assert_eq!(tier, "review");
+
+    conn.execute("DELETE FROM packages WHERE id = ?1", [pkg]).unwrap();
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM package_resolution_health", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0, "package_resolution_health must cascade on package delete");
 }
 
 #[test]

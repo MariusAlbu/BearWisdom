@@ -354,6 +354,15 @@ pub enum CallArg {
     /// Numeric, boolean, null, or simple array/object literal — stored as
     /// its source text.
     Literal(String),
+    /// Object literal whose property names are statically determinable, e.g.
+    /// `{ template: 'welcome', subject: s }`. Captured as the ordered list of
+    /// `(key, optional string-literal value)` pairs. The value is `Some(_)`
+    /// only when the property's value is a plain string or template literal
+    /// (no interpolation) — identifiers, function references, computed
+    /// expressions all produce `None`. Used by mailer detectors that need
+    /// the `template:` value AND by handler-registration detectors that only
+    /// need the keys (`server.addService(SvcDef, { m1: h, m2: h })`).
+    ObjectKeys(Vec<(String, Option<String>)>),
     /// Any argument shape not covered by the above variants.
     Other,
 }
@@ -467,11 +476,6 @@ pub struct ExtractionResult {
     pub routes: Vec<ExtractedRoute>,
     pub db_sets: Vec<ExtractedDbSet>,
     pub has_errors: bool,
-    /// Cross-service wiring artifacts spotted by the plugin. Stage 3 of the
-    /// refactored pipeline folds these across files into `flow_edges` rows
-    /// via in-memory Start×Stop matching. Empty default; plugins fill it
-    /// one framework at a time as they migrate connector detection.
-    pub connection_points: Vec<ConnectionPoint>,
     /// `(module_path, symbol_name)` pairs this file contributes to the
     /// shared demand accumulator — the subset of `refs` whose target is an
     /// external import. Used by Stage 2's demand-driven external parser to
@@ -483,92 +487,6 @@ pub struct ExtractionResult {
     /// populates this today; other languages leave it empty and the engine
     /// derives an `Application` shape from `field_type` for their typedefs.
     pub alias_targets: Vec<(String, AliasTarget)>,
-}
-
-// ---------------------------------------------------------------------------
-// Connection points — pipeline-refactor scaffolding
-// ---------------------------------------------------------------------------
-//
-// A ConnectionPoint is an intermediate value a language plugin emits when its
-// AST walk spots a cross-service / cross-module wiring artifact: an HTTP
-// route handler (Start), an `http.Client.Get` call (Stop), a DI registration
-// (Start), an `IMediator.Send` call (Stop), a Tauri `#[command]` (Start), an
-// `invoke()` call (Stop), etc.
-//
-// Stage 3 of the refactored pipeline folds connection points across all
-// parsed files into `flow_edges` rows by matching Start×Stop pairs with the
-// same (kind, key). No DB round-trip, no connector re-parse.
-//
-// These types are scaffolding: the field does not yet live on ParsedFile /
-// ExtractionResult and no plugin emits them. Added here so downstream
-// wiring work has a target to reference.
-
-/// What wiring category a connection point belongs to. Match keys only
-/// compare within the same kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConnectionKind {
-    /// HTTP REST wiring: route handlers ↔ client calls.
-    Rest,
-    /// gRPC service method ↔ client stub call.
-    Grpc,
-    /// GraphQL resolver ↔ client query / mutation.
-    GraphQL,
-    /// Dependency-injection registration ↔ consumer site.
-    Di,
-    /// Inter-process command / handler (Tauri `#[command]`, Electron
-    /// `ipcMain.handle`) ↔ invoke call site.
-    Ipc,
-    /// Event publish ↔ subscribe (pub/sub, domain events).
-    Event,
-    /// Message queue producer ↔ consumer (Kafka, RabbitMQ, etc.).
-    MessageQueue,
-    /// Route declaration only (framework routing table entry) —
-    /// matching to handlers happens via the handler's symbol qname, not
-    /// via Start×Stop pairing.
-    Route,
-}
-
-/// Whether a connection point is the producing or consuming side of the
-/// pairing. Matched pairs have the same `kind` and `key`, one role each.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConnectionRole {
-    /// Producer / server / handler side.
-    Start,
-    /// Consumer / client / caller side.
-    Stop,
-}
-
-/// A cross-file wiring datum emitted by a language plugin during extraction.
-///
-/// `key` is the comparison anchor used during Stage 3's in-memory match
-/// reduce. Canonical shapes per kind:
-///   - `Rest`: `"METHOD /path/template"` (e.g. `"GET /users/:id"`).
-///   - `Grpc`: `"package.Service/Method"`.
-///   - `GraphQL`: `"Query.fieldName"` or `"Mutation.fieldName"`.
-///   - `Di`: the registered service's type qname.
-///   - `Ipc`: the command / channel name literal.
-///   - `Event`: the event topic / type name.
-///   - `MessageQueue`: the queue or topic name.
-///   - `Route`: the route template, same shape as `Rest` starts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConnectionPoint {
-    pub kind: ConnectionKind,
-    pub role: ConnectionRole,
-    pub key: String,
-    /// 1-based line number of the emitting construct within its source file.
-    pub line: u32,
-    /// 1-based column number.
-    pub col: u32,
-    /// Qualified name of the owning symbol (the function declaration, the
-    /// class body, the route constant, etc.). Empty when the connection
-    /// point isn't attached to a nameable symbol.
-    pub symbol_qname: String,
-    /// Optional free-form metadata (e.g. framework name `"gin"`, service
-    /// identifier `"UserService"`). Stored as a small map so individual
-    /// connectors don't need bespoke struct variants.
-    pub meta: HashMap<String, String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -687,7 +605,6 @@ impl ExtractionResult {
             routes: Vec::new(),
             db_sets: Vec::new(),
             has_errors,
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
         }
@@ -706,7 +623,6 @@ impl ExtractionResult {
             routes,
             db_sets,
             has_errors,
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
         }
@@ -719,7 +635,6 @@ impl ExtractionResult {
             routes: Vec::new(),
             db_sets: Vec::new(),
             has_errors: false,
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
         }
@@ -747,7 +662,18 @@ pub struct PackageInfo {
     /// a name or couldn't be read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_name: Option<String>,
+    /// Whether the package's public surface is reachable from outside the
+    /// workspace. Drives the dead-code `exported_api` entry-point
+    /// contributor: a workspace-internal helper crate (`publish = false`
+    /// in `Cargo.toml`, `"private": true` in `package.json`) does NOT
+    /// auto-root its public symbols as reachability anchors. Default
+    /// `true` preserves prior behavior on manifests without a private
+    /// signal.
+    #[serde(default = "default_is_publishable")]
+    pub is_publishable: bool,
 }
+
+fn default_is_publishable() -> bool { true }
 
 /// A conditional-narrowing scope captured at extraction time.
 ///
@@ -837,11 +763,6 @@ pub struct ParsedFile {
     /// offsets). Default is empty — populated by languages that have wired
     /// up `FlowConfig` queries. See `FlowMeta`.
     pub flow: FlowMeta,
-    /// Cross-service wiring points emitted by the language plugin's
-    /// `extract_connection_points` path, paired across files by Stage 3 of
-    /// the refactored pipeline into `flow_edges`. Empty default; plugins
-    /// fill this one framework at a time.
-    pub connection_points: Vec<ConnectionPoint>,
     /// `(module_path, symbol_name)` contributions this file makes to the
     /// shared demand accumulator (the refs whose target is an external
     /// import). Stage 2's demand-driven external parser reads this to
@@ -866,14 +787,19 @@ pub struct ParsedFile {
     /// project-wide `angular_selectors` map.  Empty for non-TypeScript files
     /// and TypeScript files that contain no `@Component` decorators.
     pub component_selectors: Vec<(String, String)>,
+    /// Extractor-time `FlowEmission`s for plugins whose flow detection is
+    /// file-structure-based (SDL parsing, .proto file scan) and can't move
+    /// to chain-walk resolver-time emission. Accumulated by
+    /// `indexer/resolve/mod.rs` alongside resolver-emitted flows.
+    pub plugin_flow_emissions: Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)>,
 }
 
 impl ParsedFile {
     /// Drop per-file fields whose only consumers (write / FTS / chunks /
     /// route table / db_set table) have already read them. `symbols`,
-    /// `refs`, `flow`, `connection_points`, and the origin vectors stay —
-    /// resolution, connector detection, and flow matching read them
-    /// downstream. Call this after `write_parsed_files*` returns, for
+    /// `refs`, `flow`, and the origin vectors stay — resolution and flow
+    /// matching read them downstream. Call this after
+    /// `write_parsed_files*` returns, for
     /// both internal and external files. Frees hundreds of MB on big
     /// .NET / TS workspaces where external `content` would otherwise
     /// live until the end of resolve.
@@ -991,6 +917,31 @@ pub struct IndexStats {
     pub package_count: u32,
     pub files_with_errors: u32,
     pub duration_ms: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Entry points (reachability-based dead-code: L1)
+// ---------------------------------------------------------------------------
+
+/// One row to insert into the `entry_points` SQL table.
+///
+/// Contributors (language plugins, connectors, manifest walkers, user
+/// overrides) produce these. The reachability BFS treats every distinct
+/// `symbol_id` here as a root regardless of how many `(kind, source)`
+/// rows reference it.
+#[derive(Debug, Clone)]
+pub struct EntryPointRow {
+    pub symbol_id: i64,
+    /// One of: main | route | event | di | exported | lifecycle | test |
+    /// user | reflection.
+    pub kind: &'static str,
+    /// Contributor identifier. Convention: `<area>-<contributor>`, e.g.
+    /// `rust-plugin`, `axum-connector`, `manifest-cargo`, `user-roots-toml`.
+    pub source: &'static str,
+    /// Confidence the symbol is *actually* externally-reachable. Defaults
+    /// to 1.0; lowered for heuristic contributors (e.g. lifecycle-name
+    /// matches with no annotation evidence).
+    pub confidence: f64,
 }
 
 // ---------------------------------------------------------------------------

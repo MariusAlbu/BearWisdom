@@ -72,10 +72,11 @@ fn make_file(path: &str, lang: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<Ex
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
         flow: crate::types::FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 
@@ -108,10 +109,11 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
             flow: crate::types::FlowMeta::default(),
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
+
+            plugin_flow_emissions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -384,4 +386,415 @@ fn test_build_file_context_wildcard_import() {
         ctx.imports[0].module_path.as_deref(),
         Some("org.springframework.web.bind.annotation")
     );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP Producer + DbQuery flow detection (Goal 13)
+// ---------------------------------------------------------------------------
+
+fn make_chain(segments: &[&str]) -> MemberChain {
+    MemberChain {
+        segments: segments
+            .iter()
+            .enumerate()
+            .map(|(i, name)| ChainSegment {
+                name: name.to_string(),
+                node_kind: if i == 0 {
+                    "identifier".to_string()
+                } else {
+                    "property_identifier".to_string()
+                },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn test_java_resttemplate_get_for_object_emits_producer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use super::resolve::detect_java_http_chain_emission;
+
+    let chain = make_chain(&["restTemplate", "getForObject"]);
+    let call_args = vec![
+        CallArg::StringLit("/api/users/{id}".to_string()),
+        CallArg::Ident("User".to_string()),
+    ];
+    match detect_java_http_chain_emission(&chain, &call_args).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+            assert_eq!(kind, NamedChannelKind::HttpCall);
+            assert_eq!(role, ChannelRole::Producer);
+            assert_eq!(name, "/api/users/{}");
+            assert_eq!(method, Some(HttpMethod::Get));
+        }
+        other => panic!("expected NamedChannel HttpCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_java_resttemplate_post_for_entity_emits_post() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
+    use super::resolve::detect_java_http_chain_emission;
+
+    let chain = make_chain(&["restTemplate", "postForEntity"]);
+    let call_args = vec![
+        CallArg::StringLit("/api/login".to_string()),
+        CallArg::Ident("payload".to_string()),
+        CallArg::Ident("LoginResponse".to_string()),
+    ];
+    match detect_java_http_chain_emission(&chain, &call_args).unwrap() {
+        FlowEmission::NamedChannel { method, name, .. } => {
+            assert_eq!(method, Some(HttpMethod::Post));
+            assert_eq!(name, "/api/login");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_webclient_get_uri_emits_producer() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
+    use super::resolve::detect_java_http_chain_emission;
+
+    let chain = make_chain(&["webClient", "get", "uri"]);
+    let call_args = vec![CallArg::StringLit("/api/things".to_string())];
+    match detect_java_http_chain_emission(&chain, &call_args).unwrap() {
+        FlowEmission::NamedChannel { method, name, .. } => {
+            assert_eq!(method, Some(HttpMethod::Get));
+            assert_eq!(name, "/api/things");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_okhttp_url_emits_any_method() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
+    use super::resolve::detect_java_http_chain_emission;
+
+    let chain = make_chain(&["builder", "url"]);
+    let call_args = vec![CallArg::StringLit("https://api.example.com/x".to_string())];
+    match detect_java_http_chain_emission(&chain, &call_args).unwrap() {
+        FlowEmission::NamedChannel { method, name, .. } => {
+            assert_eq!(method, Some(HttpMethod::Any));
+            assert_eq!(name, "/x");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_http_no_emit_for_unknown_verb() {
+    use super::resolve::detect_java_http_chain_emission;
+
+    let chain = make_chain(&["restTemplate", "doSomething"]);
+    let call_args = vec![CallArg::StringLit("/x".to_string())];
+    assert!(detect_java_http_chain_emission(&chain, &call_args).is_none());
+}
+
+#[test]
+fn test_java_http_no_emit_when_url_is_variable() {
+    use super::resolve::detect_java_http_chain_emission;
+
+    let chain = make_chain(&["restTemplate", "getForObject"]);
+    let call_args = vec![CallArg::Ident("url".to_string()), CallArg::Ident("Object".to_string())];
+    assert!(detect_java_http_chain_emission(&chain, &call_args).is_none());
+}
+
+#[test]
+fn test_java_jpa_find_emits_dbquery() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_java_db_query_emission;
+
+    let chain = make_chain(&["entityManager", "find"]);
+    let call_args = vec![CallArg::Ident("User".to_string()), CallArg::Literal("1".to_string())];
+    match detect_java_db_query_emission(&chain, &call_args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "java.User");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_java_jpa_create_query_emits_dbquery() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_java_db_query_emission;
+
+    let chain = make_chain(&["entityManager", "createQuery"]);
+    let call_args = vec![
+        CallArg::StringLit("FROM Poll p".to_string()),
+        CallArg::Ident("Poll".to_string()),
+    ];
+    match detect_java_db_query_emission(&chain, &call_args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "java.Poll");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_java_jpa_no_emit_without_entity_class() {
+    use super::resolve::detect_java_db_query_emission;
+
+    let chain = make_chain(&["entityManager", "find"]);
+    let call_args = vec![CallArg::Ident("entity".to_string())];
+    assert!(detect_java_db_query_emission(&chain, &call_args).is_none());
+}
+
+#[test]
+fn test_java_jpa_no_emit_for_unknown_method() {
+    use super::resolve::detect_java_db_query_emission;
+
+    let chain = make_chain(&["entityManager", "flush"]);
+    let call_args: Vec<CallArg> = vec![];
+    assert!(detect_java_db_query_emission(&chain, &call_args).is_none());
+}
+
+#[test]
+fn test_java_spring_data_query_annotation_emits_dbquery() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_jpa_query_annotation_emission;
+
+    let sql = "SELECT u FROM User u WHERE u.email = :email";
+    match detect_jpa_query_annotation_emission("Query", Some(sql)).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "java.User");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_java_query_annotation_no_emit_for_other_annotations() {
+    use super::resolve::detect_jpa_query_annotation_emission;
+
+    assert!(detect_jpa_query_annotation_emission("GetMapping", Some("/x")).is_none());
+    assert!(detect_jpa_query_annotation_emission("Service", None).is_none());
+    assert!(detect_jpa_query_annotation_emission("Query", None).is_none());
+    assert!(detect_jpa_query_annotation_emission("Query", Some("DROP TABLE x")).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Goal 20 — JdbcTemplate + Retrofit + grpc-java
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_java_jdbc_template_query_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_java_jdbc_template_emission;
+
+    let chain = make_chain(&["jdbcTemplate", "query"]);
+    let args = vec![CallArg::StringLit("SELECT id FROM users WHERE x = ?".to_string()), CallArg::Other];
+    match detect_java_jdbc_template_emission(&chain, &args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "java.users");
+            assert_eq!(operation, DbQueryOp::Select);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_java_jdbc_template_update() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use super::resolve::detect_java_jdbc_template_emission;
+
+    let chain = make_chain(&["jdbcTemplate", "update"]);
+    let args = vec![CallArg::StringLit("UPDATE accounts SET balance = ? WHERE id = ?".to_string())];
+    match detect_java_jdbc_template_emission(&chain, &args).unwrap() {
+        FlowEmission::DbQuery { entity_name, operation } => {
+            assert_eq!(entity_name, "java.accounts");
+            assert_eq!(operation, DbQueryOp::Update);
+        }
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_java_jdbc_template_rejects_non_template_root() {
+    use super::resolve::detect_java_jdbc_template_emission;
+
+    let chain = make_chain(&["someService", "query"]);
+    let args = vec![CallArg::StringLit("SELECT * FROM x".to_string())];
+    assert!(detect_java_jdbc_template_emission(&chain, &args).is_none());
+}
+
+#[test]
+fn test_java_retrofit_get_attribute_emits_producer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use super::resolve::detect_retrofit_attribute_emission;
+
+    match detect_retrofit_attribute_emission("GET", Some("/api/users")).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+            assert!(matches!(kind, NamedChannelKind::HttpCall));
+            assert_eq!(role, ChannelRole::Producer);
+            assert_eq!(name, "/api/users");
+            assert_eq!(method, Some(HttpMethod::Get));
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_retrofit_post_emits_post_method() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
+    use super::resolve::detect_retrofit_attribute_emission;
+
+    match detect_retrofit_attribute_emission("POST", Some("/login")).unwrap() {
+        FlowEmission::NamedChannel { method, .. } => assert_eq!(method, Some(HttpMethod::Post)),
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_retrofit_rejects_non_verb_attribute() {
+    use super::resolve::detect_retrofit_attribute_emission;
+
+    assert!(detect_retrofit_attribute_emission("Service", Some("/x")).is_none());
+    assert!(detect_retrofit_attribute_emission("GET", None).is_none());
+    assert!(detect_retrofit_attribute_emission("GET", Some("")).is_none());
+}
+
+#[test]
+fn test_java_grpc_stub_emits_rpc_call() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_java_grpc_stub_emission;
+
+    let chain = make_chain(&["UserServiceGrpc", "newBlockingStub", "getUser"]);
+    match detect_java_grpc_stub_emission(&chain).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::RpcCall));
+            assert_eq!(role, ChannelRole::Producer);
+            assert_eq!(name, "UserService.getUser");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_grpc_future_stub_works() {
+    use super::resolve::detect_java_grpc_stub_emission;
+
+    let chain = make_chain(&["HelloServiceGrpc", "newFutureStub", "sayHello"]);
+    assert!(detect_java_grpc_stub_emission(&chain).is_some());
+}
+
+#[test]
+fn test_java_grpc_rejects_non_grpc_root() {
+    use super::resolve::detect_java_grpc_stub_emission;
+
+    let chain = make_chain(&["UserService", "newBlockingStub", "getUser"]);
+    assert!(detect_java_grpc_stub_emission(&chain).is_none());
+}
+
+#[test]
+fn test_java_quartz_schedule_emits_bgjob() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_java_quartz_emission;
+    let chain = make_chain(&["scheduler", "scheduleJob"]);
+    match detect_java_quartz_emission(&chain).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::BgJob));
+            assert_eq!(role, ChannelRole::Producer);
+            assert_eq!(name, "java.quartz");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_kafka_template_send_emits_mq_with_topic() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_java_jms_kafka_emission;
+    let chain = make_chain(&["kafkaTemplate", "send"]);
+    let args = vec![
+        CallArg::StringLit("user.created".to_string()),
+        CallArg::Ident("payload".to_string()),
+    ];
+    match detect_java_jms_kafka_emission(&chain, &args).unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::MessageQueue));
+            assert_eq!(name, "user.created");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_jms_template_send_emits_mq() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_java_jms_kafka_emission;
+    let chain = make_chain(&["jmsTemplate", "send"]);
+    match detect_java_jms_kafka_emission(&chain, &[]).unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::MessageQueue));
+            assert_eq!(name, "java.jms");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_redis_template_get_emits_config_lookup() {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    use super::resolve::detect_java_redis_template_emission;
+    let chain = make_chain(&["redisTemplate", "opsForValue", "get"]);
+    let args = vec![CallArg::StringLit("feature:flag".to_string())];
+    match detect_java_redis_template_emission(&chain, &args).unwrap() {
+        FlowEmission::ConfigLookup { key } => assert_eq!(key, "redis:feature:flag"),
+        _ => panic!("expected ConfigLookup"),
+    }
+}
+
+#[test]
+fn test_java_message_mapping_emits_ws_consumer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    use super::resolve::detect_java_message_mapping_emission;
+    match detect_java_message_mapping_emission("MessageMapping", Some("/chat/{room}")).unwrap() {
+        FlowEmission::NamedChannel { kind, role, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::WebSocket));
+            assert_eq!(role, ChannelRole::Consumer);
+            assert_eq!(name, "/chat/{room}");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_message_mapping_rejects_other_annotations() {
+    use super::resolve::detect_java_message_mapping_emission;
+    assert!(detect_java_message_mapping_emission("Component", None).is_none());
+}
+
+#[test]
+fn test_java_jakarta_server_endpoint_with_path() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
+    use super::resolve::detect_java_message_mapping_emission;
+    match detect_java_message_mapping_emission("ServerEndpoint", Some("/ws/chat")).unwrap() {
+        FlowEmission::NamedChannel { kind, name, .. } => {
+            assert!(matches!(kind, NamedChannelKind::WebSocket));
+            assert_eq!(name, "/ws/chat");
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_java_jakarta_on_open_recognised() {
+    use super::resolve::detect_java_message_mapping_emission;
+    assert!(detect_java_message_mapping_emission("OnOpen", None).is_some());
+    assert!(detect_java_message_mapping_emission("OnClose", None).is_some());
+    assert!(detect_java_message_mapping_emission("OnError", None).is_some());
 }

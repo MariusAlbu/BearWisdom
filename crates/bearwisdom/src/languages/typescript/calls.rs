@@ -61,6 +61,14 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
             "true" | "false" | "null" | "undefined" => {
                 CallArg::Literal(child.kind().to_string())
             }
+            "object" => {
+                let pairs = extract_object_property_pairs(&child, src);
+                if pairs.is_empty() {
+                    CallArg::Other
+                } else {
+                    CallArg::ObjectKeys(pairs)
+                }
+            }
             _ => CallArg::Other,
         };
         result.push(arg);
@@ -133,6 +141,11 @@ pub(super) fn emit_call_ref(
 }
 
 /// Emit an Instantiates ref for a single `new_expression` node.
+///
+/// Populates `call_args` and a single-segment `chain` with the constructor
+/// name so flow-emission detectors can recognise constructor-keyed patterns
+/// (`new Worker('queue-name', processor)`) using the same chain + call-args
+/// surface as method calls.
 pub(super) fn emit_new_ref(
     new_node: &Node,
     src: &[u8],
@@ -146,18 +159,293 @@ pub(super) fn emit_new_ref(
             _ => return,
         };
         if !name.is_empty() {
+            let call_args = extract_call_args(new_node, src);
+            let chain = Some(MemberChain {
+                segments: vec![ChainSegment {
+                    name: name.clone(),
+                    node_kind: constructor.kind().to_string(),
+                    kind: SegmentKind::Identifier,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                }],
+            });
+            // Side-channel synthetic ref: when this `new X(...)` is the
+            // initializer of `const/let/var bound = new X(constructor_arg)`,
+            // emit an EdgeKind::Imports ref keyed `__ts_bgjob_queue_binding__:<bound>`
+            // with `module` set to the first string constructor argument.
+            // The TS resolver skips Imports-kind refs and the file-context
+            // import loop picks the entry up, exposing the binding to
+            // file-scoped detectors without polluting any resolution path.
+            if let (Some(bound), Some(queue_name)) = (
+                binding_name_of_new(new_node, src),
+                first_string_arg_text(new_node, src),
+            ) {
+                if matches!(name.as_str(), "Queue" | "Worker") {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: format!("__ts_bgjob_queue_binding__:{}", bound),
+                        kind: EdgeKind::Imports,
+                        line: constructor.start_position().row as u32,
+                        module: Some(queue_name),
+                        chain: None,
+                        byte_offset: 0,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
+            }
             refs.push(ExtractedRef {
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::Instantiates,
                 line: constructor.start_position().row as u32,
                 module: None,
-                chain: None,
+                chain,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
+                            call_args,
 });
         }
+    }
+}
+
+/// If `new_node` sits directly as the initializer of a `variable_declarator`
+/// (`const name = new X(...)`), return the bound identifier text. Walks up
+/// only one level — chained initializers (`const x = (new X()).y`) intentionally
+/// don't qualify.
+fn binding_name_of_new(new_node: &Node, src: &[u8]) -> Option<String> {
+    let parent = new_node.parent()?;
+    if parent.kind() != "variable_declarator" {
+        return None;
+    }
+    let name_node = parent.child_by_field_name("name")?;
+    if name_node.kind() != "identifier" {
+        return None;
+    }
+    Some(node_text(name_node, src))
+}
+
+/// Collect statically-determinable `(key, optional string-literal value)`
+/// pairs from an `object` (object literal) node. Recognises shorthand
+/// identifiers (`{ foo }`), explicit pairs (`{ foo: handler }` /
+/// `{ foo: 'bar' }`), method shorthand (`{ getUser(...) { ... } }`), and
+/// string-keyed entries (`{ "foo": ... }`). The value slot is populated
+/// only when the value is a plain string literal or a flat template literal
+/// without interpolation; identifiers, function expressions, member
+/// accesses, and computed values all leave the slot `None`. Computed keys
+/// (`{ [dyn]: v }`) and spread elements (`{ ...rest }`) are skipped.
+fn extract_object_property_pairs(
+    object_node: &Node,
+    src: &[u8],
+) -> Vec<(String, Option<String>)> {
+    let mut pairs = Vec::new();
+    let mut cursor = object_node.walk();
+    for child in object_node.named_children(&mut cursor) {
+        match child.kind() {
+            "pair" => {
+                let Some(key_node) = child.child_by_field_name("key") else { continue; };
+                let name = match key_node.kind() {
+                    "property_identifier" | "identifier" => node_text(key_node, src),
+                    "string" => node_text(key_node, src)
+                        .trim_start_matches(['"', '\'', '`'])
+                        .trim_end_matches(['"', '\'', '`'])
+                        .to_string(),
+                    _ => continue,
+                };
+                if name.is_empty() {
+                    continue;
+                }
+                let value = child.child_by_field_name("value").and_then(|v| {
+                    match v.kind() {
+                        "string" => Some(
+                            node_text(v, src)
+                                .trim_start_matches(['"', '\'', '`'])
+                                .trim_end_matches(['"', '\'', '`'])
+                                .to_string(),
+                        ),
+                        "template_string" => {
+                            let has_subst = (0..v.child_count()).any(|i| {
+                                v.child(i)
+                                    .map(|c| c.kind() == "template_substitution")
+                                    .unwrap_or(false)
+                            });
+                            if has_subst {
+                                None
+                            } else {
+                                Some(node_text(v, src).trim_matches('`').to_string())
+                            }
+                        }
+                        _ => None,
+                    }
+                });
+                pairs.push((name, value));
+            }
+            "shorthand_property_identifier" | "property_identifier" => {
+                let name = node_text(child, src);
+                if !name.is_empty() {
+                    pairs.push((name, None));
+                }
+            }
+            "method_definition" => {
+                if let Some(key_node) = child.child_by_field_name("name") {
+                    let name = node_text(key_node, src);
+                    if !name.is_empty() {
+                        pairs.push((name, None));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    pairs
+}
+
+/// Return the first positional argument of `new_node` when it is a plain
+/// string literal (`new X("name")`). Returns `None` for template literals
+/// with substitutions, identifiers, or non-literal argument shapes.
+fn first_string_arg_text(new_node: &Node, src: &[u8]) -> Option<String> {
+    let args_node = new_node.child_by_field_name("arguments")?;
+    let mut cursor = args_node.walk();
+    let first = args_node.named_children(&mut cursor).next()?;
+    match first.kind() {
+        "string" => {
+            let raw = node_text(first, src);
+            Some(
+                raw.trim_start_matches(['"', '\'', '`'])
+                    .trim_end_matches(['"', '\'', '`'])
+                    .to_string(),
+            )
+        }
+        "template_string" => {
+            // Only flat templates (no substitution) qualify.
+            let has_subst = (0..first.child_count()).any(|i| {
+                first.child(i)
+                    .map(|c| c.kind() == "template_substitution")
+                    .unwrap_or(false)
+            });
+            if has_subst {
+                None
+            } else {
+                let raw = node_text(first, src);
+                Some(raw.trim_matches('`').to_string())
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Recognise `process.env.<KEY>`, `process.env['KEY']`,
+/// `import.meta.env.<KEY>`, and feature-flag-shaped member access
+/// (`featureFlags.<flag>`, `<...FeatureFlag(s|Manager)?>.<flag>`,
+/// `<features>.<flag>`) and emit a synthetic TypeRef ref carrying the chain
+/// so the flow-emission layer can pull out a `ConfigLookup` or
+/// `FeatureFlag` key. Returns silently for any other member/subscript
+/// expression so unrelated shapes (`obj.field`, `arr[i]`) emit no extra refs.
+fn emit_config_lookup_ref(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let key = match node.kind() {
+        // `process.env.NODE_ENV` — object is `process.env`, property is the key.
+        // `featureFlags.someFlag` — object is `featureFlags`, property is the flag.
+        "member_expression" => {
+            let object = match node.child_by_field_name("object") { Some(o) => o, None => return };
+            let property = match node.child_by_field_name("property") { Some(p) => p, None => return };
+            if property.kind() != "property_identifier" { return; }
+            let env_match = is_env_object(&object, src);
+            let ff_match = !env_match && is_feature_flag_root(&object, src);
+            if !env_match && !ff_match { return; }
+            node_text(property, src)
+        }
+        // `process.env['NODE_ENV']` — subscript with object and a string index.
+        "subscript_expression" => {
+            let object = match node.child_by_field_name("object") { Some(o) => o, None => return };
+            let index = match node.child_by_field_name("index") { Some(i) => i, None => return };
+            if !is_env_object(&object, src) { return; }
+            if index.kind() != "string" { return; }
+            node_text(index, src)
+                .trim_start_matches(['"', '\'', '`'])
+                .trim_end_matches(['"', '\'', '`'])
+                .to_string()
+        }
+        _ => return,
+    };
+    if key.is_empty() {
+        return;
+    }
+    let chain = build_chain(*node, src);
+    // Use `EdgeKind::Imports`: the resolver classifies Imports refs as
+    // external rather than unresolved, so the synthetic refs don't inflate
+    // the `unresolved_refs` table even though they have no actual import
+    // target. The flow detector still receives them via the dispatcher's
+    // Imports-kind chain branch.
+    refs.push(ExtractedRef {
+        source_symbol_index,
+        target_name: key,
+        kind: EdgeKind::Imports,
+        line: node.start_position().row as u32,
+        module: None,
+        chain,
+        byte_offset: node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
+}
+
+/// Recognise a feature-flag-shaped chain receiver. Matches when the root
+/// identifier is `featureFlags`, `features`, `flags`, or contains
+/// `featureFlag` / `featureflag` as a substring (case-insensitive). Also
+/// peers through one intermediate `value` accessor (Svelte runes /
+/// `Manager` singleton pattern) so `featureFlagsManager.value.<flag>`
+/// works.
+fn is_feature_flag_root(node: &Node, src: &[u8]) -> bool {
+    match node.kind() {
+        "identifier" => is_ff_identifier_name(&node_text(*node, src)),
+        "member_expression" => {
+            // `<ff>.value` — peer through.
+            let inner_obj = match node.child_by_field_name("object") { Some(o) => o, None => return false };
+            let inner_prop = match node.child_by_field_name("property") { Some(p) => p, None => return false };
+            if inner_obj.kind() != "identifier" { return false; }
+            if inner_prop.kind() != "property_identifier" { return false; }
+            if node_text(inner_prop, src) != "value" { return false; }
+            is_ff_identifier_name(&node_text(inner_obj, src))
+        }
+        _ => false,
+    }
+}
+
+fn is_ff_identifier_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    matches!(lower.as_str(), "featureflags" | "features" | "flags")
+        || lower.contains("featureflag")
+}
+
+/// Return true when `node` represents the `process.env` or `import.meta.env`
+/// receiver of an env-var lookup. Anything else (a custom `env` object, a
+/// type expression, etc.) is rejected.
+fn is_env_object(node: &Node, src: &[u8]) -> bool {
+    if node.kind() != "member_expression" {
+        return false;
+    }
+    let object = match node.child_by_field_name("object") { Some(o) => o, None => return false };
+    let property = match node.child_by_field_name("property") { Some(p) => p, None => return false };
+    if property.kind() != "property_identifier" || node_text(property, src) != "env" {
+        return false;
+    }
+    match object.kind() {
+        "identifier" => node_text(object, src) == "process",
+        "member_expression" => {
+            // `import.meta` — `import` keyword as the root, `meta` as the prop.
+            let inner_obj = match object.child_by_field_name("object") { Some(o) => o, None => return false };
+            let inner_prop = match object.child_by_field_name("property") { Some(p) => p, None => return false };
+            inner_obj.kind() == "import"
+                && inner_prop.kind() == "property_identifier"
+                && node_text(inner_prop, src) == "meta"
+        }
+        _ => false,
     }
 }
 
@@ -199,6 +487,15 @@ pub(super) fn extract_calls(
             }
             "new_expression" => {
                 emit_new_ref(&child, src, source_symbol_index, refs);
+                extract_calls(&child, src, source_symbol_index, refs);
+            }
+            // `process.env.X` / `process.env['X']` / `import.meta.env.X` —
+            // emit a synthetic TypeRef ref with a chain so the resolver's
+            // flow-emission detector can recognise the ConfigLookup shape.
+            // Only fires for these specific top-level identifier roots so
+            // unrelated member-access expressions don't get extra refs.
+            "member_expression" | "subscript_expression" => {
+                emit_config_lookup_ref(&child, src, source_symbol_index, refs);
                 extract_calls(&child, src, source_symbol_index, refs);
             }
             // `sql\`SELECT ...\`` / `gql\`query { ... }\`` — tagged template expression.

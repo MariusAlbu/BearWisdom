@@ -371,4 +371,270 @@ impl LanguageResolver for ScalaResolver {
             _ => true,
         }
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        if let Some(chain) = r.chain.as_ref() {
+            if let Some(em) = detect_scala_http_chain_emission(chain, &r.call_args) {
+                return vec![em];
+            }
+            if let Some(em) = detect_scala_db_query_emission(chain, &r.call_args) {
+                return vec![em];
+            }
+            if let Some(em) = detect_scala_doobie_emission(chain) {
+                return vec![em];
+            }
+            if let Some(em) = detect_scala_quill_emission(chain) {
+                return vec![em];
+            }
+            if let Some(em) = detect_scala_zio_sql_emission(chain, &r.call_args) {
+                return vec![em];
+            }
+            if let Some(em) = detect_scala_grpc_emission(chain) {
+                return vec![em];
+            }
+        }
+        // http4s / Akka HTTP `path("x") { get { ... } }` — bare calls.
+        if let Some(em) = detect_scala_http_path_call(r.target_name.as_str(), &r.call_args) {
+            return vec![em];
+        }
+        Vec::new()
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Scala HTTP detection
+// ---------------------------------------------------------------------------
+
+/// sttp `basicRequest.get(uri"...")` / Akka HTTP `Http().singleRequest(...)`.
+/// Also covers WS Producer for `client.get("/x")`-style chains.
+pub(crate) fn detect_scala_http_chain_emission(
+    chain: &crate::types::MemberChain,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+
+    if chain.segments.len() < 2 {
+        return None;
+    }
+    let leaf = chain.segments.last()?.name.as_str();
+    let method = match leaf {
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "patch" => HttpMethod::Patch,
+        "delete" => HttpMethod::Delete,
+        "head" => HttpMethod::Head,
+        _ => return None,
+    };
+    let url = match call_args.first()? {
+        CallArg::StringLit(s) => s.as_str(),
+        _ => return None,
+    };
+    if !(url.starts_with('/') || url.starts_with("http://") || url.starts_with("https://")) {
+        return None;
+    }
+    let name = crate::connectors::url_pattern::normalize(url);
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name,
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+/// http4s / Akka HTTP `path("users") { ... }`, route DSL — Consumer.
+pub(crate) fn detect_scala_http_path_call(
+    target_name: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    if !matches!(target_name, "path" | "pathPrefix" | "pathEnd") {
+        return None;
+    }
+    let url = match call_args.first()? {
+        CallArg::StringLit(s) => s.as_str(),
+        _ => return None,
+    };
+    let normalised = if url.starts_with('/') {
+        url.to_string()
+    } else {
+        format!("/{}", url)
+    };
+    let name = crate::connectors::url_pattern::normalize(&normalised);
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name,
+        role: ChannelRole::Consumer,
+        method: Some(HttpMethod::Any),
+    streaming: None,
+    })
+}
+
+/// Slick `users.filter(_.id === id).result` — chain ends in `.result`,
+/// `.first`, etc. on a TableQuery. Doobie `sql"SELECT ...".query[X]`. For
+/// minimal v1 we match chain-root PascalCase + Slick op leaf.
+pub(crate) fn detect_scala_db_query_emission(
+    chain: &crate::types::MemberChain,
+    _call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+
+    let segs = &chain.segments;
+    if segs.len() < 2 {
+        return None;
+    }
+    let root = segs[0].name.as_str();
+    let leaf = segs.last()?.name.as_str();
+    if !root.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+        return None;
+    }
+    let op = match leaf {
+        "result" | "list" | "headOption" | "to" | "filter" | "map" | "exists" => DbQueryOp::Select,
+        "insert" | "+=" | "++=" | "insertOrUpdate" => DbQueryOp::Insert,
+        "update" => DbQueryOp::Update,
+        "delete" => DbQueryOp::Delete,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: format!("scala.{}", root),
+        operation: op,
+    })
+}
+
+/// Doobie `sql"SELECT ... FROM users".query[User].option`.
+/// Chain has a leading `sql` segment (the interpolator). Leaf op tells us
+/// the result-set verb. Entity is parsed from a StringInterpolation arg's
+/// FROM/INTO/UPDATE/DELETE token when available; falls back to "*".
+pub(crate) fn detect_scala_doobie_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    let segs = &chain.segments;
+    if segs.len() < 2 {
+        return None;
+    }
+    let has_sql_seg = segs.iter().any(|s| s.name == "sql");
+    if !has_sql_seg {
+        return None;
+    }
+    let leaf = segs.last()?.name.as_str();
+    let op = match leaf {
+        "query" | "option" | "unique" | "nel" | "to" | "stream" | "list" => DbQueryOp::Select,
+        "update" | "run" => DbQueryOp::Update,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: "scala.doobie".to_string(),
+        operation: op,
+    })
+}
+
+/// Quill `quote { query[User].filter(_.id == lift(id)) }`. The chain root
+/// or an inner segment is `query[T]` with an entity type parameter. Match
+/// on the segment name `query` and treat the first declared type-arg as
+/// the entity hint.
+pub(crate) fn detect_scala_quill_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    let segs = &chain.segments;
+    let query_seg = segs.iter().find(|s| s.name == "query")?;
+    let entity = query_seg
+        .type_args
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "*".to_string());
+    let leaf = segs.last()?.name.as_str();
+    let op = match leaf {
+        "filter" | "map" | "sortBy" | "size" | "take" | "drop" | "groupBy" => DbQueryOp::Select,
+        "insert" | "insertValue" => DbQueryOp::Insert,
+        "update" | "updateValue" => DbQueryOp::Update,
+        "delete" => DbQueryOp::Delete,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: format!("scala.{}", entity),
+        operation: op,
+    })
+}
+
+/// ZIO SQL `select(*).from(users).where(...)`. The shape `.from(<Ident>)`
+/// names the table directly. Match on the leaf `from` and grab the first
+/// Ident argument as the entity name.
+pub(crate) fn detect_scala_zio_sql_emission(
+    chain: &crate::types::MemberChain,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use crate::types::CallArg;
+    let leaf = chain.segments.last()?.name.as_str();
+    if leaf != "from" {
+        return None;
+    }
+    // The chain must contain a `select` segment earlier — otherwise
+    // we'd match arbitrary `foo.from(bar)` calls.
+    if !chain.segments.iter().any(|s| s.name == "select") {
+        return None;
+    }
+    let entity = call_args.iter().find_map(|a| match a {
+        CallArg::Ident(name) if !name.is_empty() => Some(name.clone()),
+        _ => None,
+    })?;
+    Some(FlowEmission::DbQuery {
+        entity_name: format!("scala.{}", entity),
+        operation: DbQueryOp::Select,
+    })
+}
+
+pub(crate) fn detect_scala_grpc_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let segs = &chain.segments;
+    if segs.len() < 3 {
+        return None;
+    }
+    let root = segs[0].name.as_str();
+    if !root.ends_with("Grpc") && !root.ends_with("Client") {
+        return None;
+    }
+    let ctor = segs[1].name.as_str();
+    if !matches!(ctor, "stub" | "blockingStub" | "newStub" | "newBlockingStub" | "apply") {
+        return None;
+    }
+    let leaf = segs.last()?.name.as_str();
+    if matches!(leaf, "stub" | "blockingStub" | "newStub" | "newBlockingStub" | "apply") {
+        return None;
+    }
+    let service = root
+        .strip_suffix("Grpc")
+        .or_else(|| root.strip_suffix("Client"))
+        .unwrap_or(root);
+    use crate::indexer::resolve::flow_emit::StreamKind;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::RpcCall,
+        name: format!("{}.{}", service, leaf),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: Some(StreamKind::from_method_name(leaf)),
+    })
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;

@@ -188,15 +188,6 @@ impl LanguagePlugin for VuePlugin {
         extract::extract(source, file_path)
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        _file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_vue_graphql_points(source)
-    }
-
     /// Split out `<script>` / `<script setup lang="ts">` and `<style>` blocks
     /// for sub-extraction by the JS/TS/CSS/SCSS plugins. Indexer splices the
     /// resulting symbols/refs back into the same `.vue` file.
@@ -226,10 +217,6 @@ impl LanguagePlugin for VuePlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(VueResolver))
-    }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
     }
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {

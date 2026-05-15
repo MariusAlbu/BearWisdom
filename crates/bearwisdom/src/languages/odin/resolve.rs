@@ -137,4 +137,47 @@ impl LanguageResolver for OdinResolver {
         let _ = (file_ctx, ref_ctx, project_ctx);
         None
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        use crate::indexer::resolve::flow_emit::{
+            ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+        };
+        use crate::types::CallArg;
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let module = r.module.as_deref().unwrap_or("");
+        let target = r.target_name.as_str();
+        if !module.contains("http") {
+            return Vec::new();
+        }
+        if !matches!(target, "get" | "post" | "request" | "send") {
+            return Vec::new();
+        }
+        let url = r.call_args.iter().find_map(|a| match a {
+            CallArg::StringLit(s)
+                if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+            {
+                Some(s.as_str())
+            }
+            _ => None,
+        });
+        let Some(url) = url else { return Vec::new() };
+        vec![FlowEmission::NamedChannel {
+            kind: NamedChannelKind::HttpCall,
+            name: crate::connectors::url_pattern::normalize(url),
+            role: ChannelRole::Producer,
+            method: Some(HttpMethod::Any),
+        streaming: None,
+        }]
+    }
 }
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;

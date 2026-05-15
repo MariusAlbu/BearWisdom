@@ -73,6 +73,9 @@ const HTTP_CLIENT_PACKAGES: &[&str] = &[
     "ky",
     "node-fetch",
     "@vueuse/integrations",  // useAxios wrapper re-exports axios
+    "@nestjs/axios",  // HttpService wraps axios — same verb-on-chain shape
+    "openapi-typescript-fetch",  // Generated declarative HTTP clients
+    "openapi-fetch",  // openapi-typescript companion client
 ];
 
 /// Returns `true` when `pkg` is a well-known HTTP-client npm package.
@@ -113,6 +116,14 @@ pub(crate) fn is_tauri_invoke_module(pkg: &str) -> bool {
 /// Returns `true` when `callee_name` is the Electron `ipcRenderer` identifier.
 pub(crate) fn is_electron_ipc_renderer(callee_name: &str) -> bool {
     callee_name == "ipcRenderer"
+}
+
+/// Returns `true` when `callee_name` is the Electron `ipcMain` identifier.
+/// `ipcMain.handle('cmd', h)` and `ipcMain.on('cmd', h)` register Consumer-
+/// side IPC handlers that pair with renderer-side `ipcRenderer.invoke` /
+/// `ipcRenderer.send` Producer calls keyed on the same command string.
+pub(crate) fn is_electron_ipc_main(callee_name: &str) -> bool {
+    callee_name == "ipcMain"
 }
 
 /// Returns `true` when `callee_name` is a native global fetch identifier.

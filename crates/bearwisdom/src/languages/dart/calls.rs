@@ -3,8 +3,52 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
+
+pub(super) fn extract_dart_call_args(call_node: &Node, src: &str) -> Vec<CallArg> {
+    let mut args_node: Option<Node> = None;
+    let mut cursor = call_node.walk();
+    for c in call_node.children(&mut cursor) {
+        if matches!(c.kind(), "arguments" | "argument_part" | "argument_list") {
+            args_node = Some(c);
+            break;
+        }
+        // Selector wrapper: postfix_expression → selector → argument_part.
+        if c.kind() == "selector" {
+            let mut sc = c.walk();
+            for s in c.children(&mut sc) {
+                if s.kind() == "argument_part" {
+                    let mut ac = s.walk();
+                    for a in s.children(&mut ac) {
+                        if a.kind() == "arguments" {
+                            args_node = Some(a);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let Some(args) = args_node else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut ac = args.walk();
+    for child in args.named_children(&mut ac) {
+        let arg = match child.kind() {
+            "string_literal" | "adjacent_string_literals" => {
+                let raw = node_text(child, src);
+                CallArg::StringLit(raw.trim_matches('\'').trim_matches('"').to_string())
+            }
+            "identifier" => CallArg::Ident(node_text(child, src)),
+            "decimal_integer_literal" | "double_literal" | "integer_literal" => {
+                CallArg::Literal(node_text(child, src))
+            }
+            "boolean_literal" | "null_literal" => CallArg::Literal(child.kind().to_string()),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
 
 /// Emit a TypeRef for a Dart `type_identifier` node.
 pub(super) fn emit_dart_type_ref(
@@ -93,6 +137,7 @@ pub(super) fn extract_dart_calls(
 
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee_node, refs);
                     if !target_name.is_empty() {
+                        let call_args = extract_dart_call_args(&child, src);
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name,
@@ -101,9 +146,9 @@ pub(super) fn extract_dart_calls(
                             module: None,
                             chain,
                             byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 extract_dart_calls(&child, src, source_symbol_index, refs);

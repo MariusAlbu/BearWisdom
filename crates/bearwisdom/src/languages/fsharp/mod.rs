@@ -15,7 +15,6 @@
 pub(crate) mod keywords;
 mod predicates;
 pub(crate) mod type_checker;
-pub(crate) mod connectors;
 pub(crate) mod resolve;
 pub mod extract;
 
@@ -71,23 +70,6 @@ impl LanguagePlugin for FSharpPlugin {
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::FSharpResolver))
     }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        // DI needs DB joins → moved to resolve_connection_points.
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        crate::languages::drive_connector(
-            &connectors::FSharpDiConnector, db, project_root, ctx,
-        )
-    }
-
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::FSharpChecker))

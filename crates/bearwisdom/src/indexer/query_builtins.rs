@@ -763,21 +763,6 @@ pub fn query_builtins_for_language(lang: &str) -> &'static [&'static str] {
             "val",
             "var",
         ],
-        "kotlin-sg" => &[
-            "Regex",
-            "class",
-            "enum",
-            "field",
-            "fromLiteral",
-            "interface",
-            "it",
-            "object",
-            "toRegex",
-            "typealias",
-            "typeof",
-            "val",
-            "var",
-        ],
         "lua" => &[
             "and",
             "do",
@@ -1436,41 +1421,6 @@ pub fn query_builtins_for_language(lang: &str) -> &'static [&'static str] {
             "val",
             "var",
             "with",
-        ],
-        "solidity" => &[
-            "abstract",
-            "assembly",
-            "calldata",
-            "constant",
-            "contract",
-            "delete",
-            "emit",
-            "enum",
-            "event",
-            "external",
-            "function",
-            "indexed",
-            "interface",
-            "internal",
-            "is",
-            "layout",
-            "library",
-            "memory",
-            "modifier",
-            "new",
-            "payable",
-            "pragma",
-            "private",
-            "public",
-            "pure",
-            "return",
-            "returns",
-            "storage",
-            "struct",
-            "type",
-            "using",
-            "var",
-            "view",
         ],
         "starlark" => &[
             "TypeAlias",
@@ -2203,16 +2153,6 @@ pub fn locals_scm_for_language(lang: &str) -> Option<&'static str> {
 \n\
 (identifier) @local.reference\n\
 \n\
-"),
-        "solidity" => Some("(function_definition) @local.scope\n\
-(block_statement) @local.scope\n\
-\n\
-(function_definition (parameter name: (_) @local.definition))\n\
-\n\
-; still have to support tuple assignments\n\
-(assignment_expression left: (_) @local.definition)\n\
-\n\
-(identifier) @local.reference\n\
 "),
         "starlark" => Some(";;; Program structure\n\
 (module) @scope\n\

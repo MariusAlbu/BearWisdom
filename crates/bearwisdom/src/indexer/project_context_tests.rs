@@ -150,6 +150,7 @@ mod m2_tests {
                 kind: Some("npm".into()),
                 manifest: Some("server/package.json".into()),
                 declared_name: None,
+                is_publishable: true,
             },
             PackageInfo {
                 id: Some(2),
@@ -158,6 +159,7 @@ mod m2_tests {
                 kind: Some("npm".into()),
                 manifest: Some("web/package.json".into()),
                 declared_name: None,
+                is_publishable: true,
             },
         ];
 
@@ -212,6 +214,7 @@ mod m2_tests {
             kind: Some("npm".into()),
             manifest: Some("package.json".into()),
             declared_name: None,
+            is_publishable: true,
         }];
 
         let ctx = build_project_context_with_packages(root, &packages);
@@ -238,6 +241,7 @@ mod m2_tests {
                 kind: Some("npm".into()),
                 manifest: Some("server/package.json".into()),
                 declared_name: None,
+                is_publishable: true,
             },
             PackageInfo {
                 id: Some(2),
@@ -246,6 +250,7 @@ mod m2_tests {
                 kind: None,
                 manifest: None,
                 declared_name: None,
+                is_publishable: true,
             },
         ];
 
@@ -536,6 +541,7 @@ mod per_package_activation_tests {
                 kind: Some("npm".into()),
                 manifest: Some("apps/web/package.json".into()),
                 declared_name: None,
+                is_publishable: true,
             },
             PackageInfo {
                 id: Some(2),
@@ -544,6 +550,7 @@ mod per_package_activation_tests {
                 kind: Some("npm".into()),
                 manifest: Some("services/api/package.json".into()),
                 declared_name: None,
+                is_publishable: true,
             },
         ];
 
@@ -590,6 +597,7 @@ mod per_package_activation_tests {
                 kind: Some("npm".into()),
                 manifest: Some("apps/web/package.json".into()),
                 declared_name: None,
+                is_publishable: true,
             },
             PackageInfo {
                 id: Some(2),
@@ -598,6 +606,7 @@ mod per_package_activation_tests {
                 kind: Some("npm".into()),
                 manifest: Some("services/api/package.json".into()),
                 declared_name: None,
+                is_publishable: true,
             },
         ];
 
@@ -668,6 +677,7 @@ mod per_package_activation_tests {
                 kind: Some("kotlin".into()),
                 manifest: None,
                 declared_name: None,
+                is_publishable: true,
             },
             PackageInfo {
                 id: Some(2),
@@ -676,6 +686,7 @@ mod per_package_activation_tests {
                 kind: Some("python".into()),
                 manifest: None,
                 declared_name: None,
+                is_publishable: true,
             },
         ];
 
@@ -742,6 +753,7 @@ mod per_package_activation_tests {
                 kind: Some("kotlin".into()),
                 manifest: None,
                 declared_name: None,
+                is_publishable: true,
             },
             PackageInfo {
                 id: Some(2),
@@ -750,6 +762,7 @@ mod per_package_activation_tests {
                 kind: Some("kotlin".into()),
                 manifest: None,
                 declared_name: None,
+                is_publishable: true,
             },
         ];
 
@@ -798,6 +811,7 @@ mod per_package_activation_tests {
             kind: Some("go".into()),
             manifest: None,
             declared_name: None,
+            is_publishable: true,
         }];
 
         // Per-package language presence: tool only sees Go files.
@@ -854,6 +868,7 @@ mod per_package_activation_tests {
             kind: Some("go".into()),
             manifest: None,
             declared_name: None,
+            is_publishable: true,
         }];
 
         let mut per_pkg: HashMap<i64, HashSet<String>> = HashMap::new();

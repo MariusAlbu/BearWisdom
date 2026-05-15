@@ -301,4 +301,164 @@ impl LanguageResolver for DartResolver {
 
         None
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        if let Some(chain) = r.chain.as_ref() {
+            if let Some(em) = detect_dart_http_chain(chain, &r.call_args) {
+                return vec![em];
+            }
+            if let Some(em) = detect_dart_drift_emission(chain) {
+                return vec![em];
+            }
+            if let Some(em) = detect_dart_grpc_emission(chain) {
+                return vec![em];
+            }
+        }
+        if let Some(em) = detect_dart_shelf_route(r.target_name.as_str(), &r.call_args) {
+            return vec![em];
+        }
+        Vec::new()
+    }
 }
+
+pub(crate) fn detect_dart_shelf_route(
+    target_name: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    // Router pattern: `router.get('/x', handler)` shows up as chain — handled elsewhere.
+    // Shelf top-level Router DSL bare-calls.
+    let method = match target_name {
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "patch" => HttpMethod::Patch,
+        "delete" => HttpMethod::Delete,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) if s.starts_with('/') => Some(s.as_str()),
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Consumer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_dart_http_chain(
+    chain: &crate::types::MemberChain,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    if chain.segments.len() < 2 {
+        return None;
+    }
+    let leaf = chain.segments.last()?.name.as_str();
+    let method = match leaf {
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "patch" => HttpMethod::Patch,
+        "delete" => HttpMethod::Delete,
+        _ => return None,
+    };
+    let root = chain.segments[0].name.as_str();
+    // Dio / http.Client / dart:io HttpClient — Producer.
+    // Restrict to common client identifiers to avoid hijacking shelf's
+    // `router.get(...)` Consumer path.
+    if !matches!(root, "dio" | "http" | "client" | "_client" | "Dio") {
+        return None;
+    }
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Producer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_dart_drift_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    if chain.segments.len() < 2 {
+        return None;
+    }
+    // Drift `select(users).get()` / `update(users).write(...)`.
+    let root = chain.segments[0].name.as_str();
+    let leaf = chain.segments.last()?.name.as_str();
+    let op = match root {
+        "select" => DbQueryOp::Select,
+        "insert" => DbQueryOp::Insert,
+        "update" => DbQueryOp::Update,
+        "delete" => DbQueryOp::Delete,
+        _ => return None,
+    };
+    if !matches!(
+        leaf,
+        "get" | "getSingle" | "watch" | "write" | "insert" | "go" | "go!" | "do"
+    ) {
+        return None;
+    }
+    Some(FlowEmission::DbQuery {
+        entity_name: "dart.*".to_string(),
+        operation: op,
+    })
+}
+
+pub(crate) fn detect_dart_grpc_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    if chain.segments.len() < 2 {
+        return None;
+    }
+    let root = chain.segments[0].name.as_str();
+    if !root.ends_with("Client") || root == "Client" {
+        return None;
+    }
+    let leaf = chain.segments.last()?.name.as_str();
+    if matches!(leaf, "shutdown" | "terminate") {
+        return None;
+    }
+    let service = root.strip_suffix("Client").unwrap_or(root);
+    use crate::indexer::resolve::flow_emit::StreamKind;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::RpcCall,
+        name: format!("{}.{}", service, leaf),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: Some(StreamKind::from_method_name(leaf)),
+    })
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;

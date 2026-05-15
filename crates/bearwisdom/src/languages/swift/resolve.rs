@@ -236,7 +236,173 @@ impl LanguageResolver for SwiftResolver {
     ) -> Option<String> {
         infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        // Vapor `app.get("/x") { ... }`, `app.post(...)` etc. — bare call,
+        // first arg is the URL.
+        if r.chain.is_none() {
+            if let Some(em) = detect_swift_vapor_route(r.target_name.as_str(), &r.call_args) {
+                return vec![em];
+            }
+            return Vec::new();
+        }
+        let chain = r.chain.as_ref().unwrap();
+        if let Some(em) = detect_swift_http_chain(chain, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_swift_grdb_emission(chain) {
+            return vec![em];
+        }
+        if let Some(em) = detect_swift_grpc_emission(chain) {
+            return vec![em];
+        }
+        Vec::new()
+    }
 }
+
+pub(crate) fn detect_swift_vapor_route(
+    target_name: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let method = match target_name {
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "patch" => HttpMethod::Patch,
+        "delete" => HttpMethod::Delete,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) => Some(s.as_str()),
+        _ => None,
+    })?;
+    if url.is_empty() {
+        return None;
+    }
+    // Vapor uses path components without leading slash — emit as Consumer.
+    let normalised = if url.starts_with('/') {
+        url.to_string()
+    } else {
+        format!("/{}", url)
+    };
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(&normalised),
+        role: ChannelRole::Consumer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_swift_http_chain(
+    chain: &crate::types::MemberChain,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    if chain.segments.len() < 2 {
+        return None;
+    }
+    let leaf = chain.segments.last()?.name.as_str();
+    // Alamofire: `AF.request("/x", method: .get)` — Producer with any method.
+    // URLSession dataTask is detected via `URLSession`/`session` chain.
+    if leaf == "request" {
+        let url = call_args.iter().find_map(|a| match a {
+            CallArg::StringLit(s)
+                if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+            {
+                Some(s.as_str())
+            }
+            _ => None,
+        })?;
+        let root = chain.segments[0].name.as_str();
+        if !matches!(root, "AF" | "Alamofire" | "session" | "URLSession") {
+            return None;
+        }
+        return Some(FlowEmission::NamedChannel {
+            kind: NamedChannelKind::HttpCall,
+            name: crate::connectors::url_pattern::normalize(url),
+            role: ChannelRole::Producer,
+            method: Some(HttpMethod::Any),
+        streaming: None,
+        });
+    }
+    None
+}
+
+pub(crate) fn detect_swift_grdb_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    if chain.segments.len() < 2 {
+        return None;
+    }
+    let root = chain.segments[0].name.as_str();
+    let leaf = chain.segments.last()?.name.as_str();
+    if !root.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+        return None;
+    }
+    let op = match leaf {
+        "fetchAll" | "fetchOne" | "fetchCursor" | "filter" | "order" | "select" | "all" => {
+            DbQueryOp::Select
+        }
+        "insert" | "create" => DbQueryOp::Insert,
+        "update" => DbQueryOp::Update,
+        "delete" | "deleteAll" => DbQueryOp::Delete,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: format!("swift.{}", root),
+        operation: op,
+    })
+}
+
+pub(crate) fn detect_swift_grpc_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    if chain.segments.len() < 2 {
+        return None;
+    }
+    let root = chain.segments[0].name.as_str();
+    if !(root.ends_with("Client") || root.ends_with("AsyncClient")) || root == "Client" {
+        return None;
+    }
+    let leaf = chain.segments.last()?.name.as_str();
+    if matches!(leaf, "init") {
+        return None;
+    }
+    let service = root
+        .strip_suffix("AsyncClient")
+        .or_else(|| root.strip_suffix("Client"))
+        .unwrap_or(root);
+    use crate::indexer::resolve::flow_emit::StreamKind;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::RpcCall,
+        name: format!("{}.{}", service, leaf),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: Some(StreamKind::from_method_name(leaf)),
+    })
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;
 
 fn manifest_dep_match(
     project_ctx: Option<&ProjectContext>,

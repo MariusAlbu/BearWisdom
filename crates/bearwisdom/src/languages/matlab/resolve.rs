@@ -114,4 +114,61 @@ impl LanguageResolver for MatlabResolver {
 
         None
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        use crate::indexer::resolve::flow_emit::{
+            ChannelRole, DbQueryOp, FlowEmission, HttpMethod, NamedChannelKind,
+        };
+        use crate::types::CallArg;
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let target = r.target_name.as_str();
+        // webread/webwrite/urlread Producer.
+        if matches!(target, "webread" | "webwrite" | "urlread" | "urlwrite" | "websave") {
+            let url = r.call_args.iter().find_map(|a| match a {
+                CallArg::StringLit(s)
+                    if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+                {
+                    Some(s.as_str())
+                }
+                _ => None,
+            });
+            if let Some(url) = url {
+                return vec![FlowEmission::NamedChannel {
+                    kind: NamedChannelKind::HttpCall,
+                    name: crate::connectors::url_pattern::normalize(url),
+                    role: ChannelRole::Producer,
+                    method: Some(HttpMethod::Any),
+                streaming: None,
+                }];
+            }
+        }
+        // Database Toolbox: fetch / exec.
+        if matches!(target, "fetch" | "exec") {
+            let sql = r.call_args.iter().find_map(|a| match a {
+                CallArg::StringLit(s) => Some(s.as_str()),
+                _ => None,
+            });
+            if let Some(sql) = sql {
+                let upper = sql.to_ascii_uppercase();
+                if upper.contains("SELECT") || upper.contains("FROM ") {
+                    return vec![FlowEmission::DbQuery {
+                        entity_name: "matlab.*".to_string(),
+                        operation: DbQueryOp::Select,
+                    }];
+                }
+            }
+        }
+        Vec::new()
+    }
 }
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;

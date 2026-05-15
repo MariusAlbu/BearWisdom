@@ -9,7 +9,6 @@
 // dependency on the legacy `connectors/nestjs_routes.rs` module.
 // =============================================================================
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -17,83 +16,81 @@ use regex::Regex;
 use rusqlite::Connection;
 use tracing::debug;
 
-use crate::connectors::traits::{Connector, ConnectorDescriptor};
-use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{
-    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
-};
 
 // ===========================================================================
 // NestJS
 // ===========================================================================
 
-pub struct NestjsRouteConnector;
-
-impl Connector for NestjsRouteConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "nestjs_routes",
-            protocols: &[Protocol::Rest],
-            languages: &["typescript"],
+/// NestJS @Controller / @Get etc. cross-file scan + `routes` table
+/// population. The routes-table → FlowEmission bridge in resolve/mod.rs
+/// handles downstream flow_edges emission.
+///
+/// Returns the count of routes written to the `routes` table.
+pub fn discover_nestjs_routes(
+    conn: &Connection,
+    project_root: &Path,
+    ctx: &ProjectContext,
+) -> u32 {
+    if !ctx.has_dependency(ManifestKind::Npm, "@nestjs/core")
+        && !ctx.has_dependency(ManifestKind::Npm, "@nestjs/common")
+    {
+        return 0;
+    }
+    let routes = match extract_nestjs_routes(conn, project_root) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("NestJS route detection failed: {e}");
+            return 0;
+        }
+    };
+    let mut inserted: u32 = 0;
+    for r in &routes {
+        if insert_ts_route(
+            conn,
+            r.file_id,
+            r.symbol_id,
+            &r.http_method,
+            &r.route_template,
+            r.line,
+        ) {
+            inserted += 1;
         }
     }
-
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Npm, "@nestjs/core")
-            || ctx.has_dependency(ManifestKind::Npm, "@nestjs/common")
-    }
-
-    fn extract(
-        &self,
-        conn: &Connection,
-        project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
-        let routes = extract_nestjs_routes(conn, project_root)
-            .context("NestJS route detection failed")?;
-
-        Ok(routes
-            .into_iter()
-            .map(|r| ConnectionPoint {
-                file_id: r.file_id,
-                symbol_id: r.symbol_id,
-                line: r.line,
-                protocol: Protocol::Rest,
-                direction: FlowDirection::Stop,
-                key: r.route_template,
-                method: r.http_method,
-                framework: "nestjs".to_string(),
-                metadata: None,
-            })
-            .collect())
-    }
+    inserted
 }
 
 // ===========================================================================
 // Next.js
 // ===========================================================================
 
-pub struct NextjsRouteConnector;
-
-impl Connector for NextjsRouteConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "nextjs_routes",
-            protocols: &[Protocol::Rest],
-            languages: &["typescript", "tsx", "javascript", "jsx"],
+/// Next.js Pages Router + App Router file-based routing scan + `routes`
+/// table population. The routes-table → FlowEmission bridge in
+/// resolve/mod.rs handles downstream flow_edges emission.
+///
+/// Returns the count of routes written to the `routes` table.
+pub fn discover_nextjs_routes(
+    conn: &Connection,
+    project_root: &Path,
+    ctx: &ProjectContext,
+) -> u32 {
+    if !ctx.has_dependency(ManifestKind::Npm, "next") {
+        return 0;
+    }
+    match _nextjs_routes_inner(conn, project_root) {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!("Next.js route detection failed: {e}");
+            0
         }
     }
+}
 
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Npm, "next")
-    }
-
-    fn extract(
-        &self,
-        conn: &Connection,
-        project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
+fn _nextjs_routes_inner(
+    conn: &Connection,
+    project_root: &Path,
+) -> Result<u32> {
         // Matches [param] and [...param] dynamic segments.
         let re_dynamic = Regex::new(r"\[\.\.\.(\w+)\]|\[(\w+)\]")
             .expect("nextjs dynamic segment regex");
@@ -116,7 +113,7 @@ impl Connector for NextjsRouteConnector {
             .collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect Next.js file rows")?;
 
-        let mut points = Vec::new();
+        let mut inserted: u32 = 0;
 
         for (file_id, rel_path) in files {
             // Normalise separators for consistent matching on Windows.
@@ -145,18 +142,11 @@ impl Connector for NextjsRouteConnector {
                     format!("/api/{route_part}")
                 };
 
-                // Pages Router handlers export a default function — no method constraint.
-                points.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: None,
-                    line: 1,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Stop,
-                    key: route,
-                    method: String::new(), // matches any HTTP method
-                    framework: "nextjs".to_string(),
-                    metadata: None,
-                });
+                // Pages Router handlers export a default function — no method
+                // constraint. Empty `http_method` denotes "any method".
+                if insert_ts_route(conn, file_id, None, "", &route, 1) {
+                    inserted += 1;
+                }
                 continue;
             }
 
@@ -193,41 +183,47 @@ impl Connector for NextjsRouteConnector {
                     for (line_idx, line_text) in source.lines().enumerate() {
                         if let Some(cap) = re_method.captures(line_text) {
                             let method = cap[1].to_string();
-                            points.push(ConnectionPoint {
+                            if insert_ts_route(
+                                conn,
                                 file_id,
-                                symbol_id: None,
-                                line: (line_idx + 1) as u32,
-                                protocol: Protocol::Rest,
-                                direction: FlowDirection::Stop,
-                                key: route.clone(),
-                                method,
-                                framework: "nextjs".to_string(),
-                                metadata: None,
-                            });
+                                None,
+                                &method,
+                                &route,
+                                (line_idx + 1) as u32,
+                            ) {
+                                inserted += 1;
+                            }
                             found_any = true;
                         }
                     }
 
                     // No explicit exports found — treat the file as handling GET.
-                    if !found_any {
-                        points.push(ConnectionPoint {
-                            file_id,
-                            symbol_id: None,
-                            line: 1,
-                            protocol: Protocol::Rest,
-                            direction: FlowDirection::Stop,
-                            key: route,
-                            method: "GET".to_string(),
-                            framework: "nextjs".to_string(),
-                            metadata: None,
-                        });
+                    if !found_any && insert_ts_route(conn, file_id, None, "GET", &route, 1) {
+                        inserted += 1;
                     }
                 }
             }
         }
 
-        Ok(points)
-    }
+    Ok(inserted)
+}
+
+/// Insert a single TS-discovered route row. Returns true on insert.
+fn insert_ts_route(
+    conn: &Connection,
+    file_id: i64,
+    symbol_id: Option<i64>,
+    http_method: &str,
+    route: &str,
+    line: u32,
+) -> bool {
+    let result = conn.execute(
+        "INSERT OR IGNORE INTO routes
+           (file_id, symbol_id, http_method, route_template, resolved_route, line)
+         VALUES (?1, ?2, ?3, ?4, ?4, ?5)",
+        rusqlite::params![file_id, symbol_id, http_method, route, line],
+    );
+    matches!(result, Ok(n) if n > 0)
 }
 
 // ===========================================================================
@@ -469,67 +465,6 @@ impl<T> OptionalExt<T> for rusqlite::Result<T> {
         }
     }
 }
-
-// ===========================================================================
-// TauriIpcTsConnector — TypeScript start-side (invoke() calls + listen())
-// ===========================================================================
-
-pub struct TauriIpcTsConnector;
-
-impl Connector for TauriIpcTsConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "tauri_ipc_ts",
-            protocols: &[Protocol::Ipc],
-            languages: &["typescript", "tsx", "javascript", "jsx"],
-        }
-    }
-
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Cargo, "tauri")
-    }
-
-    fn extract(
-        &self,
-        _conn: &Connection,
-        _project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
-        // Flattened into `TypeScriptPlugin::extract_connection_points` →
-        // `extract_tauri_ipc_ts_src` (invoke() Start + listen() Stop).
-        Ok(Vec::new())
-    }
-}
-
-
-// ===========================================================================
-// ElectronIpcConnector — TypeScript/JavaScript only
-// ===========================================================================
-
-pub struct ElectronIpcConnector;
-
-impl Connector for ElectronIpcConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "electron_ipc",
-            protocols: &[Protocol::Ipc],
-            languages: &["typescript", "tsx", "javascript", "jsx"],
-        }
-    }
-
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Npm, "electron")
-    }
-
-    fn extract(
-        &self,
-        _conn: &Connection,
-        _project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
-        // Flattened into `extract_electron_ipc_src`.
-        Ok(Vec::new())
-    }
-}
-
 
 // ===========================================================================
 // React patterns post-index hook + inlined helpers
@@ -1221,209 +1156,16 @@ mod react_patterns_tests {
 }
 
 // ===========================================================================
-// TypeScriptRestConnector — HTTP client call starts + route stops for TS/JS
-// ===========================================================================
-
-pub struct TypeScriptRestConnector;
-
-impl Connector for TypeScriptRestConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "typescript_rest",
-            protocols: &[Protocol::Rest],
-            languages: &["typescript", "tsx", "javascript", "jsx"],
-        }
-    }
-
-    fn detect(&self, _ctx: &ProjectContext) -> bool {
-        true
-    }
-
-    fn extract(
-        &self,
-        conn: &Connection,
-        _project_root: &Path,
-    ) -> Result<Vec<ConnectionPoint>> {
-        // Starts (fetch/axios) migrated into `extract_ts_rest_starts_src`.
-        // Stops come from the `routes` table (populated during parse).
-        let mut points = Vec::new();
-        extract_ts_rest_stops(conn, &mut points)?;
-        Ok(points)
-    }
-}
-
-fn extract_ts_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> Result<()> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT r.file_id, r.symbol_id, r.line, r.http_method,
-                    COALESCE(r.resolved_route, r.route_template)
-             FROM routes r
-             JOIN files f ON f.id = r.file_id
-             WHERE f.language IN ('typescript', 'tsx', 'javascript', 'jsx')
-               AND r.http_method != '' AND r.route_template != ''",
-        )
-        .context("Failed to prepare TS REST stops query")?;
-
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<i64>>(1)?,
-                row.get::<_, Option<u32>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })
-        .context("Failed to query TS routes")?;
-
-    for row in rows {
-        let (file_id, symbol_id, line, method, route) =
-            row.context("Failed to read TS route row")?;
-        out.push(ConnectionPoint {
-            file_id,
-            symbol_id,
-            line: line.unwrap_or(0),
-            protocol: Protocol::Rest,
-            direction: FlowDirection::Stop,
-            key: route,
-            method: method.to_uppercase(),
-            framework: String::new(),
-            metadata: None,
-        });
-    }
-    Ok(())
-}
-
-fn ts_rest_is_test_or_config_file(rel_path: &str) -> bool {
-    let lower = rel_path.to_lowercase();
-    lower.contains("_test.")
-        || lower.contains(".test.")
-        || lower.contains(".spec.")
-        || lower.contains(".config.")
-        || lower.contains("__tests__")
-        || lower.contains("/node_modules/")
-        || lower.contains("/vendor/")
-        || lower.ends_with(".min.js")
-        || lower.contains("/e2e/")
-        || lower.contains("/cypress/")
-}
-
-fn ts_rest_looks_like_api_url(s: &str) -> bool {
-    // For TS/JS frontend calls, reject absolute URLs (they don't match local stops)
-    if s.starts_with("http://") || s.starts_with("https://") {
-        return false;
-    }
-    let lower = s.to_lowercase();
-    if let Some(last_seg) = lower.rsplit('/').next() {
-        if last_seg.contains('.') {
-            let ext = lower.rsplit('.').next().unwrap_or("");
-            if matches!(
-                ext,
-                "svg" | "png" | "jpg" | "jpeg" | "gif" | "ico" | "webp"
-                    | "css" | "js" | "html" | "htm" | "xml" | "json"
-                    | "txt" | "md"
-            ) {
-                return false;
-            }
-        }
-    }
-    s.starts_with('/')
-        || s.contains("/api/")
-        || s.contains("/v1/")
-        || s.contains("/v2/")
-        || s.contains("/v3/")
-        || s.starts_with("api/")
-        || s.contains("/${")
-        || s.contains("/{")
-}
-
-fn rest_normalise_url_pattern(raw: &str) -> String {
-    let without_query = raw.split('?').next().unwrap_or(raw);
-    let re_tmpl = Regex::new(r"\$\{[^}]+\}").expect("template regex");
-    re_tmpl.replace_all(without_query, "{param}").into_owned()
-}
-
-// ===========================================================================
-// TypeScriptMqConnector — Message queue producer/consumer connection points
-// ===========================================================================
-
-/// Detects TypeScript/JavaScript message queue patterns for:
-///   - kafkajs: `producer.send({ topic: "name", ... })` (producer)
-///              `consumer.subscribe({ topic: "name" })` (consumer)
-///              `@Subscribe("topic")` decorator (consumer)
-///   - amqplib (RabbitMQ): `channel.publish("exchange", "routingKey", ...)` (producer)
-///                          `channel.consume("queue", ...)` (consumer)
-///   - bullmq / bull: `new Queue("queue-name")` + `@Processor("queue-name")` (consumer)
-pub struct TypeScriptMqConnector;
-
-impl Connector for TypeScriptMqConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "typescript_mq",
-            protocols: &[Protocol::MessageQueue],
-            languages: &["typescript", "tsx", "javascript", "jsx"],
-        }
-    }
-
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Npm, "kafkajs")
-            || ctx.has_dependency(ManifestKind::Npm, "kafka-node")
-            || ctx.has_dependency(ManifestKind::Npm, "amqplib")
-            || ctx.has_dependency(ManifestKind::Npm, "amqp-connection-manager")
-            || ctx.has_dependency(ManifestKind::Npm, "bullmq")
-            || ctx.has_dependency(ManifestKind::Npm, "bull")
-            || ctx.has_dependency(ManifestKind::Npm, "@nestjs/microservices")
-    }
-
-    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // Flattened into `extract_ts_mq_src`.
-        Ok(Vec::new())
-    }
-}
-
-// ===========================================================================
 // TypeScriptGraphQlConnector — GraphQL schema starts + resolver stops
 // ===========================================================================
 
-/// Detects TypeScript/JavaScript GraphQL operations and resolver implementations.
-///
-/// Start points: `gql` template literals containing `type Query { ... }`,
-///               `type Mutation { ... }`, or `type Subscription { ... }`.
-/// Stop points:  resolver map functions (Apollo Server, Mercurius, GraphQL Yoga).
-pub struct TypeScriptGraphQlConnector;
-
-impl Connector for TypeScriptGraphQlConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "typescript_graphql",
-            protocols: &[Protocol::GraphQl],
-            languages: &["typescript", "tsx", "javascript", "jsx"],
-        }
-    }
-
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_dependency(ManifestKind::Npm, "graphql")
-            || ctx.has_dependency(ManifestKind::Npm, "@apollo/server")
-            || ctx.has_dependency(ManifestKind::Npm, "apollo-server")
-            || ctx.has_dependency(ManifestKind::Npm, "@apollo/client")
-            || ctx.has_dependency(ManifestKind::Npm, "mercurius")
-            || ctx.has_dependency(ManifestKind::Npm, "graphql-yoga")
-            || ctx.has_dependency(ManifestKind::Npm, "type-graphql")
-            || ctx.has_dependency(ManifestKind::Npm, "nexus")
-    }
-
-    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // Moved into `TypeScriptPlugin::extract_connection_points`.
-        Ok(Vec::new())
-    }
-}
-
-/// Per-file TS/JS GraphQL scan: SDL type blocks (Start), Apollo resolver
-/// maps (Stop), type-graphql `@Query() / @Mutation()` decorators (Stop).
-/// Invoked from `TypeScriptPlugin::extract_connection_points`.
-pub fn extract_typescript_graphql(source: &str) -> Vec<crate::types::ConnectionPoint> {
-    use crate::types::{ConnectionKind, ConnectionPoint as AP, ConnectionRole};
-    use std::collections::HashMap;
+/// Per-file TS/JS GraphQL scan: SDL type blocks produce Producer emissions,
+/// Apollo resolver maps and type-graphql `@Query() / @Mutation()` decorators
+/// produce Consumer emissions, all keyed by GraphQL field name.
+pub fn extract_typescript_graphql(
+    source: &str,
+) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
 
     let re_type_block = Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{")
         .expect("gql type block regex");
@@ -1446,20 +1188,20 @@ pub fn extract_typescript_graphql(source: &str) -> Vec<crate::types::ConnectionP
         return Vec::new();
     }
 
-    let mut out: Vec<AP> = Vec::new();
-    let mut current_op_type: Option<String> = None;
+    let mut out: Vec<(u32, FlowEmission)> = Vec::new();
+    let mut in_op_block = false;
     let mut brace_depth: u32 = 0;
 
     for (line_idx, line_text) in source.lines().enumerate() {
         let line_no = (line_idx + 1) as u32;
 
-        if let Some(cap) = re_type_block.captures(line_text) {
-            current_op_type = Some(cap[1].to_lowercase());
+        if re_type_block.is_match(line_text) {
+            in_op_block = true;
             brace_depth = 1;
             continue;
         }
 
-        if current_op_type.is_some() {
+        if in_op_block {
             for ch in line_text.chars() {
                 match ch {
                     '{' => brace_depth += 1,
@@ -1470,26 +1212,23 @@ pub fn extract_typescript_graphql(source: &str) -> Vec<crate::types::ConnectionP
                 }
             }
             if brace_depth == 0 {
-                current_op_type = None;
+                in_op_block = false;
                 continue;
             }
             if brace_depth == 1 {
                 if let Some(cap) = re_field.captures(line_text) {
                     let field_name = cap[1].to_string();
                     if !field_name.starts_with("__") {
-                        let mut meta = HashMap::new();
-                        if let Some(op) = current_op_type.as_deref() {
-                            meta.insert("method".to_string(), op.to_string());
-                        }
-                        out.push(AP {
-                            kind: ConnectionKind::GraphQL,
-                            role: ConnectionRole::Start,
-                            key: field_name,
-                            line: line_no,
-                            col: 1,
-                            symbol_qname: String::new(),
-                            meta,
-                        });
+                        out.push((
+                            line_no,
+                            FlowEmission::NamedChannel {
+                                kind: NamedChannelKind::GraphQLOp,
+                                name: field_name,
+                                role: ChannelRole::Producer,
+                                method: None,
+                                streaming: None,
+                            },
+                        ));
                     }
                 }
             }
@@ -1504,565 +1243,56 @@ pub fn extract_typescript_graphql(source: &str) -> Vec<crate::types::ConnectionP
             ) {
                 continue;
             }
-            let mut meta = HashMap::new();
-            meta.insert("framework".to_string(), "apollo".to_string());
-            out.push(AP {
-                kind: ConnectionKind::GraphQL,
-                role: ConnectionRole::Stop,
-                key: name,
-                line: line_no,
-                col: 1,
-                symbol_qname: String::new(),
-                meta,
-            });
+            out.push((
+                line_no,
+                FlowEmission::NamedChannel {
+                    kind: NamedChannelKind::GraphQLOp,
+                    name,
+                    role: ChannelRole::Consumer,
+                    method: None,
+                    streaming: None,
+                },
+            ));
         }
 
         if re_typegraphql_op.is_match(line_text) {
-            let mut meta = HashMap::new();
-            meta.insert("framework".to_string(), "type-graphql".to_string());
-            out.push(AP {
-                kind: ConnectionKind::GraphQL,
-                role: ConnectionRole::Stop,
-                key: String::new(),
-                line: line_no,
-                col: 1,
-                symbol_qname: String::new(),
-                meta,
-            });
+            out.push((
+                line_no,
+                FlowEmission::NamedChannel {
+                    kind: NamedChannelKind::GraphQLOp,
+                    name: String::new(),
+                    role: ChannelRole::Consumer,
+                    method: None,
+                    streaming: None,
+                },
+            ));
         }
     }
 
     out
 }
-
-fn extract_ts_graphql_points(
-    source: &str,
-    file_id: i64,
-    re_type_block: &Regex,
-    re_field: &Regex,
-    re_resolver_key: &Regex,
-    re_typegraphql_op: &Regex,
-    out: &mut Vec<ConnectionPoint>,
-) {
-    let mut current_op_type: Option<String> = None;
-    let mut brace_depth: u32 = 0;
-
-    for (line_idx, line_text) in source.lines().enumerate() {
-        let line_no = (line_idx + 1) as u32;
-
-        // Detect GraphQL type blocks to emit Start points.
-        if let Some(cap) = re_type_block.captures(line_text) {
-            current_op_type = Some(cap[1].to_lowercase());
-            brace_depth = 1;
-            continue;
-        }
-
-        if let Some(ref _op_type) = current_op_type {
-            for ch in line_text.chars() {
-                match ch {
-                    '{' => brace_depth += 1,
-                    '}' => {
-                        if brace_depth > 0 {
-                            brace_depth -= 1;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            if brace_depth == 0 {
-                current_op_type = None;
-                continue;
-            }
-
-            if brace_depth == 1 {
-                if let Some(cap) = re_field.captures(line_text) {
-                    let field_name = cap[1].to_string();
-                    if !field_name.starts_with("__") {
-                        out.push(ConnectionPoint {
-                            file_id,
-                            symbol_id: None,
-                            line: line_no,
-                            protocol: Protocol::GraphQl,
-                            direction: FlowDirection::Start,
-                            key: field_name,
-                            method: current_op_type.clone().unwrap_or_default(),
-                            framework: String::new(),
-                            metadata: None,
-                        });
-                    }
-                }
-            }
-            continue;
-        }
-
-        // Resolver map entries — Stop points.
-        for cap in re_resolver_key.captures_iter(line_text) {
-            let name = cap[1].to_string();
-            // Exclude common non-resolver patterns.
-            if matches!(
-                name.as_str(),
-                "then" | "catch" | "finally" | "map" | "filter" | "reduce"
-            ) {
-                continue;
-            }
-            out.push(ConnectionPoint {
-                file_id,
-                symbol_id: None,
-                line: line_no,
-                protocol: Protocol::GraphQl,
-                direction: FlowDirection::Stop,
-                key: name,
-                method: String::new(),
-                framework: "apollo".to_string(),
-                metadata: None,
-            });
-        }
-
-        // type-graphql @Query() / @Mutation() decorators.
-        if re_typegraphql_op.is_match(line_text) {
-            out.push(ConnectionPoint {
-                file_id,
-                symbol_id: None,
-                line: line_no,
-                protocol: Protocol::GraphQl,
-                direction: FlowDirection::Stop,
-                key: String::new(), // name resolved from next function
-                method: String::new(),
-                framework: "type-graphql".to_string(),
-                metadata: None,
-            });
-        }
-    }
-}
-
-// ===========================================================================
-// Plugin-facing composer — called from TypeScriptPlugin::extract_connection_points
-// ===========================================================================
-
-/// Compose every source-scan-level TypeScript/JavaScript connector into the
-/// per-file points list the plugin hook returns.
-pub fn extract_typescript_connection_points(
-    source: &str,
-    file_path: &str,
-) -> Vec<AbstractPoint> {
-    let mut out = Vec::new();
-    out.extend(extract_typescript_graphql(source));
-    extract_tauri_ipc_ts_src(source, &mut out);
-    extract_electron_ipc_src(source, &mut out);
-    extract_ts_rest_starts_src(source, file_path, &mut out);
-    extract_ts_mq_src(source, file_path, &mut out);
-    out
-}
-
-fn push_ipc_point(
-    out: &mut Vec<AbstractPoint>,
-    role: ConnectionRole,
-    key: String,
-    line: u32,
-    framework: &str,
-) {
-    let mut meta = HashMap::new();
-    meta.insert("framework".to_string(), framework.to_string());
-    out.push(AbstractPoint {
-        kind: ConnectionKind::Ipc,
-        role,
-        key,
-        line,
-        col: 1,
-        symbol_qname: String::new(),
-        meta,
-    });
-}
-
-fn push_mq_point(
-    out: &mut Vec<AbstractPoint>,
-    role: ConnectionRole,
-    key: String,
-    line: u32,
-    framework: &str,
-) {
-    let mut meta = HashMap::new();
-    meta.insert("framework".to_string(), framework.to_string());
-    out.push(AbstractPoint {
-        kind: ConnectionKind::MessageQueue,
-        role,
-        key,
-        line,
-        col: 1,
-        symbol_qname: String::new(),
-        meta,
-    });
-}
-
-/// Tauri IPC on the TS/JS side: `invoke("cmd")` (Start) + `listen("event")` (Stop).
-pub fn extract_tauri_ipc_ts_src(source: &str, out: &mut Vec<AbstractPoint>) {
-    if !source.contains("invoke") && !source.contains("listen") {
-        return;
-    }
-    let re_invoke = Regex::new(
-        r#"invoke\s*(?:<[^>]*>)?\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
-    )
-    .expect("invoke regex");
-    let re_listen = Regex::new(
-        r#"(?:\.\s*)?listen\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
-    )
-    .expect("listen regex");
-
-    for (line_idx, line_text) in source.lines().enumerate() {
-        let line_no = (line_idx + 1) as u32;
-        for cap in re_invoke.captures_iter(line_text) {
-            let name = cap
-                .name("name1")
-                .or_else(|| cap.name("name2"))
-                .or_else(|| cap.name("name3"))
-                .map(|m| m.as_str().to_string());
-            if let Some(key) = name {
-                push_ipc_point(out, ConnectionRole::Start, key, line_no, "tauri");
-            }
-        }
-        for cap in re_listen.captures_iter(line_text) {
-            let name = cap
-                .name("name1")
-                .or_else(|| cap.name("name2"))
-                .or_else(|| cap.name("name3"))
-                .map(|m| m.as_str().to_string());
-            if let Some(key) = name {
-                push_ipc_point(out, ConnectionRole::Stop, key, line_no, "tauri");
-            }
-        }
-    }
-}
-
-/// Electron IPC: `ipcMain.handle/on` (Stop) + `ipcRenderer.invoke/send` (Start).
-pub fn extract_electron_ipc_src(source: &str, out: &mut Vec<AbstractPoint>) {
-    if !source.contains("ipcMain") && !source.contains("ipcRenderer") {
-        return;
-    }
-    let re_main = Regex::new(
-        r#"ipcMain\s*\.\s*(?:handle|on)\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
-    )
-    .expect("ipcMain regex");
-    let re_renderer = Regex::new(
-        r#"ipcRenderer\s*\.\s*(?:invoke|send)\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
-    )
-    .expect("ipcRenderer regex");
-
-    for (line_idx, line_text) in source.lines().enumerate() {
-        let line_no = (line_idx + 1) as u32;
-        for cap in re_main.captures_iter(line_text) {
-            let name = cap
-                .name("name1")
-                .or_else(|| cap.name("name2"))
-                .or_else(|| cap.name("name3"))
-                .map(|m| m.as_str().to_string());
-            if let Some(key) = name {
-                push_ipc_point(out, ConnectionRole::Stop, key, line_no, "electron");
-            }
-        }
-        for cap in re_renderer.captures_iter(line_text) {
-            let name = cap
-                .name("name1")
-                .or_else(|| cap.name("name2"))
-                .or_else(|| cap.name("name3"))
-                .map(|m| m.as_str().to_string());
-            if let Some(key) = name {
-                push_ipc_point(out, ConnectionRole::Start, key, line_no, "electron");
-            }
-        }
-    }
-}
-
-/// TS/JS REST client-call starts: `fetch("/url")`, `axios.get("/url")`.
-pub fn extract_ts_rest_starts_src(
-    source: &str,
-    file_path: &str,
-    out: &mut Vec<AbstractPoint>,
-) {
-    if ts_rest_is_test_or_config_file(file_path) {
-        return;
-    }
-    if !source.contains("fetch(") && !source.contains("axios.") {
-        return;
-    }
-
-    let re_fetch = Regex::new(
-        r#"fetch\s*\(\s*(?:\w+\s*\(\s*)?(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
-    )
-    .expect("fetch regex");
-    let re_axios = Regex::new(
-        r#"axios\.(?P<method>get|post|put|delete|patch|head)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
-    )
-    .expect("axios regex");
-    let re_method_extract =
-        Regex::new(r#"method\s*:\s*['"](?P<m>[A-Z]+)['"]"#).expect("method extract regex");
-
-    for (line_idx, line_text) in source.lines().enumerate() {
-        let line_no = (line_idx + 1) as u32;
-
-        for cap in re_fetch.captures_iter(line_text) {
-            let raw_url = cap
-                .name("url1")
-                .or_else(|| cap.name("url2"))
-                .or_else(|| cap.name("url3"))
-                .map(|m| m.as_str().to_string());
-            let Some(raw_url) = raw_url else { continue };
-            if !ts_rest_looks_like_api_url(&raw_url) {
-                continue;
-            }
-            let method = re_method_extract
-                .captures(line_text)
-                .and_then(|c| c.name("m"))
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_else(|| "GET".to_string());
-            let url_pattern = rest_normalise_url_pattern(&raw_url);
-            let mut meta = HashMap::new();
-            meta.insert("method".to_string(), method);
-            out.push(AbstractPoint {
-                kind: ConnectionKind::Rest,
-                role: ConnectionRole::Start,
-                key: url_pattern,
-                line: line_no,
-                col: 1,
-                symbol_qname: String::new(),
-                meta,
-            });
-        }
-
-        for cap in re_axios.captures_iter(line_text) {
-            let raw_url = cap
-                .name("url1")
-                .or_else(|| cap.name("url2"))
-                .or_else(|| cap.name("url3"))
-                .map(|m| m.as_str().to_string());
-            let Some(raw_url) = raw_url else { continue };
-            if !ts_rest_looks_like_api_url(&raw_url) {
-                continue;
-            }
-            let method = cap
-                .name("method")
-                .map(|m| m.as_str().to_uppercase())
-                .unwrap_or_else(|| "GET".to_string());
-            let url_pattern = rest_normalise_url_pattern(&raw_url);
-            let mut meta = HashMap::new();
-            meta.insert("method".to_string(), method);
-            out.push(AbstractPoint {
-                kind: ConnectionKind::Rest,
-                role: ConnectionRole::Start,
-                key: url_pattern,
-                line: line_no,
-                col: 1,
-                symbol_qname: String::new(),
-                meta,
-            });
-        }
-    }
-}
-
-/// TS/JS message queue detection: kafkajs, amqplib, bullmq.
-pub fn extract_ts_mq_src(source: &str, file_path: &str, out: &mut Vec<AbstractPoint>) {
-    let lower_path = file_path.to_lowercase();
-    if lower_path.contains("/node_modules/") || lower_path.ends_with(".min.js") {
-        return;
-    }
-    if !source.contains("producer")
-        && !source.contains("consumer")
-        && !source.contains("channel")
-        && !source.contains("@Processor")
-        && !source.contains("new Queue")
-    {
-        return;
-    }
-
-    let re_kafka_send = Regex::new(
-        r#"producer\.send\s*\(\s*\{[^}]*topic\s*:\s*['"`]([^'"`]+)['"`]"#,
-    )
-    .expect("ts kafka send regex");
-    let re_kafka_subscribe = Regex::new(
-        r#"consumer\.subscribe\s*\(\s*\{[^}]*topics?\s*:\s*(?:\[[^\]]*['"`]([^'"`]+)['"`]|['"`]([^'"`]+)['"`])"#,
-    )
-    .expect("ts kafka subscribe regex");
-    let re_amqp_publish = Regex::new(
-        r#"channel\.publish\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*['"`]([^'"`]+)['"`]"#,
-    )
-    .expect("ts amqp publish regex");
-    let re_amqp_consume = Regex::new(
-        r#"channel\.consume\s*\(\s*['"`]([^'"`]+)['"`]"#,
-    )
-    .expect("ts amqp consume regex");
-    let re_processor = Regex::new(
-        r#"@Processor\s*\(\s*['"`]([^'"`]+)['"`]"#,
-    )
-    .expect("ts bullmq processor regex");
-    let re_queue_ctor = Regex::new(
-        r#"new\s+Queue\s*\(\s*['"`]([^'"`]+)['"`]"#,
-    )
-    .expect("ts bullmq queue ctor regex");
-
-    for (line_idx, line_text) in source.lines().enumerate() {
-        let line_no = (line_idx + 1) as u32;
-
-        for cap in re_kafka_send.captures_iter(line_text) {
-            push_mq_point(out, ConnectionRole::Start, cap[1].to_string(), line_no, "kafka");
-        }
-        for cap in re_kafka_subscribe.captures_iter(line_text) {
-            let topic = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str().to_string());
-            if let Some(t) = topic {
-                push_mq_point(out, ConnectionRole::Stop, t, line_no, "kafka");
-            }
-        }
-        for cap in re_amqp_publish.captures_iter(line_text) {
-            push_mq_point(out, ConnectionRole::Start, cap[2].to_string(), line_no, "rabbitmq");
-        }
-        for cap in re_amqp_consume.captures_iter(line_text) {
-            push_mq_point(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "rabbitmq");
-        }
-        for cap in re_processor.captures_iter(line_text) {
-            push_mq_point(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "bullmq");
-        }
-        for cap in re_queue_ctor.captures_iter(line_text) {
-            push_mq_point(out, ConnectionRole::Start, cap[1].to_string(), line_no, "bullmq");
-        }
-    }
-}
-
-// ===========================================================================
-// Plugin-level tests (source-scan functions only — no DB fixtures)
-// ===========================================================================
 
 #[cfg(test)]
 mod plugin_tests {
     use super::*;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
 
     #[test]
-    fn tauri_invoke_is_start() {
-        let mut out = Vec::new();
-        extract_tauri_ipc_ts_src(
-            "await invoke('greet', { name: 'world' });",
-            &mut out,
-        );
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].kind, ConnectionKind::Ipc);
-        assert_eq!(out[0].role, ConnectionRole::Start);
-        assert_eq!(out[0].key, "greet");
-        assert_eq!(out[0].meta.get("framework").map(String::as_str), Some("tauri"));
-    }
-
-    #[test]
-    fn tauri_listen_is_stop() {
-        let mut out = Vec::new();
-        extract_tauri_ipc_ts_src("listen(\"tick\", handler)", &mut out);
-        let stops: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Stop).collect();
-        assert_eq!(stops.len(), 1);
-        assert_eq!(stops[0].key, "tick");
-    }
-
-    #[test]
-    fn electron_ipc_main_handle_is_stop() {
-        let mut out = Vec::new();
-        extract_electron_ipc_src(
-            "ipcMain.handle('file:save', async (e, path, content) => {})",
-            &mut out,
-        );
-        let stops: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Stop).collect();
-        assert_eq!(stops.len(), 1);
-        assert_eq!(stops[0].key, "file:save");
-    }
-
-    #[test]
-    fn electron_renderer_invoke_is_start() {
-        let mut out = Vec::new();
-        extract_electron_ipc_src("ipcRenderer.invoke('file:save', path, content)", &mut out);
-        let starts: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Start).collect();
-        assert_eq!(starts.len(), 1);
-        assert_eq!(starts[0].key, "file:save");
-    }
-
-    #[test]
-    fn ts_rest_fetch_emits_get_by_default() {
-        let src = "await fetch('/api/users/42')";
-        let mut out = Vec::new();
-        extract_ts_rest_starts_src(src, "src/client.ts", &mut out);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].key, "/api/users/42");
-        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("GET"));
-    }
-
-    #[test]
-    fn ts_rest_fetch_parses_method_option() {
-        let src = r#"await fetch('/api/users', { method: 'POST', body })"#;
-        let mut out = Vec::new();
-        extract_ts_rest_starts_src(src, "src/client.ts", &mut out);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("POST"));
-    }
-
-    #[test]
-    fn ts_rest_skips_test_files() {
-        let mut out = Vec::new();
-        extract_ts_rest_starts_src(
-            "fetch('/api/x')",
-            "src/client.test.ts",
-            &mut out,
-        );
-        assert!(out.is_empty());
-    }
-
-    #[test]
-    fn ts_rest_rejects_absolute_urls_on_client() {
-        let src = "await fetch('https://example.com/api/x')";
-        let mut out = Vec::new();
-        extract_ts_rest_starts_src(src, "src/client.ts", &mut out);
-        assert!(out.is_empty(), "absolute URLs don't match local stops");
-    }
-
-    #[test]
-    fn ts_mq_kafka_producer_start() {
-        let src = r#"producer.send({ topic: "orders", messages: [] })"#;
-        let mut out = Vec::new();
-        extract_ts_mq_src(src, "src/queue.ts", &mut out);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].key, "orders");
-        assert_eq!(out[0].meta.get("framework").map(String::as_str), Some("kafka"));
-        assert_eq!(out[0].role, ConnectionRole::Start);
-    }
-
-    #[test]
-    fn ts_mq_skips_node_modules() {
-        let src = r#"producer.send({ topic: "x" })"#;
-        let mut out = Vec::new();
-        extract_ts_mq_src(src, "src/node_modules/foo/index.ts", &mut out);
-        assert!(out.is_empty());
-    }
-
-    #[test]
-    fn ts_mq_bullmq_processor_is_stop() {
-        let src = r#"@Processor('notifications')\nclass X {}"#;
-        let mut out = Vec::new();
-        extract_ts_mq_src(src, "src/worker.ts", &mut out);
-        let stops: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Stop).collect();
-        assert_eq!(stops.len(), 1);
-        assert_eq!(stops[0].key, "notifications");
-    }
-
-    #[test]
-    fn composer_picks_up_every_kind() {
+    fn graphql_sdl_type_block_emits_producer() {
         let src = r#"
 const Schema = gql`
   type Query {
     me: User
   }
 `
-await invoke('greet', { name })
-ipcMain.handle('save', async () => {})
-await fetch('/api/ping')
-producer.send({ topic: "t" })
 "#;
-        let points = extract_typescript_connection_points(src, "src/app.ts");
-        let has = |k: ConnectionKind| points.iter().any(|p| p.kind == k);
-        assert!(has(ConnectionKind::GraphQL), "graphql not found");
-        assert!(has(ConnectionKind::Ipc), "ipc not found");
-        assert!(has(ConnectionKind::Rest), "rest not found");
-        assert!(has(ConnectionKind::MessageQueue), "mq not found");
+        let points = extract_typescript_graphql(src);
+        assert!(points.iter().any(|(_, e)| matches!(
+            e,
+            FlowEmission::NamedChannel {
+                kind: NamedChannelKind::GraphQLOp,
+                ..
+            }
+        )));
     }
 }

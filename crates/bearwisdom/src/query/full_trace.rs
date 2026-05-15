@@ -236,9 +236,28 @@ pub fn trace_from_entry_points(
     )?;
 
     let mut roots: Vec<SymRow> = Vec::new();
+
+    // Flow-edge targets FIRST so HTTP endpoints / event handlers anchor the
+    // trace tree before the generic high-out-degree fallback. Without this
+    // priority the loop fills its `max_traces` budget with whatever has the
+    // most outgoing edges (often utility classes or generated schemas) and
+    // never reaches the cross-process flow nodes the UI actually wants to
+    // surface.
+    //
+    // target_symbol may carry either the simple name ("doStuff") or the
+    // qualified name ("Controller.doStuff") depending on where the writer's
+    // qname lookup landed — match both.
     {
-        // Request more candidates than max_traces since some will produce empty traces
-        let mut rows = stmt.query([max_traces as i64 * 4])?;
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT s.id, s.name, s.qualified_name, s.kind, tf.path, s.line
+             FROM flow_edges fe
+             JOIN files tf ON tf.id = fe.target_file_id
+             JOIN symbols s ON s.file_id = tf.id
+                           AND (s.name = fe.target_symbol OR s.qualified_name = fe.target_symbol)
+             WHERE fe.target_symbol IS NOT NULL
+             LIMIT ?1"
+        )?;
+        let mut rows = stmt.query([max_traces as i64 * 2])?;
         while let Some(row) = rows.next()? {
             roots.push(SymRow {
                 id: row.get(0)?,
@@ -251,17 +270,10 @@ pub fn trace_from_entry_points(
         }
     }
 
-    // Also add flow-edge targets as roots (HTTP endpoints, event handlers)
+    // Generic structural roots (high-out-degree top-of-tree symbols).
     {
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT s.id, s.name, s.qualified_name, s.kind, tf.path, s.line
-             FROM flow_edges fe
-             JOIN files tf ON tf.id = fe.target_file_id
-             JOIN symbols s ON s.file_id = tf.id AND s.name = fe.target_symbol
-             WHERE fe.target_symbol IS NOT NULL
-             LIMIT ?1"
-        )?;
-        let mut rows = stmt.query([max_traces as i64 * 2])?;
+        // Request more candidates than max_traces since some will produce empty traces
+        let mut rows = stmt.query([max_traces as i64 * 4])?;
         while let Some(row) = rows.next()? {
             roots.push(SymRow {
                 id: row.get(0)?,

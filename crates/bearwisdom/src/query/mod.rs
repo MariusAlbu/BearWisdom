@@ -23,6 +23,7 @@ pub mod subgraph;
 pub mod symbol_info;
 pub mod workspace;
 pub mod dead_code;
+pub mod entry_points;
 pub mod unresolved_classify;
 pub mod pattern;
 #[cfg(test)]

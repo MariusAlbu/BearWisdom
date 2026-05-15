@@ -19,6 +19,7 @@ fn setup_db() -> Database {
         [file_id],
     )
     .unwrap();
+    let used_id = conn.last_insert_rowid();
 
     conn.execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, incoming_edge_count) \
@@ -31,6 +32,17 @@ fn setup_db() -> Database {
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, incoming_edge_count) \
          VALUES (?1, 'main', 'main', 'function', 1, 0, NULL, 0)",
         [file_id],
+    )
+    .unwrap();
+    let main_id = conn.last_insert_rowid();
+
+    // Reachability needs an actual edge to mark `used_fn` alive — the
+    // historical `incoming_edge_count = 3` was a precomputed centrality
+    // claim with no backing edges, which the BFS rightly treats as dead.
+    conn.execute(
+        "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) \
+         VALUES (?1, ?2, 'calls', 1, 1.0)",
+        rusqlite::params![main_id, used_id],
     )
     .unwrap();
 
@@ -242,4 +254,111 @@ fn dead_code_scope_matches_package_declared_name() {
         .collect();
     assert!(names.contains(&"dead_in_a"), "scope should include a's dead symbol, got {names:?}");
     assert!(!names.contains(&"dead_in_b"), "scope should exclude b's dead symbol, got {names:?}");
+}
+
+/// Behavioral success criterion #1 from the goal prompt: a trait method
+/// with one live caller keeps all impls reachable via dispatch_candidate.
+/// Without the L2 synthesizer, only the interface method is reached and
+/// every concrete impl is wrongly flagged dead.
+#[test]
+fn dispatch_synthesis_keeps_all_impls_alive() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn();
+
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) \
+         VALUES ('src/lib.rs', 'h', 'rust', 0)",
+        [],
+    )
+    .unwrap();
+    let f = conn.last_insert_rowid();
+
+    // main — entry point that calls Animal::speak.
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, origin) \
+         VALUES (?1, 'main', 'main', 'function', 1, 0, NULL, 'internal')",
+        [f],
+    )
+    .unwrap();
+    let main_id = conn.last_insert_rowid();
+
+    // Animal interface + its speak method.
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, origin) \
+         VALUES (?1, 'Animal', 'Animal', 'interface', 10, 0, 'internal')",
+        [f],
+    )
+    .unwrap();
+    let animal = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, scope_path, origin) \
+         VALUES (?1, 'speak', 'Animal::speak', 'method', 11, 0, 'public', 'Animal', 'internal')",
+        [f],
+    )
+    .unwrap();
+    let animal_speak = conn.last_insert_rowid();
+
+    // Dog implements Animal, overrides speak.
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, origin) \
+         VALUES (?1, 'Dog', 'Dog', 'class', 20, 0, 'internal')",
+        [f],
+    )
+    .unwrap();
+    let dog = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, scope_path, origin) \
+         VALUES (?1, 'speak', 'Dog::speak', 'method', 21, 0, 'private', 'Dog', 'internal')",
+        [f],
+    )
+    .unwrap();
+    let dog_speak = conn.last_insert_rowid();
+
+    // Cat implements Animal, overrides speak.
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, origin) \
+         VALUES (?1, 'Cat', 'Cat', 'class', 30, 0, 'internal')",
+        [f],
+    )
+    .unwrap();
+    let cat = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility, scope_path, origin) \
+         VALUES (?1, 'speak', 'Cat::speak', 'method', 31, 0, 'private', 'Cat', 'internal')",
+        [f],
+    )
+    .unwrap();
+    let cat_speak = conn.last_insert_rowid();
+
+    // Edges: main → Animal::speak, Dog implements Animal, Cat implements Animal.
+    conn.execute(
+        "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) \
+         VALUES (?1, ?2, 'calls', 1, 1.0)",
+        rusqlite::params![main_id, animal_speak],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) \
+         VALUES (?1, ?2, 'implements', 20, 1.0)",
+        rusqlite::params![dog, animal],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) \
+         VALUES (?1, ?2, 'implements', 30, 1.0)",
+        rusqlite::params![cat, animal],
+    )
+    .unwrap();
+
+    let report = find_dead_code(&db, &DeadCodeOptions::default()).unwrap();
+    let dead_ids: std::collections::HashSet<i64> =
+        report.dead_candidates.iter().map(|c| c.symbol_id).collect();
+    assert!(
+        !dead_ids.contains(&dog_speak),
+        "Dog::speak must be alive via dispatch_candidate from Animal::speak"
+    );
+    assert!(
+        !dead_ids.contains(&cat_speak),
+        "Cat::speak must be alive via dispatch_candidate from Animal::speak"
+    );
 }

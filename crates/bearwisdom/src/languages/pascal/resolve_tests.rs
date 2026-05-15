@@ -311,3 +311,64 @@ fn wildcard_resolves_titlecase_symbol_when_stem_matches() {
     );
     assert_eq!(result.unwrap().target_symbol_id, 77);
 }
+
+// ---------------------------------------------------------------------------
+// Goal 39 — Pascal flow emission tests
+// ---------------------------------------------------------------------------
+
+use super::{detect_pascal_http_producer, detect_pascal_db_query};
+
+#[test]
+fn test_pascal_idhttp_get_emits_producer() {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod};
+    let args = vec![crate::types::CallArg::StringLit("https://api.example.com/x".to_string())];
+    match detect_pascal_http_producer("Get", &args).unwrap() {
+        FlowEmission::NamedChannel { role, method, .. } => {
+            assert_eq!(role, ChannelRole::Producer);
+            assert_eq!(method, Some(HttpMethod::Get));
+        }
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_pascal_post_emits_post() {
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
+    let args = vec![crate::types::CallArg::StringLit("/api/x".to_string())];
+    match detect_pascal_http_producer("Post", &args).unwrap() {
+        FlowEmission::NamedChannel { method, .. } => assert_eq!(method, Some(HttpMethod::Post)),
+        _ => panic!("expected NamedChannel"),
+    }
+}
+
+#[test]
+fn test_pascal_rejects_non_http_method() {
+    let args = vec![crate::types::CallArg::StringLit("/x".to_string())];
+    assert!(detect_pascal_http_producer("DoSomething", &args).is_none());
+}
+
+#[test]
+fn test_pascal_execsql_emits_db_select() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    let args = vec![crate::types::CallArg::StringLit("SELECT id FROM users".to_string())];
+    match detect_pascal_db_query("Open", &args).unwrap() {
+        FlowEmission::DbQuery { operation, .. } => assert_eq!(operation, DbQueryOp::Select),
+        _ => panic!("expected DbQuery"),
+    }
+}
+
+#[test]
+fn test_pascal_db_rejects_non_sql() {
+    let args = vec![crate::types::CallArg::StringLit("not sql".to_string())];
+    assert!(detect_pascal_db_query("ExecSQL", &args).is_none());
+}
+
+#[test]
+fn test_pascal_db_insert_op() {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    let args = vec![crate::types::CallArg::StringLit("INSERT INTO items VALUES (1)".to_string())];
+    match detect_pascal_db_query("ExecSQL", &args).unwrap() {
+        FlowEmission::DbQuery { operation, .. } => assert_eq!(operation, DbQueryOp::Insert),
+        _ => panic!("expected DbQuery"),
+    }
+}

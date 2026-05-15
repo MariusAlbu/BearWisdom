@@ -2698,15 +2698,35 @@ pub trait LanguageResolver: Send + Sync {
     /// whether `resolve` succeeded.
     ///
     /// Called for every `Calls`-kind ref before the heuristic fallback.
-    /// The default returns `None` (no emission). Language resolvers that
-    /// recognize HTTP-client chains, IPC calls, WebSocket emits, etc. override
-    /// this to emit a `FlowEmission` without needing a resolved target symbol.
+    /// The default returns an empty `Vec` (no emission). Language resolvers
+    /// that recognize HTTP-client chains, IPC calls, WebSocket emits, etc.
+    /// override this to emit one or more `FlowEmission`s without needing a
+    /// resolved target symbol. The Vec return shape supports patterns like
+    /// `server.addService(SvcDef, { m1: h, m2: h })` where a single ref site
+    /// registers handlers for multiple methods.
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,
         _ref_ctx: &RefContext,
-    ) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
-        None
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        Vec::new()
+    }
+
+    /// Lookup-aware variant of `detect_flow_emission`. Override this when
+    /// the detector benefits from inspecting the SymbolIndex — for
+    /// instance, to look up the type of a let-bound variable so chains
+    /// like `let c = ServiceClient::new(); c.method(...)` can still emit
+    /// the appropriate RpcCall on the second call.
+    ///
+    /// The default forwards to the lookup-less version so existing
+    /// implementations need no changes.
+    fn detect_flow_emission_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        _lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        self.detect_flow_emission(file_ctx, ref_ctx)
     }
 
     /// Check whether a target symbol is visible from the reference site.
@@ -3701,10 +3721,11 @@ mod tests {
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
             flow: crate::types::FlowMeta::default(),
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
+
+            plugin_flow_emissions: Vec::new(),
         };
 
         let mut id_map = HashMap::new();
@@ -3772,10 +3793,11 @@ mod tests {
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
             flow: crate::types::FlowMeta::default(),
-            connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
+
+            plugin_flow_emissions: Vec::new(),
         }
     }
 

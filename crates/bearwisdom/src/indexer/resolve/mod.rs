@@ -12,7 +12,9 @@
 pub mod engine;
 pub mod flow_emit;
 mod heuristic;
+pub mod reachability;
 pub mod rules;
+pub mod synthesize_dispatch;
 
 use engine::SymbolLookup;
 
@@ -27,6 +29,31 @@ use tracing::{debug, info, warn};
 
 use flow_emit::FlowEmission;
 use crate::connectors::url_pattern;
+
+/// Streaming-kind compatibility for an RPC pair.
+///
+/// Returns true when:
+/// - Both sides are `None` (non-RPC, or RPC where streaming wasn't inferred).
+/// - One side is `None` and the other is `Some(Unary)` (back-compat with
+///   detectors that haven't been wired for streaming yet).
+/// - Both sides are `Some(StreamKind::Unary)` (canonical unary pair).
+/// - Both sides carry the same explicit streaming kind.
+///
+/// Rejects pairs where one end is unary and the other is a streaming kind,
+/// or where the two ends are different streaming kinds (server-stream vs
+/// client-stream, etc.).
+fn streaming_kinds_compatible(
+    producer: Option<flow_emit::StreamKind>,
+    consumer: Option<flow_emit::StreamKind>,
+) -> bool {
+    use flow_emit::StreamKind;
+    match (producer, consumer) {
+        (None, None) => true,
+        (None, Some(StreamKind::Unary)) | (Some(StreamKind::Unary), None) => true,
+        (Some(p), Some(c)) => p == c,
+        _ => false,
+    }
+}
 
 // Per-file output buffer. Each rayon worker fills its own; the main thread
 // merges + bulk-writes after the parallel section. Avoids sharing the
@@ -211,7 +238,7 @@ fn flush_resolve_buf(
 /// been inserted yet when the parallel section ran). This function batches
 /// a `SELECT id FROM files WHERE path IN (...)` to resolve the ids, then:
 ///
-/// 1. Pairs `NamedChannel { Producer }` ↔ `NamedChannel { Consumer }` by
+/// 1. Pairs `NamedChannel { Producer, .. }` ↔ `NamedChannel { Consumer, .. }` by
 ///    `(kind, normalized_name)` across files, with HTTP method compatibility
 ///    filtering.  URL patterns are normalized via `url_pattern::normalize`
 ///    before keying so `:id`, `<id>`, `{id}` all compare equal to `{}`.
@@ -278,6 +305,65 @@ fn flush_flow_emissions(
         })
         .collect();
 
+    // Pre-resolve every (file_id, line) appearing in `resolved` to the
+    // qualified name of the innermost enclosing function/method/constructor.
+    // `query::full_trace::FlowJumpMap` keys flow_edges by this name to link
+    // them into the trace tree — leaving it NULL (as the previous writer did)
+    // means the trace view never picks up cross-process / cross-language
+    // jumps even when 70k+ flow_edges exist.
+    let enclosing_qname: HashMap<(i64, u32), String> = {
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT qualified_name FROM symbols
+                 WHERE file_id = ?1
+                   AND line <= ?2
+                   AND (end_line IS NULL OR end_line >= ?2)
+                   AND kind IN ('function', 'method', 'constructor')
+                 ORDER BY line DESC
+                 LIMIT 1",
+            )
+            .context("Failed to prepare enclosing-function lookup for flow emissions")?;
+        // Fallback: nearest function/method whose declaration starts within
+        // FALLBACK_LOOKAHEAD lines AFTER the emission line. Decorator
+        // emissions (NestJS @Get, TypeORM @Entity) sit ON the decorator
+        // line; the method/class they apply to starts on the following line,
+        // outside the enclosing-range query above. The lookahead recovers
+        // that owner.
+        let mut following_stmt = conn
+            .prepare_cached(
+                "SELECT qualified_name FROM symbols
+                 WHERE file_id = ?1
+                   AND line > ?2
+                   AND line <= ?2 + 20
+                   AND kind IN ('function', 'method', 'constructor', 'class', 'struct', 'interface')
+                 ORDER BY line ASC
+                 LIMIT 1",
+            )
+            .context("Failed to prepare following-symbol lookup for flow emissions")?;
+        let mut map: HashMap<(i64, u32), String> = HashMap::new();
+        let mut seen: std::collections::HashSet<(i64, u32)> = Default::default();
+        for r in &resolved {
+            let key = (r.file_id, r.line);
+            if !seen.insert(key) { continue; }
+            let qn = stmt
+                .query_row(rusqlite::params![r.file_id, r.line], |row| row.get::<_, String>(0))
+                .or_else(|_| {
+                    following_stmt.query_row(
+                        rusqlite::params![r.file_id, r.line],
+                        |row| row.get::<_, String>(0),
+                    )
+                })
+                .ok();
+            if let Some(qn) = qn {
+                map.insert(key, qn);
+            }
+        }
+        map
+    };
+    let qname_for = |file_id: i64, line: u32| -> Option<&str> {
+        enclosing_qname.get(&(file_id, line)).map(String::as_str)
+    };
+
     // -----------------------------------------------------------------------
     // Phase 1: pair NamedChannel Producer ↔ Consumer.
     //
@@ -318,59 +404,243 @@ fn flush_flow_emissions(
         let mut pair_stmt = conn
             .prepare_cached(
                 "INSERT OR IGNORE INTO flow_edges
-                    (source_file_id, source_line, target_file_id, target_line,
-                     edge_type, protocol, http_method, url_pattern, confidence)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    (source_file_id, source_line, source_symbol,
+                     target_file_id, target_line, target_symbol,
+                     edge_type, protocol, http_method, url_pattern, confidence, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             )
             .context("Failed to prepare paired flow_edges INSERT")?;
 
         // (source_file_id, source_line, target_file_id, target_line, edge_type)
         // — guards against duplicate edges when the same emission appears
-        // multiple times in the resolved list.
-        let mut seen_pairs: std::collections::HashSet<(i64, u32, i64, u32, &str)> =
+        // multiple times in the resolved list. `edge_type_str()` returns
+        // `&'static str` so the lifetime is explicit here for the wildcard
+        // pair helper closure that takes this set as an argument.
+        let mut seen_pairs: std::collections::HashSet<(i64, u32, i64, u32, &'static str)> =
             Default::default();
 
+        // Helper: pair one producer emission with one consumer emission. Runs
+        // the same method-compat / dedup / INSERT logic the exact-match and
+        // wildcard passes share. Returns Ok(()) regardless of insert outcome;
+        // pair tracking is updated via the captured `seen_pairs` /
+        // `named_channel_paired` sets.
+        let mut pair_one = |pi: usize,
+                            ci: usize,
+                            url_pattern_override: Option<&str>,
+                            seen_pairs: &mut std::collections::HashSet<(i64, u32, i64, u32, &'static str)>,
+                            named_channel_paired: &mut std::collections::HashSet<usize>|
+         -> Result<()> {
+            let pr = &resolved[pi];
+            let cr = &resolved[ci];
+            let FlowEmission::NamedChannel { kind, method: prod_method, name, streaming: prod_streaming, .. } = pr.emission else {
+                return Ok(());
+            };
+            let (cons_method, cons_streaming) = if let FlowEmission::NamedChannel { method, streaming, .. } = &cr.emission {
+                (method.map(|m| m.as_str()), *streaming)
+            } else {
+                (None, None)
+            };
+            if !url_pattern::http_methods_compatible(
+                prod_method.map(|m| m.as_str()),
+                cons_method,
+            ) {
+                return Ok(());
+            }
+            // Streaming compatibility for RPC pairs: a unary producer must
+            // not pair with a streaming consumer (or vice versa). `None`
+            // and `Some(Unary)` are treated as equivalent so existing
+            // detectors that don't set streaming still pair correctly.
+            if !streaming_kinds_compatible(*prod_streaming, cons_streaming) {
+                return Ok(());
+            }
+            let edge_type = kind.edge_type_str();
+            let pair_key = (pr.file_id, pr.line, cr.file_id, cr.line, edge_type);
+            if !seen_pairs.insert(pair_key) {
+                named_channel_paired.insert(pi);
+                named_channel_paired.insert(ci);
+                return Ok(());
+            }
+            let url = url_pattern_override.unwrap_or(name.as_str());
+            // Stream-aware metadata: when the producer or consumer carries
+            // a non-unary StreamKind, record it on the edge. Unary RPC and
+            // non-RPC edges get NULL metadata.
+            let metadata = (*prod_streaming).or(cons_streaming).and_then(|s| {
+                if s == crate::indexer::resolve::flow_emit::StreamKind::Unary {
+                    None
+                } else {
+                    Some(s.as_str().to_string())
+                }
+            });
+            let n = pair_stmt.execute(rusqlite::params![
+                pr.file_id, pr.line, qname_for(pr.file_id, pr.line),
+                cr.file_id, cr.line, qname_for(cr.file_id, cr.line),
+                edge_type, kind.protocol_str(),
+                prod_method.map(|m| m.as_str()),
+                Some(url),
+                0.9_f64,
+                metadata,
+            ]).context("Failed to insert paired flow_edge")?;
+            if n > 0 {
+                named_channel_paired.insert(pi);
+                named_channel_paired.insert(ci);
+            }
+            Ok(())
+        };
+
+        // Exact-match pass.
         for (key, prod_idxs) in &producers {
             if let Some(cons_idxs) = consumers.get(key) {
                 for &pi in prod_idxs {
                     for &ci in cons_idxs {
-                        let pr = &resolved[pi];
-                        let cr = &resolved[ci];
-                        if let FlowEmission::NamedChannel { kind, method: prod_method, name, .. } = pr.emission {
-                            // Extract consumer method for compatibility check.
-                            let cons_method = if let FlowEmission::NamedChannel { method, .. } = cr.emission {
-                                method.map(|m| m.as_str())
-                            } else {
-                                None
-                            };
-                            // Skip incompatible method pairs (GET ≠ POST; Any matches all).
-                            if !url_pattern::http_methods_compatible(
-                                prod_method.map(|m| m.as_str()),
-                                cons_method,
-                            ) {
-                                continue;
-                            }
-                            let pair_key = (pr.file_id, pr.line, cr.file_id, cr.line, kind.edge_type_str());
-                            if !seen_pairs.insert(pair_key) {
-                                // Already emitted this exact edge; mark both sides paired
-                                // without a second INSERT.
-                                named_channel_paired.insert(pi);
-                                named_channel_paired.insert(ci);
-                                continue;
-                            }
-                            let n = pair_stmt.execute(rusqlite::params![
-                                pr.file_id, pr.line,
-                                cr.file_id, cr.line,
-                                kind.edge_type_str(), kind.protocol_str(),
-                                prod_method.map(|m| m.as_str()),
-                                Some(name.as_str()),
-                                0.9_f64,
-                            ]).context("Failed to insert paired flow_edge")?;
-                            if n > 0 {
-                                named_channel_paired.insert(pi);
-                                named_channel_paired.insert(ci);
-                            }
-                        }
+                        pair_one(pi, ci, None, &mut seen_pairs, &mut named_channel_paired)?;
+                    }
+                }
+            }
+        }
+
+        // Wildcard pass: bucket key `<prefix>/*` on one role matches every
+        // bucket whose key starts with `<prefix>/` on the OTHER role. Used for
+        // background-job Consumer constructors (`new Worker('queue', …)` →
+        // `queue/*`) that should pair with every concrete `queue.add('job', …)`
+        // Producer for the same queue. Bidirectional — a wildcard Producer
+        // would pair with concrete Consumers symmetrically, though no current
+        // emitter produces that shape.
+        //
+        // Bucket keys are `(edge_type_str, normalized_name)`. Concrete and
+        // wildcard entries live in different buckets, so this pass is purely
+        // additive over Phase 1 exact matching.
+        // Route-parameter segment matching: `/users/{}/posts` matches
+        // `/users/123/posts` segment-by-segment. Segment counts must be
+        // equal; `{}` segments accept any non-empty literal segment.
+        fn segment_wildcard_matches(wild_key: &str, concrete_key: &str) -> bool {
+            let w_segs: Vec<&str> = wild_key.split('/').collect();
+            let c_segs: Vec<&str> = concrete_key.split('/').collect();
+            if w_segs.len() != c_segs.len() {
+                return false;
+            }
+            for (w, c) in w_segs.iter().zip(c_segs.iter()) {
+                if w == c {
+                    continue;
+                }
+                if *w == "{}" && !c.is_empty() {
+                    continue;
+                }
+                return false;
+            }
+            true
+        }
+
+        let bucket_matches_wildcard = |wild_key: &str, concrete_key: &str| -> bool {
+            // wild_key ends with `/*`, concrete_key is everything else.
+            let Some(prefix) = wild_key.strip_suffix("/*") else {
+                return false;
+            };
+            if prefix.is_empty() || concrete_key == wild_key {
+                return false;
+            }
+            // Match `<prefix>/<anything-non-empty>` — including another
+            // wildcard like `<prefix>/*/sub` if it ever appears.
+            concrete_key
+                .strip_prefix(prefix)
+                .and_then(|rest| rest.strip_prefix('/'))
+                .map_or(false, |tail| !tail.is_empty())
+        };
+
+        // Wildcard Producer × concrete Consumer.
+        let wildcard_producer_keys: Vec<(&str, &str)> = producers
+            .keys()
+            .filter(|(_, name)| name.ends_with("/*"))
+            .copied()
+            .collect();
+        for wkey in wildcard_producer_keys {
+            let prod_idxs = producers.get(&wkey).cloned().unwrap_or_default();
+            for (ckey, cons_idxs) in &consumers {
+                if ckey.0 != wkey.0 {
+                    continue;
+                }
+                if !bucket_matches_wildcard(wkey.1, ckey.1) {
+                    continue;
+                }
+                for &pi in &prod_idxs {
+                    for &ci in cons_idxs {
+                        pair_one(
+                            pi,
+                            ci,
+                            Some(ckey.1),
+                            &mut seen_pairs,
+                            &mut named_channel_paired,
+                        )?;
+                    }
+                }
+            }
+        }
+
+        // Wildcard Consumer × concrete Producer.
+        let wildcard_consumer_keys: Vec<(&str, &str)> = consumers
+            .keys()
+            .filter(|(_, name)| name.ends_with("/*"))
+            .copied()
+            .collect();
+        for wkey in wildcard_consumer_keys {
+            let cons_idxs = consumers.get(&wkey).cloned().unwrap_or_default();
+            for (pkey, prod_idxs) in &producers {
+                if pkey.0 != wkey.0 {
+                    continue;
+                }
+                if !bucket_matches_wildcard(wkey.1, pkey.1) {
+                    continue;
+                }
+                for &pi in prod_idxs {
+                    for &ci in &cons_idxs {
+                        pair_one(
+                            pi,
+                            ci,
+                            Some(pkey.1),
+                            &mut seen_pairs,
+                            &mut named_channel_paired,
+                        )?;
+                    }
+                }
+            }
+        }
+
+        // Segment-wildcard pass: a Consumer URL containing `{}` segments
+        // pairs against any Producer URL whose path matches when those
+        // positions are filled by concrete values. Implements the natural
+        // route-parameter matching semantics — `/api/trpc/{}` Consumer
+        // matches `/api/trpc/polls.list`, `/users/{}/posts` matches
+        // `/users/123/posts`, etc.
+        //
+        // Only runs when the Consumer key contains `{}` AND the Producer key
+        // doesn't; the both-sides-already-{} case is handled by the
+        // exact-match pass above (template literals normalize to the same
+        // `{}` form).
+        let segment_wildcard_consumer_keys: Vec<(&str, &str)> = consumers
+            .keys()
+            .filter(|(_, name)| name.contains("/{}"))
+            .copied()
+            .collect();
+        for wkey in segment_wildcard_consumer_keys {
+            let cons_idxs = consumers.get(&wkey).cloned().unwrap_or_default();
+            for (pkey, prod_idxs) in &producers {
+                if pkey.0 != wkey.0 {
+                    continue;
+                }
+                if pkey.1 == wkey.1 {
+                    continue; // Exact-match pass handled this.
+                }
+                if !segment_wildcard_matches(wkey.1, pkey.1) {
+                    continue;
+                }
+                for &pi in prod_idxs {
+                    for &ci in &cons_idxs {
+                        pair_one(
+                            pi,
+                            ci,
+                            Some(pkey.1),
+                            &mut seen_pairs,
+                            &mut named_channel_paired,
+                        )?;
                     }
                 }
             }
@@ -411,9 +681,10 @@ fn flush_flow_emissions(
         let mut pair_stmt = conn
             .prepare_cached(
                 "INSERT OR IGNORE INTO flow_edges
-                    (source_file_id, source_line, target_file_id, target_line,
+                    (source_file_id, source_line, source_symbol,
+                     target_file_id, target_line, target_symbol,
                      edge_type, url_pattern, confidence, metadata)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )
             .context("Failed to prepare db-paired flow_edges INSERT")?;
 
@@ -435,8 +706,8 @@ fn flush_flow_emissions(
                 for ei in find_entities(entity_name) {
                     let er = &resolved[ei];
                     let n = pair_stmt.execute(rusqlite::params![
-                        r.file_id, r.line,
-                        er.file_id, er.line,
+                        r.file_id, r.line, qname_for(r.file_id, r.line),
+                        er.file_id, er.line, qname_for(er.file_id, er.line),
                         "db_query",
                         Some(entity_name.as_str()),
                         0.85_f64,
@@ -457,8 +728,8 @@ fn flush_flow_emissions(
                 for ei in find_entities(table_name) {
                     let er = &resolved[ei];
                     let n = pair_stmt.execute(rusqlite::params![
-                        r.file_id, r.line,
-                        er.file_id, er.line,
+                        r.file_id, r.line, qname_for(r.file_id, r.line),
+                        er.file_id, er.line, qname_for(er.file_id, er.line),
                         "migration_target",
                         Some(table_name.as_str()),
                         0.85_f64,
@@ -479,8 +750,9 @@ fn flush_flow_emissions(
     let mut single_stmt = conn
         .prepare_cached(
             "INSERT OR IGNORE INTO flow_edges
-                (source_file_id, source_line, edge_type, protocol, http_method, url_pattern, confidence)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (source_file_id, source_line, source_symbol,
+                 edge_type, protocol, http_method, url_pattern, confidence, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )
         .context("Failed to prepare single-ended flow_edges INSERT")?;
 
@@ -493,11 +765,13 @@ fn flush_flow_emissions(
         let n = single_stmt.execute(rusqlite::params![
             r.file_id,
             r.line,
+            qname_for(r.file_id, r.line),
             r.emission.edge_type(),
             r.emission.protocol(),
             r.emission.http_method_str(),
             r.emission.url_pattern(),
             0.9_f64,
+            r.emission.streaming_str(),
         ]).context("Failed to insert single-ended flow_edge")?;
         written += n as u32;
     }
@@ -507,6 +781,16 @@ fn flush_flow_emissions(
 
 #[cfg(test)]
 pub(crate) fn _test_flush_flow_emissions(
+    conn: &rusqlite::Connection,
+    emissions: &[(String, u32, FlowEmission)],
+) -> Result<u32> {
+    flush_flow_emissions(conn, emissions)
+}
+
+/// Public entry to the pairing/flush pipeline. Used by post-connector
+/// passes (see `full.rs`) that materialise late-arriving DB rows into
+/// flow edges. Same semantics as the resolver's own flush.
+pub fn flush_flow_emissions_public(
     conn: &rusqlite::Connection,
     emissions: &[(String, u32, FlowEmission)],
 ) -> Result<u32> {
@@ -769,12 +1053,65 @@ fn resolve_iteration_body(
     //
     // External (`ext:`) files are filtered out — they're indexed for
     // lookup only, never as resolution sources.
-    let (combined_buf, local_stats_total) = parsed
+    let (mut combined_buf, local_stats_total) = parsed
         .par_iter()
         .filter(|pf| !pf.path.starts_with("ext:"))
         .map(|pf| -> (FileWriteBuf, FileStats) {
             let mut buf = FileWriteBuf::default();
             let mut local_stats = FileStats::default();
+
+            // File-path Consumer pass for mailer templates. A file under a
+            // recognised template root (`mails/`, `emails/`, `templates/email/`,
+            // `views/mails/`) emits a single Consumer NamedChannel Mailer
+            // keyed on the file's basename so a Producer that names the same
+            // template pairs against it. Runs once per file at line 1.
+            if let Some(template_name) = mailer_template_name_for_path(&pf.path) {
+                buf.flow_emissions.push((
+                    pf.path.clone(),
+                    1u32,
+                    flow_emit::FlowEmission::NamedChannel {
+                        kind: flow_emit::NamedChannelKind::Mailer,
+                        name: template_name,
+                        role: flow_emit::ChannelRole::Consumer,
+                        method: None,
+                    streaming: None,
+                    },
+                ));
+            }
+
+            // File-path Consumer pass for Next.js routes. App Router files
+            // matching `**/app/**/route.{ts,tsx,js,jsx}` emit one Consumer
+            // per exported HTTP-verb handler (`GET`/`POST`/…). Pages Router
+            // files matching `**/pages/api/**/*.{ts,…}` emit a single Any-
+            // method Consumer keyed on the file's URL path.
+            for emission in nextjs_route_consumer_emissions(&pf.path, &pf.symbols) {
+                buf.flow_emissions.push((pf.path.clone(), 1u32, emission));
+            }
+
+            // Cross-language adapter: every `ExtractedRoute` populated by a
+            // language extractor (ASP.NET attribute routes, Phoenix routes,
+            // chi/gin/echo routes, Spring `@GetMapping`, etc.) becomes a
+            // Consumer NamedChannel HttpCall so it can pair against
+            // Producer-side HTTP calls from any other language.
+            for (line, emission) in extracted_routes_to_emissions(&pf.routes, &pf.symbols) {
+                buf.flow_emissions.push((pf.path.clone(), line, emission));
+            }
+
+            // Extractor-time `FlowEmission`s — populated at parse time by
+            // file-structure scanners that can't migrate to chain-walk
+            // resolver-time emission (GraphQL SDL parsing, `.proto` service
+            // blocks).
+            plugin_flow_emissions_to_emissions(pf, &mut buf.flow_emissions);
+
+            // ExtractedDbSet → DbEntity adapter. Languages with model-table
+            // extraction (currently C# EF Core via `DbSet<T>` properties on
+            // DbContext classes) emit one ExtractedDbSet per discovered
+            // model. Each becomes a `FlowEmission::DbEntity` so DbQuery
+            // emissions for the same entity name pair against it via the
+            // pairer's entity matcher.
+            for (line, emission) in extracted_db_sets_to_emissions(&pf.db_sets, &pf.symbols) {
+                buf.flow_emissions.push((pf.path.clone(), line, emission));
+            }
 
         // Look up source IDs against the MERGED map so incremental
         // resolves can find symbol IDs for files that weren't in this
@@ -920,7 +1257,7 @@ fn resolve_iteration_body(
                 // succeeds — HTTP client calls, IPC, WebSocket emits, etc. are
                 // identifiable from import context alone, even when the chain
                 // walker can't resolve the external symbol to a DB id.
-                if let Some(emission) = resolver.detect_flow_emission(file_ctx, &ref_ctx) {
+                for emission in resolver.detect_flow_emission_with_lookup(file_ctx, &ref_ctx, index) {
                     buf.flow_emissions.push((pf.path.clone(), r.line, emission));
                 }
 
@@ -1358,21 +1695,42 @@ fn resolve_iteration_body(
 /// Stage 2 can call iteration multiple times without paying this cost on
 /// every pass.
 pub fn finalize_resolution(db: &mut Database) -> Result<()> {
-    let conn = db.conn();
-    conn.execute_batch(
-        "CREATE TEMP TABLE IF NOT EXISTS _edge_counts (id INTEGER PRIMARY KEY, cnt INTEGER);
-         DELETE FROM _edge_counts;
-         INSERT INTO _edge_counts SELECT target_id, COUNT(*) FROM edges GROUP BY target_id;",
-    )
-    .context("Failed to build edge count temp table")?;
-    conn.execute(
-        "UPDATE symbols SET incoming_edge_count = COALESCE(
-            (SELECT cnt FROM _edge_counts WHERE _edge_counts.id = symbols.id), 0)",
-        [],
-    )
-    .context("Failed to materialize incoming_edge_count")?;
-    conn.execute("DELETE FROM _edge_counts", [])
-        .context("Failed to clean up edge count temp table")?;
+    {
+        let conn = db.conn();
+        conn.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS _edge_counts (id INTEGER PRIMARY KEY, cnt INTEGER);
+             DELETE FROM _edge_counts;
+             INSERT INTO _edge_counts SELECT target_id, COUNT(*) FROM edges GROUP BY target_id;",
+        )
+        .context("Failed to build edge count temp table")?;
+        conn.execute(
+            "UPDATE symbols SET incoming_edge_count = COALESCE(
+                (SELECT cnt FROM _edge_counts WHERE _edge_counts.id = symbols.id), 0)",
+            [],
+        )
+        .context("Failed to materialize incoming_edge_count")?;
+        conn.execute("DELETE FROM _edge_counts", [])
+            .context("Failed to clean up edge count temp table")?;
+    }
+
+    // L2+L1+L3 of the reachability-based dead-code stack:
+    //   1. Synthesize dispatch_candidate edges so virtual-dispatch
+    //      targets (trait/interface method → impl method) are present
+    //      in the graph before the BFS runs.
+    //   2. Rebuild the `entry_points` table from contributors.
+    //   3. BFS from entry-point seeds through edges above the confidence
+    //      threshold to materialize `reachability`.
+    // Dead-code queries antijoin against `reachability` instead of
+    // checking `incoming_edge_count = 0`.
+    synthesize_dispatch::synthesize_dispatch_edges(db)
+        .context("Failed to synthesize dispatch edges")?;
+    crate::query::entry_points::rebuild_entry_points(db)
+        .context("Failed to rebuild entry_points")?;
+    reachability::materialize_reachability(db)
+        .context("Failed to materialize reachability")?;
+    crate::query::dead_code::materialize_package_resolution_health(db)
+        .context("Failed to materialize package_resolution_health")?;
+
     Ok(())
 }
 
@@ -1475,6 +1833,359 @@ fn read_external_file_paths(
 ///
 /// Returns an empty Vec on any SQL error; the path through here is best-
 /// effort context enrichment, not a correctness-critical read.
+/// If `path` lives under a recognised mailer template root, return the
+/// file's basename (without extension) as the template name. Returns `None`
+/// for any other path. The supported roots match the conventions of
+/// Nodemailer Express handlebars (`emails/`), NestJS mailer module
+/// (`mails/`, `templates/email/`), and Rails-style mailers (`views/mails/`,
+/// `app/views/mailers/`). The match is path-segment exact — a file named
+/// `MyEmail.tsx` ten levels deep under any non-template ancestor is not
+/// matched.
+fn mailer_template_name_for_path(path: &str) -> Option<String> {
+    const ROOTS: &[&[&str]] = &[
+        &["mails"],
+        &["emails"],
+        &["templates", "email"],
+        &["templates", "emails"],
+        &["templates", "mail"],
+        &["templates", "mails"],
+        &["views", "mails"],
+        &["views", "mailers"],
+        &["app", "views", "mailers"],
+    ];
+    let norm: Vec<&str> = path.split(['/', '\\']).filter(|s| !s.is_empty()).collect();
+    if norm.len() < 2 {
+        return None;
+    }
+    let basename = norm.last()?;
+    let stem = basename.rsplit_once('.').map(|(s, _)| s).unwrap_or(basename);
+    if stem.is_empty() {
+        return None;
+    }
+    let parent_segments = &norm[..norm.len() - 1];
+    for root in ROOTS {
+        if parent_segments
+            .windows(root.len())
+            .any(|w| w.iter().zip(root.iter()).all(|(a, b)| a.eq_ignore_ascii_case(b)))
+        {
+            return Some(stem.to_string());
+        }
+    }
+    None
+}
+
+/// Recognise Next.js HTTP route files and return Consumer NamedChannel
+/// HttpCall emissions for them. Two route conventions are supported:
+///
+/// - **App Router** (`**/app/**/route.{ts,tsx,js,jsx}`): one Consumer per
+///   exported HTTP-verb function (`GET` / `POST` / `PUT` / `PATCH` /
+///   `DELETE` / `HEAD` / `OPTIONS`). The URL pattern is the file's path with
+///   the `app/` ancestor stripped, the `route.<ext>` basename dropped, and
+///   `[id]` / `[...slug]` / `[[...slug]]` segments rewritten to `{}`.
+/// - **Pages Router** (`**/pages/api/**/*.{ts,…}`): a single Any-method
+///   Consumer per file (Pages Router handlers dispatch internally on
+///   `req.method`). URL pattern excludes the `.ts` extension and rewrites
+///   `[id]` segments the same way; the special `index` basename is
+///   collapsed to the directory.
+///
+/// Returns an empty Vec when the path doesn't match either convention or
+/// when the App Router file exports no recognised HTTP-verb handlers.
+fn nextjs_route_consumer_emissions(
+    path: &str,
+    symbols: &[crate::types::ExtractedSymbol],
+) -> Vec<flow_emit::FlowEmission> {
+    let segs: Vec<&str> = path.split(['/', '\\']).filter(|s| !s.is_empty()).collect();
+    if segs.is_empty() {
+        return Vec::new();
+    }
+    let basename = *segs.last().unwrap();
+
+    // App Router: `app/**/route.{ts,tsx,js,jsx}` — exports name the verbs.
+    if matches!(basename, "route.ts" | "route.tsx" | "route.js" | "route.jsx") {
+        let Some(app_idx) = segs.iter().rposition(|s| *s == "app") else {
+            return Vec::new();
+        };
+        // Drop the `route.<ext>` basename and rewrite dynamic segments.
+        let url_segs: Vec<String> = segs[app_idx + 1..segs.len() - 1]
+            .iter()
+            .map(|s| rewrite_nextjs_segment(s))
+            .collect();
+        let url = if url_segs.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{}", url_segs.join("/"))
+        };
+        let verbs = exported_http_verb_handlers(symbols);
+        if !verbs.is_empty() {
+            return verbs
+                .into_iter()
+                .map(|method| flow_emit::FlowEmission::NamedChannel {
+                    kind: flow_emit::NamedChannelKind::HttpCall,
+                    name: url.clone(),
+                    role: flow_emit::ChannelRole::Consumer,
+                    method: Some(method),
+                streaming: None,
+                })
+                .collect();
+        }
+        // Fallback: Next.js App Router requires route files to export at
+        // least one HTTP verb. Re-export-rename patterns
+        // (`export { handler as GET, handler as POST }`) currently aren't
+        // synthesised as named symbols when the original is a local
+        // declaration. Emit a single Any-method Consumer so the file still
+        // pairs against any-method Producers (incl. tRPC client emissions).
+        return vec![flow_emit::FlowEmission::NamedChannel {
+            kind: flow_emit::NamedChannelKind::HttpCall,
+            name: url,
+            role: flow_emit::ChannelRole::Consumer,
+            method: Some(flow_emit::HttpMethod::Any),
+        streaming: None,
+        }];
+    }
+
+    // Pages Router: `pages/api/**` with any TS/JS extension. Skip files
+    // whose basename starts with `_` (Next.js convention for non-route).
+    let pages_idx = segs.iter().rposition(|s| *s == "pages");
+    let api_after_pages = pages_idx.and_then(|p_idx| {
+        segs.get(p_idx + 1).filter(|s| **s == "api").map(|_| p_idx + 1)
+    });
+    if let Some(api_idx) = api_after_pages {
+        if basename.starts_with('_') {
+            return Vec::new();
+        }
+        let stem = basename
+            .rsplit_once('.')
+            .map(|(s, _)| s)
+            .unwrap_or(basename);
+        if !matches!(
+            basename.rsplit_once('.').map(|(_, ext)| ext).unwrap_or(""),
+            "ts" | "tsx" | "js" | "jsx" | "mjs"
+        ) {
+            return Vec::new();
+        }
+        let mut url_segs: Vec<String> = segs[api_idx..segs.len() - 1]
+            .iter()
+            .map(|s| rewrite_nextjs_segment(s))
+            .collect();
+        // Pages convention: `pages/api/users/index.ts` → `/api/users`.
+        if stem != "index" {
+            url_segs.push(rewrite_nextjs_segment(stem));
+        }
+        let url = format!("/{}", url_segs.join("/"));
+        return vec![flow_emit::FlowEmission::NamedChannel {
+            kind: flow_emit::NamedChannelKind::HttpCall,
+            name: url,
+            role: flow_emit::ChannelRole::Consumer,
+            method: Some(flow_emit::HttpMethod::Any),
+        streaming: None,
+        }];
+    }
+
+    Vec::new()
+}
+
+/// Rewrite a single Next.js route segment for URL normalization:
+/// - `[id]` → `{}`           (single dynamic segment)
+/// - `[...slug]` → `{}`      (catch-all)
+/// - `[[...slug]]` → `{}`    (optional catch-all)
+/// - `(group)` → ``          (route group; consumed by the join, see below)
+/// - literal segments returned unchanged.
+///
+/// Route groups (`(marketing)`) are returned as empty strings; the caller is
+/// expected to filter empties out of the joined URL.
+fn rewrite_nextjs_segment(seg: &str) -> String {
+    if seg.starts_with('(') && seg.ends_with(')') {
+        return String::new();
+    }
+    if seg.starts_with("[[...") && seg.ends_with("]]") {
+        return "{}".to_string();
+    }
+    if seg.starts_with("[...") && seg.ends_with(']') {
+        return "{}".to_string();
+    }
+    if seg.starts_with('[') && seg.ends_with(']') {
+        return "{}".to_string();
+    }
+    seg.to_string()
+}
+
+/// Return the set of HTTP methods exported as named functions from a file.
+/// Recognises the canonical Next.js App Router handler names (uppercase
+/// HTTP verbs). Order is fixed (Get, Post, Put, Patch, Delete, Head, Options)
+/// for deterministic emission across runs.
+fn exported_http_verb_handlers(
+    symbols: &[crate::types::ExtractedSymbol],
+) -> Vec<flow_emit::HttpMethod> {
+    use flow_emit::HttpMethod;
+    let mut found = [false; 7];
+    for sym in symbols {
+        match sym.name.as_str() {
+            "GET" => found[0] = true,
+            "POST" => found[1] = true,
+            "PUT" => found[2] = true,
+            "PATCH" => found[3] = true,
+            "DELETE" => found[4] = true,
+            "HEAD" => found[5] = true,
+            "OPTIONS" => found[6] = true,
+            _ => {}
+        }
+    }
+    let order = [
+        HttpMethod::Get,
+        HttpMethod::Post,
+        HttpMethod::Put,
+        HttpMethod::Patch,
+        HttpMethod::Delete,
+        HttpMethod::Head,
+        HttpMethod::Options,
+    ];
+    found
+        .iter()
+        .zip(order.iter())
+        .filter_map(|(f, m)| if *f { Some(*m) } else { None })
+        .collect()
+}
+
+/// Convert per-file `ExtractedRoute` entries into Consumer
+/// `NamedChannel { kind: HttpCall, .. }` emissions. Used by the cross-language
+/// adapter to surface HTTP routes from any language that participates in
+/// `pf.routes` (C# ASP.NET attribute routes, Elixir Phoenix scope blocks,
+/// Go chi/gin chains, Java Spring `@GetMapping`, …) — they pair against
+/// Producer-side HTTP calls keyed on the same URL.
+///
+/// Returns `(handler_line, emission)` pairs. Routes whose `template` is
+/// empty after trimming are skipped — without a URL there's no pairing
+/// key. The `http_method` field is parsed via `HttpMethod::from_method_name`
+/// so `"GET"` / `"get"` / `""` all map sensibly (`""` collapses to `Any`).
+/// The URL template is canonicalised through `url_pattern::normalize` so
+/// dynamic-segment variants (`{id}`, `:id`, `<id>`) compare equal across
+/// languages.
+fn extracted_routes_to_emissions(
+    routes: &[crate::types::ExtractedRoute],
+    symbols: &[crate::types::ExtractedSymbol],
+) -> Vec<(u32, flow_emit::FlowEmission)> {
+    let mut out = Vec::with_capacity(routes.len());
+    for route in routes {
+        if route.template.trim().is_empty() {
+            continue;
+        }
+        let handler_line = symbols
+            .get(route.handler_symbol_index)
+            .map(|s| s.start_line)
+            .unwrap_or(1);
+        let method = flow_emit::HttpMethod::from_method_name(route.http_method.as_str());
+        let name = crate::connectors::url_pattern::normalize(route.template.as_str());
+        out.push((
+            handler_line,
+            flow_emit::FlowEmission::NamedChannel {
+                kind: flow_emit::NamedChannelKind::HttpCall,
+                name,
+                role: flow_emit::ChannelRole::Consumer,
+                method: Some(method),
+            streaming: None,
+            },
+        ));
+    }
+    out
+}
+
+/// Flush extractor-time `FlowEmission`s into the resolve loop's accumulator.
+/// Used for plugins whose flow detection is file-structure-based (GraphQL
+/// SDL blocks, `.proto` service definitions) and runs at parse time rather
+/// than during chain-walk resolver emission. The tuple shape matches
+/// `extracted_routes_to_emissions` — `(file_path, line, emission)`.
+fn plugin_flow_emissions_to_emissions(
+    pf: &crate::types::ParsedFile,
+    emissions: &mut Vec<(String, u32, flow_emit::FlowEmission)>,
+) {
+    for (line, emission) in &pf.plugin_flow_emissions {
+        emissions.push((pf.path.clone(), *line, emission.clone()));
+    }
+}
+
+/// Convert per-file `ExtractedDbSet` entries into `FlowEmission::DbEntity`
+/// emissions. Used for languages whose model-table mapping is extracted
+/// at the symbol layer (C# EF Core `DbSet<TEntity>` properties on a
+/// DbContext). Each entry becomes a DbEntity row keyed by the table name
+/// (or entity type name if the table name is empty), letting DbQuery
+/// emissions for the same entity name pair against it via the pairer's
+/// fuzzy name matching.
+fn extracted_db_sets_to_emissions(
+    db_sets: &[crate::types::ExtractedDbSet],
+    symbols: &[crate::types::ExtractedSymbol],
+) -> Vec<(u32, flow_emit::FlowEmission)> {
+    let mut out = Vec::with_capacity(db_sets.len());
+    for ds in db_sets {
+        let line = symbols
+            .get(ds.property_symbol_index)
+            .map(|s| s.start_line)
+            .unwrap_or(1);
+        let table = if ds.table_name.is_empty() {
+            None
+        } else {
+            Some(ds.table_name.clone())
+        };
+        out.push((
+            line,
+            flow_emit::FlowEmission::DbEntity {
+                base_symbol_id: None,
+                base_name_hint: ds.entity_type.clone(),
+                table_name_hint: table,
+            },
+        ));
+    }
+    out
+}
+
+/// Append a Consumer `NamedChannel { kind: HttpCall, .. }` emission for every
+/// row in the `routes` table whose file is internal and whose template is
+/// non-empty. Used for languages whose route extraction is implemented as a
+/// project-wide `Connector` writing to the DB directly (Go chi/gin, Java
+/// Spring `@GetMapping`, Elixir Phoenix scope blocks). The per-file
+/// `pf.routes`-driven adapter handles the remaining languages (C# and TS
+/// NestJS). Skips routes whose host file isn't on disk (deleted between
+/// extract and resolve).
+pub fn append_db_route_consumer_emissions(
+    conn: &rusqlite::Connection,
+    emissions: &mut Vec<(String, u32, flow_emit::FlowEmission)>,
+) -> Result<()> {
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT f.path,
+                    r.http_method,
+                    COALESCE(r.resolved_route, r.route_template) AS template,
+                    r.line
+             FROM routes r
+             JOIN files f ON r.file_id = f.id
+             WHERE f.origin = 'internal'",
+        )
+        .context("preparing routes-table read for flow adapter")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let path: String = row.get(0)?;
+        let method_str: String = row.get(1)?;
+        let template: String = row.get(2)?;
+        let line: u32 = row.get(3).unwrap_or(1);
+        if template.trim().is_empty() {
+            continue;
+        }
+        let method = flow_emit::HttpMethod::from_method_name(method_str.as_str());
+        let name = crate::connectors::url_pattern::normalize(template.as_str());
+        emissions.push((
+            path,
+            line.max(1),
+            flow_emit::FlowEmission::NamedChannel {
+                kind: flow_emit::NamedChannelKind::HttpCall,
+                name,
+                role: flow_emit::ChannelRole::Consumer,
+                method: Some(method),
+            streaming: None,
+            },
+        ));
+    }
+    Ok(())
+}
+
 fn read_file_imports_from_db(
     conn: &rusqlite::Connection,
     file_path: &str,

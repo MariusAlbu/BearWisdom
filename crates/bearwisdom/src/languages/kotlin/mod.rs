@@ -1,7 +1,6 @@
 //! kotlin language plugin.
 
 mod calls;
-pub mod connectors;
 pub(crate) mod decorators;
 mod embedded;
 mod flow;
@@ -50,15 +49,6 @@ impl LanguagePlugin for KotlinPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
-    }
-
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_kotlin_connection_points(source, file_path)
     }
 
     fn embedded_regions(
@@ -113,26 +103,6 @@ impl LanguagePlugin for KotlinPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::KotlinChecker))
-    }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::KotlinGrpcConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::KotlinRestConnector, db, project_root, ctx,
-        ));
-        out
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

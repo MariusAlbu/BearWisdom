@@ -154,6 +154,12 @@
   flex-shrink: 0;
 }
 
+.layerLegendDivider {
+  color: var(--text-faint, #444);
+  font-size: 14px;
+  user-select: none;
+}
+
 /* ---- Search filter badge ---- */
 
 .filterBadgeBar {

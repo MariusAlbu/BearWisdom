@@ -1,7 +1,6 @@
 //! dart language plugin.
 
 mod calls;
-pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod helpers;
 pub(crate) mod keywords;
@@ -47,15 +46,6 @@ impl LanguagePlugin for DartPlugin {
         extract::extract(source)
     }
 
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_dart_connection_points(source, file_path)
-    }
-
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class_definition",
@@ -97,19 +87,9 @@ impl LanguagePlugin for DartPlugin {
         Some(std::sync::Arc::new(type_checker::DartChecker))
     }
 
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        crate::languages::drive_connector(
-            &connectors::DartRestConnector, db, project_root, ctx,
-        )
-    }
+    // DartRestConnector deleted — its routes-table re-read for Stop points
+    // is redundant with the routes-table → FlowEmission bridge in
+    // `indexer/resolve/mod.rs::append_db_route_consumer_emissions`.
+    // Start points still flow through `extract_connection_points`.
 
 }

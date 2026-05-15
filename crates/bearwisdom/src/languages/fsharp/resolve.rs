@@ -147,7 +147,162 @@ impl LanguageResolver for FSharpResolver {
 
         None
     }
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let module = r.module.as_deref().unwrap_or("");
+        let target = r.target_name.as_str();
+        // Giraffe / Saturn route — `route "/x" >=> handler` or
+        // `router { get "/x" handler }`. Bare calls.
+        if let Some(em) = detect_fsharp_route(target, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_fsharp_http_producer(module, target, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_fsharp_db_query(module, target) {
+            return vec![em];
+        }
+        if let Some(chain) = r.chain.as_ref() {
+            if let Some(em) = detect_fsharp_di_chain_emission(chain) {
+                return vec![em];
+            }
+        } else if let Some(em) = detect_fsharp_di_bare_emission(target) {
+            return vec![em];
+        }
+        Vec::new()
+    }
 }
+
+/// Match `AddScoped` / `AddTransient` / `AddSingleton` chain leaves emitted
+/// from F# `services.AddScoped<IFoo, Foo>()` calls. F# shares the .NET DI
+/// API with C# verbatim; emits a `DiBinding` with `container = "dotnet"`.
+pub(crate) fn detect_fsharp_di_chain_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    let leaf = chain.segments.last()?;
+    if !matches!(
+        leaf.name.as_str(),
+        "AddScoped" | "AddTransient" | "AddSingleton"
+    ) {
+        return None;
+    }
+    Some(FlowEmission::DiBinding {
+        service_symbol_id: 0,
+        container: Some("dotnet".to_string()),
+    })
+}
+
+/// F#-only fallback for bare `AddScoped` calls when the extractor didn't
+/// build a member chain (e.g. computation-expression DSL flows that emit
+/// just the leaf identifier as the call target).
+pub(crate) fn detect_fsharp_di_bare_emission(
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::FlowEmission;
+    if !matches!(target, "AddScoped" | "AddTransient" | "AddSingleton") {
+        return None;
+    }
+    Some(FlowEmission::DiBinding {
+        service_symbol_id: 0,
+        container: Some("dotnet".to_string()),
+    })
+}
+
+pub(crate) fn detect_fsharp_route(
+    target_name: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let method = match target_name {
+        "route" | "routef" | "routeStartsWith" => HttpMethod::Any,
+        "GET" => HttpMethod::Get,
+        "POST" => HttpMethod::Post,
+        "PUT" => HttpMethod::Put,
+        "DELETE" => HttpMethod::Delete,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) if s.starts_with('/') => Some(s.as_str()),
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Consumer,
+        method: Some(method),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_fsharp_http_producer(
+    module: &str,
+    target: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    // `Http.AsyncRequestString(url)` / `Http.RequestString(url)` (FSharp.Data),
+    // FsHttp `http { GET url }` patterns are too DSL-like to detect at call level.
+    let m_last = module.rsplit('.').next().unwrap_or(module);
+    if m_last != "Http" {
+        return None;
+    }
+    if !matches!(
+        target,
+        "AsyncRequestString" | "RequestString" | "AsyncRequest" | "Request"
+    ) {
+        return None;
+    }
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Producer,
+        method: Some(HttpMethod::Any),
+    streaming: None,
+    })
+}
+
+pub(crate) fn detect_fsharp_db_query(
+    module: &str,
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    let op = match (module.rsplit('.').next().unwrap_or(module), target) {
+        ("Sql", "execute") | ("Sql", "executeAsync") | ("Sql", "executeReader") => DbQueryOp::Other,
+        ("Sql", "executeRowAsync") | ("Sql", "executeRow") => DbQueryOp::Select,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: "fs.*".to_string(),
+        operation: op,
+    })
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;
 
 // ---------------------------------------------------------------------------
 // Private helpers

@@ -50,7 +50,6 @@ pub fn extract(source: &str) -> ExtractionResult {
                 routes: vec![],
                 db_sets: vec![],
                 has_errors: true,
-                connection_points: Vec::new(),
                 demand_contributions: Vec::new(),
                 alias_targets: Vec::new(),
             }

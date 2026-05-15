@@ -54,10 +54,18 @@ pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
             if text.contains("private")   { return Some(Visibility::Private);   }
             if text.contains("protected") { return Some(Visibility::Protected); }
             if text.contains("public")    { return Some(Visibility::Public);    }
-            return None;
+            // A `modifiers` block holding only non-visibility tokens
+            // (`sealed`, `abstract`, `case`, `implicit`, `final`, …).
+            // Scala's default visibility is public — emitting None would
+            // hide every `case class Foo` from the dead-code
+            // `exported_api` entry-point contributor.
+            return Some(Visibility::Public);
         }
     }
-    None
+    // No `modifiers` block — bare `class Foo` / `def bar` / `val baz`.
+    // Scala defaults to public; emit it so the reachability seed-set
+    // picks the symbol up.
+    Some(Visibility::Public)
 }
 
 pub(super) fn extract_doc_comment(node: &Node, src: &[u8]) -> Option<String> {

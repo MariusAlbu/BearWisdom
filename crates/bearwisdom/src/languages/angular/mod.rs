@@ -14,7 +14,6 @@
 //! profile detector has already tagged as "angular" (based on proximity to
 //! angular.json or @angular/* deps in package.json).
 
-pub mod connectors;
 pub mod extract;
 pub mod resolve;
 
@@ -78,25 +77,5 @@ impl LanguagePlugin for AngularPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::AngularResolver))
-    }
-
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        let mut out = Vec::new();
-        out.extend(crate::languages::drive_connector(
-            &connectors::AngularDiConnector, db, project_root, ctx,
-        ));
-        out.extend(crate::languages::drive_connector(
-            &connectors::AngularRestConnector, db, project_root, ctx,
-        ));
-        out
     }
 }

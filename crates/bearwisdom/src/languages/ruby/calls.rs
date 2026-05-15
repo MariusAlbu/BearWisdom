@@ -3,8 +3,61 @@
 // =============================================================================
 
 use super::helpers::{get_call_method_name, node_text};
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
 use tree_sitter::Node;
+
+/// Extract positional arguments from a Ruby `call`/`method_call`/`command_call`
+/// node's argument list. Captures string literals, symbol literals,
+/// identifiers, constants (PascalCase model references), and numeric /
+/// boolean / nil literals. Anything else becomes `CallArg::Other`.
+pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
+    let args_node = match call_node.child_by_field_name("arguments") {
+        Some(n) => n,
+        None => {
+            // Some grammar variants emit `argument_list` as a named child
+            // rather than a field. Fall back to the first child of that
+            // kind.
+            let mut cursor = call_node.walk();
+            let found = call_node
+                .children(&mut cursor)
+                .find(|c| c.kind() == "argument_list");
+            match found {
+                Some(n) => n,
+                None => return Vec::new(),
+            }
+        }
+    };
+    let mut out = Vec::new();
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        let arg = match child.kind() {
+            "string" | "string_literal" => {
+                CallArg::StringLit(strip_ruby_string(&node_text(&child, src)))
+            }
+            // `:symbol` — emit as Ident so symbol-keyed lookups work the
+            // same as identifiers.
+            "simple_symbol" | "symbol" => {
+                let raw = node_text(&child, src);
+                CallArg::Ident(raw.trim_start_matches(':').to_string())
+            }
+            "identifier" => CallArg::Ident(node_text(&child, src)),
+            "constant" => CallArg::Ident(node_text(&child, src)),
+            "integer" | "float" => CallArg::Literal(node_text(&child, src)),
+            "true" | "false" | "nil" => CallArg::Literal(child.kind().to_string()),
+            _ => CallArg::Other,
+        };
+        out.push(arg);
+    }
+    out
+}
+
+fn strip_ruby_string(raw: &str) -> String {
+    raw.trim_start_matches('"')
+        .trim_end_matches('"')
+        .trim_start_matches('\'')
+        .trim_end_matches('\'')
+        .to_string()
+}
 
 pub(super) fn extract_calls_from_body(
     node: &Node,
@@ -57,6 +110,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
 
                     let chain = build_chain(&child, src);
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &child, refs);
+                    let call_args = extract_call_args(&child, src);
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name: mname,
@@ -66,7 +120,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         chain,
                         byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
+                                            call_args,
 });
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
@@ -83,6 +137,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     let mname = node_text(&method_node, src);
                     if !mname.is_empty() {
                         let chain = build_chain(&child, src);
+                        let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name: mname,
@@ -92,7 +147,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
+                                                    call_args,
 });
                     }
                 } else {
@@ -132,6 +187,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     let mname = node_text(&method_node, src);
                     if !mname.is_empty() {
                         let chain = build_chain(&child, src);
+                        let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name: mname,
@@ -141,7 +197,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             chain,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
+                                                    call_args,
 });
                     }
                 }

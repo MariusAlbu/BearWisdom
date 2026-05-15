@@ -44,6 +44,34 @@ function kindColor(kind: string): string {
   return KIND_COLORS[kind.toLowerCase()] ?? '#8a9aaa'
 }
 
+// Flow-edge colors. These mark cross-process / cross-language / cross-system
+// jumps in the trace tree (an HTTP call to another service, a DB write, a
+// GraphQL operation). Plain code-call edges (`calls`/`type_ref`/`instantiates`/
+// `member`) are not in this map — they keep the per-node-kind gradient.
+const FLOW_EDGE_COLORS: Record<string, string> = {
+  http_call:     '#e25c5c',
+  websocket:     '#e056b6',
+  rpc_call:      '#3cb4d6',
+  graphql_op:    '#e9598c',
+  db_query:      '#e09137',
+  db_entity:     '#c4965e',
+  message_queue: '#9466d4',
+  bg_job:        '#7a78d4',
+  ipc_call:      '#5b9dc4',
+  auth_guard:    '#d04545',
+  cli_command:   '#5a9a4e',
+  config_lookup: '#9d8a5a',
+  feature_flag:  '#9ed452',
+}
+
+function isFlowEdge(kind: string): boolean {
+  return Object.prototype.hasOwnProperty.call(FLOW_EDGE_COLORS, kind)
+}
+
+function flowEdgeLabel(kind: string): string {
+  return kind.replace(/_/g, ' ')
+}
+
 // ---------------------------------------------------------------------------
 // Internal graph types for sankey
 // ---------------------------------------------------------------------------
@@ -383,7 +411,12 @@ export function FlowExplorer({ workspacePath, onFileNavigate, searchQuery = '' }
       .attr('class', 'sk-link')
       .attr('d', sankeyLinkHorizontal())
       .attr('fill', 'none')
-      .attr('stroke', (_, i) => `url(#sk-grad-${i})`)
+      // Flow-jump edges (http_call, db_query, …) get a solid flow color so
+      // they stand out against the gradient links representing plain calls.
+      .attr('stroke', (d, i) => {
+        const ek = (d as LayoutLink & { edgeKind?: string }).edgeKind ?? ''
+        return isFlowEdge(ek) ? FLOW_EDGE_COLORS[ek] : `url(#sk-grad-${i})`
+      })
       .attr('stroke-width', d => Math.max(1, d.width ?? 1))
       .attr('opacity', 0.28)
       .style('transition', 'opacity 0.18s ease')
@@ -514,10 +547,16 @@ export function FlowExplorer({ workspacePath, onFileNavigate, searchQuery = '' }
       if (!tooltip) return
       const src = d.source as LayoutNode & SNode
       const tgt = d.target as LayoutNode & SNode
+      const ek = (d as LayoutLink & { edgeKind?: string }).edgeKind ?? ''
+      const flow = isFlowEdge(ek)
+      const ekRow = ek
+        ? `<div class="${styles.ttKind}" style="${flow ? `color: ${FLOW_EDGE_COLORS[ek]}; font-weight: 600;` : ''}">${flowEdgeLabel(ek)}</div>`
+        : ''
       tooltip.innerHTML = `
         <div class="${styles.ttSource}">${src.label}</div>
         <span class="${styles.ttArrow}">→</span>
         <div class="${styles.ttTarget}">${tgt.label}</div>
+        ${ekRow}
         <div class="${styles.ttConns}">connections: <span class="${styles.ttCount}">${d.value}</span></div>
       `
       tooltip.classList.add(styles.visible)
@@ -728,6 +767,18 @@ export function FlowExplorer({ workspacePath, onFileNavigate, searchQuery = '' }
   const filteredNodeCount = filteredSankeyData?.nodes.length ?? 0
   const totalNodeCount = baseSankeyData?.nodes.length ?? 0
 
+  // Flow edge kinds present in the current data, for the legend. Computed in
+  // a stable order matching FLOW_EDGE_COLORS' declaration so the legend
+  // doesn't reshuffle between renders.
+  const presentFlowKinds = useMemo(() => {
+    if (!filteredSankeyData) return [] as string[]
+    const present = new Set<string>()
+    for (const l of filteredSankeyData.links) {
+      if (isFlowEdge(l.edgeKind)) present.add(l.edgeKind)
+    }
+    return Object.keys(FLOW_EDGE_COLORS).filter(k => present.has(k))
+  }, [filteredSankeyData])
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -794,7 +845,7 @@ export function FlowExplorer({ workspacePath, onFileNavigate, searchQuery = '' }
         onSymbolSearch={handleSymbolSearch}
       />
 
-      <KindLegend />
+      <KindLegend flowKinds={presentFlowKinds} />
 
       {isFiltered && (
         <div className={styles.filterBadgeBar}>
@@ -901,7 +952,7 @@ function SummaryBar({
 
 const KIND_LEGEND = ['class', 'method', 'interface', 'constructor', 'property', 'enum'] as const
 
-function KindLegend() {
+function KindLegend({ flowKinds }: { flowKinds: string[] }) {
   return (
     <div className={styles.layerLegend}>
       {KIND_LEGEND.map(kind => (
@@ -913,6 +964,20 @@ function KindLegend() {
           <span>{kind}</span>
         </div>
       ))}
+      {flowKinds.length > 0 && (
+        <>
+          <span className={styles.layerLegendDivider} aria-hidden>·</span>
+          {flowKinds.map(k => (
+            <div key={k} className={styles.layerLegendItem}>
+              <div
+                className={styles.layerLegendSwatch}
+                style={{ background: FLOW_EDGE_COLORS[k] }}
+              />
+              <span>{flowEdgeLabel(k)}</span>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   )
 }

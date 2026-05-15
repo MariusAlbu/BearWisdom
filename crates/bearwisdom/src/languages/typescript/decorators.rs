@@ -1,5 +1,6 @@
+use super::calls::extract_call_args;
 use super::helpers::node_text;
-use crate::types::{EdgeKind, ExtractedRef};
+use crate::types::{CallArg, EdgeKind, ExtractedRef};
 use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------
@@ -43,17 +44,23 @@ pub(super) fn extract_decorators(
 ) {
     let decorator_nodes = collect_decorator_nodes(node);
     for dec in decorator_nodes {
-        if let Some((name, first_arg)) = parse_decorator(&dec, src) {
+        if let Some((name, _first_arg, call_args)) = parse_decorator(&dec, src) {
+            // `first_arg` lives on `call_args[0]` (CallArg::StringLit) — do
+            // NOT also stash it in `module`. `module` is reserved for import
+            // sources (`import { Foo } from '<module>'`); reusing it here
+            // makes decorator refs indistinguishable from imports, and
+            // downstream consumers (controller-prefix pre-pass, route-decorator
+            // detector) misroute one for the other.
             refs.push(ExtractedRef {
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::TypeRef,
                 line: dec.start_position().row as u32,
-                module: first_arg,
+                module: None,
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
+                            call_args,
 });
         }
     }
@@ -113,7 +120,10 @@ fn collect_decorator_nodes<'a>(node: &'a Node<'a>) -> Vec<Node<'a>> {
 // Parse a single `decorator` node into (name, optional_first_arg).
 // ---------------------------------------------------------------------------
 
-fn parse_decorator<'a>(node: &'a Node<'a>, src: &[u8]) -> Option<(String, Option<String>)> {
+fn parse_decorator<'a>(
+    node: &'a Node<'a>,
+    src: &[u8],
+) -> Option<(String, Option<String>, Vec<CallArg>)> {
     // A decorator node has a single meaningful child:
     //   call_expression  → @Foo(...)  or @Foo.Bar(...)
     //   identifier       → @Foo  (bare, no parens)
@@ -123,12 +133,13 @@ fn parse_decorator<'a>(node: &'a Node<'a>, src: &[u8]) -> Option<(String, Option
             "call_expression" => {
                 let name = extract_call_name(&child, src)?;
                 let first_arg = extract_first_string_arg(&child, src);
-                return Some((name, first_arg));
+                let call_args = extract_call_args(&child, src);
+                return Some((name, first_arg, call_args));
             }
             "identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() {
-                    return Some((name, None));
+                    return Some((name, None, Vec::new()));
                 }
             }
             _ => {}

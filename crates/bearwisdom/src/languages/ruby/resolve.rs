@@ -424,6 +424,266 @@ impl LanguageResolver for RubyResolver {
     // is_visible: default (always true) is correct for Ruby.
     // Ruby access control (private/protected) is enforced at runtime, not
     // at the call site — all indexed symbols are accessible for our purposes.
+
+    fn detect_flow_emission(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let r = &ref_ctx.extracted_ref;
+        // ActionCable channel inheritance — `class XChannel < ApplicationCable::Channel`.
+        if r.kind == EdgeKind::Inherits {
+            if let Some(emission) = detect_ruby_actioncable_emission(r.target_name.as_str()) {
+                return vec![emission];
+            }
+            return Vec::new();
+        }
+        if r.kind != EdgeKind::Calls {
+            return Vec::new();
+        }
+        let Some(chain) = r.chain.as_ref() else {
+            return Vec::new();
+        };
+        if let Some(emission) = detect_ruby_activerecord_emission(chain) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_ruby_actionmailer_emission(chain) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_ruby_bgjob_emission(chain) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_ruby_http_emission(chain, &r.call_args) {
+            return vec![emission];
+        }
+        Vec::new()
+    }
+}
+
+/// Detect Net::HTTP / Faraday / HTTParty / RestClient client calls.
+/// Chain shape: `Net::HTTP.get("url")`, `Faraday.get("url")`,
+/// `HTTParty.post("url", ...)`, `RestClient.get("url")`. Emit Producer HttpCall.
+pub(crate) fn detect_ruby_http_emission(
+    chain: &crate::types::MemberChain,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    let segs = &chain.segments;
+    if segs.len() < 2 {
+        return None;
+    }
+    let root = segs[0].name.as_str();
+    let is_http_lib = match root {
+        "Net" => segs.get(1).map_or(false, |s| s.name == "HTTP"),
+        "Faraday" | "HTTParty" | "RestClient" => true,
+        _ => false,
+    };
+    if !is_http_lib {
+        return None;
+    }
+    let leaf = segs.last()?.name.as_str();
+    let method = match leaf {
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "delete" => HttpMethod::Delete,
+        "patch" => HttpMethod::Patch,
+        "head" => HttpMethod::Head,
+        _ => return None,
+    };
+    let url = match call_args.first()? {
+        crate::types::CallArg::StringLit(s) => s.clone(),
+        crate::types::CallArg::TemplateLit(s) => s.clone(),
+        _ => return None,
+    };
+    if !ruby_url_looks_like_api(&url) {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: normalise_ruby_url(&url),
+        role: ChannelRole::Producer,
+        method: Some(method),
+        streaming: None,
+    })
+}
+
+fn ruby_url_looks_like_api(s: &str) -> bool {
+    if s.starts_with("http://") || s.starts_with("https://") {
+        let after = s.find("://").map(|i| &s[i + 3..]).unwrap_or(s);
+        let path = after.find('/').map(|i| &after[i..]).unwrap_or("");
+        if path.is_empty() {
+            return false;
+        }
+        return ruby_url_looks_like_api(path);
+    }
+    s.starts_with('/')
+        || s.contains("/api/")
+        || s.contains("/v1/")
+        || s.contains("/v2/")
+        || s.contains("/{")
+}
+
+fn normalise_ruby_url(raw: &str) -> String {
+    let without_query = raw.split('?').next().unwrap_or(raw);
+    let re_tmpl = regex::Regex::new(r"#\{[^}]+\}").expect("template regex");
+    re_tmpl.replace_all(without_query, "{param}").into_owned()
+}
+
+/// `class XChannel < ApplicationCable::Channel` (or bare `Channel`).
+/// Emit single-ended Consumer WebSocket.
+pub(crate) fn detect_ruby_actioncable_emission(
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let last = target.rsplit("::").next().unwrap_or(target);
+    if last != "Channel" {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::WebSocket,
+        name: "rb.actioncable".to_string(),
+        role: ChannelRole::Consumer,
+        method: None,
+    streaming: None,
+    })
+}
+
+/// Detect Sidekiq `MyWorker.perform_async(args)` / `.perform_later(args)`
+/// (ActiveJob) and similar BG-job enqueue calls.
+pub(crate) fn detect_ruby_bgjob_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let segs = &chain.segments;
+    if segs.len() < 2 {
+        return None;
+    }
+    let root = segs[0].name.as_str();
+    let leaf = segs.last()?.name.as_str();
+    if !root
+        .chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
+    {
+        return None;
+    }
+    // Sidekiq / ActiveJob / Resque enqueue methods.
+    if !matches!(
+        leaf,
+        "perform_async" | "perform_later" | "perform_in" | "perform_at"
+            | "enqueue" | "set" | "deliver_later"
+    ) {
+        return None;
+    }
+    // Skip ActionMailer-style — that's handled by detect_ruby_actionmailer_emission.
+    if root.ends_with("Mailer") {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::BgJob,
+        name: format!("rb.{}", root),
+        role: ChannelRole::Producer,
+        method: None,
+    streaming: None,
+    })
+}
+
+/// Detect Rails ActionMailer: `UserMailer.welcome(user).deliver_now` —
+/// chain root ends with `Mailer` and any leaf is a deliver-style method.
+pub(crate) fn detect_ruby_actionmailer_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
+    let segs = &chain.segments;
+    if segs.len() < 2 {
+        return None;
+    }
+    let root = segs[0].name.as_str();
+    let leaf = segs.last()?.name.as_str();
+    if !root.ends_with("Mailer") || root == "Mailer" {
+        return None;
+    }
+    if !matches!(
+        leaf,
+        "deliver_now" | "deliver_later" | "deliver" | "deliver_now!" | "deliver_later!"
+    ) {
+        return None;
+    }
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::Mailer,
+        name: format!("rb.{}", root),
+        role: ChannelRole::Producer,
+        method: None,
+    streaming: None,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ActiveRecord DbQuery — `Model.where(...)` / `Model.find(...)` / etc.
+// ---------------------------------------------------------------------------
+
+/// Recognise ActiveRecord-style query chains and emit Producer DbQuery
+/// keyed on the model class. Shapes handled:
+/// - `<Model>.where(...)` / `find` / `find_by` / `first` / `last` /
+///   `all` / `count` / `pluck` / `exists?` etc. (Select)
+/// - `<Model>.create(...)` / `create!` / `new` (Insert/Other)
+/// - `<Model>.update(...)` / `update_all` (Update)
+/// - `<Model>.destroy(...)` / `destroy_all` / `delete` / `delete_all` (Delete)
+/// - Chained methods: `<Model>.where(...).includes(...).first` —
+///   detector fires on the root segment match, leaf op classifies.
+///
+/// Requires the chain root to be PascalCase (Ruby model class naming
+/// convention). Method names like `Foo.bar` where bar isn't a known
+/// ORM op produce no emission.
+pub(crate) fn detect_ruby_activerecord_emission(
+    chain: &crate::types::MemberChain,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+
+    let segs = &chain.segments;
+    if segs.len() < 2 {
+        return None;
+    }
+    let root = segs[0].name.as_str();
+    let leaf = segs.last()?.name.as_str();
+    if !is_pascal_case_first_rb(root) {
+        return None;
+    }
+    let op = parse_activerecord_op(leaf)?;
+    Some(FlowEmission::DbQuery {
+        entity_name: format!("rb.{}", root),
+        operation: op,
+    })
+}
+
+fn parse_activerecord_op(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
+    use crate::indexer::resolve::flow_emit::DbQueryOp;
+    Some(match name {
+        // Read operations.
+        "where" | "find" | "find_by" | "find_by!" | "find_each" | "first" | "last"
+        | "all" | "count" | "exists?" | "pluck" | "select" | "includes" | "joins"
+        | "left_joins" | "preload" | "eager_load" | "order" | "group" | "having"
+        | "limit" | "offset" | "distinct" | "none" | "unscoped" | "merge" | "take"
+        | "take!" | "any?" | "many?" | "average" | "minimum" | "maximum" | "sum"
+        | "ids" | "size" | "length" | "to_a" => DbQueryOp::Select,
+        // Insert operations.
+        "create" | "create!" | "insert" | "insert_all" | "insert_all!" => DbQueryOp::Insert,
+        // Update operations.
+        "update" | "update!" | "update_all" | "update_attributes" | "save" | "save!"
+        | "upsert" | "upsert_all" | "touch" | "increment!" | "decrement!" => DbQueryOp::Update,
+        // Delete operations.
+        "destroy" | "destroy!" | "destroy_all" | "delete" | "delete_all" => DbQueryOp::Delete,
+        // find_or_create_by — upsert semantics.
+        "find_or_create_by" | "find_or_create_by!" | "find_or_initialize_by" => DbQueryOp::Upsert,
+        _ => return None,
+    })
+}
+
+fn is_pascal_case_first_rb(name: &str) -> bool {
+    name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
 }
 
 // ---------------------------------------------------------------------------

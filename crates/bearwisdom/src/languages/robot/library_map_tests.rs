@@ -39,10 +39,11 @@ fn pf(path: &str, refs: Vec<ExtractedRef>) -> ParsedFile {
         content: None,
         has_errors: false,
         flow: FlowMeta::default(),
-        connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
+
+        plugin_flow_emissions: Vec::new(),
     }
 }
 

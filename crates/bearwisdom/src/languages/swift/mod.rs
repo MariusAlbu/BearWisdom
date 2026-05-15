@@ -1,7 +1,6 @@
 //! swift language plugin.
 
 mod calls;
-pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod embedded;
 mod helpers;
@@ -46,15 +45,6 @@ impl LanguagePlugin for SwiftPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
-    }
-
-    fn extract_connection_points(
-        &self,
-        source: &str,
-        file_path: &str,
-        _lang_id: &str,
-    ) -> Vec<crate::types::ConnectionPoint> {
-        connectors::extract_swift_connection_points(source, file_path)
     }
 
     fn embedded_regions(
@@ -115,19 +105,9 @@ impl LanguagePlugin for SwiftPlugin {
         Some(std::sync::Arc::new(type_checker::SwiftChecker))
     }
 
-    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![]
-    }
-
-    fn resolve_connection_points(
-        &self,
-        db: &crate::db::Database,
-        project_root: &std::path::Path,
-        ctx: &crate::indexer::project_context::ProjectContext,
-    ) -> Vec<crate::connectors::types::ConnectionPoint> {
-        crate::languages::drive_connector(
-            &connectors::SwiftRestConnector, db, project_root, ctx,
-        )
-    }
-
+    // resolve_connection_points removed — SwiftRestConnector's only role was
+    // re-reading the `routes` table for Stop points, which the central
+    // routes-table → FlowEmission bridge in `indexer/resolve/mod.rs` already
+    // handles for every language. Start points still flow through
+    // `extract_connection_points` from source-scan.
 }

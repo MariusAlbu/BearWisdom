@@ -22,55 +22,45 @@ use regex::Regex;
 use rusqlite::Connection;
 use tracing::debug;
 
-use crate::connectors::traits::{Connector, ConnectorDescriptor};
-use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
-use crate::ecosystem::manifest::ManifestKind;
-use crate::indexer::project_context::ProjectContext;
-
 // ===========================================================================
 // PhoenixRouteConnector
 // ===========================================================================
 
-pub struct PhoenixRouteConnector;
-
-impl Connector for PhoenixRouteConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "phoenix_routes",
-            protocols: &[Protocol::Rest],
-            languages: &["elixir"],
+/// Phoenix router map scan + `routes` table population. The
+/// `routes`-table → FlowEmission bridge in resolve/mod.rs handles
+/// downstream flow_edges emission.
+///
+/// Returns the count of routes written to the `routes` table.
+pub fn discover_phoenix_routes(conn: &Connection, project_root: &Path) -> u32 {
+    let routes = match find_phoenix_routes(conn, project_root) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("Phoenix route detection failed: {e}");
+            return 0;
         }
-    }
+    };
 
-    fn detect(&self, ctx: &ProjectContext) -> bool {
-        if let Some(mix) = ctx.manifests.get(&ManifestKind::Mix) {
-            if mix.dependencies.contains("phoenix") {
-                return true;
+    let mut inserted: u32 = 0;
+    if let Ok(mut stmt) = conn.prepare_cached(
+        "INSERT OR IGNORE INTO routes \
+         (file_id, symbol_id, http_method, route_template, resolved_route, line) \
+         VALUES (?1, NULL, ?2, ?3, ?3, ?4)",
+    ) {
+        for r in &routes {
+            if let Ok(n) = stmt.execute(rusqlite::params![
+                r.file_id,
+                r.http_method,
+                r.path,
+                r.line as i64,
+            ]) {
+                if n > 0 {
+                    inserted += 1;
+                }
             }
         }
-        // Fallback: will check file content in extract().
-        true
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        let routes = find_phoenix_routes(conn, project_root)
-            .context("Phoenix route detection failed")?;
-
-        Ok(routes
-            .into_iter()
-            .map(|r| ConnectionPoint {
-                file_id: r.file_id,
-                symbol_id: None,
-                line: r.line,
-                protocol: Protocol::Rest,
-                direction: FlowDirection::Stop,
-                key: r.path,
-                method: r.http_method,
-                framework: "phoenix".to_string(),
-                metadata: None,
-            })
-            .collect())
-    }
+    inserted
 }
 
 // ---------------------------------------------------------------------------
@@ -195,8 +185,16 @@ fn find_phoenix_routes(conn: &Connection, project_root: &Path) -> Result<Vec<Pho
             }
         };
 
-        // Quick filter: must use Phoenix.Router.
-        if !source.contains("Phoenix.Router") && !source.contains("use Phoenix") {
+        // Quick filter: must look like a Phoenix router. Modern Phoenix
+        // apps put the `use Phoenix.Router` invocation behind a project
+        // macro (`use MyAppWeb, :router`), so accept the project-macro
+        // shape too. Generic `:router` plus any verb macro signature is
+        // sufficient to gate the regex pass below.
+        let looks_like_router = source.contains("Phoenix.Router")
+            || source.contains("use Phoenix")
+            || source.contains(", :router")
+            || source.contains(":router\n");
+        if !looks_like_router {
             continue;
         }
 
