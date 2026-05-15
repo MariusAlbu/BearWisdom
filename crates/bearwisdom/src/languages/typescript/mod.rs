@@ -24,6 +24,8 @@ pub mod extract;
 pub(crate) mod predicates;
 pub(crate) mod type_checker;
 pub mod resolve;
+mod aliases;
+pub(crate) mod flow_detectors;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
