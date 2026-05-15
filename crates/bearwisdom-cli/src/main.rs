@@ -554,6 +554,16 @@ enum Commands {
         /// Absolute path to the project root.
         path: String,
     },
+
+    /// Flow-pairing diagnostics: paired vs single-ended flow_edges
+    /// breakdown by edge_type/protocol/source_language, plus the top
+    /// single-ended-group worklist. The connector equivalent of
+    /// `unresolved-classify` — see
+    /// `research/ArchitectureImprovements/Codex/04-flow-connectors-plan.md`.
+    FlowDiagnostics {
+        /// Absolute path to the project root.
+        path: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -709,6 +719,7 @@ fn run(command: Commands, full: bool) -> Result<String> {
             cmd_unresolved_classify(&path, samples)
         }
         Commands::ResolutionGate { path } => cmd_resolution_gate(&path),
+        Commands::FlowDiagnostics { path } => cmd_flow_diagnostics(&path),
     }
 }
 
@@ -2038,6 +2049,15 @@ fn cmd_unresolved_classify(project_path: &str, samples: usize) -> Result<String>
 /// Resolution-gate report. Wraps `resolution_breakdown` plus the dead-code
 /// `find_dead_code` health/trust-tier summary into a single canonical
 /// gate output. See `research/ArchitectureImprovements/Codex/01-resolution-gate-plan.md`.
+/// Flow-pairing diagnostics — paired vs single-ended `flow_edges` with a
+/// per-(edge_type, protocol) breakdown and a top-N single-ended worklist.
+/// See `research/ArchitectureImprovements/Codex/04-flow-connectors-plan.md`.
+fn cmd_flow_diagnostics(project_path: &str) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let report = bearwisdom::flow_diagnostics(&db).context("flow_diagnostics failed")?;
+    ok_json(report)
+}
+
 fn cmd_resolution_gate(project_path: &str) -> Result<String> {
     use bearwisdom::query::dead_code::{DeadCodeOptions, find_dead_code};
     let db = open_existing_db(project_path)?;

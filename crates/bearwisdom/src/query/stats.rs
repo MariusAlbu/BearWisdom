@@ -577,6 +577,221 @@ pub fn flow_edges_data(db: &Database, limit: usize) -> QueryResult<FlowEdgesData
     Ok(FlowEdgesData { edges, total, by_edge_type, by_language_pair })
 }
 
+// ---------------------------------------------------------------------------
+// Flow diagnostics — paired vs single-ended breakdown
+// ---------------------------------------------------------------------------
+
+/// Pairing counts for one bucket (edge_type / protocol / language /
+/// edge_type+language slice). Single-ended rows are `flow_edges` whose
+/// `target_file_id IS NULL` — the resolver-side equivalent of an
+/// unresolved reference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowPairing {
+    pub paired: u32,
+    pub single_ended: u32,
+}
+
+impl FlowPairing {
+    /// Total edges in this bucket.
+    pub fn total(&self) -> u32 {
+        self.paired + self.single_ended
+    }
+
+    /// `paired / total * 100`, capped to two decimals. 100.0 when the bucket
+    /// is empty so empty buckets don't show up as 0% pairing.
+    pub fn pairing_rate(&self) -> f64 {
+        let total = self.total();
+        if total == 0 {
+            return 100.0;
+        }
+        let rate = (self.paired as f64) / (total as f64) * 100.0;
+        (rate * 100.0).round() / 100.0
+    }
+}
+
+/// One (edge_type, protocol) bucket in the diagnostic breakdown.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowEdgeTypeBucket {
+    pub edge_type: String,
+    pub protocol: Option<String>,
+    pub paired: u32,
+    pub single_ended: u32,
+    /// `paired / total * 100`, two decimals.
+    pub pairing_rate: f64,
+}
+
+/// One example single-ended group surfaced in the diagnostic worklist:
+/// a (edge_type, protocol, url_pattern, source_language) tuple with its
+/// count and an example file/line.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SingleEndedExample {
+    pub edge_type: String,
+    pub protocol: Option<String>,
+    pub url_pattern: Option<String>,
+    pub source_language: Option<String>,
+    pub example_file: Option<String>,
+    pub example_line: Option<u32>,
+    pub count: u32,
+}
+
+/// Full pairing-quality report for `flow_edges`.
+///
+/// The connector equivalent of `ResolutionBreakdown`: every produced flow
+/// edge is either paired (both endpoints resolved across files) or
+/// single-ended (only the producer or only the consumer side was emitted).
+/// Pairing quality is the gate metric for the connector-kill — a healthy
+/// project pairs the bulk of its emitted HTTP / RPC / WebSocket / queue
+/// edges across services and only leaves single-ended rows where the
+/// counterpart genuinely lives outside the indexed code.
+///
+/// See `research/ArchitectureImprovements/Codex/04-flow-connectors-plan.md`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowDiagnostics {
+    /// Total `flow_edges` rows.
+    pub total: u32,
+    /// Rows with both ends resolved (`target_file_id IS NOT NULL`).
+    pub paired: u32,
+    /// Rows with the target side unresolved (`target_file_id IS NULL`).
+    pub single_ended: u32,
+    /// `paired / total * 100`, two decimals. 100.0 for empty indexes.
+    pub pairing_rate: f64,
+    /// Per-(edge_type, protocol) breakdown sorted by single_ended desc, then
+    /// total desc. The worklist headline: which connector kinds are leaking.
+    pub by_edge_type: Vec<FlowEdgeTypeBucket>,
+    /// Per source-language pairing. Pinpoints whether a specific language's
+    /// resolver is the source of unpaired edges.
+    pub by_source_language: BTreeMap<String, FlowPairing>,
+    /// Top single-ended examples — (edge_type, protocol, url_pattern,
+    /// source_language) groups with the highest count, capped at 25. Each
+    /// row carries an arbitrary example file/line for the user to inspect.
+    pub top_single_ended: Vec<SingleEndedExample>,
+}
+
+/// Compute pairing-quality diagnostics for the project's `flow_edges`.
+///
+/// Single-ended rows = `target_file_id IS NULL`. They're the post-Phase H
+/// equivalent of "unmatched starts/stops" — the connector kill emitted them
+/// but the pairer never found a partner. This report breaks the count down
+/// so the next round of resolver work can target the heaviest leak first.
+pub fn flow_diagnostics(db: &Database) -> QueryResult<FlowDiagnostics> {
+    let _timer = db.timer("flow_diagnostics");
+    let conn = db.conn();
+
+    // --- Headline totals + (edge_type, protocol) buckets in one scan.
+    let mut by_edge_type: Vec<FlowEdgeTypeBucket> = Vec::new();
+    let mut total = 0u32;
+    let mut paired_total = 0u32;
+    let mut single_total = 0u32;
+    {
+        let mut stmt = conn.prepare(
+            "SELECT edge_type,
+                    protocol,
+                    SUM(CASE WHEN target_file_id IS NULL THEN 0 ELSE 1 END) AS paired,
+                    SUM(CASE WHEN target_file_id IS NULL THEN 1 ELSE 0 END) AS single_ended
+             FROM flow_edges
+             GROUP BY edge_type, protocol",
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let edge_type: String = row.get(0)?;
+            let protocol: Option<String> = row.get(1)?;
+            let paired: u32 = row.get::<_, i64>(2)? as u32;
+            let single_ended: u32 = row.get::<_, i64>(3)? as u32;
+            paired_total += paired;
+            single_total += single_ended;
+            total += paired + single_ended;
+            let pairing = FlowPairing { paired, single_ended };
+            by_edge_type.push(FlowEdgeTypeBucket {
+                edge_type,
+                protocol,
+                paired,
+                single_ended,
+                pairing_rate: pairing.pairing_rate(),
+            });
+        }
+    }
+    by_edge_type.sort_by(|a, b| {
+        b.single_ended
+            .cmp(&a.single_ended)
+            .then_with(|| (b.paired + b.single_ended).cmp(&(a.paired + a.single_ended)))
+            .then_with(|| a.edge_type.cmp(&b.edge_type))
+    });
+
+    let pairing_rate = if total == 0 {
+        100.0
+    } else {
+        let r = (paired_total as f64) / (total as f64) * 100.0;
+        (r * 100.0).round() / 100.0
+    };
+
+    // --- Per-source-language pairing.
+    let mut by_source_language: BTreeMap<String, FlowPairing> = BTreeMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT COALESCE(fe.source_language, sf.language, '') AS lang,
+                    SUM(CASE WHEN fe.target_file_id IS NULL THEN 0 ELSE 1 END) AS paired,
+                    SUM(CASE WHEN fe.target_file_id IS NULL THEN 1 ELSE 0 END) AS single_ended
+             FROM flow_edges fe
+             JOIN files sf ON sf.id = fe.source_file_id
+             GROUP BY lang",
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let lang: String = row.get(0)?;
+            let paired: u32 = row.get::<_, i64>(1)? as u32;
+            let single_ended: u32 = row.get::<_, i64>(2)? as u32;
+            by_source_language.insert(lang, FlowPairing { paired, single_ended });
+        }
+    }
+
+    // --- Top-N single-ended worklist.
+    //
+    // Grouping by (edge_type, protocol, url_pattern, source_language) keeps
+    // duplicate emissions (same URL emitted at 12 different call sites)
+    // collapsed into one worklist entry. The example_file/line picks any
+    // representative row via MIN.
+    let mut top_single_ended: Vec<SingleEndedExample> = Vec::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT fe.edge_type,
+                    fe.protocol,
+                    fe.url_pattern,
+                    COALESCE(fe.source_language, sf.language) AS lang,
+                    MIN(sf.path) AS example_file,
+                    MIN(fe.source_line) AS example_line,
+                    COUNT(*) AS cnt
+             FROM flow_edges fe
+             JOIN files sf ON sf.id = fe.source_file_id
+             WHERE fe.target_file_id IS NULL
+             GROUP BY fe.edge_type, fe.protocol, fe.url_pattern, lang
+             ORDER BY cnt DESC, fe.edge_type, fe.url_pattern
+             LIMIT 25",
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            top_single_ended.push(SingleEndedExample {
+                edge_type: row.get(0)?,
+                protocol: row.get(1)?,
+                url_pattern: row.get(2)?,
+                source_language: row.get(3)?,
+                example_file: row.get(4)?,
+                example_line: row.get::<_, Option<i64>>(5)?.map(|v| v as u32),
+                count: row.get::<_, i64>(6)? as u32,
+            });
+        }
+    }
+
+    Ok(FlowDiagnostics {
+        total,
+        paired: paired_total,
+        single_ended: single_total,
+        pairing_rate,
+        by_edge_type,
+        by_source_language,
+        top_single_ended,
+    })
+}
+
 /// List all HTTP routes from the index.
 pub fn list_routes(db: &Database) -> QueryResult<Vec<crate::types::RouteInfo>> {
     let conn = db.conn();
