@@ -7,6 +7,8 @@ pub mod references;
 
 // New modules added in this update.
 pub mod hierarchy;
+pub mod hierarchy_drill;
+pub mod hierarchy_workspace;
 pub mod architecture;
 pub mod blast_radius;
 pub mod call_hierarchy;
