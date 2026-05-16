@@ -1,4 +1,4 @@
-use super::extract_cowboy_triples_from_text;
+use crate::languages::erlang::cowboy::extract_cowboy_triples_from_text;
 use crate::types::ExtractedRoute;
 use super::extract as run_extract;
 

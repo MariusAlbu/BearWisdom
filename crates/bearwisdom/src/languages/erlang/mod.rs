@@ -15,6 +15,9 @@ pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
+mod attributes;
+mod cowboy;
+mod functions;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
