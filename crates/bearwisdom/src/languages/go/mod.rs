@@ -1,8 +1,10 @@
 //! go language plugin.
 
+mod call_sites;
 mod calls;
 mod chain;
 mod embedded;
+mod refs;
 mod flow;
 mod flow_detectors;
 mod helpers;
