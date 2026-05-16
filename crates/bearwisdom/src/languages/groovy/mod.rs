@@ -13,6 +13,9 @@
 pub(crate) mod connectors;
 pub(crate) mod keywords;
 pub mod extract;
+mod ast_visit;
+mod calls;
+mod node_helpers;
 
 mod predicates;
 pub(crate) mod type_checker;
