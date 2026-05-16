@@ -24,6 +24,10 @@
 //! components) so both Razor dialects go through the same pipeline.
 
 pub mod embedded;
+mod embedded_mask;
+mod embedded_scan;
+#[cfg(test)]
+mod embedded_tests;
 pub mod extract;
 
 use crate::languages::LanguagePlugin;
