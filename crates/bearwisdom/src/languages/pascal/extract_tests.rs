@@ -513,7 +513,7 @@ fn castlefields_simplemult_classes_extracted() {
 
 #[test]
 fn normalised_source_strips_specialize_and_generic_params() {
-    use super::normalise_source_for_test;
+    use crate::languages::pascal::normalise::normalise_source_for_test;
     let source = r#"{$ifdef read_interface}
   TMFMatrix3f = class({$ifdef FPC}specialize{$endif} TX3DSimpleMultField<
     TMatrix3,

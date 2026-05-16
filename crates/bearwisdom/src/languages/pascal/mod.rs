@@ -4,6 +4,8 @@
 
 pub mod keywords;
 pub mod extract;
+mod normalise;
+mod error_recovery;
 
 mod predicates;
 pub(crate) mod type_checker;
