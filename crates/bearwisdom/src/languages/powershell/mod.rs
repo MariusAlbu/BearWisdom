@@ -12,6 +12,9 @@
 
 pub mod keywords;
 pub mod extract;
+mod commands;
+mod dotnet_bindings;
+mod node_helpers;
 
 mod predicates;
 pub(crate) mod type_checker;
