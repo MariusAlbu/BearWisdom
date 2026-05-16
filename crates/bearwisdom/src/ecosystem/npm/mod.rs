@@ -655,8 +655,16 @@ fn node_builtins() -> std::collections::HashSet<&'static str> {
 }
 
 mod externals;
+mod walk;
+mod post_process;
+mod symbol_index;
+mod ts_scan;
 
 pub(crate) use externals::*;
+pub(crate) use walk::*;
+pub(crate) use post_process::*;
+pub(crate) use symbol_index::*;
+pub(crate) use ts_scan::*;
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]
