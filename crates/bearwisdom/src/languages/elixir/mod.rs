@@ -5,6 +5,9 @@ pub(crate) mod connectors;
 pub(crate) mod phoenix_routes;
 pub(crate) mod keywords;
 pub mod extract;
+mod calls;
+mod directives;
+mod type_refs;
 
 pub(crate) mod predicates;
 pub(crate) mod type_checker;

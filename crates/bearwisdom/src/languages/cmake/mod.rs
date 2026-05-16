@@ -3,6 +3,8 @@
 pub mod embedded;
 pub mod keywords;
 pub mod extract;
+mod arguments;
+mod commands;
 pub mod resolve;
 
 #[cfg(test)]
