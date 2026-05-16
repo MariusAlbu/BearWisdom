@@ -2,12 +2,15 @@
 
 mod calls;
 pub(crate) mod type_checker;
+mod declarations;
 mod flow;
 mod helpers;
 mod macro_misparse;
+mod preproc;
 mod salvage;
-mod symbols;
+mod templates;
 mod type_refs;
+mod typerefs;
 mod visitor;
 pub mod extract;
 pub mod keywords;

@@ -10,12 +10,13 @@ use super::macro_misparse::{
     detect_macro_class_misparse, emit_misparsed_base_class_refs, push_misparsed_class,
 };
 use super::predicates;
-use super::symbols::{
-    emit_typerefs_for_type_descriptor, extract_bases, extract_enum_body, push_alias_decl,
-    push_declaration, push_function_def, push_include, push_namespace, push_namespace_alias,
-    push_preproc_def, push_preproc_function_def, push_specifier, push_template_decl, push_typedef,
-    push_using_decl,
+use super::declarations::{
+    extract_enum_body, push_declaration, push_function_def, push_include, push_namespace,
+    push_namespace_alias, push_specifier, push_typedef,
 };
+use super::preproc::{push_preproc_def, push_preproc_function_def};
+use super::templates::{push_alias_decl, push_template_decl, push_using_decl};
+use super::typerefs::{emit_typerefs_for_type_descriptor, extract_bases};
 use super::type_refs::emit_param_type_refs;
 use crate::parser::scope_tree;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};

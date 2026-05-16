@@ -6,7 +6,7 @@ use tree_sitter::Node;
 
 use super::helpers::node_text;
 use super::predicates;
-use super::symbols::emit_typerefs_for_type_descriptor;
+use super::typerefs::emit_typerefs_for_type_descriptor;
 use crate::types::{EdgeKind, ExtractedRef};
 
 // ---------------------------------------------------------------------------

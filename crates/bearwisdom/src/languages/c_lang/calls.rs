@@ -4,7 +4,7 @@
 
 use super::helpers::{call_target_name, first_type_identifier, node_text};
 use super::predicates::is_c_compiler_intrinsic;
-use super::symbols::emit_typerefs_for_type_descriptor;
+use super::typerefs::emit_typerefs_for_type_descriptor;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
