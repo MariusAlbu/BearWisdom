@@ -3,7 +3,7 @@
 // =============================================================================
 
 
-use super::{calls, helpers, symbols};
+use super::{assignments, calls, helpers, statements, symbols, types};
 use crate::types::{EdgeKind, ExtractionResult};
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use super::helpers::node_text;
@@ -159,7 +159,7 @@ pub(super) fn extract_from_node(
             // `type Point = tuple[int, int]` (Python 3.12+)
             "type_alias_statement" => {
                 let enclosing = parent_index.unwrap_or(0);
-                symbols::extract_type_alias_top_level(
+                types::extract_type_alias_top_level(
                     &child,
                     source,
                     symbols,
@@ -171,7 +171,7 @@ pub(super) fn extract_from_node(
             }
 
             "expression_statement" => {
-                symbols::extract_assignment_if_any(
+                assignments::extract_assignment_if_any(
                     &child,
                     source,
                     symbols,
@@ -215,7 +215,7 @@ pub(super) fn extract_from_node(
             // `with open('f') as fh:` — context manager
             "with_statement" => {
                 let enclosing = parent_index.unwrap_or(0);
-                symbols::extract_with_statement(
+                statements::extract_with_statement(
                     &child,
                     source,
                     symbols,
@@ -230,7 +230,7 @@ pub(super) fn extract_from_node(
             // `match command: case ...:` — structural pattern matching (3.10+)
             "match_statement" => {
                 let enclosing = parent_index.unwrap_or(0);
-                symbols::extract_match_statement(
+                statements::extract_match_statement(
                     &child,
                     source,
                     symbols,

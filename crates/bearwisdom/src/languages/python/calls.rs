@@ -531,3 +531,27 @@ pub(super) fn extract_import_from_statement(
         }
     }
 }
+// =============================================================================
+// F-string interpolation (low priority -- call extraction only)
+// =============================================================================
+
+/// Extract calls from f-string interpolation expressions.
+pub(super) fn extract_fstring_calls(
+    node: &Node,
+    source: &str,
+    enclosing_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    import_map: &HashMap<String, String>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "interpolation" || child.kind() == "fstring_expression" {
+            let mut ic = child.walk();
+            for expr in child.children(&mut ic) {
+                if expr.is_named() {
+                    extract_calls_from_body(&expr, source, enclosing_symbol_index, refs, import_map);
+                }
+            }
+        }
+    }
+}
