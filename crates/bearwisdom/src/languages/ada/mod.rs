@@ -12,6 +12,7 @@
 pub mod keywords;
 pub mod extract;
 
+mod chain;
 mod predicates;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
