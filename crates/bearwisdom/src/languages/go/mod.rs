@@ -1,6 +1,7 @@
 //! go language plugin.
 
 mod calls;
+mod chain;
 mod embedded;
 mod flow;
 mod helpers;
@@ -8,6 +9,7 @@ pub(crate) mod keywords;
 mod symbols;
 mod statements;
 mod tags;
+mod type_refs;
 mod types;
 pub mod extract;
 
