@@ -5,6 +5,7 @@ pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod embedded;
 mod flow;
+mod flow_detectors;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
