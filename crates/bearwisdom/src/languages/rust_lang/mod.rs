@@ -4,6 +4,7 @@ mod calls;
 pub(crate) mod decorators;
 mod embedded;
 mod flow;
+mod flow_detectors;
 mod helpers;
 mod patterns;
 pub(crate) mod keywords;
