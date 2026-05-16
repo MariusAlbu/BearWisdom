@@ -20,6 +20,9 @@ mod narrowing;
 mod params;
 pub(crate) mod keywords;
 mod symbols;
+mod symbols_casts;
+mod symbols_fields;
+mod symbols_variables;
 mod types;
 
 pub mod extract;
