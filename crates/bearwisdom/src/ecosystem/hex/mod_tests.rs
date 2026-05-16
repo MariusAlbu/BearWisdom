@@ -1,4 +1,14 @@
+use std::path::Path;
+use std::sync::Arc;
+
 use super::*;
+use super::discovery::{discover_erlang_mk_roots, discover_mix_roots, discover_rebar_roots};
+use super::reachability::{
+    extract_elixir_module_refs, extract_erlang_module_refs, extract_gleam_module_refs,
+    requested_to_path_suffixes, walk_hex_narrowed,
+};
+use super::symbol_index::{scan_elixir_header, scan_gleam_header};
+use super::walk::{detect_hex_language, walk_hex_root};
 
 #[test]
 fn ecosystem_identity() {
