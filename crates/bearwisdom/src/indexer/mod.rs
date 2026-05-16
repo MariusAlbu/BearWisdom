@@ -10,6 +10,9 @@ mod flow_tests;
 #[path = "flow_config_tests.rs"]
 mod flow_config_tests;
 pub mod full;
+pub mod parse_file;
+pub mod embedded_regions;
+pub mod local_refs;
 pub mod mem_probe;
 pub mod stage_discover;
 pub mod stage_link;

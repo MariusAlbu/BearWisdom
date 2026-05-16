@@ -1,0 +1,363 @@
+// =============================================================================
+// indexer/parse_file.rs  —  single-file parsing
+//
+// Reads a file, hashes its bytes, decodes to UTF-8, classifies it (generated
+// header / vendored library), and dispatches to the language plugin to
+// produce a `ParsedFile`. Embedded-region splicing and locals.scm filtering
+// live in sibling modules (`embedded_regions`, `local_refs`) and are invoked
+// from inside `parse_file_with_demand`.
+// =============================================================================
+
+use crate::languages::LanguageRegistry;
+use crate::types::ParsedFile;
+use crate::walker::WalkedFile;
+use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
+use tracing::{debug, warn};
+
+
+pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Result<ParsedFile> {
+    parse_file_with_demand(walked, registry, None)
+}
+
+/// R6 entry point for demand-driven parsing. When `demand` is `Some`, the
+/// language plugin's `extract_with_demand` is called instead of `extract`,
+/// and top-level declarations whose name is not in the set may be dropped.
+/// Used when parsing external sources (node_modules `.d.ts`, etc.).
+pub(crate) fn parse_file_with_demand(
+    walked: &WalkedFile,
+    registry: &LanguageRegistry,
+    demand: Option<&std::collections::HashSet<String>>,
+) -> Result<ParsedFile> {
+    let bytes = std::fs::read(&walked.absolute_path)
+        .with_context(|| format!("Cannot read {}", walked.relative_path))?;
+
+    // SHA-256 of the raw bytes for change detection.
+    let hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        format!("{:x}", hasher.finalize())
+    };
+
+    // Fast path: valid UTF-8 avoids an allocation. Lossy fallback handles
+    // legacy Windows-1252 / Latin-1 source files (Delphi, older C/Fortran);
+    // invalid byte sequences become U+FFFD, which does not appear in any
+    // identifier, so parsing and resolution are unaffected.
+    let content = match String::from_utf8(bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            debug!(
+                "Non-UTF-8 bytes in {} — using lossy decode",
+                walked.relative_path
+            );
+            String::from_utf8_lossy(e.as_bytes()).into_owned()
+        }
+    };
+
+    let size = content.len() as u64;
+    let line_count = content.lines().count() as u32;
+
+    // Capture mtime for fast change detection on next incremental pass.
+    let mtime = std::fs::metadata(&walked.absolute_path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+
+    // Short-circuit: some projects vendor auto-generated platform headers
+    // (Microsoft WebView2/WinRT MIDL output, etc.) that balloon the
+    // unresolved_refs table with thousands of macro/typedef identifiers the
+    // parser can't distinguish from real refs (STDMETHODCALLTYPE, IUnknown,
+    // LPCWSTR, BEGIN_INTERFACE, …). These files are valid C but semantically
+    // uninteresting and have no cross-project consumers. Record the file row
+    // for hash tracking but emit zero symbols/refs.
+    let is_generated = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        is_generated_platform_header(walked.language, &content)
+    })) {
+        Ok(flag) => flag,
+        Err(e) => {
+            let msg = panic_message(&e);
+            warn!(
+                "is_generated_platform_header panicked on {}: {msg} — treating as non-generated",
+                walked.relative_path,
+            );
+            false
+        }
+    };
+    if is_generated {
+        return Ok(ParsedFile {
+            path: walked.relative_path.clone(),
+            language: walked.language.to_string(),
+            content_hash: hash,
+            size,
+            line_count,
+            mtime,
+            package_id: None,
+            symbols: Vec::new(),
+            refs: Vec::new(),
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            symbol_origin_languages: Vec::new(),
+            ref_origin_languages: Vec::new(),
+            symbol_from_snippet: Vec::new(),
+            content: Some(content),
+            has_errors: false,
+            flow: crate::types::FlowMeta::default(),
+            demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
+            plugin_flow_emissions: Vec::new(),
+        });
+    }
+
+    // Dispatch to the language plugin (dedicated or generic fallback).
+    // When demand is Some, the plugin's demand-aware path runs; with None it
+    // degrades to the regular `extract` via the trait's default impl.
+    // The absolute path is passed as file_path so plugins that need filesystem
+    // access (e.g. Fortran's fypp preprocessor) can locate sibling files.
+    let plugin = registry.get(walked.language);
+    let abs_path_str = walked.absolute_path.to_string_lossy();
+    let mut r = plugin.extract_with_demand(
+        &content,
+        &abs_path_str,
+        walked.language,
+        demand,
+    );
+
+    // Run locals.scm query to filter out locally-resolved references.
+    // This removes local variables, parameters, and other intra-scope names
+    // that don't need cross-file resolution.
+    super::local_refs::filter_local_refs(&content, walked.language, plugin, &r.symbols, &mut r.refs);
+
+    // Symbols produced by the host extractor all share the file's language,
+    // so the origin vector starts empty and grows only when we splice in
+    // sub-extracted regions below.
+    let mut symbol_origin_languages: Vec<Option<String>> = Vec::new();
+    // E3: parallel snippet flag — true for symbols spliced in from a
+    // MarkdownFence region (fenced code in Markdown, Rust doctests, Python
+    // docstring `>>>` lines). Used downstream to exclude these symbols'
+    // unresolved references from aggregate resolution stats.
+    let mut symbol_from_snippet: Vec<bool> = Vec::new();
+    let mut ref_origin_languages: Vec<Option<String>> = Vec::new();
+
+    // Dispatch embedded regions (Vue/Svelte/Astro/Razor/HTML/PHP/MDX) —
+    // each region is sub-parsed by the declared language's plugin and the
+    // results are spliced back with line/column offsets.
+    let regions = plugin.embedded_regions(&content, &walked.relative_path, walked.language);
+    if !regions.is_empty() {
+        // Pad origin vecs so host symbols/refs are all None before embedded Some(..).
+        symbol_origin_languages.resize(r.symbols.len(), None);
+        symbol_from_snippet.resize(r.symbols.len(), false);
+        ref_origin_languages.resize(r.refs.len(), None);
+        super::embedded_regions::dispatch_embedded_regions(
+            &walked.relative_path,
+            registry,
+            regions,
+            &mut r,
+            &mut symbol_origin_languages,
+            &mut symbol_from_snippet,
+            &mut ref_origin_languages,
+        );
+    }
+
+    // R5 Sprint 2: run flow-typing queries if the plugin provides a FlowConfig.
+    // Populates FlowMeta (forward-inference binding map, conditional narrowings,
+    // call-site type_args on chain segments). Plugins without flow_config pay
+    // zero cost here.
+    let flow_meta = if let (Some(flow_cfg), Some(grammar)) =
+        (plugin.flow_config(), plugin.grammar(walked.language))
+    {
+        crate::indexer::flow::run_flow_queries(
+            &content,
+            &grammar,
+            flow_cfg,
+            &r.symbols,
+            &mut r.refs,
+        )
+    } else {
+        crate::types::FlowMeta::default()
+    };
+
+    // Extractor-time `FlowEmission`s for plugins whose flow detection is
+    // file-structure-based (SDL parsing, `.proto` file scan) and can't move
+    // to chain-walk resolver-time emission. The `indexer/resolve/mod.rs`
+    // adapter flushes these alongside resolver-emitted flows.
+    let plugin_flow_emissions: Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> =
+        match walked.language {
+            "graphql" => {
+                crate::languages::graphql::connectors::extract_schema_starts(&content)
+            }
+            "vue" => {
+                crate::languages::vue::connectors::extract_vue_graphql_points(&content)
+            }
+            "svelte" => {
+                crate::languages::svelte::connectors::extract_svelte_graphql_points(&content)
+            }
+            "ruby" => crate::languages::ruby::connectors::extract_ruby_graphql(
+                &content,
+                &walked.relative_path,
+            ),
+            "python" => {
+                crate::languages::python::connectors::extract_python_graphql(&content)
+            }
+            "typescript" | "tsx" | "javascript" | "jsx" => {
+                crate::languages::typescript::connectors::extract_typescript_graphql(
+                    &content,
+                )
+            }
+            "proto" => {
+                crate::languages::proto::connectors::extract_proto_grpc_starts(&content)
+            }
+            _ => Vec::new(),
+        };
+
+    // Angular @Component selector metadata — populated for TypeScript and
+    // Angular files so the resolver can map kebab-case template tags to real
+    // component class qualified names without falling back to kebab→PascalCase
+    // guessing.
+    let component_selectors = if matches!(walked.language, "typescript" | "angular") {
+        crate::languages::typescript::selectors::extract_component_selectors(&content, &r.symbols)
+    } else {
+        Vec::new()
+    };
+
+    Ok(ParsedFile {
+        path: walked.relative_path.clone(),
+        language: walked.language.to_string(),
+        content_hash: hash,
+        size,
+        line_count,
+        mtime,
+        package_id: None, // assigned later by assign_package_ids
+        symbols: r.symbols,
+        refs: r.refs,
+        routes: r.routes,
+        db_sets: r.db_sets,
+        symbol_origin_languages,
+        ref_origin_languages,
+        symbol_from_snippet,
+        content: Some(content),
+        has_errors: r.has_errors,
+        flow: flow_meta,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors,
+        plugin_flow_emissions,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Auto-generated vendored-header detection
+// ---------------------------------------------------------------------------
+
+/// Returns `true` for C/C++ header files that were produced by a platform
+/// code generator (MIDL, IDL, …) rather than hand-written application code.
+///
+/// These files are commonly vendored into `docs/` or `third_party/` sub-
+/// directories as API references but carry thousands of platform-specific
+/// macro and typedef identifiers that the C extractor cannot distinguish
+/// from real references. Indexing them produces huge numbers of spurious
+/// `unresolved_refs` rows (STDMETHODCALLTYPE, IUnknown, BEGIN_INTERFACE,
+/// LPCWSTR, UINT32, …) with zero resolvable cross-project value.
+///
+/// Detection is content-based (not path-based) so we don't have to guess
+/// which directories a given test project chooses to vendor under. We scan
+/// the first 2048 bytes only — every known generator emits its marker in
+/// the top banner comment.
+pub(super) fn is_generated_platform_header(language: &str, content: &str) -> bool {
+    if !matches!(language, "c" | "cpp" | "c++") {
+        return false;
+    }
+    let mut end = content.len().min(2048);
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &content[..end];
+    const MARKERS: &[&str] = &[
+        "File created by MIDL compiler",        // Microsoft MIDL (WebView2, WinRT, COM)
+        "ALWAYS GENERATED file contains",        // MIDL banner variant
+        "Created by: flatc compiler",            // FlatBuffers generator
+        "Generated by the protocol buffer compiler", // protoc C++ output
+    ];
+    MARKERS.iter().any(|m| head.contains(m))
+}
+
+// ---------------------------------------------------------------------------
+// Vendored C/C++ library detection
+// ---------------------------------------------------------------------------
+
+const VENDORED_PATH_SEGMENTS: &[&str] = &[
+    "third_party",
+    "vendor",
+    "deps",
+    "external",
+    "extern",
+];
+
+/// Content markers that appear in the opening banner of well-known single-header
+/// vendored libraries — specific enough that they don't appear in project code
+/// that merely includes/uses the library.
+const VENDORED_CONTENT_MARKERS: &[&str] = &[
+    "JSON for Modern C++",              // nlohmann/json (banner in the ASCII logo)
+    "raylib v",                         // raylib — "raylib v5.5 - A simple..."
+    "raymath v",                        // raymath companion header
+    "Sean Barrett",                     // STB single-file libs (all list this author)
+    "Catch v",                          // Catch2 test framework (v1/v2 banner)
+    "Catch2 v",                         // Catch2 (v3 banner)
+    "dear imgui,",                      // Dear ImGui — "dear imgui, v1.X..."
+    "GLFW 3",                           // GLFW — "GLFW 3" in main header comment
+    "miniaudio - Audio playback",       // miniaudio — banner line
+    "termbox2.h --",                    // termbox2 self-documentation comment
+    // Sokol: the distinctive self-doc format used in ALL sokol headers.
+    // The banner is "sokol_<name>.h -- description" in the first comment block.
+    // This does NOT appear in files that merely include sokol headers.
+    ".h -- Drop-in",
+    ".h -- drop-in",
+    ".h -- Minimal",
+    ".h -- minimal",
+    ".h -- Simple",
+    ".h -- simple",
+];
+
+/// Returns `true` if a C/C++ file should be classified as a vendored
+/// third-party library rather than first-party project code.
+///
+/// Two-tier: path segment check (conventional vendor dirs) then content
+/// banner check (common single-header libraries dropped anywhere in the tree).
+pub(crate) fn is_c_vendored_file(language: &str, path: &str, content: &str) -> bool {
+    if !matches!(language, "c" | "cpp" | "c++") {
+        return false;
+    }
+    let norm = path.replace('\\', "/");
+    for seg in VENDORED_PATH_SEGMENTS {
+        if norm.contains(&format!("/{seg}/"))
+            || norm.ends_with(&format!("/{seg}"))
+            || norm.starts_with(&format!("{seg}/"))
+        {
+            return true;
+        }
+    }
+    // Slice the first ~4 KiB of content to scan for vendor banners.  Naive
+    // byte-slicing panics when the cut falls inside a multi-byte UTF-8 char
+    // (e.g. the box-drawing glyphs some Redis deps use in comments). Walk
+    // back to the nearest char boundary.
+    let mut end = content.len().min(4096);
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &content[..end];
+    VENDORED_CONTENT_MARKERS.iter().any(|m| head.contains(m))
+}
+
+/// Extract a short human-readable description from a `catch_unwind` payload.
+/// Used by the pipeline's panic guards so a scanner that misbehaves still
+/// produces a legible warning instead of `<opaque Any>`.
+pub(super) fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        return (*s).to_string();
+    }
+    if let Some(s) = payload.downcast_ref::<String>() {
+        return s.clone();
+    }
+    "<non-string panic payload>".to_string()
+}
