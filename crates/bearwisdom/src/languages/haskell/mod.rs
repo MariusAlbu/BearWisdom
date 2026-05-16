@@ -9,6 +9,9 @@ pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
+mod definitions;
+mod expressions;
+mod servant;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
