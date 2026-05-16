@@ -24,6 +24,7 @@ mod symbols_casts;
 mod symbols_fields;
 mod symbols_variables;
 mod types;
+mod alias_classify;
 
 pub mod extract;
 mod reexports;

@@ -8,7 +8,7 @@
 //             JSX component usage, tagged templates
 // =============================================================================
 
-use super::{calls, decorators, helpers, imports, narrowing, params, symbols, types};
+use super::{alias_classify, calls, decorators, helpers, imports, narrowing, params, symbols, types};
 use super::reexports::{
     extract_bare_reexports_via_imports, extract_reexports, push_triple_slash_imports,
 };
@@ -553,7 +553,7 @@ fn extract_node(
                         // Object / Other). This is the type-checker's
                         // alternative to the engine's positional flatten.
                         let qname = symbols[idx].qualified_name.clone();
-                        let target = types::classify_alias_target(&value, src);
+                        let target = alias_classify::classify_alias_target(&value, src);
                         alias_targets.push((qname, target));
                     }
                 }
