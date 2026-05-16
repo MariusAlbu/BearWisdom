@@ -655,12 +655,16 @@ fn node_builtins() -> std::collections::HashSet<&'static str> {
 }
 
 mod externals;
+mod externals_imports;
+mod externals_node_modules;
 mod walk;
 mod post_process;
 mod symbol_index;
 mod ts_scan;
 
 pub(crate) use externals::*;
+pub(crate) use externals_imports::*;
+pub(crate) use externals_node_modules::*;
 pub(crate) use walk::*;
 pub(crate) use post_process::*;
 pub(crate) use symbol_index::*;
