@@ -17,6 +17,8 @@ mod predicates;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod extract;
+mod applications;
+mod type_defs;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
