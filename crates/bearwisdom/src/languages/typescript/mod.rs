@@ -6,6 +6,10 @@
 
 // Extraction sub-modules
 pub mod connectors;
+mod connectors_graphql;
+mod connectors_nestjs;
+mod connectors_nextjs;
+mod connectors_react;
 mod calls;
 pub(crate) mod decorators;
 mod embedded;
