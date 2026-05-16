@@ -6,7 +6,9 @@ mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
+mod statements;
 mod tags;
+mod types;
 pub mod extract;
 
 mod predicates;

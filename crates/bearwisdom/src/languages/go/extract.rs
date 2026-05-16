@@ -26,7 +26,7 @@
 //   letter.  Unexported names → Private.
 // =============================================================================
 
-use super::{symbols, helpers};
+use super::{helpers, statements, symbols, types};
 use crate::types::ExtractionResult;
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use tree_sitter::{Node, Parser};
@@ -155,7 +155,7 @@ fn extract_from_node(
             }
 
             "type_declaration" => {
-                symbols::extract_type_declaration(
+                types::extract_type_declaration(
                     &child,
                     source,
                     symbols,
@@ -166,7 +166,7 @@ fn extract_from_node(
             }
 
             "const_declaration" => {
-                symbols::extract_const_var_decl(
+                statements::extract_const_var_decl(
                     &child,
                     source,
                     symbols,
@@ -179,7 +179,7 @@ fn extract_from_node(
             }
 
             "var_declaration" => {
-                symbols::extract_const_var_decl(
+                statements::extract_const_var_decl(
                     &child,
                     source,
                     symbols,

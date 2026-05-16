@@ -107,7 +107,7 @@ fn extract_body_with_symbols_inner(
         match child.kind() {
             // `:=` short variable declaration
             "short_var_declaration" => {
-                super::symbols::extract_short_var_decl(
+                super::statements::extract_short_var_decl(
                     &child,
                     source,
                     symbols,
@@ -129,7 +129,7 @@ fn extract_body_with_symbols_inner(
 
             // `var x Type = val` — explicit var declaration inside a function body.
             "var_declaration" => {
-                super::symbols::extract_const_var_decl(
+                super::statements::extract_const_var_decl(
                     &child,
                     source,
                     symbols,
@@ -153,7 +153,7 @@ fn extract_body_with_symbols_inner(
 
             // `const x = val` — explicit const declaration inside a function body.
             "const_declaration" => {
-                super::symbols::extract_const_var_decl(
+                super::statements::extract_const_var_decl(
                     &child,
                     source,
                     symbols,
@@ -169,7 +169,7 @@ fn extract_body_with_symbols_inner(
             // `type inner struct { X int }` — type declaration inside a function body.
             // Extracts Struct/Interface/TypeAlias symbols and their fields.
             "type_declaration" => {
-                super::symbols::extract_type_declaration(
+                super::types::extract_type_declaration(
                     &child,
                     source,
                     symbols,
@@ -204,7 +204,7 @@ fn extract_body_with_symbols_inner(
                         let mut cc = case_child.walk();
                         for cc_child in case_child.children(&mut cc) {
                             if cc_child.kind() == "short_var_declaration" {
-                                super::symbols::extract_short_var_decl(
+                                super::statements::extract_short_var_decl(
                                     &cc_child,
                                     source,
                                     symbols,
@@ -1282,7 +1282,7 @@ fn extract_inline_struct_fields_from_rhs(
         if child.kind() == "identifier" {
             continue;
         }
-        super::symbols::extract_inline_struct_fields(
+        super::types::extract_inline_struct_fields(
             &child,
             source,
             symbols,
