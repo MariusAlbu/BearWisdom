@@ -5,6 +5,9 @@ pub(crate) mod predicates;
 pub(crate) mod type_checker;
 pub(crate) mod keywords;
 pub mod extract;
+mod calls;
+mod imports;
+mod globals;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
