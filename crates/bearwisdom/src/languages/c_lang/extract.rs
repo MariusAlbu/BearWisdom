@@ -4,10 +4,11 @@
 
 use tree_sitter::Parser;
 
-use super::salvage::{
-    salvage_macro_expanded_decls, salvage_missed_defines, salvage_missed_function_pointer_decls,
-    salvage_missed_msvc_calling_convention_decls, salvage_missed_template_class_decls,
-};
+use super::salvage_callconv::salvage_missed_msvc_calling_convention_decls;
+use super::salvage_defines::salvage_missed_defines;
+use super::salvage_funcptr::salvage_missed_function_pointer_decls;
+use super::salvage_macro_expand::salvage_macro_expanded_decls;
+use super::salvage_template_class::salvage_missed_template_class_decls;
 use super::type_refs::sweep_typerefs;
 use super::visitor::extract_node;
 use crate::parser::scope_tree::{self, ScopeKind};
