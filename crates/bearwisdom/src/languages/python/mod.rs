@@ -15,6 +15,7 @@ pub mod extract;
 
 mod predicates;
 pub(crate) mod type_checker;
+mod externals;
 pub mod resolve;
 mod flow_detectors;
 
@@ -29,6 +30,14 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
+
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod flow_tests;
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::languages::LanguagePlugin;
