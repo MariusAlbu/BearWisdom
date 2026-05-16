@@ -1,6 +1,8 @@
 //! Nix language plugin.
 
 pub mod keywords;
+pub mod bindings;
+pub mod calls;
 pub mod extract;
 pub mod resolve;
 pub(crate) mod type_checker;
