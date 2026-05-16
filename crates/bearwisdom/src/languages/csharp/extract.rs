@@ -35,7 +35,7 @@
 // =============================================================================
 
 
-use super::{calls, symbols, helpers, decorators, types};
+use super::{calls, calls_routes, calls_symbols, symbols, helpers, decorators, types};
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::{
@@ -320,7 +320,7 @@ fn extract_node_inner(
                 types::extract_base_types(child, src, idx.unwrap_or(0), refs);
                 decorators::extract_decorators(child, src, idx.unwrap_or(0), refs);
                 // Extract class-level [Route("...")] for ASP.NET controllers.
-                let class_route = calls::extract_class_route_prefix(child, src);
+                let class_route = calls_routes::extract_class_route_prefix(child, src);
                 // Check if this looks like a DbContext subclass.
                 let is_db_context = helpers::is_dbcontext_subclass(child, src);
                 if let Some(body) = child.child_by_field_name("body") {
@@ -385,7 +385,7 @@ fn extract_node_inner(
                         calls::extract_calls_from_body(&body, src, sym_idx, refs);
                         // Extract lambda params, LINQ range vars, and pattern binding
                         // variables as Variable symbols scoped to this method.
-                        calls::extract_body_variable_symbols(
+                        calls_symbols::extract_body_variable_symbols(
                             &body,
                             src,
                             scope_tree,
@@ -393,11 +393,11 @@ fn extract_node_inner(
                             Some(sym_idx),
                         );
                         // Look for minimal-API route registrations inside the body.
-                        calls::extract_minimal_api_routes(&body, src, sym_idx, routes);
+                        calls_routes::extract_minimal_api_routes(&body, src, sym_idx, routes);
                     }
                     // Look for ASP.NET attribute routes on the method declaration.
                     // Prepend the class-level [Route("...")] prefix if present.
-                    calls::extract_attribute_routes_with_prefix(child, src, sym_idx, routes, class_route_prefix);
+                    calls_routes::extract_attribute_routes_with_prefix(child, src, sym_idx, routes, class_route_prefix);
                 }
             }
 
@@ -417,7 +417,7 @@ fn extract_node_inner(
                         calls::extract_calls_from_body(&body, src, sym_idx, refs);
                         // Extract lambda params, LINQ range vars, and pattern binding
                         // variables as Variable symbols scoped to this constructor.
-                        calls::extract_body_variable_symbols(
+                        calls_symbols::extract_body_variable_symbols(
                             &body,
                             src,
                             scope_tree,
@@ -553,7 +553,7 @@ fn extract_node_inner(
                     symbols::push_method_type_refs(child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls_from_body(&body, src, sym_idx, refs);
-                        calls::extract_body_variable_symbols(&body, src, scope_tree, symbols, Some(sym_idx));
+                        calls_symbols::extract_body_variable_symbols(&body, src, scope_tree, symbols, Some(sym_idx));
                     }
                 }
             }

@@ -10,6 +10,8 @@
 
 pub mod keywords;
 pub mod extract;
+mod extractors;
+mod walk;
 pub mod fypp;
 
 mod predicates;

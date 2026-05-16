@@ -247,7 +247,7 @@ pub(super) fn extract_db_sets_from_body(
 
 /// Returns the table name from a [Table("...")] attribute if present.
 pub(super) fn check_table_attribute_on_property(node: &Node, src: &[u8]) -> Option<String> {
-    use super::calls::attr_route_template;
+    use super::calls_routes::attr_route_template;
     let mut outer = node.walk();
     for child in node.children(&mut outer) {
         if child.kind() == "attribute_list" {

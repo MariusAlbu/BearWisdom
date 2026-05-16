@@ -1,6 +1,9 @@
 //! csharp language plugin.
 
 mod calls;
+mod calls_narrowing;
+mod calls_routes;
+mod calls_symbols;
 pub mod connectors;
 pub(crate) mod decorators;
 mod embedded;
