@@ -19,6 +19,9 @@ mod symbols;
 mod types;
 
 pub mod extract;
+mod reexports;
+mod type_scan;
+pub(crate) mod selectors;
 
 // Resolution sub-modules
 pub(crate) mod predicates;

@@ -1128,7 +1128,7 @@ pub(crate) fn parse_file_with_demand(
     // component class qualified names without falling back to kebab→PascalCase
     // guessing.
     let component_selectors = if matches!(walked.language, "typescript" | "angular") {
-        crate::languages::typescript::extract::extract_component_selectors(&content, &r.symbols)
+        crate::languages::typescript::selectors::extract_component_selectors(&content, &r.symbols)
     } else {
         Vec::new()
     };
