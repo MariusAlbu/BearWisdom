@@ -1,7 +1,9 @@
 //! Puppet language plugin.
 
 pub mod keywords;
+pub mod definitions;
 pub mod extract;
+pub mod refs;
 pub mod resolve;
 mod predicates;
 pub(crate) mod type_checker;
