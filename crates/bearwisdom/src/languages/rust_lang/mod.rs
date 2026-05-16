@@ -1,6 +1,9 @@
 //! rust_lang language plugin.
 
 mod calls;
+mod calls_args;
+mod calls_imports;
+mod calls_macros;
 pub(crate) mod decorators;
 mod embedded;
 mod flow;
