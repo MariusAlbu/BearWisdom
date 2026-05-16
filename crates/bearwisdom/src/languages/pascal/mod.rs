@@ -4,6 +4,8 @@
 
 pub mod keywords;
 pub mod extract;
+mod decls;
+mod refs;
 mod normalise;
 mod error_recovery;
 
