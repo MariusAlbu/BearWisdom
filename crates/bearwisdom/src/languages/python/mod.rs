@@ -16,6 +16,7 @@ pub mod extract;
 mod predicates;
 pub(crate) mod type_checker;
 pub mod resolve;
+mod flow_detectors;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
