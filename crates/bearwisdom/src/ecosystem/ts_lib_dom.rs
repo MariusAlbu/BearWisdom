@@ -15,11 +15,15 @@
 //      workspace layouts)
 //   4. @types/node under node_modules/@types/node/ for Node.js globals.
 //
-// Activation: ManifestFieldContains on `tsconfig.json.compilerOptions.lib`
-// containing "DOM". Pure-Node TS projects with `lib: ["es2020"]` and no DOM
-// entry skip this ecosystem; browser-targeting projects (React, Vue, Svelte,
-// Angular, Astro) routinely declare DOM and activate. The trait doc cites
-// this as the canonical case for `ManifestFieldContains`.
+// Activation: Any of —
+//   a. ManifestFieldContains on `tsconfig.json.compilerOptions.lib` containing
+//      "DOM" (the original signal, kept for backwards compat).
+//   b. LanguagePresent for any TS-family language id (typescript, tsx,
+//      javascript, vue, svelte, astro). The TypeScript stdlib is an implicit
+//      toolchain dep — every project with .ts/.vue/.svelte files needs ES
+//      globals and DOM types, regardless of whether its tsconfig spells out
+//      `"lib": ["DOM"]` (many projects inherit that through tsconfig `extends`
+//      chains that the flat-JSON reader cannot follow).
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -45,11 +49,23 @@ impl Ecosystem for TsLibDomEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::ManifestFieldContains {
-            manifest_glob: "**/tsconfig.json",
-            field_path: "compilerOptions.lib",
-            value: "DOM",
-        }
+        // Any TS-family project gets the stdlib, whether or not its tsconfig
+        // explicitly lists "DOM". Projects that inherit lib entries through
+        // tsconfig `extends` chains would otherwise be missed by the flat-JSON
+        // ManifestFieldContains reader.
+        EcosystemActivation::Any(&[
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/tsconfig.json",
+                field_path: "compilerOptions.lib",
+                value: "DOM",
+            },
+            EcosystemActivation::LanguagePresent("typescript"),
+            EcosystemActivation::LanguagePresent("tsx"),
+            EcosystemActivation::LanguagePresent("javascript"),
+            EcosystemActivation::LanguagePresent("vue"),
+            EcosystemActivation::LanguagePresent("svelte"),
+            EcosystemActivation::LanguagePresent("astro"),
+        ])
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
