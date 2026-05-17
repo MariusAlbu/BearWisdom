@@ -209,6 +209,10 @@ fn make_installed_r_fixture(root: &Path, packages: &[(&str, &str)]) {
     for (pkg, ns_content) in packages {
         let pkg_dir = root.join(pkg);
         fs::create_dir_all(&pkg_dir).unwrap();
+        // DESCRIPTION is the per-package marker the walker uses to recognise
+        // a real package directory (base has no NAMESPACE, every package has
+        // DESCRIPTION).
+        fs::write(pkg_dir.join("DESCRIPTION"), format!("Package: {pkg}\n")).unwrap();
         fs::write(pkg_dir.join("NAMESPACE"), ns_content).unwrap();
     }
 }
@@ -271,40 +275,40 @@ fn synthesize_from_namespace_symbol_and_origin_counts_match() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn discover_uses_r_home_when_library_base_namespace_present() {
+fn discover_uses_r_home_when_library_base_description_present() {
     let tmp = tempfile::tempdir().unwrap();
-    // Simulate minimal installed R: library/base/NAMESPACE must exist.
+    // Simulate minimal installed R: library/base/DESCRIPTION must exist
+    // (base has no NAMESPACE — base is hardcoded in R itself).
     let base_dir = tmp.path().join("library").join("base");
     fs::create_dir_all(&base_dir).unwrap();
-    fs::write(base_dir.join("NAMESPACE"), "export(c)\n").unwrap();
+    fs::write(base_dir.join("DESCRIPTION"), "Package: base\n").unwrap();
 
     std::env::remove_var("BEARWISDOM_R_SRC");
     std::env::set_var("R_HOME", tmp.path());
     let roots = discover_r_stdlib();
     std::env::remove_var("R_HOME");
 
-    assert_eq!(roots.len(), 1);
-    assert_eq!(roots[0].module_path, KIND_NAMESPACE,
-        "an installed R (no src/library) must produce a KIND_NAMESPACE root");
-    // root must point at the library/ subdirectory
+    assert!(!roots.is_empty(), "system library should produce a root");
+    let sys_root = roots.iter().find(|r| r.module_path == KIND_NAMESPACE)
+        .expect("KIND_NAMESPACE root expected for installed R");
     assert!(
-        roots[0].root.ends_with("library"),
-        "root must point at the library/ subdirectory, got: {}",
-        roots[0].root.display()
+        sys_root.root.ends_with("library"),
+        "system root must point at the library/ subdirectory, got: {}",
+        sys_root.root.display()
     );
 }
 
 #[test]
-fn discover_returns_empty_when_r_home_lacks_base_namespace() {
+fn discover_returns_empty_when_r_home_lacks_base_description() {
     let tmp = tempfile::tempdir().unwrap();
-    // R_HOME exists but library/base/NAMESPACE is absent.
+    // R_HOME exists but library/base/DESCRIPTION is absent.
     std::env::remove_var("BEARWISDOM_R_SRC");
     std::env::set_var("R_HOME", tmp.path());
     let roots = discover_r_stdlib();
     std::env::remove_var("R_HOME");
 
     assert!(roots.is_empty(),
-        "an R_HOME without library/base/NAMESPACE must not produce a root");
+        "an R_HOME without library/base/DESCRIPTION must not produce a root");
 }
 
 #[test]
@@ -316,7 +320,7 @@ fn source_distro_takes_priority_over_r_home() {
     let r_home = tmp.path().join("fake_r_home");
     let base_dir = r_home.join("library").join("base");
     fs::create_dir_all(&base_dir).unwrap();
-    fs::write(base_dir.join("NAMESPACE"), "export(c)\n").unwrap();
+    fs::write(base_dir.join("DESCRIPTION"), "Package: base\n").unwrap();
 
     std::env::set_var("BEARWISDOM_R_SRC", tmp.path());
     std::env::set_var("R_HOME", &r_home);

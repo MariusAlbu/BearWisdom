@@ -109,12 +109,15 @@ impl ExternalSourceLocator for RStdlibEcosystem {
     }
 
     fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<ParsedFile>> {
-        // The ExternalSourceLocator trait signature takes project_root, not dep.
-        // This path is only hit for the installed-R case when called from the
-        // legacy locator interface. Discover and synthesize on the fly.
-        let roots = discover_r_stdlib();
-        let ns_root = roots.iter().find(|r| r.module_path == KIND_NAMESPACE)?;
-        Some(synthesize_from_namespace(&ns_root.root))
+        // Legacy locator interface — discover all installed libraries and
+        // synthesize symbols from each.
+        let mut out = Vec::new();
+        for root in discover_r_stdlib() {
+            if root.module_path == KIND_NAMESPACE {
+                out.extend(synthesize_from_namespace(&root.root));
+            }
+        }
+        if out.is_empty() { None } else { Some(out) }
     }
 }
 
@@ -134,8 +137,10 @@ pub(super) fn discover_r_stdlib() -> Vec<ExternalDepRoot> {
         return vec![root];
     }
     // Priority 2: installed R — yields NAMESPACE-based synthetic symbols.
-    if let Some(root) = probe_r_install() {
-        return vec![root];
+    // Returns one root per library found (system + user libraries).
+    let installed = probe_r_install();
+    if !installed.is_empty() {
+        return installed;
     }
     debug!("r-stdlib: no R source distribution or install found \
             (set BEARWISDOM_R_SRC or R_HOME, or install R)");
@@ -168,28 +173,112 @@ fn probe_r_source_distro() -> Option<ExternalDepRoot> {
     })
 }
 
-/// Probe an installed R instance. Returns an `ExternalDepRoot` whose `root`
-/// is `<R_HOME>/library` when a valid install is found.
-fn probe_r_install() -> Option<ExternalDepRoot> {
-    let r_home = find_r_home()?;
-    let library = r_home.join("library");
-    // Sanity-check: a real R install always has base/NAMESPACE.
-    if !library.join("base").join("NAMESPACE").is_file() {
-        debug!(
-            "r-stdlib: {} does not look like a real R install (missing library/base/NAMESPACE)",
-            r_home.display()
-        );
-        return None;
+/// Probe an installed R instance. Returns one `ExternalDepRoot` per library
+/// root found: the system library at `<R_HOME>/library`, plus any user
+/// libraries from `R_LIBS_USER` env var or the platform-default user-library
+/// path. Each library contains one subdirectory per installed package.
+fn probe_r_install() -> Vec<ExternalDepRoot> {
+    let mut out = Vec::new();
+    if let Some(r_home) = find_r_home() {
+        let library = r_home.join("library");
+        // base lacks NAMESPACE (built into R itself); DESCRIPTION is the
+        // load-bearing per-package metadata file present on every install.
+        if library.join("base").join("DESCRIPTION").is_file() {
+            debug!("r-stdlib: using system library at {}", library.display());
+            out.push(ExternalDepRoot {
+                module_path: KIND_NAMESPACE.to_string(),
+                version: String::new(),
+                root: library,
+                ecosystem: TAG,
+                package_id: None,
+                requested_imports: Vec::new(),
+            });
+        } else {
+            debug!(
+                "r-stdlib: {} does not look like a real R install (missing library/base/DESCRIPTION)",
+                r_home.display()
+            );
+        }
     }
-    debug!("r-stdlib: using installed R at {}", r_home.display());
-    Some(ExternalDepRoot {
-        module_path: KIND_NAMESPACE.to_string(),
-        version: String::new(),
-        root: library,
-        ecosystem: TAG,
-        package_id: None,
-        requested_imports: Vec::new(),
-    })
+    for user_lib in find_user_libraries() {
+        debug!("r-stdlib: using user library at {}", user_lib.display());
+        out.push(ExternalDepRoot {
+            module_path: KIND_NAMESPACE.to_string(),
+            version: String::new(),
+            root: user_lib,
+            ecosystem: TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        });
+    }
+    out
+}
+
+/// Locate user-installed R package libraries. Returns every existing path
+/// found via `R_LIBS_USER` env var, plus platform-default user-library
+/// directories (the locations `install.packages()` writes to by default).
+fn find_user_libraries() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(val) = std::env::var_os("R_LIBS_USER") {
+        for piece in std::env::split_paths(&val) {
+            collect_library_versions(&piece, &mut out);
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(home) = std::env::var_os("USERPROFILE") {
+            let home = PathBuf::from(home);
+            collect_library_versions(&home.join("Documents").join("R").join("win-library"), &mut out);
+            collect_library_versions(&home.join("AppData").join("Local").join("R").join("win-library"), &mut out);
+            collect_library_versions(&home.join("R").join("win-library"), &mut out);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            collect_library_versions(&PathBuf::from(home).join("R"), &mut out);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// User library roots are typically organized one subdirectory per
+/// R version (`win-library/4.6`, `win-library/4.5`, …). Add each
+/// existing version-subdirectory. If the path itself directly contains
+/// packages (no version subdirs), add it directly.
+fn collect_library_versions(root: &Path, out: &mut Vec<PathBuf>) {
+    if !root.is_dir() {
+        return;
+    }
+    let mut found_subdir = false;
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && looks_like_library_dir(&path) {
+                out.push(path);
+                found_subdir = true;
+            }
+        }
+    }
+    if !found_subdir && looks_like_library_dir(root) {
+        out.push(root.to_path_buf());
+    }
+}
+
+/// A library directory contains one subdirectory per installed package,
+/// each of which has a `DESCRIPTION` file. Spot-check by looking for any
+/// child directory with a DESCRIPTION.
+fn looks_like_library_dir(path: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(path) else { return false };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() && p.join("DESCRIPTION").is_file() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Locate `R_HOME` by trying, in order:
@@ -353,22 +442,49 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
 // NAMESPACE-based symbol synthesis (installed-R path)
 // ---------------------------------------------------------------------------
 
-/// Parse NAMESPACE files for each base package under `library_root` and
-/// return one `ParsedFile` containing all exported symbols.
+/// Enumerate every package subdirectory under `library_root`, parse its
+/// NAMESPACE file (or fall back to INDEX for `base`, which has no NAMESPACE
+/// because it's built into R itself), and return one `ParsedFile` containing
+/// all exported symbols.
 pub(super) fn synthesize_from_namespace(library_root: &Path) -> Vec<ParsedFile> {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
 
-    for &pkg in BASE_PACKAGES {
-        let ns_path = library_root.join(pkg).join("NAMESPACE");
-        if !ns_path.is_file() {
-            debug!("r-stdlib: NAMESPACE not found for package {pkg}");
+    let Ok(entries) = std::fs::read_dir(library_root) else {
+        debug!("r-stdlib: could not read library root {}", library_root.display());
+        return Vec::new();
+    };
+    for entry in entries.flatten() {
+        let pkg_dir = entry.path();
+        if !pkg_dir.is_dir() {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&ns_path) else {
-            debug!("r-stdlib: could not read NAMESPACE for {pkg}");
+        let Some(pkg) = pkg_dir.file_name().and_then(|n| n.to_str()) else { continue };
+        if pkg.starts_with('.') {
             continue;
-        };
-        parse_namespace(&content, pkg, &mut symbols);
+        }
+        // Each real R package has a DESCRIPTION file; skip non-package directories.
+        if !pkg_dir.join("DESCRIPTION").is_file() {
+            continue;
+        }
+
+        let ns_path = pkg_dir.join("NAMESPACE");
+        if ns_path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&ns_path) {
+                parse_namespace(&content, pkg, &mut symbols);
+                continue;
+            }
+        }
+        // Fallback: NAMESPACE absent (base package, or older format).
+        // INDEX lists `<name><whitespace><description>` on the first column;
+        // continuation lines start with whitespace.
+        let index_path = pkg_dir.join("INDEX");
+        if index_path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&index_path) {
+                parse_index(&content, pkg, &mut symbols);
+                continue;
+            }
+        }
+        debug!("r-stdlib: no NAMESPACE or INDEX for package {pkg}");
     }
 
     if symbols.is_empty() {
@@ -456,6 +572,28 @@ pub(super) fn parse_namespace(content: &str, pkg: &str, out: &mut Vec<ExtractedS
         // exportPattern, useDynLib, import, importFrom etc. are intentionally
         // skipped: they either can't enumerate names without an R environment
         // or describe inbound rather than outbound symbols.
+    }
+}
+
+/// Parse an INDEX file (used as a NAMESPACE fallback for the `base` package,
+/// which has no NAMESPACE because base is hardcoded in R itself). The format
+/// is `<name><whitespace><description>` on each entry; continuation lines
+/// for the description start with whitespace.
+pub(super) fn parse_index(content: &str, pkg: &str, out: &mut Vec<ExtractedSymbol>) {
+    for line in content.lines() {
+        // Continuation lines (description wrap) start with whitespace — skip.
+        if line.is_empty() || line.starts_with(|c: char| c.is_whitespace()) {
+            continue;
+        }
+        let name = match line.split_whitespace().next() {
+            Some(n) => n,
+            None => continue,
+        };
+        let cleaned = clean_name(name);
+        if cleaned.is_empty() {
+            continue;
+        }
+        out.push(make_sym(&cleaned, pkg, SymbolKind::Function));
     }
 }
 
