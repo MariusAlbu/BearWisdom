@@ -7,12 +7,15 @@
 //   Function  — binary_operator where op is `<-`/`=` and RHS is function_definition
 //   Variable  — binary_operator where op is `<-`/`=` and RHS is not function/class
 //   Class     — call where function = "setClass" / "setRefClass" / "R6Class"
-//   Method    — call where function = "setMethod" / "setGeneric"
+//   Method    — entries inside R6Class public/private/active list args
+//             — call where function = "setMethod" / "setGeneric"
 //   Test      — call where function = "test_that" / "it" / "describe"
 //
 // REFERENCES:
 //   Imports   — call where function = "library" / "require" / "requireNamespace"
 //   Calls     — namespace_operator (pkg::fn / pkg:::fn) → function name + module=package
+//   Calls     — dollar-chain call `Cls$new()` → target_name = class name (constructor)
+//   Calls     — dollar-chain call `obj$method()` → target_name = "Cls.method" (qname)
 //   Calls     — all other call nodes → function name
 // =============================================================================
 
@@ -275,11 +278,13 @@ fn extract_binary_operator(
             // Check if the RHS call is a class constructor
             let callee = get_call_function_name(&rhs, src);
             if CLASS_FUNCS.contains(&callee.as_str()) {
+                // Use the first string argument as the canonical class name when
+                // present; fall back to the LHS identifier name.
                 let class_name = get_first_string_arg(&rhs, src).unwrap_or_else(|| name.clone());
                 let idx = symbols.len();
                 symbols.push(ExtractedSymbol {
                     name: class_name.clone(),
-                    qualified_name: class_name,
+                    qualified_name: class_name.clone(),
                     kind: SymbolKind::Class,
                     visibility: Some(Visibility::Public),
                     start_line: node.start_position().row as u32,
@@ -291,6 +296,12 @@ fn extract_binary_operator(
                     scope_path: None,
                     parent_index,
                 });
+                // For R6Class, emit Method symbols from public/private/active list args.
+                // Other class systems (setClass, setRefClass) use separate setMethod()
+                // calls, so only R6Class gets this treatment.
+                if callee == "R6Class" || callee.ends_with("::R6Class") {
+                    extract_r6_methods(&rhs, src, &class_name, idx, symbols);
+                }
                 // Still emit the Call edge for the R6Class/setClass call itself
                 let source_idx = parent_index.unwrap_or(0);
                 refs.push(ExtractedRef {
@@ -301,9 +312,9 @@ fn extract_binary_operator(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 return Some(idx);
             }
             // Otherwise emit the call as a ref and fall through to Variable
@@ -360,11 +371,54 @@ fn extract_call(
     parent_index: Option<usize>,
 ) -> Option<usize> {
     let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
-    let callee = get_call_function_name(node, src);
+    let line = node.start_position().row as u32;
+
+    // Dollar-chain call: `Cls$new()`, `private$helper()`, `obj$method()`.
+    //
+    // `Map$new()` is parsed as a `call` whose function field is the text
+    // `Map$new`. Split on the first `$` to get (lhs, rhs).
+    //
+    // Three sub-cases:
+    //   `ClassName$new()`  → constructor call; ref to the class symbol itself.
+    //   `private$method()` → intra-class call on the implicit private list;
+    //                        emit bare method name so same-file lookup finds it.
+    //   `self$method()`    → same as private — R6 self-call pattern.
+    //   `obj$method()`     → instance method call; emit dotted qname so
+    //                        resolve_common Step 5 finds `ClassName.method`.
+    let raw_callee = get_call_function_name(node, src);
+    if let Some(dollar_pos) = raw_callee.find('$') {
+        let lhs = &raw_callee[..dollar_pos];
+        let rhs = &raw_callee[dollar_pos + 1..];
+        if !lhs.is_empty() && !rhs.is_empty() {
+            let target = if rhs == "new" {
+                // `ClassName$new()` → ref resolves to the class symbol.
+                lhs.to_string()
+            } else if matches!(lhs, "private" | "self") {
+                // Intra-class call — bare method name, found by same-file lookup.
+                rhs.to_string()
+            } else {
+                // General case: emit dotted qname for cross-file member resolution.
+                format!("{lhs}.{rhs}")
+            };
+            refs.push(ExtractedRef {
+                source_symbol_index: source_idx,
+                target_name: target,
+                kind: EdgeKind::Calls,
+                line,
+                module: None,
+                chain: None,
+                byte_offset: 0,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
+            return None;
+        }
+    }
+
+    let callee = raw_callee;
     if callee.is_empty() {
         return None;
     }
-    let line = node.start_position().row as u32;
 
     if IMPORT_FUNCS.contains(&callee.as_str()) {
         if let Some(pkg) = get_first_string_arg(node, src) {
@@ -436,6 +490,93 @@ fn extract_call(
             call_args: Vec::new(),
 });
     None
+}
+
+// ---------------------------------------------------------------------------
+// R6Class method extraction
+// ---------------------------------------------------------------------------
+
+/// Walk an `R6Class(...)` call node's named arguments looking for
+/// `public = list(...)`, `private = list(...)`, and `active = list(...)`.
+/// For each `name = function(...)` entry inside those lists, emit a
+/// `Method` symbol whose qualified name is `ClassName.methodName` and
+/// whose `parent_index` points at the class symbol just pushed.
+fn extract_r6_methods(
+    r6_call: &Node,
+    src: &[u8],
+    class_name: &str,
+    class_idx: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let args = match r6_call.child_by_field_name("arguments") {
+        Some(a) => a,
+        None => return,
+    };
+    let mut cursor = args.walk();
+    for arg in args.children(&mut cursor) {
+        if arg.kind() != "argument" {
+            continue;
+        }
+        // Named argument: `public = list(...)` / `private = list(...)` / `active = list(...)`
+        let arg_name = arg.child_by_field_name("name")
+            .map(|n| node_text(n, src))
+            .unwrap_or_default();
+        if !matches!(arg_name.as_str(), "public" | "private" | "active") {
+            continue;
+        }
+        let value = match arg.child_by_field_name("value") {
+            Some(v) => v,
+            None => continue,
+        };
+        // Value must be a `list(...)` call.
+        if value.kind() != "call" {
+            continue;
+        }
+        let list_fn = get_call_function_name(&value, src);
+        if list_fn != "list" {
+            continue;
+        }
+        let list_args = match value.child_by_field_name("arguments") {
+            Some(a) => a,
+            None => continue,
+        };
+        let mut la_cursor = list_args.walk();
+        for list_entry in list_args.children(&mut la_cursor) {
+            if list_entry.kind() != "argument" {
+                continue;
+            }
+            let method_name = list_entry.child_by_field_name("name")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default();
+            if method_name.is_empty() {
+                continue;
+            }
+            // Only entries whose value is a function definition become methods.
+            let method_val = match list_entry.child_by_field_name("value") {
+                Some(v) => v,
+                None => continue,
+            };
+            if method_val.kind() != "function_definition" {
+                continue;
+            }
+            let params = extract_r_params(&method_val, src);
+            let qname = format!("{class_name}.{method_name}");
+            symbols.push(ExtractedSymbol {
+                name: method_name.clone(),
+                qualified_name: qname,
+                kind: SymbolKind::Method,
+                visibility: Some(Visibility::Public),
+                start_line: list_entry.start_position().row as u32,
+                end_line: list_entry.end_position().row as u32,
+                start_col: list_entry.start_position().column as u32,
+                end_col: list_entry.end_position().column as u32,
+                signature: Some(format!("{method_name}({params})")),
+                doc_comment: None,
+                scope_path: None,
+                parent_index: Some(class_idx),
+            });
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -521,6 +662,7 @@ fn get_call_function_name(node: &Node, src: &[u8]) -> String {
         .map(|n| node_text(n, src))
         .unwrap_or_default()
 }
+
 
 fn get_first_string_arg(node: &Node, src: &[u8]) -> Option<String> {
     let args = node.child_by_field_name("arguments")?;

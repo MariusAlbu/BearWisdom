@@ -305,3 +305,97 @@ fn cov_namespace_export_pattern_emits_function() {
         r.symbols
     );
 }
+
+// ---------------------------------------------------------------------------
+// R6Class method extraction
+// ---------------------------------------------------------------------------
+
+/// R6Class with public and private lists emits Method symbols for each
+/// `name = function(...)` entry, parented to the class.
+#[test]
+fn cov_r6class_public_methods_emit_method_symbols() {
+    let src = r#"
+Animal <- R6Class("Animal",
+  public = list(
+    initialize = function(name) { self$name <- name },
+    speak = function() { cat("...") }
+  ),
+  private = list(
+    helper = function() { invisible(NULL) }
+  )
+)
+"#;
+    let r = extract::extract(src, "test.R");
+    let class_sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class);
+    assert!(class_sym.is_some(), "expected Class symbol; got: {:?}", r.symbols);
+
+    let methods: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Method)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(methods.contains(&"initialize"), "expected initialize method; got: {methods:?}");
+    assert!(methods.contains(&"speak"), "expected speak method; got: {methods:?}");
+    assert!(methods.contains(&"helper"), "expected helper method; got: {methods:?}");
+}
+
+/// R6Class methods have qualified names of the form `ClassName.methodName`.
+#[test]
+fn cov_r6class_method_qualified_name() {
+    let src = r#"
+Map <- R6Class("Map",
+  public = list(
+    get = function(key) { NULL },
+    set = function(key, value) { invisible(NULL) }
+  )
+)
+"#;
+    let r = extract::extract(src, "test.R");
+    let qnames: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Method)
+        .map(|s| s.qualified_name.as_str())
+        .collect();
+    assert!(qnames.contains(&"Map.get"), "expected qname Map.get; got: {qnames:?}");
+    assert!(qnames.contains(&"Map.set"), "expected qname Map.set; got: {qnames:?}");
+}
+
+/// `ClassName$new()` emits a Calls ref targeting the class name (constructor).
+#[test]
+fn cov_dollar_new_emits_calls_ref_to_class() {
+    let r = extract::extract("obj <- Map$new()\n", "test.R");
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"Map"),
+        "expected Calls ref target_name='Map' from Map$new(); got: {calls:?}"
+    );
+}
+
+/// `private$method()` emits a Calls ref with bare method name (same-file lookup).
+#[test]
+fn cov_dollar_private_emits_bare_method_ref() {
+    let r = extract::extract("private$helper()\n", "test.R");
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"helper"),
+        "expected Calls ref target_name='helper' from private$helper(); got: {calls:?}"
+    );
+}
+
+/// `obj$method()` emits a Calls ref with dotted qname `obj.method`.
+#[test]
+fn cov_dollar_obj_emits_dotted_qname_ref() {
+    let r = extract::extract("ctx$onInvalidate(function() {})\n", "test.R");
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"ctx.onInvalidate"),
+        "expected Calls ref target_name='ctx.onInvalidate'; got: {calls:?}"
+    );
+}

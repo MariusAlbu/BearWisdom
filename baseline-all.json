@@ -279,7 +279,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 86
+        "min_resolution_rate": 97
       },
       "code_chunks": 5704,
       "files": 135,
@@ -288,8 +288,8 @@
         "http_call": 40
       },
       "flow_edges": 42,
-      "internal_edges": 2006,
-      "internal_unresolved": 312,
+      "internal_edges": 2337,
+      "internal_unresolved": 58,
       "languages": {
         "astro": 39,
         "c": 1,
@@ -309,37 +309,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/astro-awesome-privacy",
       "perf": {
-        "end_ws_mb": 165,
+        "end_ws_mb": 97,
         "files_per_sec": 1,
-        "index_duration_ms": 131054
+        "index_duration_ms": 120324
       },
       "project": "astro-awesome-privacy",
-      "resolution_rate": 86.54,
+      "resolution_rate": 97.58,
       "routes": 0,
       "symbols": 3128,
       "unresolved_by_lang_kind": {
         "astro.calls": 2,
         "c.calls": 3,
         "c.type_ref": 7,
-        "javascript.calls": 28,
-        "python.calls": 76,
+        "javascript.calls": 3,
+        "python.calls": 35,
         "python.type_ref": 6,
-        "scss.calls": 4,
-        "typescript.calls": 86,
-        "typescript.instantiates": 1,
-        "typescript.type_ref": 99
+        "typescript.calls": 1,
+        "typescript.instantiates": 1
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 88
+        "min_resolution_rate": 96
       },
       "code_chunks": 3130,
       "files": 105,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 322,
-      "internal_unresolved": 40,
+      "internal_edges": 462,
+      "internal_unresolved": 19,
       "languages": {
         "astro": 25,
         "css": 2,
@@ -353,31 +351,31 @@
       },
       "path": "F:/Work/Projects/TestProjects/astro-paper",
       "perf": {
-        "end_ws_mb": 185,
-        "files_per_sec": 40,
-        "index_duration_ms": 2622
+        "end_ws_mb": 88,
+        "files_per_sec": 30,
+        "index_duration_ms": 3559
       },
       "project": "astro-paper",
-      "resolution_rate": 88.95,
+      "resolution_rate": 96.05,
       "routes": 0,
       "symbols": 950,
       "unresolved_by_lang_kind": {
         "astro.calls": 7,
-        "javascript.calls": 11,
-        "typescript.calls": 10,
-        "typescript.type_ref": 12
+        "javascript.calls": 5,
+        "typescript.calls": 4,
+        "typescript.type_ref": 3
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 91
+        "min_resolution_rate": 97
       },
       "code_chunks": 32143,
       "files": 1067,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 14960,
-      "internal_unresolved": 1354,
+      "internal_edges": 17915,
+      "internal_unresolved": 402,
       "languages": {
         "astro": 100,
         "css": 20,
@@ -392,20 +390,20 @@
       },
       "path": "F:/Work/Projects/TestProjects/astro-starlight",
       "perf": {
-        "end_ws_mb": 159,
-        "files_per_sec": 89,
-        "index_duration_ms": 12010
+        "end_ws_mb": 110,
+        "files_per_sec": 104,
+        "index_duration_ms": 10219
       },
       "project": "astro-starlight",
-      "resolution_rate": 91.7,
+      "resolution_rate": 97.81,
       "routes": 0,
       "symbols": 18040,
       "unresolved_by_lang_kind": {
         "astro.calls": 27,
-        "javascript.calls": 12,
-        "typescript.calls": 309,
+        "javascript.calls": 1,
+        "typescript.calls": 168,
         "typescript.instantiates": 64,
-        "typescript.type_ref": 942
+        "typescript.type_ref": 142
       }
     },
     {
@@ -1976,7 +1974,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 77
+        "min_resolution_rate": 98
       },
       "code_chunks": 5863,
       "files": 221,
@@ -1984,8 +1982,8 @@
         "db_query": 2
       },
       "flow_edges": 2,
-      "internal_edges": 1204,
-      "internal_unresolved": 358,
+      "internal_edges": 2328,
+      "internal_unresolved": 35,
       "languages": {
         "css": 6,
         "dockerfile": 1,
@@ -1998,21 +1996,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/ejs-dummyjson",
       "perf": {
-        "end_ws_mb": 256,
-        "files_per_sec": 105,
-        "index_duration_ms": 2112
+        "end_ws_mb": 95,
+        "files_per_sec": 72,
+        "index_duration_ms": 3054
       },
       "project": "ejs-dummyjson",
-      "resolution_rate": 77.08,
+      "resolution_rate": 98.52,
       "routes": 0,
       "symbols": 2927,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 358
+        "javascript.calls": 35
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 93
+        "min_resolution_rate": 98
       },
       "code_chunks": 33064,
       "files": 513,
@@ -2023,8 +2021,8 @@
         "websocket": 11
       },
       "flow_edges": 76,
-      "internal_edges": 2362,
-      "internal_unresolved": 161,
+      "internal_edges": 2840,
+      "internal_unresolved": 31,
       "languages": {
         "css": 13,
         "dockerfile": 1,
@@ -2039,16 +2037,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ejs-reference",
       "perf": {
-        "end_ws_mb": 332,
-        "files_per_sec": 85,
-        "index_duration_ms": 6066
+        "end_ws_mb": 129,
+        "files_per_sec": 84,
+        "index_duration_ms": 6106
       },
       "project": "ejs-reference",
-      "resolution_rate": 93.62,
+      "resolution_rate": 98.92,
       "routes": 0,
       "symbols": 18914,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 161
+        "javascript.calls": 31
       }
     },
     {
@@ -5463,14 +5461,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 30
+        "min_resolution_rate": 83
       },
       "code_chunks": 6514,
       "files": 135,
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 790,
-      "internal_unresolved": 1817,
+      "internal_unresolved": 154,
       "languages": {
         "markdown": 15,
         "nix": 118,
@@ -5478,21 +5476,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/nix-disko",
       "perf": {
-        "end_ws_mb": 735,
-        "files_per_sec": 259,
-        "index_duration_ms": 522
+        "end_ws_mb": 33,
+        "files_per_sec": 247,
+        "index_duration_ms": 547
       },
       "project": "nix-disko",
-      "resolution_rate": 30.3,
+      "resolution_rate": 83.69,
       "routes": 0,
       "symbols": 4947,
       "unresolved_by_lang_kind": {
-        "nix.calls": 1817
+        "nix.calls": 154
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 55
+        "min_resolution_rate": 68
       },
       "code_chunks": 11080,
       "files": 486,
@@ -5500,8 +5498,8 @@
         "http_call": 1
       },
       "flow_edges": 1,
-      "internal_edges": 3065,
-      "internal_unresolved": 2446,
+      "internal_edges": 3038,
+      "internal_unresolved": 1372,
       "languages": {
         "css": 3,
         "haskell": 1,
@@ -5520,18 +5518,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/nix-dream2nix",
       "perf": {
-        "end_ws_mb": 281,
-        "files_per_sec": 80,
-        "index_duration_ms": 6104
+        "end_ws_mb": 75,
+        "files_per_sec": 40,
+        "index_duration_ms": 12054
       },
       "project": "nix-dream2nix",
-      "resolution_rate": 55.62,
+      "resolution_rate": 68.89,
       "routes": 0,
       "symbols": 7894,
       "unresolved_by_lang_kind": {
         "haskell.calls": 1,
         "javascript.calls": 1,
-        "nix.calls": 2439,
+        "nix.calls": 1365,
         "python.calls": 3,
         "python.type_ref": 1,
         "rust.calls": 1
@@ -5539,14 +5537,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 60
+        "min_resolution_rate": 97
       },
       "code_chunks": 83727,
       "files": 3531,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 20157,
-      "internal_unresolved": 13027,
+      "internal_edges": 20169,
+      "internal_unresolved": 532,
       "languages": {
         "c": 1,
         "css": 18,
@@ -5570,34 +5568,33 @@
       },
       "path": "F:/Work/Projects/TestProjects/nix-home-manager",
       "perf": {
-        "end_ws_mb": 349,
-        "files_per_sec": 59,
-        "index_duration_ms": 59728
+        "end_ws_mb": 165,
+        "files_per_sec": 44,
+        "index_duration_ms": 79470
       },
       "project": "nix-home-manager",
-      "resolution_rate": 60.74,
+      "resolution_rate": 97.43,
       "routes": 0,
       "symbols": 58972,
       "unresolved_by_lang_kind": {
         "c.type_ref": 2,
-        "javascript.calls": 3,
-        "lua.calls": 2,
-        "nix.calls": 12977,
-        "python.calls": 28,
+        "lua.calls": 1,
+        "nix.calls": 511,
+        "python.calls": 3,
         "python.type_ref": 3,
         "shell.calls": 12
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 60
+        "min_resolution_rate": 97
       },
       "code_chunks": 83941,
       "files": 3541,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 20191,
-      "internal_unresolved": 13079,
+      "internal_edges": 20203,
+      "internal_unresolved": 532,
       "languages": {
         "c": 1,
         "css": 18,
@@ -5621,20 +5618,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/nix-home-manager-fresh",
       "perf": {
-        "end_ws_mb": 353,
-        "files_per_sec": 59,
-        "index_duration_ms": 59803
+        "end_ws_mb": 175,
+        "files_per_sec": 45,
+        "index_duration_ms": 79396
       },
       "project": "nix-home-manager-fresh",
-      "resolution_rate": 60.69,
+      "resolution_rate": 97.43,
       "routes": 0,
       "symbols": 59105,
       "unresolved_by_lang_kind": {
         "c.type_ref": 2,
-        "javascript.calls": 3,
-        "lua.calls": 2,
-        "nix.calls": 13029,
-        "python.calls": 28,
+        "lua.calls": 1,
+        "nix.calls": 511,
+        "python.calls": 3,
         "python.type_ref": 3,
         "shell.calls": 12
       }
@@ -7380,14 +7376,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 60
+        "min_resolution_rate": 99
       },
-      "code_chunks": 18662,
+      "code_chunks": 18699,
       "files": 310,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 11942,
-      "internal_unresolved": 7671,
+      "internal_edges": 23035,
+      "internal_unresolved": 227,
       "languages": {
         "c": 1,
         "cpp": 13,
@@ -7400,30 +7396,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/r-dplyr",
       "perf": {
-        "end_ws_mb": 94,
-        "files_per_sec": 6,
-        "index_duration_ms": 49267
+        "end_ws_mb": 96,
+        "files_per_sec": 5,
+        "index_duration_ms": 57765
       },
       "project": "r-dplyr",
-      "resolution_rate": 60.89,
+      "resolution_rate": 99.02,
       "routes": 0,
-      "symbols": 14045,
+      "symbols": 14075,
       "unresolved_by_lang_kind": {
         "c.calls": 2,
         "cpp.calls": 2,
-        "r.calls": 7667
+        "r.calls": 223
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 52
+        "min_resolution_rate": 95
       },
       "code_chunks": 29073,
       "files": 805,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 13366,
-      "internal_unresolved": 12324,
+      "internal_edges": 31811,
+      "internal_unresolved": 1409,
       "languages": {
         "markdown": 110,
         "quarto": 11,
@@ -7434,30 +7430,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/r-ggplot2",
       "perf": {
-        "end_ws_mb": 90,
-        "files_per_sec": 154,
-        "index_duration_ms": 5215
+        "end_ws_mb": 81,
+        "files_per_sec": 135,
+        "index_duration_ms": 5979
       },
       "project": "r-ggplot2",
-      "resolution_rate": 52.03,
+      "resolution_rate": 95.76,
       "routes": 0,
       "symbols": 19943,
       "unresolved_by_lang_kind": {
-        "r.calls": 12324
+        "r.calls": 1409
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 64
+        "min_resolution_rate": 95
       },
-      "code_chunks": 40105,
+      "code_chunks": 40632,
       "files": 704,
       "flow_edge_types": {
         "config_lookup": 3
       },
       "flow_edges": 3,
-      "internal_edges": 17193,
-      "internal_unresolved": 9459,
+      "internal_edges": 33609,
+      "internal_unresolved": 1492,
       "languages": {
         "css": 12,
         "html": 5,
@@ -7473,20 +7469,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/r-shiny",
       "perf": {
-        "end_ws_mb": 357,
-        "files_per_sec": 59,
-        "index_duration_ms": 12009
+        "end_ws_mb": 115,
+        "files_per_sec": 44,
+        "index_duration_ms": 15941
       },
       "project": "r-shiny",
-      "resolution_rate": 64.51,
+      "resolution_rate": 95.75,
       "routes": 0,
-      "symbols": 19425,
+      "symbols": 19740,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 306,
-        "r.calls": 8405,
-        "typescript.calls": 58,
-        "typescript.instantiates": 8,
-        "typescript.type_ref": 682
+        "javascript.calls": 177,
+        "r.calls": 1075,
+        "typescript.calls": 6,
+        "typescript.type_ref": 234
       }
     },
     {
@@ -8458,14 +8453,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 84
+        "min_resolution_rate": 100
       },
       "code_chunks": 985,
       "files": 35,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 42,
-      "internal_unresolved": 8,
+      "internal_edges": 53,
+      "internal_unresolved": 0,
       "languages": {
         "javascript": 2,
         "json": 2,
@@ -8478,17 +8473,15 @@
       },
       "path": "F:/Work/Projects/TestProjects/slim-iina-website",
       "perf": {
-        "end_ws_mb": 362,
-        "files_per_sec": 19,
-        "index_duration_ms": 1802
+        "end_ws_mb": 206,
+        "files_per_sec": 12,
+        "index_duration_ms": 2876
       },
       "project": "slim-iina-website",
-      "resolution_rate": 84.0,
+      "resolution_rate": 100.0,
       "routes": 0,
       "symbols": 610,
-      "unresolved_by_lang_kind": {
-        "javascript.calls": 8
-      }
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
@@ -9040,7 +9033,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 87
+        "min_resolution_rate": 98
       },
       "code_chunks": 21064,
       "files": 397,
@@ -9048,8 +9041,8 @@
         "http_call": 6
       },
       "flow_edges": 6,
-      "internal_edges": 8345,
-      "internal_unresolved": 1245,
+      "internal_edges": 10212,
+      "internal_unresolved": 104,
       "languages": {
         "css": 2,
         "dockerfile": 2,
@@ -9063,17 +9056,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/templ-templui",
       "perf": {
-        "end_ws_mb": 360,
-        "files_per_sec": 40,
-        "index_duration_ms": 9949
+        "end_ws_mb": 142,
+        "files_per_sec": 38,
+        "index_duration_ms": 10434
       },
       "project": "templ-templui",
-      "resolution_rate": 87.02,
+      "resolution_rate": 98.99,
       "routes": 5,
       "symbols": 14087,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 1229,
-        "javascript.type_ref": 16
+        "javascript.calls": 104
       }
     },
     {
@@ -9688,7 +9680,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 83
+        "min_resolution_rate": 97
       },
       "code_chunks": 2702,
       "files": 126,
@@ -9696,8 +9688,8 @@
         "db_query": 1
       },
       "flow_edges": 1,
-      "internal_edges": 597,
-      "internal_unresolved": 120,
+      "internal_edges": 1114,
+      "internal_unresolved": 23,
       "languages": {
         "c": 1,
         "javascript": 1,
@@ -9709,19 +9701,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/twig-symfony-web-profiler",
       "perf": {
-        "end_ws_mb": 366,
-        "files_per_sec": 132,
-        "index_duration_ms": 958
+        "end_ws_mb": 223,
+        "files_per_sec": 58,
+        "index_duration_ms": 2182
       },
       "project": "twig-symfony-web-profiler",
-      "resolution_rate": 83.26,
+      "resolution_rate": 97.98,
       "routes": 0,
       "symbols": 862,
       "unresolved_by_lang_kind": {
-        "c.calls": 2,
-        "c.type_ref": 11,
-        "javascript.calls": 94,
-        "javascript.type_ref": 11,
+        "c.calls": 1,
+        "c.type_ref": 9,
+        "javascript.calls": 3,
+        "javascript.type_ref": 8,
         "php.calls": 2
       }
     },
@@ -9953,14 +9945,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 58
+        "min_resolution_rate": 82
       },
       "code_chunks": 4346,
       "files": 294,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 940,
-      "internal_unresolved": 664,
+      "internal_edges": 1319,
+      "internal_unresolved": 279,
       "languages": {
         "css": 2,
         "handlebars": 3,
@@ -9975,23 +9967,23 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "perf": {
-        "end_ws_mb": 365,
-        "files_per_sec": 73,
-        "index_duration_ms": 4025
+        "end_ws_mb": 127,
+        "files_per_sec": 62,
+        "index_duration_ms": 4733
       },
       "project": "vue-element-admin",
-      "resolution_rate": 58.6,
+      "resolution_rate": 82.54,
       "routes": 0,
       "symbols": 2366,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 610,
+        "javascript.calls": 225,
         "javascript.type_ref": 7,
         "vue.calls": 47
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 71
+        "min_resolution_rate": 82
       },
       "code_chunks": 14493,
       "files": 499,
@@ -10000,8 +9992,8 @@
         "http_call": 7
       },
       "flow_edges": 10,
-      "internal_edges": 5844,
-      "internal_unresolved": 2347,
+      "internal_edges": 7041,
+      "internal_unresolved": 1487,
       "languages": {
         "css": 7,
         "dockerfile": 1,
@@ -10016,18 +10008,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-elk",
       "perf": {
-        "end_ws_mb": 355,
-        "files_per_sec": 26,
-        "index_duration_ms": 18952
+        "end_ws_mb": 138,
+        "files_per_sec": 30,
+        "index_duration_ms": 16715
       },
       "project": "vue-elk",
-      "resolution_rate": 71.35,
+      "resolution_rate": 82.56,
       "routes": 0,
       "symbols": 5433,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 1367,
-        "typescript.instantiates": 7,
-        "typescript.type_ref": 698,
+        "typescript.calls": 833,
+        "typescript.instantiates": 2,
+        "typescript.type_ref": 377,
         "vue.calls": 275
       }
     },
@@ -10050,8 +10042,8 @@
         "service_dependency": 4
       },
       "flow_edges": 2186,
-      "internal_edges": 176310,
-      "internal_unresolved": 3503,
+      "internal_edges": 176430,
+      "internal_unresolved": 3415,
       "languages": {
         "css": 2,
         "dockerfile": 3,
@@ -10077,32 +10069,32 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-hoppscotch",
       "perf": {
-        "end_ws_mb": 457,
-        "files_per_sec": 8,
-        "index_duration_ms": 332218
+        "end_ws_mb": 283,
+        "files_per_sec": 6,
+        "index_duration_ms": 397058
       },
       "project": "vue-hoppscotch",
-      "resolution_rate": 98.05,
+      "resolution_rate": 98.1,
       "routes": 23,
       "symbols": 87381,
       "unresolved_by_lang_kind": {
         "go.calls": 1,
         "go.type_ref": 2,
         "javascript.calls": 13,
-        "nix.calls": 93,
+        "nix.calls": 14,
         "rust.calls": 60,
         "rust.type_ref": 38,
         "sql.type_ref": 2,
         "typescript.calls": 1212,
         "typescript.inherits": 10,
         "typescript.instantiates": 5,
-        "typescript.type_ref": 1831,
+        "typescript.type_ref": 1822,
         "vue.calls": 236
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 95
+        "min_resolution_rate": 99
       },
       "code_chunks": 34700,
       "files": 1783,
@@ -10112,8 +10104,8 @@
         "http_call": 5
       },
       "flow_edges": 17,
-      "internal_edges": 21827,
-      "internal_unresolved": 954,
+      "internal_edges": 24820,
+      "internal_unresolved": 182,
       "languages": {
         "css": 14,
         "dockerfile": 1,
@@ -10131,20 +10123,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-naive-admin",
       "perf": {
-        "end_ws_mb": 388,
-        "files_per_sec": 24,
-        "index_duration_ms": 74957
+        "end_ws_mb": 190,
+        "files_per_sec": 19,
+        "index_duration_ms": 93639
       },
       "project": "vue-naive-admin",
-      "resolution_rate": 95.81,
+      "resolution_rate": 99.27,
       "routes": 0,
       "symbols": 17570,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 4,
-        "typescript.calls": 471,
-        "typescript.instantiates": 40,
-        "typescript.type_ref": 403,
-        "vue.calls": 36
+        "typescript.calls": 54,
+        "typescript.instantiates": 16,
+        "typescript.type_ref": 75,
+        "vue.calls": 37
       }
     },
     {
@@ -10216,9 +10207,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin",
       "perf": {
-        "end_ws_mb": 361,
-        "files_per_sec": 33,
-        "index_duration_ms": 9067
+        "end_ws_mb": 344,
+        "files_per_sec": 29,
+        "index_duration_ms": 10252
       },
       "project": "vue-vuestic-admin",
       "resolution_rate": 98.89,
