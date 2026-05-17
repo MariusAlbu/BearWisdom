@@ -7273,7 +7273,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 96
+        "min_resolution_rate": 98
       },
       "code_chunks": 24254,
       "files": 310,
@@ -7285,8 +7285,8 @@
         "http_call": 8
       },
       "flow_edges": 720,
-      "internal_edges": 13528,
-      "internal_unresolved": 486,
+      "internal_edges": 13630,
+      "internal_unresolved": 257,
       "languages": {
         "css": 6,
         "html": 53,
@@ -7299,18 +7299,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-drf",
       "perf": {
-        "end_ws_mb": 368,
-        "files_per_sec": 16,
-        "index_duration_ms": 19529
+        "end_ws_mb": 118,
+        "files_per_sec": 11,
+        "index_duration_ms": 27531
       },
       "project": "python-drf",
-      "resolution_rate": 96.53,
+      "resolution_rate": 98.15,
       "routes": 5,
       "symbols": 15943,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 245,
+        "javascript.calls": 18,
         "python.calls": 83,
-        "python.type_ref": 158
+        "python.type_ref": 156
       }
     },
     {

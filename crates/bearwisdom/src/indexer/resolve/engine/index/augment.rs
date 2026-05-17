@@ -197,6 +197,15 @@ impl SymbolIndex {
                             }
                         }
                     }
+                    // A class symbol IS the callable — calling `Foo()` returns
+                    // an instance of `Foo`. Record `return_type = qualified_name`
+                    // so the chain walker can follow `x = Foo(); x.method()`.
+                    SymbolKind::Class => {
+                        self.type_info
+                            .entry(sym.qualified_name.clone())
+                            .or_default()
+                            .return_type = Some(sym.qualified_name.clone());
+                    }
                     _ => {}
                 }
             }

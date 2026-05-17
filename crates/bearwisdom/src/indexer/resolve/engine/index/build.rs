@@ -268,9 +268,20 @@ impl SymbolIndex {
                             }
                         }
                     }
-                    // Classes/interfaces/structs with TypeRef to themselves may have
-                    // generic type parameters in the signature.
                     _ => {}
+                }
+            }
+
+            // Class symbols are callable — `Foo()` returns an instance of `Foo`.
+            // Populate return_type = qualified_name unconditionally so the chain
+            // walker can follow `x = Foo(); x.method()`. This pass is separate
+            // from the TypeRef loop above because class symbols have no outgoing
+            // TypeRefs of their own.
+            for sym in &pf.symbols {
+                if sym.kind == SymbolKind::Class {
+                    return_type
+                        .entry(sym.qualified_name.clone())
+                        .or_insert_with(|| sym.qualified_name.clone());
                 }
             }
 

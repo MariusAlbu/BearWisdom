@@ -8,7 +8,7 @@
 
 use super::resolve::PythonResolver;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, FileContext, LanguageResolver, RefContext, SymbolIndex,
+    build_scope_chain, FileContext, LanguageResolver, RefContext, SymbolIndex, SymbolLookup,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use std::collections::HashMap;
@@ -219,5 +219,45 @@ fn test_init_reexport_windows_path() {
     assert!(
         result.is_some(),
         "Team should resolve on Windows backslash paths"
+    );
+}
+
+/// A `class Foo` symbol must have `return_type = "Foo"` in the SymbolIndex so
+/// that `x = Foo(); x.method()` can be chain-walked. Without this, the chain
+/// walker receives `None` from `return_type_name("Foo")` and cannot propagate
+/// the type of `x`.
+#[test]
+fn class_symbol_has_return_type_equal_to_own_qname() {
+    let foo_file = make_py_file(
+        "myapp/models.py",
+        vec![make_sym("Foo", "Foo", SymbolKind::Class)],
+        vec![],
+    );
+
+    let (index, _) = build_index(&[&foo_file]);
+
+    assert_eq!(
+        index.return_type_name("Foo"),
+        Some("Foo"),
+        "Class symbol must carry return_type = its own qualified_name"
+    );
+}
+
+/// A nested class (`module.Foo`) must also expose `return_type` equal to its
+/// fully-qualified name so chain walking works across module boundaries.
+#[test]
+fn nested_class_symbol_has_qualified_return_type() {
+    let foo_file = make_py_file(
+        "myapp/models.py",
+        vec![make_sym("Foo", "myapp.models.Foo", SymbolKind::Class)],
+        vec![],
+    );
+
+    let (index, _) = build_index(&[&foo_file]);
+
+    assert_eq!(
+        index.return_type_name("myapp.models.Foo"),
+        Some("myapp.models.Foo"),
+        "Qualified class symbol must carry return_type = its own qualified_name"
     );
 }
