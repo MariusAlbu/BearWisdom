@@ -893,4 +893,98 @@ mod per_package_activation_tests {
             "compile-commands must NOT be in workspace-wide actives without C/C++"
         );
     }
+
+    /// ts-lib-dom activates via LanguagePresent when a project has TypeScript
+    /// source files but no explicit `"DOM"` in any tsconfig.json. This covers
+    /// monorepos where the DOM lib entry lives in a shared tsconfig base that
+    /// is extended via the `extends` field — a chain the flat-JSON reader
+    /// cannot follow. Any project with .ts/.vue/.svelte files needs ES globals
+    /// and DOM types regardless of how its tsconfig is structured.
+    #[test]
+    fn ts_lib_dom_activates_via_language_presence_without_dom_in_tsconfig() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        // tsconfig.json present but no lib field — simulates the extends-chain
+        // pattern where DOM is declared in a shared base config.
+        write_file(
+            root,
+            "tsconfig.json",
+            r#"{"extends":"@org/tsconfig/web.json","compilerOptions":{"paths":{}}}"#,
+        );
+        write_file(root, "package.json", r#"{"name":"app"}"#);
+
+        let workspace_langs = vec!["typescript".to_string(), "vue".to_string()];
+
+        let registry = ecosystem::default_registry();
+        let ctx = ProjectContext::initialize(root, &[], workspace_langs, registry);
+
+        let ts_lib_dom = EcosystemId::new("ts-lib-dom");
+        assert!(
+            ctx.active_ecosystems.contains(&ts_lib_dom),
+            "ts-lib-dom must activate via LanguagePresent(typescript) \
+             even when tsconfig has no explicit lib:DOM entry: got {:?}",
+            ctx.active_ecosystems
+        );
+    }
+
+    /// ts-lib-dom activates via LanguagePresent in the per-package evaluation
+    /// path (monorepo layout). Covers the real production path where
+    /// `initialize_with_per_package_languages` is used and each package has
+    /// its own language_presence set.
+    #[test]
+    fn ts_lib_dom_activates_via_per_package_language_presence() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        // tsconfig with no explicit lib field — all lib entries are inherited
+        // from an `extends` chain the flat-JSON reader can't follow.
+        write_file(
+            root,
+            "apps/web/tsconfig.json",
+            r#"{"extends":"@org/tsconfig/web.json","compilerOptions":{"paths":{}}}"#,
+        );
+        write_file(root, "apps/web/package.json", r#"{"name":"web"}"#);
+
+        let packages = vec![PackageInfo {
+            id: Some(1),
+            name: "web".into(),
+            path: "apps/web".into(),
+            kind: Some("npm".into()),
+            manifest: Some("apps/web/package.json".into()),
+            declared_name: None,
+            is_publishable: true,
+        }];
+
+        // Per-package language presence: web package has typescript and vue files.
+        let mut per_pkg: HashMap<i64, HashSet<String>> = HashMap::new();
+        per_pkg.insert(1, HashSet::from(["typescript".to_string(), "vue".to_string()]));
+
+        let workspace_langs = vec!["typescript".to_string(), "vue".to_string()];
+
+        let registry = ecosystem::default_registry();
+        let ctx = ProjectContext::initialize_with_per_package_languages(
+            root,
+            &packages,
+            workspace_langs,
+            per_pkg,
+            registry,
+        );
+
+        let ts_lib_dom = EcosystemId::new("ts-lib-dom");
+        assert!(
+            ctx.active_ecosystems.contains(&ts_lib_dom),
+            "ts-lib-dom must activate for package with typescript/vue files \
+             even when tsconfig has no explicit lib:DOM entry: got {:?}",
+            ctx.active_ecosystems
+        );
+        assert!(
+            ctx.active_ecosystems_by_package
+                .get(&1)
+                .map(|ids| ids.contains(&ts_lib_dom))
+                .unwrap_or(false),
+            "ts-lib-dom must be in the web package's per-package actives: got {:?}",
+            ctx.active_ecosystems_by_package.get(&1)
+        );
+    }
 }
