@@ -187,6 +187,7 @@ pub fn full_index(
     let parse_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(parse_threads)
         .thread_name(|i| format!("bw-parse-{i}"))
+        .stack_size(16 * 1024 * 1024)
         .build()
         .context("Failed to build parse thread pool")?;
     debug!("Parsing with {parse_threads} threads (cap for memory discipline)");
