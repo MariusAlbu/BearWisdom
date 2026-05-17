@@ -138,9 +138,20 @@ impl LanguageResolver for NixResolver {
             return None;
         }
 
-        // Bare names are classified by the engine's keywords() set; the
-        // builtins./lib./pkgs./config. prefix check above already short-
-        // circuits the namespace cases.
+        // Dotted platform attribute paths (lib.*, pkgs.*, config.*, builtins.*)
+        // are always external — no project source defines them. The prefix
+        // check in resolve() skips resolution for these but does NOT classify
+        // them as external; that is this function's job.
+        if target.starts_with("builtins.")
+            || target.starts_with("lib.")
+            || target.starts_with("pkgs.")
+            || target.starts_with("config.")
+        {
+            return Some("builtin".to_string());
+        }
+
+        // Bare names without a dotted prefix are classified by the engine's
+        // keywords() set via classify_external_name.
         let _ = (file_ctx, ref_ctx, project_ctx);
         None
     }
