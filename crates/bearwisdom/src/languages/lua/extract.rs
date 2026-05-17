@@ -519,6 +519,7 @@ fn extract_function_call(
 ) {
     let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
     let line = node.start_position().row as u32;
+    let call_byte_offset = node.start_byte() as u32;
 
     // tree-sitter-lua 0.5 uses the `name` field for the callee of function_call
     let callee = match node.child_by_field_name("name") {
@@ -539,7 +540,7 @@ fn extract_function_call(
                         line,
                         module: Some(module_path),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: call_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -555,7 +556,7 @@ fn extract_function_call(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: call_byte_offset,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -567,7 +568,7 @@ fn extract_function_call(
                         line,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: call_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -580,7 +581,7 @@ fn extract_function_call(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: call_byte_offset,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -596,7 +597,7 @@ fn extract_function_call(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: call_byte_offset,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -612,7 +613,7 @@ fn extract_function_call(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: call_byte_offset,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

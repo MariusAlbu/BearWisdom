@@ -46,3 +46,4 @@ fn check_plugin(lang_id: &str) {
 #[test] fn php_flow_queries_compile() { check_plugin("php"); }
 #[test] fn ruby_flow_queries_compile() { check_plugin("ruby"); }
 #[test] fn c_flow_queries_compile() { check_plugin("c"); }
+#[test] fn lua_flow_queries_compile() { check_plugin("lua"); }

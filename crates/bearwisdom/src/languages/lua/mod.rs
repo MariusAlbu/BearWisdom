@@ -5,6 +5,7 @@
 
 pub mod keywords;
 pub mod extract;
+pub mod flow;
 
 mod predicates;
 pub(crate) mod type_checker;
@@ -64,5 +65,9 @@ impl LanguagePlugin for LuaPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::LuaChecker))
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::LUA_FLOW_CONFIG)
     }
 }
