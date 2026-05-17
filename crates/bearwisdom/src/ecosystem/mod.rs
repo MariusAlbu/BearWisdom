@@ -634,6 +634,7 @@ pub fn default_locator(
         "jdk-src" => Some(Arc::new(JdkSrcEcosystem)),
         "ts-lib-dom" => Some(Arc::new(TsLibDomEcosystem)),
         "ruby-stdlib" => Some(Arc::new(RubyStdlibEcosystem)),
+        "r-stdlib" => Some(Arc::new(RStdlibEcosystem)),
         "posix-headers" => Some(Arc::new(PosixHeadersEcosystem)),
         "msvc-sdk" => Some(Arc::new(MsvcSdkEcosystem)),
         "qt-runtime" => Some(Arc::new(QtRuntimeEcosystem)),
