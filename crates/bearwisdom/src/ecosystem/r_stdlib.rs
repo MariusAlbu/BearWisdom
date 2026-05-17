@@ -535,14 +535,13 @@ pub(super) fn synthesize_from_namespace(library_root: &Path) -> Vec<ParsedFile> 
 ///   `exportClasses(Cl1, ...)` — S4 class exports
 ///   `exportMethods(f1, ...)` — S4 generic method exports
 ///   `exportClassesFrom(pkg, ...)` — re-exports; emitted as Class symbols
+///
+/// NAMESPACE directives commonly span multiple lines — `export(\n  a,\n  b,\n)` —
+/// so the parser walks the content collecting balanced-paren directive bodies
+/// before dispatching, not line-by-line.
 pub(super) fn parse_namespace(content: &str, pkg: &str, out: &mut Vec<ExtractedSymbol>) {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        // Skip comments and empty lines.
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-
+    for directive in iter_directives(content) {
+        let trimmed = directive.trim_start();
         if let Some(rest) = strip_directive(trimmed, "export") {
             extract_names(rest, pkg, SymbolKind::Function, out);
         } else if let Some(rest) = strip_directive(trimmed, "exportClasses") {
@@ -659,6 +658,49 @@ pub(super) fn dump_exports_via_rscript(
     }
     if let Some(done) = current.take() {
         out.push(done);
+    }
+    out
+}
+
+/// Walk the NAMESPACE content yielding one logical directive per call,
+/// joining lines until parens balance. Comments (`# ...`) are stripped per
+/// line. Backtick-quoted segments don't count for paren-depth.
+pub(super) fn iter_directives(content: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut buf = String::new();
+    let mut depth: i32 = 0;
+    let mut in_backtick = false;
+    for raw_line in content.lines() {
+        // Strip comments — but only when NOT inside a backtick segment.
+        let line = if in_backtick {
+            raw_line
+        } else {
+            match raw_line.find('#') {
+                Some(idx) => &raw_line[..idx],
+                None => raw_line,
+            }
+        };
+        for ch in line.chars() {
+            match ch {
+                '`' => in_backtick = !in_backtick,
+                '(' if !in_backtick => depth += 1,
+                ')' if !in_backtick => depth -= 1,
+                _ => {}
+            }
+            buf.push(ch);
+        }
+        buf.push('\n');
+        if depth <= 0 {
+            let directive = std::mem::take(&mut buf);
+            let t = directive.trim();
+            if !t.is_empty() {
+                out.push(directive);
+            }
+            depth = 0;
+        }
+    }
+    if !buf.trim().is_empty() {
+        out.push(buf);
     }
     out
 }
