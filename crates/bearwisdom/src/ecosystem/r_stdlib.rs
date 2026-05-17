@@ -443,11 +443,13 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
 // ---------------------------------------------------------------------------
 
 /// Enumerate every package subdirectory under `library_root`, parse its
-/// NAMESPACE file (or fall back to INDEX for `base`, which has no NAMESPACE
-/// because it's built into R itself), and return one `ParsedFile` containing
-/// all exported symbols.
+/// NAMESPACE file for exports, and return one `ParsedFile` containing all
+/// exported symbols. Packages without a NAMESPACE (notably `base`, which
+/// is built into R itself) are dumped via a single Rscript subprocess that
+/// calls `getNamespaceExports()` — the authoritative R-side enumeration.
 pub(super) fn synthesize_from_namespace(library_root: &Path) -> Vec<ParsedFile> {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut needs_rscript: Vec<String> = Vec::new();
 
     let Ok(entries) = std::fs::read_dir(library_root) else {
         debug!("r-stdlib: could not read library root {}", library_root.display());
@@ -474,17 +476,23 @@ pub(super) fn synthesize_from_namespace(library_root: &Path) -> Vec<ParsedFile> 
                 continue;
             }
         }
-        // Fallback: NAMESPACE absent (base package, or older format).
-        // INDEX lists `<name><whitespace><description>` on the first column;
-        // continuation lines start with whitespace.
-        let index_path = pkg_dir.join("INDEX");
-        if index_path.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&index_path) {
-                parse_index(&content, pkg, &mut symbols);
-                continue;
+        // Defer to the Rscript pass — the only authoritative source for
+        // packages without a NAMESPACE file (base is hardcoded inside R).
+        needs_rscript.push(pkg.to_string());
+    }
+
+    if !needs_rscript.is_empty() {
+        // library_root is `<R_HOME>/library` — derive r_home for Rscript.
+        if let Some(r_home) = library_root.parent() {
+            let rscript_exports = dump_exports_via_rscript(r_home, &needs_rscript);
+            for (pkg, names) in rscript_exports {
+                for name in names {
+                    if !name.is_empty() {
+                        symbols.push(make_sym(&name, &pkg, SymbolKind::Function));
+                    }
+                }
             }
         }
-        debug!("r-stdlib: no NAMESPACE or INDEX for package {pkg}");
     }
 
     if symbols.is_empty() {
@@ -575,26 +583,84 @@ pub(super) fn parse_namespace(content: &str, pkg: &str, out: &mut Vec<ExtractedS
     }
 }
 
-/// Parse an INDEX file (used as a NAMESPACE fallback for the `base` package,
-/// which has no NAMESPACE because base is hardcoded in R itself). The format
-/// is `<name><whitespace><description>` on each entry; continuation lines
-/// for the description start with whitespace.
-pub(super) fn parse_index(content: &str, pkg: &str, out: &mut Vec<ExtractedSymbol>) {
-    for line in content.lines() {
-        // Continuation lines (description wrap) start with whitespace — skip.
-        if line.is_empty() || line.starts_with(|c: char| c.is_whitespace()) {
-            continue;
+/// Dump per-package exports via a single Rscript subprocess call. Returns
+/// a list of `(package, exports)` pairs in the order requested. Skipped
+/// silently if Rscript can't be located or invoked — fallback path is
+/// "this package has no exports we can see," consistent with how the
+/// other Stdlib walkers degrade.
+///
+/// The script delimits per-package output with a sentinel line so a single
+/// subprocess call covers every package in one round trip.
+pub(super) fn dump_exports_via_rscript(
+    r_home: &Path,
+    packages: &[String],
+) -> Vec<(String, Vec<String>)> {
+    let rscript = if cfg!(target_os = "windows") {
+        r_home.join("bin").join("Rscript.exe")
+    } else {
+        r_home.join("bin").join("Rscript")
+    };
+    let rscript_bin = if rscript.is_file() {
+        rscript
+    } else {
+        // Fallback to PATH.
+        PathBuf::from(if cfg!(target_os = "windows") { "Rscript.exe" } else { "Rscript" })
+    };
+
+    // Build a single R expression that prints each package's exports
+    // surrounded by sentinel markers.
+    let pkgs_arg = packages
+        .iter()
+        .map(|p| format!("'{}'", p.replace('\'', "")))
+        .collect::<Vec<_>>()
+        .join(",");
+    let script = format!(
+        "for (p in c({pkgs_arg})) {{ \
+           cat('---R-STDLIB-PKG:', p, '---\\n', sep=''); \
+           tryCatch(cat(getNamespaceExports(p), sep='\\n'), error=function(e) NULL); \
+           cat('\\n'); \
+         }}"
+    );
+
+    let output = match std::process::Command::new(&rscript_bin)
+        .args(["-e", &script])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        Ok(o) => {
+            debug!(
+                "r-stdlib: Rscript exit {} for getNamespaceExports — falling back to NAMESPACE-only coverage",
+                o.status.code().unwrap_or(-1)
+            );
+            return Vec::new();
         }
-        let name = match line.split_whitespace().next() {
-            Some(n) => n,
-            None => continue,
-        };
-        let cleaned = clean_name(name);
-        if cleaned.is_empty() {
-            continue;
+        Err(e) => {
+            debug!("r-stdlib: could not invoke Rscript: {e}");
+            return Vec::new();
         }
-        out.push(make_sym(&cleaned, pkg, SymbolKind::Function));
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    let mut current: Option<(String, Vec<String>)> = None;
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("---R-STDLIB-PKG:") {
+            if let Some(done) = current.take() {
+                out.push(done);
+            }
+            let pkg = rest.trim_end_matches("---").trim().to_string();
+            current = Some((pkg, Vec::new()));
+        } else if let Some((_, names)) = current.as_mut() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                names.push(trimmed.to_string());
+            }
+        }
     }
+    if let Some(done) = current.take() {
+        out.push(done);
+    }
+    out
 }
 
 /// Strip a directive name and return the remainder (including the `(`).

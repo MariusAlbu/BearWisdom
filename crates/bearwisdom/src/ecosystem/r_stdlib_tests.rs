@@ -63,13 +63,18 @@ fn discover_returns_empty_without_env_var() {
 }
 
 #[test]
-fn discover_returns_empty_when_path_lacks_src_library() {
+fn discover_returns_no_source_root_when_path_lacks_src_library() {
     let tmp = tempfile::tempdir().unwrap();
     // Tmp dir exists but has no src/library/ child.
     std::env::set_var("BEARWISDOM_R_SRC", tmp.path());
     let roots = discover_r_stdlib();
     std::env::remove_var("BEARWISDOM_R_SRC");
-    assert!(roots.is_empty());
+    // The SOURCE path must not produce a root; installed-R / user-library
+    // probes may still fire if a real R is installed on the host machine.
+    assert!(
+        roots.iter().all(|r| r.module_path != KIND_SOURCE),
+        "invalid BEARWISDOM_R_SRC must not produce a KIND_SOURCE root"
+    );
 }
 
 #[test]
@@ -299,7 +304,7 @@ fn discover_uses_r_home_when_library_base_description_present() {
 }
 
 #[test]
-fn discover_returns_empty_when_r_home_lacks_base_description() {
+fn discover_does_not_attribute_invalid_r_home_to_a_root() {
     let tmp = tempfile::tempdir().unwrap();
     // R_HOME exists but library/base/DESCRIPTION is absent.
     std::env::remove_var("BEARWISDOM_R_SRC");
@@ -307,8 +312,13 @@ fn discover_returns_empty_when_r_home_lacks_base_description() {
     let roots = discover_r_stdlib();
     std::env::remove_var("R_HOME");
 
-    assert!(roots.is_empty(),
-        "an R_HOME without library/base/DESCRIPTION must not produce a root");
+    // No root should point at the invalid R_HOME's library subdir.
+    let bad_library = tmp.path().join("library");
+    assert!(
+        roots.iter().all(|r| r.root != bad_library),
+        "invalid R_HOME must not produce a root pointing at its library/ subdir; \
+         user-library probes may still fire on machines with a real R install"
+    );
 }
 
 #[test]
