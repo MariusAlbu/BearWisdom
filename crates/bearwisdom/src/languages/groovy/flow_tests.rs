@@ -24,12 +24,14 @@ class Foo {
 }
 
 #[test]
-fn flow_def_local_binds_rhs() {
+fn flow_def_local_chain_rhs_binds() {
+    // `def x = obj.factory()` — RHS is a method chain, produces a Calls ref
+    // inside the RHS byte range, so the flow engine can bind `x → ref_idx`.
     let src = r#"
 class Bar {
     void test() {
-        def svc = new MyService()
-        svc.doWork()
+        def client = HttpClientFactory.newClient()
+        client.send(null)
     }
 }
 "#;
@@ -39,17 +41,19 @@ class Bar {
     let meta = run_flow_queries(src, &language, &GROOVY_FLOW_CONFIG, &result.symbols, &mut refs);
     assert!(
         !meta.flow_binding_lhs.is_empty(),
-        "expected flow binding for def-local declaration"
+        "expected flow binding for def-local with chain RHS"
     );
 }
 
 #[test]
-fn flow_bare_assignment_binds_rhs() {
+fn flow_bare_assignment_chain_rhs_binds() {
+    // `x = factory.create()` — bare reassignment where the RHS is a call chain.
+    // The flow engine must emit a binding from `x` to the Calls ref for `create`.
     let src = r#"
 class Baz {
     void test() {
         def repo
-        repo = new UserRepository()
+        repo = RepoFactory.create()
         repo.findAll()
     }
 }
@@ -60,6 +64,6 @@ class Baz {
     let meta = run_flow_queries(src, &language, &GROOVY_FLOW_CONFIG, &result.symbols, &mut refs);
     assert!(
         !meta.flow_binding_lhs.is_empty(),
-        "expected flow binding for bare assignment expression"
+        "expected flow binding for bare assignment with chain RHS"
     );
 }

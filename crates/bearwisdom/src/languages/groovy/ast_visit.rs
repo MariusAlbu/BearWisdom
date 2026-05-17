@@ -381,6 +381,7 @@ fn extract_function(
     });
 
     let local_types = scan_local_types(node, src);
+    emit_local_variable_symbols(node, src, idx, symbols);
     visit_for_calls(node, src, idx, refs, &local_types);
 }
 
@@ -436,7 +437,54 @@ fn extract_method_declaration(
     });
 
     let local_types = scan_local_types(node, src);
+    emit_local_variable_symbols(node, src, idx, symbols);
     visit_for_calls(node, src, idx, refs, &local_types);
+}
+
+// ---------------------------------------------------------------------------
+// Local variable symbol emission (flow engine LHS correlation)
+// ---------------------------------------------------------------------------
+
+/// Walk a method/function body and emit a Variable symbol for each
+/// `local_variable_declaration` declarator.  These symbols are not indexed
+/// for search — they exist so the flow engine can correlate assignment LHS
+/// names to indices and bind the RHS call's return type to the local.
+fn emit_local_variable_symbols(
+    body_root: &Node,
+    src: &str,
+    parent_index: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let mut cursor = body_root.walk();
+    for child in body_root.children(&mut cursor) {
+        if child.kind() == "local_variable_declaration" {
+            let mut dc = child.walk();
+            for decl in child.children(&mut dc) {
+                if decl.kind() == "variable_declarator" {
+                    if let Some(name_node) = decl.child_by_field_name("name") {
+                        let name = node_text(&name_node, src).to_string();
+                        if !name.is_empty() {
+                            symbols.push(ExtractedSymbol {
+                                name: name.clone(),
+                                qualified_name: name,
+                                kind: SymbolKind::Variable,
+                                visibility: None,
+                                start_line: name_node.start_position().row as u32,
+                                end_line: name_node.end_position().row as u32,
+                                start_col: name_node.start_position().column as u32,
+                                end_col: name_node.end_position().column as u32,
+                                signature: None,
+                                doc_comment: None,
+                                scope_path: None,
+                                parent_index: Some(parent_index),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        emit_local_variable_symbols(&child, src, parent_index, symbols);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -541,7 +589,7 @@ pub(super) fn extract_call(
         line: node.start_position().row as u32,
         module: None,
         chain,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     });

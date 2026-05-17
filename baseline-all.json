@@ -3332,14 +3332,14 @@
       "assertions": {
         "min_resolution_rate": 97
       },
-      "code_chunks": 27929,
+      "code_chunks": 33996,
       "files": 1177,
       "flow_edge_types": {
         "http_call": 1
       },
       "flow_edges": 1,
-      "internal_edges": 11256,
-      "internal_unresolved": 348,
+      "internal_edges": 11536,
+      "internal_unresolved": 267,
       "languages": {
         "css": 3,
         "dockerfile": 2,
@@ -3355,22 +3355,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/groovy-codenarc",
       "perf": {
-        "end_ws_mb": 278,
-        "files_per_sec": 94,
-        "index_duration_ms": 12484
+        "end_ws_mb": 95,
+        "files_per_sec": 66,
+        "index_duration_ms": 17791
       },
       "project": "groovy-codenarc",
-      "resolution_rate": 97.0,
+      "resolution_rate": 97.74,
       "routes": 0,
-      "symbols": 12150,
+      "symbols": 15516,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 280,
+        "groovy.calls": 220,
         "groovy.implements": 1,
         "groovy.inherits": 15,
         "java.calls": 9,
         "java.instantiates": 4,
-        "java.type_ref": 23,
-        "javascript.calls": 16
+        "java.type_ref": 18
       }
     },
     {
@@ -3473,7 +3472,7 @@
       "assertions": {
         "min_resolution_rate": 97
       },
-      "code_chunks": 30344,
+      "code_chunks": 30778,
       "files": 1291,
       "flow_edge_types": {
         "db_query": 23,
@@ -3481,8 +3480,8 @@
         "http_call": 6
       },
       "flow_edges": 36,
-      "internal_edges": 38474,
-      "internal_unresolved": 884,
+      "internal_edges": 38564,
+      "internal_unresolved": 854,
       "languages": {
         "groovy": 606,
         "html": 1,
@@ -3495,22 +3494,22 @@
       },
       "path": "F:/Work/Projects/TestProjects/groovy-spock",
       "perf": {
-        "end_ws_mb": 291,
-        "files_per_sec": 84,
-        "index_duration_ms": 15324
+        "end_ws_mb": 92,
+        "files_per_sec": 68,
+        "index_duration_ms": 18937
       },
       "project": "groovy-spock",
-      "resolution_rate": 97.75,
+      "resolution_rate": 97.83,
       "routes": 2,
-      "symbols": 12899,
+      "symbols": 13184,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 382,
+        "groovy.calls": 378,
         "groovy.implements": 14,
         "groovy.inherits": 10,
         "java.calls": 147,
         "java.inherits": 1,
         "java.instantiates": 38,
-        "java.type_ref": 292
+        "java.type_ref": 266
       }
     },
     {
