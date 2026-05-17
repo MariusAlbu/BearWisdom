@@ -15,6 +15,7 @@ pub(crate) mod keywords;
 pub mod extract;
 mod ast_visit;
 mod calls;
+mod flow;
 mod node_helpers;
 
 mod predicates;
@@ -24,6 +25,10 @@ pub mod resolve;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
+
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod flow_tests;
 
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
@@ -82,5 +87,9 @@ impl LanguagePlugin for GroovyPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::GroovyChecker))
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::GROOVY_FLOW_CONFIG)
     }
 }
