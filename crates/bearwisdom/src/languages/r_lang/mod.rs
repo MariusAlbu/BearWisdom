@@ -5,6 +5,7 @@
 
 pub mod keywords;
 pub mod extract;
+pub mod flow;
 
 mod predicates;
 pub(crate) mod type_checker;
@@ -17,6 +18,10 @@ use crate::types::ExtractionResult;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
+
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod flow_tests;
 
 pub struct RLangPlugin;
 
@@ -67,5 +72,9 @@ impl LanguagePlugin for RLangPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::RChecker))
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::R_FLOW_CONFIG)
     }
 }
