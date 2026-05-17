@@ -58,13 +58,8 @@ fn discover_returns_empty_without_env_var() {
     // Make sure no leftover var from another test leaks in.
     std::env::remove_var("BEARWISDOM_R_SRC");
     std::env::remove_var("R_HOME");
-    // Only run this assertion when R is NOT installed (the subprocess probe
-    // would succeed on a machine that has R on PATH).  We can detect that by
-    // checking whether the probe itself would return something.  If it does,
-    // skip the empty assertion — the machine has R and that's fine.
-    let roots = discover_r_stdlib();
-    // Either empty (no R) or non-empty (R found) — just assert it doesn't panic.
-    let _ = roots;
+    // Either empty (no R) or non-empty (R found via subprocess) — assert no panic.
+    let _ = discover_r_stdlib();
 }
 
 #[test]
@@ -291,8 +286,12 @@ fn discover_uses_r_home_when_library_base_namespace_present() {
     assert_eq!(roots.len(), 1);
     assert_eq!(roots[0].module_path, KIND_NAMESPACE,
         "an installed R (no src/library) must produce a KIND_NAMESPACE root");
-    assert!(roots[0].root.ends_with("library") || roots[0].root.ends_with("library\\") || roots[0].root.ends_with("library/"),
-        "root must point at the library/ subdirectory, got: {}", roots[0].root.display());
+    // root must point at the library/ subdirectory
+    assert!(
+        roots[0].root.ends_with("library"),
+        "root must point at the library/ subdirectory, got: {}",
+        roots[0].root.display()
+    );
 }
 
 #[test]

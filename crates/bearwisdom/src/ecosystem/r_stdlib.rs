@@ -410,7 +410,7 @@ pub(super) fn synthesize_from_namespace(library_root: &Path) -> Vec<ParsedFile> 
 ///   `exportPattern(regex)` — ignored (can't enumerate without environment)
 ///   `exportClasses(Cl1, ...)` — S4 class exports
 ///   `exportMethods(f1, ...)` — S4 generic method exports
-///   `exportClassesFrom(pkg, ...)` — re-exports; emitted as functions
+///   `exportClassesFrom(pkg, ...)` — re-exports; emitted as Class symbols
 pub(super) fn parse_namespace(content: &str, pkg: &str, out: &mut Vec<ExtractedSymbol>) {
     for line in content.lines() {
         let trimmed = line.trim();
