@@ -54,7 +54,7 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
         if let Some((level, text)) = parse_atx_heading(line) {
             symbols.push(ExtractedSymbol {
                 name: text.clone(),
-                qualified_name: format!("{file_name}.{}", slugify(&text)),
+                qualified_name: format!("{file_name}.{text}"),
                 kind: SymbolKind::Field,
                 visibility: Some(Visibility::Public),
                 start_line: line_no,

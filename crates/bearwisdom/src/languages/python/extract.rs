@@ -65,6 +65,27 @@ pub fn extract(source: &str) -> ExtractionResult {
 // Core traversal
 // ---------------------------------------------------------------------------
 
+/// Return the `source_symbol_index` to use for an import ref emitted during
+/// top-level traversal.
+///
+/// When a `parent_index` is set (import inside a class or function body), the
+/// parent symbol index is used directly — it was pushed before the recursive
+/// call, so the index is valid by construction.
+///
+/// At the module level (`parent_index = None`) the ref is attributed to the
+/// last symbol pushed so far, clamped to 0.  This means a module-level import
+/// that appears before any symbol definition (e.g. at the top of the file)
+/// gets `source_symbol_index = 0`, which becomes valid once the first function
+/// or class below it is extracted.  Files that contain only imports and no
+/// symbol-defining statements will still fire REF-001 from the canonical-form
+/// validator because no symbol slot exists to attach to.
+fn clamp_owner(parent_index: Option<usize>, symbols_len: usize) -> usize {
+    match parent_index {
+        Some(idx) => idx,
+        None => symbols_len.saturating_sub(1),
+    }
+}
+
 pub(super) fn extract_from_node(
     node: Node,
     source: &str,
@@ -119,11 +140,16 @@ pub(super) fn extract_from_node(
             }
 
             "import_statement" => {
-                calls::extract_import_statement(&child, source, refs, symbols.len());
+                // Attach to the enclosing symbol when one exists, otherwise
+                // to the most-recently-pushed symbol (index 0 fallback).
+                // The index is always clamped so it stays in-bounds.
+                let owner = clamp_owner(parent_index, symbols.len());
+                calls::extract_import_statement(&child, source, refs, owner);
             }
 
             "import_from_statement" => {
-                calls::extract_import_from_statement(&child, source, refs, symbols.len());
+                let owner = clamp_owner(parent_index, symbols.len());
+                calls::extract_import_from_statement(&child, source, refs, owner);
             }
 
             // `from __future__ import annotations` — emit Imports refs for
@@ -131,7 +157,7 @@ pub(super) fn extract_from_node(
             // instead the `__future__` keyword is a bare node, and the imported
             // names appear as `dotted_name` or `identifier` children.
             "future_import_statement" => {
-                let current_idx = symbols.len();
+                let owner = clamp_owner(parent_index, symbols.len());
                 let mut cursor = child.walk();
                 for fc in child.children(&mut cursor) {
                     match fc.kind() {
@@ -139,16 +165,16 @@ pub(super) fn extract_from_node(
                             let name = helpers::node_text(&fc, source);
                             if !name.is_empty() && name != "__future__" {
                                 refs.push(crate::types::ExtractedRef {
-                                    source_symbol_index: current_idx,
+                                    source_symbol_index: owner,
                                     target_name: name,
                                     kind: crate::types::EdgeKind::Imports,
                                     line: fc.start_position().row as u32,
                                     module: Some("__future__".to_string()),
                                     chain: None,
                                     byte_offset: 0,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         _ => {}

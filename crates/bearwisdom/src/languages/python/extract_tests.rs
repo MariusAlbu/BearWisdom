@@ -1045,3 +1045,80 @@ def foo():
                 .collect::<Vec<_>>()
         );
     }
+
+    // -----------------------------------------------------------------------
+    // REF-001: source_symbol_index must be in bounds
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn import_before_function_produces_in_bounds_refs() {
+        // Imports appear before the first function definition.
+        // At extraction time no symbol exists yet, so source_symbol_index is
+        // clamped to 0.  After the function is pushed symbols.len() becomes 1,
+        // making index 0 valid — no REF-001.
+        let src = "import json\n\ndef compute():\n    pass\n";
+        let r = extract::extract(src);
+        for rf in &r.refs {
+            assert!(
+                rf.source_symbol_index < r.symbols.len(),
+                "REF-001: source_symbol_index {} out of bounds (symbols.len() = {}), ref target = {:?}",
+                rf.source_symbol_index,
+                r.symbols.len(),
+                rf.target_name,
+            );
+        }
+        assert!(
+            r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "json"),
+            "Expected Imports ref for 'json'"
+        );
+    }
+
+    #[test]
+    fn import_after_class_produces_in_bounds_refs() {
+        // This is the core REF-001 violation case: an import that appears
+        // after at least one symbol has already been pushed.  The old code
+        // passed symbols.len() (= 1) as source_symbol_index, which is one
+        // past the only valid index (0).  clamp_owner fixes this to 0.
+        let src = "class Foo:\n    pass\n\nimport os\n";
+        let r = extract::extract(src);
+        for rf in &r.refs {
+            assert!(
+                rf.source_symbol_index < r.symbols.len(),
+                "REF-001: source_symbol_index {} out of bounds (symbols.len() = {}), ref target = {:?}",
+                rf.source_symbol_index,
+                r.symbols.len(),
+                rf.target_name,
+            );
+        }
+    }
+
+    #[test]
+    fn future_import_in_file_with_symbols_produces_in_bounds_refs() {
+        let src = "from __future__ import annotations\n\ndef run():\n    pass\n";
+        let r = extract::extract(src);
+        for rf in &r.refs {
+            assert!(
+                rf.source_symbol_index < r.symbols.len(),
+                "REF-001: source_symbol_index {} out of bounds (symbols.len() = {}), ref target = {:?}",
+                rf.source_symbol_index,
+                r.symbols.len(),
+                rf.target_name,
+            );
+        }
+    }
+
+    #[test]
+    fn import_from_statement_in_class_body_produces_in_bounds_refs() {
+        // Import inside a class body uses the class symbol as owner.
+        let src = "class Config:\n    from os import path\n";
+        let r = extract::extract(src);
+        for rf in &r.refs {
+            assert!(
+                rf.source_symbol_index < r.symbols.len(),
+                "REF-001: source_symbol_index {} out of bounds (symbols.len() = {}), ref target = {:?}",
+                rf.source_symbol_index,
+                r.symbols.len(),
+                rf.target_name,
+            );
+        }
+    }
