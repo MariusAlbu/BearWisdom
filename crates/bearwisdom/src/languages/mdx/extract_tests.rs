@@ -51,15 +51,22 @@ fn self_closing_jsx_becomes_calls_ref() {
 fn dotted_jsx_becomes_calls_ref() {
     let src = "<Tabs.Root>\n<Tabs.Item />\n</Tabs.Root>\n";
     let r = extract(src, "page.mdx");
-    let calls: Vec<&str> = r
+    // Dotted tags split into a MemberChain; target_name is the leaf segment.
+    // `</Tabs.Root>` is an end tag and skipped.
+    let dotted_calls: Vec<_> = r
         .refs
         .iter()
-        .filter(|r| r.kind == EdgeKind::Calls)
-        .map(|r| r.target_name.as_str())
+        .filter(|r| r.kind == EdgeKind::Calls && r.chain.is_some())
         .collect();
-    // `</Tabs.Root>` is an end tag and skipped.
-    assert!(calls.contains(&"Tabs.Root"));
-    assert!(calls.contains(&"Tabs.Item"));
+    let leaf_names: Vec<&str> = dotted_calls.iter().map(|r| r.target_name.as_str()).collect();
+    assert!(leaf_names.contains(&"Root"), "expected 'Root' leaf, got {leaf_names:?}");
+    assert!(leaf_names.contains(&"Item"), "expected 'Item' leaf, got {leaf_names:?}");
+    // Chain roots must be the namespace identifiers.
+    let roots: Vec<&str> = dotted_calls
+        .iter()
+        .map(|r| r.chain.as_ref().unwrap().segments[0].name.as_str())
+        .collect();
+    assert!(roots.contains(&"Tabs"), "expected 'Tabs' as chain root, got {roots:?}");
 }
 
 #[test]
@@ -78,13 +85,16 @@ fn lowercase_html_tag_is_not_a_ref() {
 fn lowercase_dotted_accepted_motion_style() {
     let src = "<motion.div animate={{ x: 1 }} />\n";
     let r = extract(src, "page.mdx");
-    let calls: Vec<&str> = r
+    // Dotted tag: target_name is the leaf, chain carries both segments.
+    let call = r
         .refs
         .iter()
-        .filter(|r| r.kind == EdgeKind::Calls)
-        .map(|r| r.target_name.as_str())
-        .collect();
-    assert_eq!(calls, vec!["motion.div"]);
+        .find(|r| r.kind == EdgeKind::Calls)
+        .expect("expected a Calls ref");
+    assert_eq!(call.target_name, "div");
+    let chain = call.chain.as_ref().expect("expected a MemberChain");
+    assert_eq!(chain.segments[0].name, "motion");
+    assert_eq!(chain.segments[1].name, "div");
 }
 
 #[test]

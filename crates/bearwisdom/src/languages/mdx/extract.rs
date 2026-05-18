@@ -10,7 +10,7 @@
 //! component symbols.
 
 use super::super::markdown::{fenced, host_scan};
-use crate::types::{EdgeKind, ExtractedRef, ExtractionResult};
+use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractionResult, MemberChain, SegmentKind};
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let mut scan = host_scan::scan(source, file_path);
@@ -49,17 +49,18 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
         if bytes[i] == b'<' {
             if let Some((name, consumed)) = scan_jsx_tag(&bytes[i..]) {
                 let line = line_of_byte(bytes, i);
+                let (target_name, chain) = build_jsx_ref(&name);
                 refs.push(ExtractedRef {
                     source_symbol_index: host_index,
-                    target_name: name,
+                    target_name,
                     kind: EdgeKind::Calls,
                     line,
                     module: None,
-                    chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    chain,
+                    byte_offset: i as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 i += consumed;
                 continue;
             }
@@ -140,6 +141,41 @@ fn fence_byte_ranges(source: &str) -> Vec<(usize, usize)> {
 
 fn inside_any_range(pos: usize, ranges: &[(usize, usize)]) -> bool {
     ranges.iter().any(|(s, e)| pos >= *s && pos < *e)
+}
+
+/// Splits a raw JSX tag name (as returned by `scan_jsx_tag`) into the
+/// canonical `target_name` and an optional `MemberChain`.
+///
+/// For plain names (`Hero`, `Button`) the name is returned unchanged and no
+/// chain is built. For dotted names (`Tabs.Root`, `motion.div`) the chain
+/// carries all segments and `target_name` is set to the leaf (`Root`, `div`)
+/// so REF-003 is satisfied: no dotted string survives without a chain.
+fn build_jsx_ref(raw: &str) -> (String, Option<MemberChain>) {
+    if !raw.contains('.') {
+        return (raw.to_string(), None);
+    }
+    let parts: Vec<&str> = raw.split('.').collect();
+    let mut segments = Vec::with_capacity(parts.len());
+    for (i, part) in parts.iter().enumerate() {
+        // The root segment is a JSX namespace root, not a variable. Use
+        // NamespaceAccess so the chain walker's external-classification path
+        // (which handles variable-rooted property chains) does not fire on it.
+        let kind = if i == 0 {
+            SegmentKind::NamespaceAccess
+        } else {
+            SegmentKind::Property
+        };
+        segments.push(ChainSegment {
+            name: part.to_string(),
+            node_kind: "jsx_member_expression".to_string(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+        });
+    }
+    let leaf = parts.last().unwrap_or(&raw).to_string();
+    (leaf, Some(MemberChain { segments }))
 }
 
 /// If `bytes` starts with `<Name[.Qualifier]*` followed by a valid JSX

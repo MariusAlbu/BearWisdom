@@ -175,8 +175,9 @@ fn dotted_jsx_captured_as_component_ref() {
         .unwrap()
         .flatten()
         .collect();
-    assert!(names.iter().any(|n| n == "Tabs.Root"), "got {names:?}");
-    assert!(names.iter().any(|n| n == "Tabs.Item"), "got {names:?}");
+    // Dotted JSX: target_name is the leaf segment after chain decomposition.
+    assert!(names.iter().any(|n| n == "Root"), "got {names:?}");
+    assert!(names.iter().any(|n| n == "Item"), "got {names:?}");
 }
 
 #[test]
