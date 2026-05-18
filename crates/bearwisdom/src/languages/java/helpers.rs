@@ -15,7 +15,9 @@ pub(super) fn node_text(node: Node, src: &[u8]) -> String {
 /// Detect visibility from the `modifiers` child of a declaration node.
 ///
 /// In tree-sitter-java, `modifiers` is an unnamed child containing unnamed
-/// leaf tokens like "public", "private", "protected".
+/// leaf tokens like "public", "private", "protected". When the `modifiers`
+/// node is absent entirely, or when it contains no visibility keyword, the
+/// symbol has Java package-private access.
 pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -32,11 +34,12 @@ pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
             if mod_text.contains("protected") {
                 return Some(Visibility::Protected);
             }
-            // No visibility keyword → package-private.
-            return None;
+            // Modifiers node present but no visibility keyword → package-private.
+            return Some(Visibility::PackagePrivate);
         }
     }
-    None
+    // No modifiers node → package-private.
+    Some(Visibility::PackagePrivate)
 }
 
 /// Extract a Javadoc comment (`/** ... */`) immediately preceding `node`.

@@ -282,7 +282,7 @@ class Example {
         assert_eq!(prot_field.visibility, Some(Visibility::Protected));
 
         let pkg_field = symbols.iter().find(|s| s.name == "packagePrivate").unwrap();
-        assert_eq!(pkg_field.visibility, None, "package-private should be None");
+        assert_eq!(pkg_field.visibility, Some(Visibility::PackagePrivate));
     }
 
     // -----------------------------------------------------------------------
