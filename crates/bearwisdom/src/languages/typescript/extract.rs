@@ -202,6 +202,40 @@ fn extract_inner(
     // there's no per-language drift.
     resolve_import_refs(&mut refs, &import_map);
 
+    // SYM-002: scope_path equals symbols[parent_index].qualified_name. The
+    // scope-tree path can drift for synthetic-name child symbols (index
+    // signature parameters `[s]`, computed property keys `[Symbol.match]`,
+    // mapped-type binder names) emitted inside method bodies — their scope
+    // is the method, not the enclosing class. Re-derive from parent_index.
+    for i in 0..symbols.len() {
+        if let Some(p) = symbols[i].parent_index {
+            let parent_qname = symbols[p].qualified_name.clone();
+            symbols[i].scope_path = Some(parent_qname);
+        }
+    }
+
+    // REF-001: every ref's source_symbol_index must be in bounds. Ambient
+    // .d.ts files that are pure triple-slash reference hubs
+    // (e.g. tsserverlibrary.d.ts) emit Imports refs but declare no symbols
+    // under demand-driven filtering. Push a file-level sentinel symbol at
+    // index 0 so those refs have a valid owner.
+    if symbols.is_empty() && !refs.is_empty() {
+        symbols.push(ExtractedSymbol {
+            name: String::new(),
+            qualified_name: String::new(),
+            kind: crate::types::SymbolKind::Namespace,
+            visibility: Some(crate::types::Visibility::Public),
+            start_line: 0,
+            end_line: root.end_position().row as u32,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+
     let mut result = ExtractionResult::new(symbols, refs, has_errors);
     result.alias_targets = alias_targets;
     result
