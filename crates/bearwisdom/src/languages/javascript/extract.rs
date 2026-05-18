@@ -799,7 +799,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                             line: n.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: n.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
                         });
@@ -815,7 +815,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                                     line: type_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: type_node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
                                 });
@@ -916,7 +916,7 @@ fn extract_for_loop_var(
                     line: right.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: right.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });

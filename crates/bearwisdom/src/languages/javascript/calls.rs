@@ -44,7 +44,7 @@ pub(super) fn extract_calls(
                                 line: child.start_position().row as u32,
                                 module: Some(module),
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
                             });
@@ -60,7 +60,7 @@ pub(super) fn extract_calls(
                                 line: child.start_position().row as u32,
                                 module: Some(module),
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
                             });
@@ -111,7 +111,7 @@ pub(super) fn extract_calls(
                             line: constructor.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: constructor.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
                         });
@@ -132,7 +132,7 @@ pub(super) fn extract_calls(
                             line: tag.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: tag.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
                         });
@@ -280,7 +280,7 @@ pub(super) fn emit_call_ref_js(
                 line: call_node.start_position().row as u32,
                 module: Some(module),
                 chain: None,
-                byte_offset: 0,
+                byte_offset: call_node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
             });
@@ -294,7 +294,7 @@ pub(super) fn emit_call_ref_js(
                 line: call_node.start_position().row as u32,
                 module: Some(module),
                 chain: None,
-                byte_offset: 0,
+                byte_offset: call_node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
             });
@@ -484,7 +484,7 @@ pub(super) fn emit_new_ref_js(
             line: constructor.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: constructor.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });

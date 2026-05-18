@@ -57,7 +57,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 line: spec.start_position().row as u32,
                                 module: module_path.clone(),
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: spec.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
                             });
@@ -76,7 +76,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                         line,
                         module: module_path.clone(),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });
@@ -94,7 +94,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });
@@ -127,7 +127,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                     line,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
                                 });
@@ -165,7 +165,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 line,
                                 module: module_path.clone(),
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
                             });
@@ -189,7 +189,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 line,
                                 module: module_path.clone(),
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
                             });
@@ -216,7 +216,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
             line,
             module: module_path,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });
@@ -323,7 +323,7 @@ pub(super) fn extract_module_exports(
             line: child.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: child.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });
@@ -466,7 +466,7 @@ pub(super) fn try_emit_require(
             line: init_node.start_position().row as u32,
             module: Some(module),
             chain: None,
-            byte_offset: 0,
+            byte_offset: init_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });

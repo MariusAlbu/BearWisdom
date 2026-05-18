@@ -116,7 +116,7 @@ pub(super) fn push_variable_decl(
                                         line: init_node.start_position().row as u32,
                                         module: None,
                                         chain: None,
-                                        byte_offset: 0,
+                                        byte_offset: constructor.start_byte() as u32,
                                                                             namespace_segments: Vec::new(),
                                                                             call_args: Vec::new(),
 });

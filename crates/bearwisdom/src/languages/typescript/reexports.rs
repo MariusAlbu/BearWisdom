@@ -78,7 +78,7 @@ pub(super) fn extract_bare_reexports_via_imports(
                     line: spec.start_position().row as u32,
                     module: Some(import.module.clone()),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: spec.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });
@@ -133,7 +133,11 @@ pub(super) fn extract_bare_reexports_via_imports(
 /// The scan stops at the first non-comment / non-blank line per the TS
 /// language spec — directives must precede all source.
 pub(super) fn push_triple_slash_imports(source: &str, refs: &mut Vec<ExtractedRef>) {
+    let mut byte_offset: usize = 0;
     for (line_no, line) in source.lines().enumerate() {
+        let line_byte_offset = byte_offset;
+        // Advance past this line's bytes plus the newline separator.
+        byte_offset += line.len() + 1;
         let trimmed = line.trim_start();
         if trimmed.is_empty() {
             continue;
@@ -166,13 +170,13 @@ pub(super) fn push_triple_slash_imports(source: &str, refs: &mut Vec<ExtractedRe
                         continue;
                     }
                     if let Some(value) = read_quoted(&rest[idx + prefix.len()..]) {
-                        emit_triple_slash_ref(refs, kind, &value, line_no);
+                        emit_triple_slash_ref(refs, kind, &value, line_no, line_byte_offset);
                     }
                 }
                 continue;
             };
             if let Some(value) = read_quoted(after) {
-                emit_triple_slash_ref(refs, kind, &value, line_no);
+                emit_triple_slash_ref(refs, kind, &value, line_no, line_byte_offset);
             }
         }
     }
@@ -211,7 +215,13 @@ fn is_attribute_boundary(bytes: &[u8], idx: usize) -> bool {
     prev == b' ' || prev == b'\t' || prev == b'<' || prev == b'\n'
 }
 
-fn emit_triple_slash_ref(refs: &mut Vec<ExtractedRef>, kind: &str, value: &str, line: usize) {
+fn emit_triple_slash_ref(
+    refs: &mut Vec<ExtractedRef>,
+    kind: &str,
+    value: &str,
+    line: usize,
+    byte_offset: usize,
+) {
     let value = value.trim();
     if value.is_empty() {
         return;
@@ -231,7 +241,7 @@ fn emit_triple_slash_ref(refs: &mut Vec<ExtractedRef>, kind: &str, value: &str, 
         line: line as u32,
         module: Some(module),
         chain: None,
-        byte_offset: 0,
+        byte_offset: byte_offset as u32,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     });
@@ -341,7 +351,7 @@ pub(super) fn extract_reexports(
                                 line: spec.start_position().row as u32,
                                 module: module_path.clone(),
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: spec.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
                             });
@@ -413,7 +423,7 @@ pub(super) fn extract_reexports(
             line,
             module: module_path.clone(),
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });

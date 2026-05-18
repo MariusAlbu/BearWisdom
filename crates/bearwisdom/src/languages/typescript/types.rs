@@ -37,7 +37,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: type_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -56,7 +56,7 @@ pub(super) fn extract_type_ref_from_annotation(
                     line: type_node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: type_node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -98,7 +98,7 @@ pub(super) fn extract_type_ref_from_annotation(
                                         line: arg.start_position().row as u32,
                                         module: None,
                                         chain: None,
-                                        byte_offset: 0,
+                                        byte_offset: arg.start_byte() as u32,
                                                                             namespace_segments: Vec::new(),
                                                                             call_args: Vec::new(),
 });
@@ -130,7 +130,7 @@ pub(super) fn extract_type_ref_from_annotation(
                     line: type_node.start_position().row as u32,
                     module: Some(module),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: type_node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });
@@ -143,7 +143,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: type_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -300,7 +300,7 @@ pub(super) fn extract_type_ref_from_annotation(
                         line: expr.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: expr.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -319,7 +319,7 @@ pub(super) fn extract_type_ref_from_annotation(
                                     line: child.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: child.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -445,7 +445,7 @@ pub(super) fn extract_type_refs_recursive(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -499,7 +499,7 @@ pub(super) fn extract_type_refs_recursive(
                                     line: child.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: child.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
