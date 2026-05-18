@@ -1,3 +1,4 @@
+pub mod canonical_form;
 pub mod changeset;
 pub mod secondary_scan;
 pub mod demand;

@@ -104,10 +104,10 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: node.start_byte() as u32,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     } else if tag.chars().next().map_or(false, |c| c.is_uppercase())
         && !BUILTIN_HTML_TAGS.contains(&tag.as_str())
     {
@@ -119,10 +119,10 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: node.start_byte() as u32,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     // Scan attributes for Angular bindings
@@ -187,16 +187,21 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: node.start_byte() as u32,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
         return;
     }
 
     // Pipes in attribute values: [prop]="value | pipe" or (event)="value | pipe"
     if !attr_value.is_empty() {
-        extract_pipes_from_expression(&attr_value, node.start_position().row as u32, refs);
+        extract_pipes_from_expression(
+            &attr_value,
+            node.start_position().row as u32,
+            node.start_byte() as u32,
+            refs,
+        );
     }
 }
 
@@ -228,10 +233,10 @@ fn extract_handler_from_value(value: &str, node: &Node, refs: &mut Vec<Extracted
         line: node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        byte_offset: node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -240,25 +245,39 @@ fn extract_handler_from_value(value: &str, node: &Node, refs: &mut Vec<Extracted
 
 /// Scan raw template source for `| pipeName` patterns in interpolations.
 fn extract_pipes_from_text(src: &str, refs: &mut Vec<ExtractedRef>) {
+    let mut byte_cursor: u32 = 0;
     for (line_idx, line) in src.lines().enumerate() {
-        extract_pipes_from_expression(line, line_idx as u32, refs);
+        extract_pipes_from_expression(line, line_idx as u32, byte_cursor, refs);
+        // +1 for the line terminator; harmless overestimate for the last line.
+        byte_cursor = byte_cursor.saturating_add(line.len() as u32 + 1);
     }
 }
 
-/// Extract pipe names from an expression string: `value | date:'short' | async`
-fn extract_pipes_from_expression(expr: &str, line: u32, refs: &mut Vec<ExtractedRef>) {
-    // Split by `|` and skip the first segment (it's the value, not a pipe)
-    let mut parts = expr.split('|');
-    parts.next(); // skip LHS value
+/// Extract pipe names from an expression string: `value | date:'short' | async`.
+/// `expr_byte_offset` is the byte position of `expr[0]` in the host file.
+fn extract_pipes_from_expression(
+    expr: &str,
+    line: u32,
+    expr_byte_offset: u32,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut consumed: u32 = 0;
+    let mut parts = expr.split('|').peekable();
+    // The first segment is the value, not a pipe — advance past it.
+    if let Some(head) = parts.next() {
+        consumed += head.len() as u32 + 1; // +1 for the `|` delimiter
+    }
     for part in parts {
+        let part_offset = expr_byte_offset.saturating_add(consumed);
+        consumed += part.len() as u32 + 1;
         let pipe_name = part
             .trim()
             .split(':')
-            .next()  // strip arguments like `:arg`
+            .next()
             .unwrap_or("")
             .trim()
             .split(' ')
-            .next()  // stop at first space
+            .next()
             .unwrap_or("")
             .to_string();
 
@@ -266,7 +285,6 @@ fn extract_pipes_from_expression(expr: &str, line: u32, refs: &mut Vec<Extracted
             continue;
         }
 
-        // Convention: datePipe → DatePipe (Angular pipe class naming)
         let class_name = format!("{}Pipe", to_pascal_case(&pipe_name));
         refs.push(ExtractedRef {
             source_symbol_index: 0,
@@ -275,10 +293,10 @@ fn extract_pipes_from_expression(expr: &str, line: u32, refs: &mut Vec<Extracted
             line,
             module: None,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: part_offset,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 

@@ -10,6 +10,14 @@ keywords.workspace     = true
 categories.workspace   = true
 description = "Structural code intelligence — 31 languages, cross-framework graph, hybrid search"
 
+[features]
+default = []
+# Runs the canonical-form validator on every ParsedFile produced by
+# parse_file. Off in release builds for zero overhead; on under
+# `cargo test --features canonical-form-checked` so extractor regressions
+# surface as test failures.
+canonical-form-checked = []
+
 [dependencies]
 tree-sitter            = { workspace = true }
 tree-sitter-c-sharp    = { workspace = true }

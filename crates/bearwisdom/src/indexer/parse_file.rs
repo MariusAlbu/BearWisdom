@@ -221,7 +221,7 @@ pub(crate) fn parse_file_with_demand(
         Vec::new()
     };
 
-    Ok(ParsedFile {
+    let parsed = ParsedFile {
         path: walked.relative_path.clone(),
         language: walked.language.to_string(),
         content_hash: hash,
@@ -243,7 +243,12 @@ pub(crate) fn parse_file_with_demand(
         alias_targets: Vec::new(),
         component_selectors,
         plugin_flow_emissions,
-    })
+    };
+
+    #[cfg(feature = "canonical-form-checked")]
+    crate::indexer::canonical_form::assert_canonical(&parsed);
+
+    Ok(parsed)
 }
 
 // ---------------------------------------------------------------------------
