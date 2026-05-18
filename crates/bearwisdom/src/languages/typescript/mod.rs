@@ -33,10 +33,13 @@ pub(crate) mod selectors;
 
 // Resolution sub-modules
 pub(crate) mod predicates;
+pub mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
 mod aliases;
 pub(crate) mod flow_detectors;
+
+pub use profile::TYPESCRIPT_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -168,6 +171,12 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::TypeScriptChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&TYPESCRIPT_PROFILE)
     }
 
     // TODO(routes-dispatch): wire `connectors::discover_nestjs_routes` and

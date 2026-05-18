@@ -35,11 +35,13 @@
 pub mod alias;
 pub mod chain;
 pub mod core;
+pub mod engine;
 pub mod inheritance;
 pub mod profile;
 pub mod subtype;
 pub mod type_env;
 
+pub use engine::Engine;
 pub use type_env::TypeEnvironment;
 
 use crate::indexer::resolve::engine::{

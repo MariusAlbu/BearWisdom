@@ -179,6 +179,19 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Trait surface stays minimal until subsequent PRs port behavior in.
     fn type_checker(&self) -> Option<Arc<dyn crate::type_checker::TypeChecker>> { None }
 
+    /// Return the language profile for this plugin, if one is defined.
+    ///
+    /// The engine collects profiles from every registered plugin and routes
+    /// `Engine::resolve` by `file_ctx.language`. Plugins without a profile
+    /// fall through to the legacy per-language resolver path. Phase 5 wires
+    /// TypeScript first; subsequent Wave A/B migrations add their profile
+    /// in the same per-language file.
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        None
+    }
+
     // `connectors()` trait method removed (Phase H) — no `impl Connector for X`
     // blocks remain. Per-language flow detection now lives either in resolver
     // FlowEmission emissions or in free `discover_*` functions called from
