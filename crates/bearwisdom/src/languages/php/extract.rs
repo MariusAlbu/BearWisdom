@@ -5,7 +5,7 @@
 
 use super::{calls, symbols, decorators};
 use crate::parser::scope_tree::{self, ScopeKind};
-use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
+use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -47,6 +47,21 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     let mut syms: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    syms.push(ExtractedSymbol {
+        name: String::new(),
+        qualified_name: String::new(),
+        kind: SymbolKind::Namespace,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: root.end_position().row as u32,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    });
 
     extract_from_node(root, src, &mut syms, &mut refs, None, "", "");
 
@@ -107,7 +122,7 @@ pub(super) fn extract_from_node(
             }
 
             "namespace_use_declaration" => {
-                calls::extract_use_declaration(&child, src, refs, symbols.len());
+                calls::extract_use_declaration(&child, src, refs, parent_index.unwrap_or(0));
             }
 
             "function_definition" => {
@@ -264,7 +279,7 @@ pub(super) fn extract_from_node(
             // `use TraitName;` inside a class body at top-level traversal
             // (when encountered outside of a class's declaration_list walk).
             "use_declaration" => {
-                calls::extract_trait_use(&child, src, refs, symbols.len());
+                calls::extract_trait_use(&child, src, refs, parent_index.unwrap_or(0));
             }
 
             "ERROR" | "MISSING" => {}
