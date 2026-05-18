@@ -34,7 +34,9 @@
 
 pub mod alias;
 pub mod chain;
+pub mod core;
 pub mod inheritance;
+pub mod profile;
 pub mod subtype;
 pub mod type_env;
 

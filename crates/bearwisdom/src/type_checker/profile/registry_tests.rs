@@ -1,0 +1,65 @@
+use super::*;
+use crate::type_checker::profile::language_profile::{
+    DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+};
+
+static TS_PROFILE: LanguageProfile = LanguageProfile {
+    id: "typescript",
+    qname_separator: ".",
+    self_keywords: &["this", "super"],
+    supertype_discovery: SupertypeDiscovery::Both,
+    members_can_be_external: true,
+    dispatch_axis: DispatchAxis::Receiver,
+    has_generics: true,
+    has_sum_types: true,
+    look_through_optional: true,
+    literal_narrowing: true,
+    async_wrappers: &["Promise", "PromiseLike", "Thenable"],
+    iterator_method: Some("[Symbol.iterator]"),
+    primitive_mapping: &[],
+    kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    constructor_patterns: &[],
+    class_builder_specs: &[],
+    decorator_syntax: None,
+    doc_comment_kinds: &[],
+    visibility_keywords: &[],
+};
+
+#[test]
+fn lookup_unregistered_id_returns_default_profile() {
+    let registry = ProfileRegistry::new();
+    let p = registry.get("python");
+    assert_eq!(p.id, "default");
+}
+
+#[test]
+fn register_then_lookup_returns_registered_profile() {
+    let mut registry = ProfileRegistry::new();
+    registry.register(&TS_PROFILE);
+    let p = registry.get("typescript");
+    assert_eq!(p.id, "typescript");
+    assert!(p.has_generics);
+    assert_eq!(p.supertype_discovery, SupertypeDiscovery::Both);
+}
+
+#[test]
+fn contains_returns_false_for_unregistered_id() {
+    let registry = ProfileRegistry::new();
+    assert!(!registry.contains("python"));
+}
+
+#[test]
+fn contains_returns_true_after_registration() {
+    let mut registry = ProfileRegistry::new();
+    registry.register(&TS_PROFILE);
+    assert!(registry.contains("typescript"));
+    assert!(!registry.contains("python"));
+}
+
+#[test]
+fn register_overwrites_previous_profile_for_same_id() {
+    let mut registry = ProfileRegistry::new();
+    registry.register(&TS_PROFILE);
+    registry.register(&TS_PROFILE);
+    assert_eq!(registry.len(), 1);
+}
