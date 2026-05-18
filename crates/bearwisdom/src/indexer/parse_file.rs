@@ -151,6 +151,7 @@ pub(crate) fn parse_file_with_demand(
         ref_origin_languages.resize(r.refs.len(), None);
         super::embedded_regions::dispatch_embedded_regions(
             &walked.relative_path,
+            &content,
             registry,
             regions,
             &mut r,

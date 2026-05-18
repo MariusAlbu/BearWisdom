@@ -32,6 +32,7 @@ use crate::languages::LanguageRegistry;
 /// SQL string DSL inside a Razor `@{}` C# block) is deferred to S13+.
 pub(super) fn dispatch_embedded_regions(
     file_path: &str,
+    host_content: &str,
     registry: &LanguageRegistry,
     regions: Vec<crate::types::EmbeddedRegion>,
     r: &mut crate::types::ExtractionResult,
@@ -40,7 +41,14 @@ pub(super) fn dispatch_embedded_regions(
     ref_origin_langs: &mut Vec<Option<String>>,
 ) {
     use crate::types::EmbeddedOrigin;
+    let line_starts = build_line_starts(host_content);
     for region in regions {
+        let region_host_byte = host_byte_for_position(
+            &line_starts,
+            host_content,
+            region.line_offset,
+            region.col_offset,
+        );
         let sub_plugin = registry.get(&region.language_id);
         let sub_text = if region.holes.is_empty() {
             region.text.clone()
@@ -151,6 +159,7 @@ pub(super) fn dispatch_embedded_regions(
                 .and_then(|m| *m)
                 .unwrap_or(0);
             rf.line = rf.line.saturating_add(line_offset);
+            rf.byte_offset = rf.byte_offset.saturating_add(region_host_byte);
             r.refs.push(rf);
             // Tag this ref with the embedded language so the resolver
             // routes it to the correct externals/primitives table instead
@@ -224,4 +233,29 @@ fn punch_holes(text: &str, holes: &[crate::types::Span]) -> String {
     // unpunched text — the sub-parse may fail on the interpolation but at
     // least we stay valid UTF-8.
     String::from_utf8(out).unwrap_or_else(|_| text.to_string())
+}
+
+/// Build a Vec where entry `i` holds the byte offset of the start of line `i`
+/// in `content`. Used to translate (line, col) positions back to host-file
+/// byte offsets without re-scanning the file for each region.
+fn build_line_starts(content: &str) -> Vec<u32> {
+    let mut starts = Vec::with_capacity(content.len() / 40);
+    starts.push(0u32);
+    for (i, b) in content.bytes().enumerate() {
+        if b == b'\n' {
+            starts.push((i + 1) as u32);
+        }
+    }
+    starts
+}
+
+/// Compute the host-file byte offset of `(line, col)` against `content`. Col
+/// is a tree-sitter byte column on the target line. Out-of-range positions
+/// clamp to the file's byte length.
+fn host_byte_for_position(line_starts: &[u32], content: &str, line: u32, col: u32) -> u32 {
+    let line_start = line_starts
+        .get(line as usize)
+        .copied()
+        .unwrap_or(content.len() as u32);
+    line_start.saturating_add(col).min(content.len() as u32)
 }
