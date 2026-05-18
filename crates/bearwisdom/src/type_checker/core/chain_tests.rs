@@ -611,6 +611,154 @@ fn self_ref_root_resolves_through_enclosing_scope() {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn chain_expands_alias_before_member_lookup() {
+    // type UserAlias = User;  chain = UserAlias.name → walks through the
+    // alias to User, then looks up `name` on User.
+    let mut arena = TypeArena::new();
+    let user_ty = arena.class("User");
+    let alias_ty = arena.class("UserAlias");
+    let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(user_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(user_ty, 1);
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(alias_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(alias_ty, 2);
+    symbol_types.insert(
+        3,
+        SymbolTypeData {
+            declared_type: Some(str_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        user_ty,
+        sym_info(3, "name", "User.name", "field", Some("User")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let mut aliases = AliasIndex::default();
+    aliases.insert(
+        alias_ty,
+        AliasTarget::Application {
+            root: "User".to_string(),
+            args: Vec::new(),
+        },
+    );
+    let lookup = EmptyLookup::new();
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("UserAlias", SegmentKind::TypeAccess),
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("alias expands and chain resolves");
+    assert_eq!(result.target_symbol_id, 3);
+    assert_eq!(result.resolved_yield_type, str_ty);
+}
+
+#[test]
+fn construction_segment_yields_self_for_type_defining_kind() {
+    // class Foo { x: string; }  chain = new Foo().x → root is Foo,
+    // intermediate Construction segment yields Foo (self), final segment
+    // looks up x.
+    let mut arena = TypeArena::new();
+    let foo_ty = arena.class("Foo");
+    let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(foo_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(foo_ty, 1);
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            declared_type: Some(str_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(foo_ty, sym_info(2, "x", "Foo.x", "field", Some("Foo")));
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("Foo", SegmentKind::Construction),
+            seg("x", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("x");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("construction segment yields self, x resolves");
+    assert_eq!(result.target_symbol_id, 2);
+    assert_eq!(result.resolved_yield_type, str_ty);
+}
+
+#[test]
 fn gate_real_ts_two_segment_chain_walks_field() {
     use crate::languages::typescript::extract;
 
@@ -717,5 +865,131 @@ export class User {
         .walk(&chain, &ref_ctx, &fc)
         .expect("real-extraction User.name must resolve");
     assert_eq!(result.target_symbol_id, name_sym_id);
+    assert_eq!(result.resolved_yield_type, str_ty);
+}
+
+#[test]
+fn gate_real_ts_method_call_chain_walks_three_segments() {
+    // class Repo { get(): User; }   class User { name: string; }
+    // chain: Repo.get().name → method yield User → field name → string.
+    use crate::languages::typescript::extract;
+
+    let source = r#"
+export class User {
+    name: string = "";
+}
+export class Repo {
+    get(): User { return new User(); }
+}
+"#;
+    let extraction = extract::extract(source, false);
+    let pf = crate::types::ParsedFile {
+        path: "src/repo.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: source.len() as u64,
+        line_count: source.lines().count() as u32,
+        mtime: None,
+        package_id: None,
+        symbols: extraction.symbols,
+        refs: extraction.refs,
+        routes: extraction.routes,
+        db_sets: extraction.db_sets,
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: Some(source.to_string()),
+        has_errors: extraction.has_errors,
+        flow: Default::default(),
+        demand_contributions: extraction.demand_contributions,
+        alias_targets: extraction.alias_targets,
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut sym_ids = crate::type_checker::core::SymbolIdMap::default();
+    for (idx, _) in pf.symbols.iter().enumerate() {
+        sym_ids.insert((pf.path.clone(), idx), idx as i64 + 1);
+    }
+
+    let mut arena = TypeArena::new();
+    let members = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+    );
+
+    let user_ty = arena.class("User");
+    let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
+
+    let mut symbol_types = SymbolTypeMap::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+        &DEFAULT_PROFILE,
+    );
+    // Phase 5+ extractor will fill these; for Phase 4's gate splice in the
+    // canonical return/declared types so the walker has type info to thread.
+    let get_idx = pf
+        .symbols
+        .iter()
+        .position(|s| s.name == "get" && s.kind == SymbolKind::Method)
+        .expect("`get` method extracted");
+    let get_id = sym_ids[&(pf.path.clone(), get_idx)];
+    symbol_types.insert(
+        get_id,
+        SymbolTypeData {
+            return_type: Some(user_ty),
+            ..Default::default()
+        },
+    );
+    let name_idx = pf
+        .symbols
+        .iter()
+        .position(|s| s.name == "name" && matches!(s.kind, SymbolKind::Property | SymbolKind::Field))
+        .expect("`name` field extracted");
+    let name_id = sym_ids[&(pf.path.clone(), name_idx)];
+    symbol_types.insert(
+        name_id,
+        SymbolTypeData {
+            declared_type: Some(str_ty),
+            ..Default::default()
+        },
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_type("Repo", "Repo");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("Repo", SegmentKind::TypeAccess),
+            seg("get", SegmentKind::Property),
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source_sym = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("Repo.get().name must resolve end-to-end");
+    assert_eq!(result.target_symbol_id, name_id);
     assert_eq!(result.resolved_yield_type, str_ty);
 }
