@@ -107,15 +107,17 @@ impl SymbolTypeMap {
     /// Construct a SymbolTypeMap from per-file extraction output.
     ///
     /// Every type-defining symbol (Class, Struct, Interface, Trait, Enum,
-    /// TypeAlias) receives `return_type = Some(self_type_id)` — the
-    /// canonical "callable class yields itself" rule. The arena is extended
-    /// with the corresponding Class type for each such symbol.
+    /// TypeAlias, Delegate) receives `return_type = Some(self_type_id)` —
+    /// the canonical "callable type yields itself" rule. The arena is
+    /// extended with the corresponding Class type for each such symbol.
     ///
-    /// Symbols whose extractor populated TypeId-bearing fields directly on
-    /// ExtractedSymbol will have those carried in. Today's ExtractedSymbol
-    /// does not yet carry TypeId fields; per-language migration will add
-    /// them as extractors are reworked. Until then, only the self-yields-
-    /// self entries are populated.
+    /// Symbols whose extractor populated the canonical TypeId-bearing
+    /// fields directly on ExtractedSymbol (`declared_type`, `return_type`,
+    /// `param_types`, `generic_params`) carry those values straight into
+    /// the SymbolTypeData. Per-language extractor migration (Phase 5+)
+    /// gradually populates these; SymbolTypeMap honours whatever the
+    /// extractor surfaced, falling back to the self-yield rule only when
+    /// `return_type` is None and the kind is type-defining.
     pub fn build_from_parsed_files(
         parsed: &[ParsedFile],
         sym_id_map: &SymbolIdMap,
@@ -128,10 +130,32 @@ impl SymbolTypeMap {
                 let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
                     continue;
                 };
-                if is_type_defining(sym.kind) {
-                    let class_id = arena.class(&sym.qualified_name);
-                    let entry = map.entry(sym_id);
-                    entry.return_type = Some(class_id);
+
+                let extractor_return = sym.return_type;
+                let extractor_declared = sym.declared_type;
+                let extractor_params = sym.param_types.clone();
+                let extractor_generics = sym.generic_params.clone();
+
+                // Self-yield rule applies only when the extractor didn't
+                // already produce a return_type. Lets per-language code
+                // override the default for symbols where "callable yields
+                // self" isn't the right answer (e.g. a future Python
+                // metaclass profile that wants the metaclass instance).
+                let return_type = match (extractor_return, is_type_defining(sym.kind)) {
+                    (Some(ty), _) => Some(ty),
+                    (None, true) => Some(arena.class(&sym.qualified_name)),
+                    (None, false) => None,
+                };
+
+                let data = SymbolTypeData {
+                    declared_type: extractor_declared,
+                    return_type,
+                    param_types: extractor_params,
+                    generic_params: extractor_generics,
+                };
+
+                if !data.is_empty() {
+                    map.insert(sym_id, data);
                 }
             }
         }
