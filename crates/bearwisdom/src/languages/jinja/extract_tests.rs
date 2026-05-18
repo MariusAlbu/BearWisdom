@@ -206,7 +206,7 @@ fn nested_pipe_filter_in_parens_is_suppressed() {
     // `([ x ] | flatten)` — `flatten` follows `|` inside parens and must not
     // be emitted as a TypeRef.
     let mut refs = Vec::new();
-    scan_expression("([ mirror_list ] | flatten) | join(',')", 0, 0, &mut refs);
+    scan_expression("([ mirror_list ] | flatten) | join(',')", 0, 0, 0, &mut refs);
     let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
     assert!(names.contains(&"mirror_list"));
     assert!(!names.contains(&"flatten"), "filter after nested `|` must be suppressed");
@@ -219,6 +219,7 @@ fn paren_filter_chain_like_matrix_synapse() {
     let mut refs = Vec::new();
     scan_expression(
         "((cache_size | int | to_json) if cache_size else '')",
+        0,
         0,
         0,
         &mut refs,
@@ -238,6 +239,7 @@ fn subscript_chain_only_emits_head() {
         "vm.networkProfile.networkInterfaces[0].expanded.ipAddress",
         0,
         0,
+        0,
         &mut refs,
     );
     let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
@@ -247,7 +249,7 @@ fn subscript_chain_only_emits_head() {
 #[test]
 fn multiple_subscript_levels_emit_head_only() {
     let mut refs = Vec::new();
-    scan_expression("data[key][0].value.sub", 0, 0, &mut refs);
+    scan_expression("data[key][0].value.sub", 0, 0, 0, &mut refs);
     let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
     // `data` is the head; `key` is the first subscript arg (separate expr),
     // `value` and `sub` are chain continuations after the second `]`.

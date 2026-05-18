@@ -54,7 +54,7 @@ fn import_ref(target: &str) -> ExtractedRef {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }

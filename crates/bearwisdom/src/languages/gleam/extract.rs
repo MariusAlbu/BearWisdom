@@ -402,7 +402,7 @@ fn extract_import(
         line: node.start_position().row as u32,
         module: Some(module_text),
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -465,7 +465,7 @@ fn extract_call_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         line: node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -512,7 +512,7 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -536,7 +536,7 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });

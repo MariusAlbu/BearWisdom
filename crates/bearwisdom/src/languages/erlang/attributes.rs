@@ -136,7 +136,7 @@ pub(super) fn extract_behaviour(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -191,7 +191,7 @@ pub(super) fn extract_import_attr(
             line,
             module: Some(module_name.clone()),
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });
@@ -208,7 +208,7 @@ pub(super) fn extract_import_attr(
             line,
             module: Some(module_name),
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });
@@ -243,7 +243,7 @@ pub(super) fn extract_include(
             line: node.start_position().row as u32,
             module: Some(file),
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });

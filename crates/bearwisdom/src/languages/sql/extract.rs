@@ -276,7 +276,7 @@ fn extract_create_index(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -302,7 +302,7 @@ fn extract_alter_table(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -695,7 +695,7 @@ fn extract_column(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -732,7 +732,7 @@ fn extract_fk_refs(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

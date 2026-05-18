@@ -172,7 +172,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                                         line: call_line,
                                         module,
                                         chain: None,
-                                        byte_offset: 0,
+                                        byte_offset: child.start_byte() as u32,
                                         namespace_segments: Vec::new(),
                                         call_args: Vec::new(),
                                     });
@@ -209,7 +209,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             line: call_line,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
                         });
@@ -239,7 +239,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             line,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
                         });
@@ -271,7 +271,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             line,
                             module,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
                         });
@@ -296,10 +296,10 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             line,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 collect_calls(&child, src, source_idx, refs);

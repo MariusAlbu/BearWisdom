@@ -34,6 +34,7 @@ pub fn scan_expression(
     body: &str,
     source_symbol_index: usize,
     line: u32,
+    byte_offset: u32,
     refs: &mut Vec<ExtractedRef>,
 ) {
     let leading = trim_at_top_level_pipe(body);
@@ -146,7 +147,7 @@ pub fn scan_expression(
             line,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });

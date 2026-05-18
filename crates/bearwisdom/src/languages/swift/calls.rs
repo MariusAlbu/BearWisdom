@@ -34,7 +34,7 @@ pub(super) fn extract_calls_from_body(
                             line: callee.start_position().row as u32,
                             module: None,
                             chain,
-                            byte_offset: 0,
+                            byte_offset: callee.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args,
                         });
@@ -156,10 +156,10 @@ pub(super) fn extract_type_ref_from_swift_type(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: node.start_byte() as u32,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
     // Recursively walk the entire type subtree to catch ALL type_identifier nodes,
     // including in generic arguments and nested type expressions.
@@ -208,10 +208,10 @@ fn extract_all_type_identifiers(
                             line,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -315,10 +315,10 @@ pub(super) fn extract_protocol_composition_refs(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                byte_offset: child.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }

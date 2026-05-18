@@ -161,7 +161,7 @@ fn make_extracted_ref(target: &str) -> ExtractedRef {
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
     }
 }
 
@@ -690,7 +690,7 @@ fn test_ada_exec_select_emits_db_select() {
         line: 1,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: vec![CallArg::Other, CallArg::StringLit("SELECT id FROM users".to_string())],
     };
@@ -719,7 +719,7 @@ fn test_ada_no_emit_for_non_sql() {
         line: 1,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: vec![CallArg::StringLit("hello".to_string())],
     };

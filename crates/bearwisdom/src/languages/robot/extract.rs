@@ -36,6 +36,17 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
     let lines: Vec<&str> = source.lines().collect();
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' {
+                offsets.push(pos);
+            }
+        }
+        offsets
+    };
     let mut section = Section::None;
     let mut current_item: Option<usize> = None; // index into symbols of current kw/tc
     // Suite-level `Test Template    <Keyword>` from `*** Settings ***`.
@@ -68,9 +79,10 @@ pub fn extract(source: &str) -> ExtractionResult {
             continue;
         }
 
+        let line_byte_off = line_starts.get(i).copied().unwrap_or(0);
         match section {
             Section::Settings => {
-                extract_settings_line(trimmed, i as u32, &symbols, &mut refs);
+                extract_settings_line(trimmed, i as u32, line_byte_off, &symbols, &mut refs);
                 // Detect suite-level `Test Template    <Keyword>` so the
                 // per-test default is "template active" unless a test
                 // explicitly resets via `[Template]    NONE`.
@@ -100,6 +112,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                     handle_body_line(
                         trimmed,
                         i as u32,
+                        line_byte_off,
                         idx,
                         &mut refs,
                         &mut template_active,
@@ -118,6 +131,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                     handle_body_line(
                         trimmed,
                         i as u32,
+                        line_byte_off,
                         idx,
                         &mut refs,
                         &mut template_active,
@@ -159,6 +173,7 @@ fn detect_section(trimmed: &str) -> Section {
 fn extract_settings_line(
     trimmed: &str,
     lineno: u32,
+    byte_offset: u32,
     symbols: &[ExtractedSymbol],
     refs: &mut Vec<ExtractedRef>,
 ) {
@@ -180,10 +195,10 @@ fn extract_settings_line(
                         line: lineno,
                         module: Some(t),
                         chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -230,6 +245,7 @@ fn extract_variable_name(trimmed: &str) -> Option<String> {
 fn handle_body_line(
     trimmed: &str,
     lineno: u32,
+    byte_offset: u32,
     source_idx: usize,
     refs: &mut Vec<ExtractedRef>,
     template_active: &mut bool,
@@ -248,7 +264,7 @@ fn handle_body_line(
             "[Setup]" | "[Teardown]" => {
                 if let Some(kw) = cells.get(1).map(|s| s.trim()) {
                     if !kw.is_empty() && !kw.eq_ignore_ascii_case("NONE") {
-                        emit_keyword_call(kw, lineno, source_idx, refs);
+                        emit_keyword_call(kw, lineno, byte_offset, source_idx, refs);
                     }
                 }
             }
@@ -263,7 +279,7 @@ fn handle_body_line(
         // Template active — body line is data, not a call.
         return;
     }
-    extract_keyword_invocation(trimmed, lineno, source_idx, refs);
+    extract_keyword_invocation(trimmed, lineno, byte_offset, source_idx, refs);
 }
 
 /// Emit a single Calls ref for `keyword_name`, applying the same
@@ -273,6 +289,7 @@ fn handle_body_line(
 fn emit_keyword_call(
     keyword_name: &str,
     lineno: u32,
+    byte_offset: u32,
     source_idx: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
@@ -298,7 +315,7 @@ fn emit_keyword_call(
         line: lineno,
         module,
         chain: None,
-        byte_offset: 0,
+        byte_offset,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     });
@@ -311,6 +328,7 @@ fn emit_keyword_call(
 fn extract_keyword_invocation(
     trimmed: &str,
     lineno: u32,
+    byte_offset: u32,
     source_idx: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
@@ -390,10 +408,10 @@ fn extract_keyword_invocation(
         line: lineno,
         module,
         chain: None,
-        byte_offset: 0,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        byte_offset,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------

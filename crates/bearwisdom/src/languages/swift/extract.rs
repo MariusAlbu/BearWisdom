@@ -541,10 +541,10 @@ fn infer_type_from_value(
                         line: value_node.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: value_node.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -559,10 +559,10 @@ fn infer_type_from_value(
                     line: value_node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: value_node.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         _ => {}

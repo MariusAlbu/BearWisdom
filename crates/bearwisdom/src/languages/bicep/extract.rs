@@ -137,7 +137,7 @@ fn extract_resource_declaration(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -188,7 +188,7 @@ fn extract_module_declaration(
             line: node.start_position().row as u32,
             module: Some(path),
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -395,7 +395,7 @@ fn extract_import_statement(
             line: node.start_position().row as u32,
             module: Some(path),
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -415,7 +415,7 @@ fn extract_using_statement(
             line: node.start_position().row as u32,
             module: Some(path),
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -443,7 +443,7 @@ fn extract_calls_in_subtree(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -462,7 +462,7 @@ fn extract_calls_in_subtree(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: child.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -634,7 +634,7 @@ fn collect_all_call_expressions(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });

@@ -90,7 +90,7 @@ pub(super) fn sweep_typerefs<'a>(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -118,7 +118,7 @@ pub(super) fn sweep_typerefs<'a>(
                                     line: base.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: base.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -137,7 +137,7 @@ pub(super) fn sweep_typerefs<'a>(
                                             line: inner.start_position().row as u32,
                                             module: None,
                                             chain: None,
-                                            byte_offset: 0,
+                                            byte_offset: inner.start_byte() as u32,
                                                                                     namespace_segments: Vec::new(),
                                                                                     call_args: Vec::new(),
 });

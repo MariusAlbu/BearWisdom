@@ -18,6 +18,8 @@ pub struct ScriptRef {
     pub url: String,
     /// 0-based line of the opening `<script` tag.
     pub line: u32,
+    /// Byte offset of the `<script` token within the full source string.
+    pub byte_offset: u32,
 }
 
 /// Scan `source` for every `<script … src="…" …></script>` (or self-closing)
@@ -67,7 +69,7 @@ pub fn extract_script_refs(source: &str) -> Vec<ScriptRef> {
         let attrs = &bytes[tag_start + 7..tag_end];
         if let Some(url) = find_attribute_value(attrs, b"src") {
             if is_extractable_script_url(&url) {
-                refs.push(ScriptRef { url, line });
+                refs.push(ScriptRef { url, line, byte_offset: tag_start as u32 });
             }
         }
         // Advance past the tag; line counter picks up newlines inside the tag.

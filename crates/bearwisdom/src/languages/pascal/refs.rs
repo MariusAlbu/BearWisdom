@@ -36,7 +36,7 @@ pub(super) fn extract_typeref(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -54,7 +54,7 @@ pub(super) fn extract_typeref(
                         line: node.start_position().row as u32,
                         module: qualifier,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -90,7 +90,7 @@ pub(super) fn extract_call(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });

@@ -37,6 +37,16 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' { offsets.push(pos); }
+        }
+        offsets
+    };
+
     // Track current enclosing Sub/Function for nested Calls.
     let mut current_proc: Option<usize> = None;
     // Track whether we are inside a Sub/Function body.
@@ -214,7 +224,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                     line: row,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: line_starts.get(lineno).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });

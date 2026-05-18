@@ -16,6 +16,9 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     }];
     let _ = &mut symbols; // keep mut to allow future extensions
     let mut refs: Vec<ExtractedRef> = Vec::new();
+    let line_starts: Vec<u32> = std::iter::once(0)
+        .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
+        .collect();
 
     // Scan for `<.ComponentName` or `<Module.Function` opening tags.
     for (line_no, line) in source.lines().enumerate() {
@@ -30,16 +33,17 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                 }
                 let name = line.get(start..j).unwrap_or("").to_string();
                 if !name.is_empty() {
+                    let line_start = line_starts.get(line_no).copied().unwrap_or(0);
                     refs.push(ExtractedRef {
                         source_symbol_index: 0,
                         target_name: name,
                         kind: EdgeKind::Calls,
                         line: line_no as u32,
                         module: None, chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: line_start + i as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 i = j;
                 continue;

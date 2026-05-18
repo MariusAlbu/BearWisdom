@@ -49,7 +49,7 @@ pub(super) fn extract_normal_command(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -493,7 +493,7 @@ fn extract_include_command(
         line: node.start_position().row as u32,
         module: Some(path),
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -525,7 +525,7 @@ fn extract_find_package_command(
         line: node.start_position().row as u32,
         module: Some(pkg.clone()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     });
@@ -592,7 +592,7 @@ fn extract_add_subdirectory_command(
         line: node.start_position().row as u32,
         module: Some(dir),
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -649,7 +649,7 @@ fn extract_target_link_libraries(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -768,7 +768,7 @@ pub(super) fn collect_all_normal_commands(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

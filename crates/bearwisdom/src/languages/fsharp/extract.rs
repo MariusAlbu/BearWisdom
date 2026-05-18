@@ -269,6 +269,15 @@ fn is_module_alias(node: &Node, src: &str) -> bool {
 /// then applies `is_external_namespace_fallback` against the root segment
 /// (`Fornax`), matching the same path that `open Fornax.*` would follow.
 fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in src.bytes() {
+            pos += 1;
+            if b == b'\n' { offsets.push(pos); }
+        }
+        offsets
+    };
     for (line_idx, line) in src.lines().enumerate() {
         let trimmed = line.trim();
         // Only process `#r "..."` lines; stop at the first non-directive,
@@ -319,7 +328,7 @@ fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
             line: line_idx as u32,
             module: Some(assembly.to_string()),
             chain: None,
-            byte_offset: 0,
+            byte_offset: line_starts.get(line_idx).copied().unwrap_or(0),
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });
@@ -349,7 +358,7 @@ fn extract_open(
         line: node.start_position().row as u32,
         module: Some(module),
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -572,7 +581,7 @@ pub(super) fn extract_interface_implementation(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -608,7 +617,7 @@ pub(super) fn extract_class_inherits(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });

@@ -94,7 +94,7 @@ pub fn push_import_refs(
                 line,
                 module: module_path.clone(),
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
             });
@@ -126,7 +126,7 @@ pub fn push_import_refs(
                 line,
                 module: module_path.clone(),
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
             });
@@ -153,7 +153,7 @@ fn emit_clause_refs(
                     line: item.start_position().row as u32,
                     module: module_path.clone(),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: item.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });
@@ -178,7 +178,7 @@ fn emit_clause_refs(
                         line: spec.start_position().row as u32,
                         module: module_path.clone(),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: spec.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });
@@ -196,7 +196,7 @@ fn emit_clause_refs(
                             line: ns_child.start_position().row as u32,
                             module: module_path.clone(),
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: ns_child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
                         });
@@ -239,7 +239,7 @@ fn emit_require_clause_ref(
             line: clause.start_position().row as u32,
             module: require_module,
             chain: None,
-            byte_offset: 0,
+            byte_offset: clause.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });

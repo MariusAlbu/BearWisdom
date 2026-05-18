@@ -35,7 +35,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         line,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: if line > 0 { 1 } else { 0 },
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -49,7 +49,7 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         line,
         module: Some(module.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: if line > 0 { 1 } else { 0 },
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }

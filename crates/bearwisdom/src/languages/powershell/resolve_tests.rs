@@ -214,7 +214,7 @@ fn make_member_ref(target: &str, module: &str, kind: EdgeKind) -> ExtractedRef {
         line: 5,
         module: Some(module.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -303,7 +303,7 @@ fn test_infer_external_ns_cmdlet_no_module() {
         line: 1,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };

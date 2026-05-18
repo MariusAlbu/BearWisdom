@@ -28,6 +28,9 @@ impl LanguagePlugin for VelocityPlugin {
             signature: None, doc_comment: None, scope_path: None, parent_index: None,
         }];
         let mut refs: Vec<ExtractedRef> = Vec::new();
+        let line_starts: Vec<u32> = std::iter::once(0)
+            .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
+            .collect();
         for (line_no, line) in source.lines().enumerate() {
             let t = line.trim_start();
             if let Some(rest) = t.strip_prefix("#macro(") {
@@ -54,10 +57,10 @@ impl LanguagePlugin for VelocityPlugin {
                                 source_symbol_index: 0, target_name: target,
                                 kind: EdgeKind::Imports,
                                 line: line_no as u32, module: None, chain: None,
-                                byte_offset: 0,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                 }

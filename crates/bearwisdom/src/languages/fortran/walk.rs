@@ -212,7 +212,7 @@ pub(super) fn walk_node(
                                             line: node.start_position().row as u32,
                                             module: None, // filled in below once module_name is known
                                             chain: None,
-                                            byte_offset: 0,
+                                            byte_offset: node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
                                         });
@@ -250,7 +250,7 @@ pub(super) fn walk_node(
                                             // If there's no rename, this stays None.
                                             module: if source.is_empty() { None } else { Some(source) },
                                             chain: None,
-                                            byte_offset: 0,
+                                            byte_offset: node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
                                         });
@@ -273,7 +273,7 @@ pub(super) fn walk_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });
@@ -333,7 +333,7 @@ pub(super) fn walk_node(
                                     line: node.start_position().row as u32,
                                     module: module_val,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
                                 });
@@ -350,7 +350,7 @@ pub(super) fn walk_node(
                                     line: node.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
                                 });
@@ -367,7 +367,7 @@ pub(super) fn walk_node(
                                 line: node.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: node.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
                             });
@@ -397,7 +397,7 @@ pub(super) fn walk_node(
                                 line: node.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: node.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
                             });
@@ -430,7 +430,7 @@ pub(super) fn walk_node(
                                     line: node.start_position().row as u32,
                                     module: module_val,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
                                 });
@@ -448,7 +448,7 @@ pub(super) fn walk_node(
                                     line: node.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
                                 });

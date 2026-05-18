@@ -39,9 +39,20 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' { offsets.push(pos); }
+        }
+        offsets
+    };
+
     // Accumulate logical lines (clauses can span multiple source lines).
     let mut clause_buf = String::new();
     let mut clause_start_line: u32 = 0;
+    let mut clause_start_byte: u32 = 0;
     let mut in_block_comment = false;
 
     for (lineno, raw_line) in source.lines().enumerate() {
@@ -73,6 +84,7 @@ pub fn extract(source: &str) -> ExtractionResult {
 
         if clause_buf.is_empty() {
             clause_start_line = row;
+            clause_start_byte = line_starts.get(lineno).copied().unwrap_or(0);
         }
 
         // Accumulate until we hit a '.' that terminates a clause.
@@ -83,14 +95,14 @@ pub fn extract(source: &str) -> ExtractionResult {
         if clause_ends(&clause_buf) {
             let clause = clause_buf.trim().to_string();
             clause_buf.clear();
-            process_clause(&clause, clause_start_line, &mut symbols, &mut refs);
+            process_clause(&clause, clause_start_line, clause_start_byte, &mut symbols, &mut refs);
         }
     }
 
     // Handle any unterminated final clause.
     if !clause_buf.is_empty() {
         let clause = clause_buf.trim().to_string();
-        process_clause(&clause, clause_start_line, &mut symbols, &mut refs);
+        process_clause(&clause, clause_start_line, clause_start_byte, &mut symbols, &mut refs);
     }
 
     ExtractionResult::new(symbols, refs, false)
@@ -103,6 +115,7 @@ pub fn extract(source: &str) -> ExtractionResult {
 fn process_clause(
     clause: &str,
     line: u32,
+    byte_offset: u32,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
@@ -111,7 +124,7 @@ fn process_clause(
     // Directive: :- directive(args)
     if clause.starts_with(":-") {
         let body = clause[2..].trim();
-        process_directive(body, line, symbols, refs);
+        process_directive(body, line, byte_offset, symbols, refs);
         return;
     }
 
@@ -138,7 +151,7 @@ fn process_clause(
                 Some(head.to_string()),
             ));
             // Extract goal calls from body.
-            extract_body_goals(body, line, idx, refs);
+            extract_body_goals(body, line, byte_offset, idx, refs);
         }
     } else {
         // Fact (no :-)
@@ -161,6 +174,7 @@ fn process_clause(
 fn process_directive(
     body: &str,
     line: u32,
+    byte_offset: u32,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
@@ -200,7 +214,7 @@ fn process_directive(
                 line,
                 module: Some(module_name),
                 chain: None,
-                byte_offset: 0,
+                byte_offset,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -243,7 +257,7 @@ fn process_directive(
                 line,
                 module: Some(module_name),
                 chain: None,
-                byte_offset: 0,
+                byte_offset,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -259,6 +273,7 @@ fn process_directive(
 fn extract_body_goals(
     body: &str,
     line: u32,
+    byte_offset: u32,
     source_idx: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
@@ -310,7 +325,7 @@ fn extract_body_goals(
             line,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });

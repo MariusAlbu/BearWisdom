@@ -20,6 +20,9 @@ impl LanguagePlugin for FreemarkerPlugin {
         let stem = stem(file_path);
         let mut symbols = vec![host(&stem)];
         let mut refs: Vec<ExtractedRef> = Vec::new();
+        let line_starts: Vec<u32> = std::iter::once(0)
+            .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
+            .collect();
         for (line_no, line) in source.lines().enumerate() {
             let t = line.trim_start();
             if let Some(rest) = t.strip_prefix("<#macro ") {
@@ -29,7 +32,8 @@ impl LanguagePlugin for FreemarkerPlugin {
                 }
             } else if let Some(rest) = t.strip_prefix("<#include ") {
                 if let Some(name) = quoted(rest) {
-                    refs.push(imports_ref(&name, line_no as u32));
+                    let byte_offset = line_starts.get(line_no).copied().unwrap_or(0);
+                    refs.push(imports_ref(&name, line_no as u32, byte_offset));
                 }
             }
         }
@@ -94,7 +98,7 @@ fn field(stem: &str, name: &str, line: u32, sig: &str) -> ExtractedSymbol {
         signature: Some(sig.into()), doc_comment: None,
         scope_path: Some(stem.into()), parent_index: Some(0) }
 }
-fn imports_ref(name: &str, line: u32) -> ExtractedRef {
+fn imports_ref(name: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     let p = std::path::Path::new(name);
     let target = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
     ExtractedRef { source_symbol_index: 0, target_name: target,
@@ -102,7 +106,7 @@ fn imports_ref(name: &str, line: u32) -> ExtractedRef {
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
         chain: None,
-        byte_offset: 0,
+        byte_offset,
     }
 }
 fn quoted(s: &str) -> Option<String> {

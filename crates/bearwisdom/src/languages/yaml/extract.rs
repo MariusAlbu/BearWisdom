@@ -95,6 +95,15 @@ fn collect_uses_refs(source: &str, file_path: &str) -> Vec<ExtractedRef> {
     if !is_github_actions_path(file_path) {
         return Vec::new();
     }
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' { offsets.push(pos); }
+        }
+        offsets
+    };
     let mut out = Vec::new();
     for (line_no, line) in source.lines().enumerate() {
         let Some((_, raw_value)) = parse_uses_line(line) else { continue };
@@ -117,7 +126,7 @@ fn collect_uses_refs(source: &str, file_path: &str) -> Vec<ExtractedRef> {
             line: line_no as u32,
             module: Some(value.to_string()),
             chain: None,
-            byte_offset: 0,
+            byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });

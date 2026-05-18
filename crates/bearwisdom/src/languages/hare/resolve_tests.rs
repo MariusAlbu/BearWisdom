@@ -12,7 +12,7 @@ fn test_hare_http_emit() {
         line: 1,
         module: Some("net::http::client".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: vec![CallArg::StringLit("https://api.example.com/x".to_string())],
     };
@@ -36,7 +36,7 @@ fn test_hare_no_emit_for_non_http_module() {
         line: 1,
         module: Some("io::map".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: vec![CallArg::StringLit("/x".to_string())],
     };
@@ -60,7 +60,7 @@ fn test_hare_no_emit_for_non_url_arg() {
         line: 1,
         module: Some("net::http".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: vec![CallArg::StringLit("notaurl".to_string())],
     };

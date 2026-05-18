@@ -47,6 +47,9 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
 
     // Pass 2: find `@ComponentCall(...)` refs attributed to the
     // enclosing templ function when in scope, else the host.
+    let line_starts: Vec<u32> = std::iter::once(0)
+        .chain(source.match_indices('\n').map(|(idx, _)| (idx + 1) as u32))
+        .collect();
     for (line_no, line) in source.lines().enumerate() {
         let bytes = line.as_bytes();
         let mut i = 0usize;
@@ -68,16 +71,17 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         .find(|&&idx| (symbols[idx].start_line as usize) <= line_no)
                         .copied()
                         .unwrap_or(host_index);
+                    let line_start = line_starts.get(line_no).copied().unwrap_or(0);
                     refs.push(ExtractedRef {
                         source_symbol_index: src_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
                         line: line_no as u32,
                         module: None, chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: line_start + i as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 i = j;
                 continue;

@@ -46,7 +46,7 @@ pub(super) fn extract_calls_recursive(
                                 line: child.start_position().row as u32,
                                 module,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: child.start_byte() as u32,
                                                         namespace_segments: Vec::new(),
                                                         call_args: Vec::new(),
 });
@@ -78,7 +78,7 @@ pub(super) fn extract_calls_recursive(
                         line: child.start_position().row as u32,
                         module: if name.contains('.') { Some(name) } else { None },
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -157,7 +157,7 @@ pub(super) fn extract_dot_call_module_ref(
                                 line: dc_child.start_position().row as u32,
                                 module: if name.contains('.') { Some(name) } else { None },
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: dc_child.start_byte() as u32,
                                                             namespace_segments: Vec::new(),
                                                             call_args: Vec::new(),
 });
@@ -209,7 +209,7 @@ pub(super) fn extract_pipe_calls(
                             line: r.start_position().row as u32,
                             module,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: r.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -235,7 +235,7 @@ pub(super) fn extract_pipe_calls(
                 line: right.start_position().row as u32,
                 module,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: right.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });

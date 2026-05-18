@@ -68,6 +68,17 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
     let lines: Vec<&str> = source.lines().collect();
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' {
+                offsets.push(pos);
+            }
+        }
+        offsets
+    };
     let mut i = 0;
 
     while i < lines.len() {
@@ -125,10 +136,10 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 parent_index: None,
             });
             // Scan body lines for call expressions
-            extract_calls_from_body(&body_lines, fn_idx, start_line + 1, &mut refs);
+            extract_calls_from_body(&body_lines, fn_idx, start_line + 1, &mut refs, &line_starts);
             // Deep-scan the body for anonymous struct blocks (e.g. `return struct { ... }`,
             // `=> struct { ... }`) that contain nested fn/method declarations.
-            extract_anon_struct_fns(&body_lines, fn_idx, &mut symbols, &mut refs);
+            extract_anon_struct_fns(&body_lines, fn_idx, &mut symbols, &mut refs, &line_starts);
             i = end_line as usize + 1;
             continue;
         }
@@ -163,10 +174,10 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     line: start_line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: line_starts.get(i).copied().unwrap_or(0),
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 i += 1;
                 continue;
             }
@@ -192,7 +203,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: None,
                     });
-                    extract_struct_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs);
+                    extract_struct_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs, &line_starts);
                     i = end_line as usize + 1;
                     continue;
                 }
@@ -216,7 +227,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: None,
                     });
-                    extract_enum_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs);
+                    extract_enum_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs, &line_starts);
                     i = end_line as usize + 1;
                     continue;
                 }
@@ -261,6 +272,7 @@ fn extract_struct_body(
     parent_idx: usize,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
+    line_starts: &[u32],
 ) {
     let mut j = 0;
     while j < body_lines.len() {
@@ -312,7 +324,7 @@ fn extract_struct_body(
             // Scan body for calls
             if end_j > start_j {
                 let fn_body = &body_lines[start_j + 1..end_j];
-                extract_calls_from_body_slice(fn_body, fn_idx, refs);
+                extract_calls_from_body_slice(fn_body, fn_idx, refs, line_starts);
             }
 
             j = end_j + 1;
@@ -346,10 +358,10 @@ fn extract_struct_body(
                     line: line_num,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: line_starts.get(line_num as usize).copied().unwrap_or(0),
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
 
@@ -367,6 +379,7 @@ fn extract_enum_body(
     parent_idx: usize,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
+    _line_starts: &[u32],
 ) {
     let mut j = 0;
     while j < body_lines.len() {
@@ -413,7 +426,7 @@ fn extract_enum_body(
 
             if end_j > j {
                 let fn_body = &body_lines[j + 1..end_j];
-                extract_calls_from_body_slice(fn_body, fn_idx, refs);
+                extract_calls_from_body_slice(fn_body, fn_idx, refs, _line_starts);
             }
 
             j = end_j + 1;
@@ -479,6 +492,7 @@ fn extract_anon_struct_fns(
     parent_fn_idx: usize,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
+    line_starts: &[u32],
 ) {
     let mut j = 0;
     while j < body_lines.len() {
@@ -528,9 +542,9 @@ fn extract_anon_struct_fns(
 
                 if !struct_body.is_empty() {
                     // Extract fn declarations from the struct body
-                    extract_struct_body(&struct_body, line_num, parent_fn_idx, symbols, refs);
+                    extract_struct_body(&struct_body, line_num, parent_fn_idx, symbols, refs, line_starts);
                     // Recurse for deeper nesting
-                    extract_anon_struct_fns(&struct_body, parent_fn_idx, symbols, refs);
+                    extract_anon_struct_fns(&struct_body, parent_fn_idx, symbols, refs, line_starts);
                 }
 
                 j = end_j + 1;
@@ -565,14 +579,16 @@ fn extract_calls_from_body(
     source_symbol_index: usize,
     _base_line: u32,
     refs: &mut Vec<ExtractedRef>,
+    line_starts: &[u32],
 ) {
-    extract_calls_from_body_slice(body_lines, source_symbol_index, refs);
+    extract_calls_from_body_slice(body_lines, source_symbol_index, refs, line_starts);
 }
 
 fn extract_calls_from_body_slice(
     body_lines: &[(u32, &str)],
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
+    line_starts: &[u32],
 ) {
     for (line_num, raw) in body_lines {
         let trimmed = raw.trim();
@@ -580,7 +596,8 @@ fn extract_calls_from_body_slice(
             continue;
         }
         // Find all `identifier(` patterns — these are function calls
-        extract_call_identifiers(trimmed, source_symbol_index, *line_num, refs);
+        let byte_off = line_starts.get(*line_num as usize).copied().unwrap_or(0);
+        extract_call_identifiers(trimmed, source_symbol_index, *line_num, byte_off, refs);
     }
 }
 
@@ -594,6 +611,7 @@ fn extract_call_identifiers(
     line: &str,
     source_symbol_index: usize,
     line_num: u32,
+    byte_offset: u32,
     refs: &mut Vec<ExtractedRef>,
 ) {
     let bytes = line.as_bytes();
@@ -645,10 +663,10 @@ fn extract_call_identifiers(
                     line: line_num,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }

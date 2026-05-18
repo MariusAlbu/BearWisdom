@@ -70,8 +70,21 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut _data_section = DataSection::None;
     let mut current_para: Option<usize> = None;
 
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' {
+                offsets.push(pos);
+            }
+        }
+        offsets
+    };
+
     for (lineno, line) in source.lines().enumerate() {
         let row = lineno as u32;
+        let row_byte_offset = line_starts.get(lineno).copied().unwrap_or(0);
 
         // Skip blank lines.
         if line.trim().is_empty() {
@@ -132,7 +145,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: Some(copybook),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: row_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -216,7 +229,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: row_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -231,7 +244,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: row_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -242,7 +255,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: Some(prog),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: row_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -257,7 +270,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: Some(copybook),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: row_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -272,7 +285,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: row_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -308,7 +321,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: Some(copybook),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: row_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

@@ -136,7 +136,7 @@ pub(super) fn emit_misparsed_base_class_refs(
                     line: inner.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: inner.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });

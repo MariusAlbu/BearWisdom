@@ -47,7 +47,7 @@ pub(super) fn extract_resource_declaration(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -109,7 +109,7 @@ pub(super) fn extract_include_or_require(
                 line: child.start_position().row as u32,
                 module: Some(name.clone()),
                 chain: None,
-                byte_offset: 0,
+                byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -121,7 +121,7 @@ pub(super) fn extract_include_or_require(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -171,7 +171,7 @@ pub(super) fn extract_function_call(
         line,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -210,7 +210,7 @@ pub(super) fn collect_all_function_calls(
             line,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -257,7 +257,7 @@ pub(super) fn collect_resource_references(
             line,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });

@@ -138,7 +138,7 @@ fn selector_map_hit_resolves_to_class() {
         // Raw selector stored by template extractor.
         module: Some("app-user-card".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -189,7 +189,7 @@ fn selector_map_miss_falls_through() {
         line: 5,
         module: Some("app-user-card".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };

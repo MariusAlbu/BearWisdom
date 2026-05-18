@@ -10,7 +10,7 @@ fn fixture(target: &str, module: Option<&str>, args: Vec<CallArg>) -> (Extracted
         line: 1,
         module: module.map(String::from),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: args,
     };

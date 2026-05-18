@@ -47,7 +47,7 @@ fn make_ref_plain(source_idx: usize, target: &str) -> ExtractedRef {
         line: 2,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -60,7 +60,7 @@ fn make_ref_with_module(source_idx: usize, target: &str, module: &str) -> Extrac
         line: 2,
         module: Some(module.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -73,7 +73,7 @@ fn make_import(source_idx: usize, target: &str) -> ExtractedRef {
         line: 1,
         module: Some(target.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }

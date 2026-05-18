@@ -130,10 +130,10 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: node.start_byte() as u32,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     // Scan attributes for event handler directives
@@ -205,10 +205,10 @@ fn try_extract_event_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef
         line: node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        byte_offset: node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------

@@ -138,7 +138,7 @@ pub(super) fn extract_calls_from_body(
                                             line: pchild.start_position().row as u32,
                                             module: None,
                                             chain: None,
-                                            byte_offset: 0,
+                                            byte_offset: pchild.start_byte() as u32,
                                                                                     namespace_segments: Vec::new(),
                                                                                     call_args: Vec::new(),
 });
@@ -171,7 +171,7 @@ pub(super) fn extract_calls_from_body(
                                     line: inner.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: inner.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -182,7 +182,7 @@ pub(super) fn extract_calls_from_body(
                                     line: inner.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: inner.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -200,7 +200,7 @@ pub(super) fn extract_calls_from_body(
                                             line: name_node.start_position().row as u32,
                                             module: None,
                                             chain: None,
-                                            byte_offset: 0,
+                                            byte_offset: name_node.start_byte() as u32,
                                                                                     namespace_segments: Vec::new(),
                                                                                     call_args: Vec::new(),
 });
@@ -211,7 +211,7 @@ pub(super) fn extract_calls_from_body(
                                             line: name_node.start_position().row as u32,
                                             module: None,
                                             chain: None,
-                                            byte_offset: 0,
+                                            byte_offset: name_node.start_byte() as u32,
                                                                                     namespace_segments: Vec::new(),
                                                                                     call_args: Vec::new(),
 });
@@ -304,7 +304,7 @@ fn extract_lambda_param_typerefs(
                                         line: inner.start_position().row as u32,
                                         module: None,
                                         chain: None,
-                                        byte_offset: 0,
+                                        byte_offset: inner.start_byte() as u32,
                                                                             namespace_segments: Vec::new(),
                                                                             call_args: Vec::new(),
 });
@@ -342,7 +342,7 @@ fn extract_catch_typerefs(
                                 line: inner.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: inner.start_byte() as u32,
                                                             namespace_segments: Vec::new(),
                                                             call_args: Vec::new(),
 });
@@ -360,7 +360,7 @@ fn extract_catch_typerefs(
                                     line: name_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: name_node.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });

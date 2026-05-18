@@ -74,10 +74,10 @@ fn emit_attribute(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: node.start_byte() as u32,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -211,10 +211,10 @@ fn extract_binding_pattern_type(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -297,10 +297,10 @@ fn extract_pattern_type_refs(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 } else if child.kind() == "simple_identifier" {
                     let name = node_text(child, src);
@@ -312,10 +312,10 @@ fn extract_pattern_type_refs(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -333,10 +333,10 @@ fn extract_pattern_type_refs(
                             line: inner.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            byte_offset: inner.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -391,10 +391,10 @@ pub(super) fn extract_extension_conformances(
                                     line: inner.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    byte_offset: inner.start_byte() as u32,
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }

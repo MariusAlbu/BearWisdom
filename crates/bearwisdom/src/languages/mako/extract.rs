@@ -15,6 +15,9 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     }];
     let host_index = 0usize;
     let mut refs: Vec<ExtractedRef> = Vec::new();
+    let line_starts: Vec<u32> = std::iter::once(0)
+        .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
+        .collect();
 
     for (line_no, line) in source.lines().enumerate() {
         let trimmed = line.trim_start();
@@ -44,10 +47,10 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
                     module: None, chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         } else if let Some(rest) = trimmed.strip_prefix("<%inherit") {
             if let Some(file) = extract_attr(rest, "file") {
@@ -57,10 +60,10 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
                     module: None, chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }

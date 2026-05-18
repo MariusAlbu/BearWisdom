@@ -10,7 +10,7 @@ fn fixture(target: &str, module: &str, args: Vec<CallArg>) -> (ExtractedRef, Ext
         line: 1,
         module: Some(module.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: args,
     };

@@ -184,10 +184,10 @@ pub(super) fn extract_calls_from_body(
                         line: cls_node.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: cls_node.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
 
@@ -291,10 +291,10 @@ pub(super) fn extract_include_require(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                byte_offset: node.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -527,10 +527,10 @@ fn extract_catch_type_refs(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: node.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         // `ExceptionA|ExceptionB` — union of exception types.
@@ -658,10 +658,10 @@ pub(super) fn extract_type_refs_from_php_type(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: node.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         _ => {}
@@ -793,7 +793,7 @@ pub(super) fn extract_use_declaration(
             }
             "qualified_name" | "name" => {
                 let full = node_text(&child, src);
-                push_fq_import(full, child.start_position().row as u32, refs, current_symbol_count);
+                push_fq_import(full, child.start_position().row as u32, child.start_byte() as u32, refs, current_symbol_count);
             }
             _ => {}
         }
@@ -810,7 +810,7 @@ fn push_use_ref_for_name(
     for child in node.children(&mut cursor) {
         if child.kind() == "qualified_name" || child.kind() == "name" {
             let full = node_text(&child, src);
-            push_fq_import(full, child.start_position().row as u32, refs, current_symbol_count);
+            push_fq_import(full, child.start_position().row as u32, child.start_byte() as u32, refs, current_symbol_count);
             return;
         }
     }
@@ -820,6 +820,7 @@ fn push_use_ref_for_name(
 fn push_fq_import(
     full: String,
     line: u32,
+    byte_offset: u32,
     refs: &mut Vec<ExtractedRef>,
     current_symbol_count: usize,
 ) {
@@ -837,10 +838,10 @@ fn push_fq_import(
         line,
         module,
         chain: None,
-        byte_offset: 0,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        byte_offset,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 pub(super) fn extract_trait_use(
@@ -867,10 +868,10 @@ pub(super) fn extract_trait_use(
                 line: child.start_position().row as u32,
                 module,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                byte_offset: child.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }

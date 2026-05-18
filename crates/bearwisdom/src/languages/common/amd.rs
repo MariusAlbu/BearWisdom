@@ -38,6 +38,15 @@ pub fn append_amd_define_imports(
     if pairs.is_empty() {
         return;
     }
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' { offsets.push(pos); }
+        }
+        offsets
+    };
     for (dep, param, line) in pairs {
         // Skip dummy AMD names (`require`, `exports`, `module`) — these
         // are AMD bookkeeping, not real deps.
@@ -51,7 +60,7 @@ pub fn append_amd_define_imports(
             line,
             module: Some(dep),
             chain: None,
-            byte_offset: 0,
+            byte_offset: line_starts.get(line as usize).copied().unwrap_or(0),
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         });

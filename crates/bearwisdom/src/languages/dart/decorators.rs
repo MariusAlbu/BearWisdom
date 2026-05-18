@@ -89,10 +89,10 @@ fn emit_annotation(
             line: node.start_position().row as u32,
             module: first_arg,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: node.start_byte() as u32,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -210,10 +210,10 @@ fn extract_cascade_section(
                                 line: inner.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                byte_offset: inner.start_byte() as u32,
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                         break;
                     }
@@ -230,10 +230,10 @@ fn extract_cascade_section(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             _ => {}

@@ -434,7 +434,7 @@ fn infer_external_namespace_from_hash_r_import() {
         line: 0,
         module: Some("Fornax.Core".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -457,7 +457,7 @@ fn infer_external_namespace_from_hash_r_import() {
         line: 20,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };

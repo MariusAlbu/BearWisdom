@@ -109,7 +109,7 @@ pub(super) fn extract_directive(
                                     line: arg.start_position().row as u32,
                                     module,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: arg.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -132,7 +132,7 @@ pub(super) fn extract_directive(
                                             line: item.start_position().row as u32,
                                             module,
                                             chain: None,
-                                            byte_offset: 0,
+                                            byte_offset: item.start_byte() as u32,
                                                                                     namespace_segments: Vec::new(),
                                                                                     call_args: Vec::new(),
 });
@@ -170,7 +170,7 @@ pub(super) fn extract_directive(
             line: node.start_position().row as u32,
             module,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -234,7 +234,7 @@ fn extract_qualified_multi_alias(
                         line: item.start_position().row as u32,
                         module: Some(full_module),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: item.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -253,7 +253,7 @@ fn extract_qualified_multi_alias(
             line: right.start_position().row as u32,
             module: Some(name),
             chain: None,
-            byte_offset: 0,
+            byte_offset: right.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });

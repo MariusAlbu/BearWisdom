@@ -547,10 +547,10 @@ fn extract_import_spec_recursive(
                     line: child.start_position().row as u32,
                     module: Some(module),
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: child.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             } else if ck == "import_specification" || ck == "library_import" || ck == "library_export" {
                 extract_import_spec_recursive(&child, src, current_symbol_count, refs);
             }
@@ -582,10 +582,10 @@ pub(super) fn extract_part_directive(
                 line: child.start_position().row as u32,
                 module: Some(module),
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                byte_offset: child.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -820,10 +820,10 @@ pub(super) fn extract_dart_heritage(
                     line: type_node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: type_node.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         } else {
             // Fallback: scan children of superclass for type_identifier.
@@ -837,10 +837,10 @@ pub(super) fn extract_dart_heritage(
                         line: n.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: n.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -859,10 +859,10 @@ pub(super) fn extract_dart_heritage(
                     line: n.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: n.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -881,10 +881,10 @@ pub(super) fn extract_dart_heritage(
                     line: n.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: n.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     };
@@ -959,10 +959,10 @@ fn infer_type_from_dart_initializer(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             _ => {
@@ -979,10 +979,10 @@ fn infer_type_from_dart_initializer(
                                 line: inner.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                byte_offset: inner.start_byte() as u32,
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                             return;
                         }
                     }

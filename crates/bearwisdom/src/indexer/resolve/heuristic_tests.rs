@@ -100,7 +100,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         line: 1,
         module: Some("NS".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -111,7 +111,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         line: 5,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };

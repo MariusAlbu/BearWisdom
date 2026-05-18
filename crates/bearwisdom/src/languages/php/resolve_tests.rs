@@ -36,7 +36,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
         line: 1,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -49,7 +49,7 @@ fn make_use(source_idx: usize, alias: &str, fqn: &str) -> ExtractedRef {
         line: 1,
         module: Some(fqn.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -437,10 +437,10 @@ fn test_inherited_method_via_this_resolves() {
                 line: 5,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
             // $this->account() inside execute()
             ExtractedRef {
                 source_symbol_index: 2, // execute
@@ -449,10 +449,10 @@ fn test_inherited_method_via_this_resolves() {
                 line: 20,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
         ],
     );
 
@@ -515,10 +515,10 @@ fn test_static_eloquent_call_via_type_access() {
                 line: 5,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
         ],
     );
 
@@ -557,10 +557,10 @@ fn test_static_eloquent_call_via_type_access() {
                         },
                     ],
                 }),
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
         ],
     );
 
@@ -626,10 +626,10 @@ fn test_inherited_method_via_chain_selfref() {
                 line: 3,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
             // Realistic: extractor emits target_name="account" with SelfRef chain.
             ExtractedRef {
                 source_symbol_index: 1,
@@ -657,10 +657,10 @@ fn test_inherited_method_via_chain_selfref() {
                         },
                     ],
                 }),
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
         ],
     );
 
@@ -716,10 +716,10 @@ fn test_transitive_inherited_method_resolves() {
                 line: 3,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
         ],
     );
     let child_file = make_file(
@@ -736,10 +736,10 @@ fn test_transitive_inherited_method_resolves() {
                 line: 3,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
             ExtractedRef {
                 source_symbol_index: 1, // handle
                 target_name: "$this->account".to_string(),
@@ -747,10 +747,10 @@ fn test_transitive_inherited_method_resolves() {
                 line: 15,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-},
+                byte_offset: 1,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
         ],
     );
 

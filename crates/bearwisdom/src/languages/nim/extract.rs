@@ -35,6 +35,16 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' { offsets.push(pos); }
+        }
+        offsets
+    };
+
     let lines: Vec<&str> = source.lines().collect();
     let mut i = 0;
 
@@ -98,14 +108,15 @@ pub fn extract(source: &str) -> ExtractionResult {
             // is indented under a bare `import` keyword.  Consume continuation
             // lines before advancing.
             if trimmed == "import" || trimmed.starts_with("import ") || trimmed.starts_with("from ") {
-                let (import_refs, consumed) = parse_import_block(&lines, i);
+                let byte_off = line_starts.get(i).copied().unwrap_or(0);
+                let (import_refs, consumed) = parse_import_block(&lines, i, byte_off);
                 refs.extend(import_refs);
                 i += consumed;
                 continue;
             }
 
             // include file
-            if let Some(inc_ref) = parse_include_line(trimmed, i as u32) {
+            if let Some(inc_ref) = parse_include_line(trimmed, i as u32, line_starts.get(i).copied().unwrap_or(0)) {
                 refs.push(inc_ref);
                 i += 1;
                 continue;
@@ -475,10 +486,10 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
 ///   `import other as O`
 ///   `import\n  blscurve,\n  stew/byteutils`     ← bare keyword + indented list
 ///   `import foo/[\n  bar,\n  baz\n]`            ← bracket spanning lines
-fn parse_import_block(lines: &[&str], start: usize) -> (Vec<ExtractedRef>, usize) {
+fn parse_import_block(lines: &[&str], start: usize, byte_offset: u32) -> (Vec<ExtractedRef>, usize) {
     let line_num = start as u32;
     let (raw_text, consumed) = collect_import_block(lines, start);
-    let refs = parse_collected_import(&raw_text, line_num);
+    let refs = parse_collected_import(&raw_text, line_num, byte_offset);
     (refs, consumed)
 }
 
@@ -531,7 +542,7 @@ fn collect_import_block(lines: &[&str], start: usize) -> (String, usize) {
 }
 
 /// Parse a fully-collected import statement string into ExtractedRefs.
-fn parse_collected_import(text: &str, line_num: u32) -> Vec<ExtractedRef> {
+fn parse_collected_import(text: &str, line_num: u32, byte_offset: u32) -> Vec<ExtractedRef> {
     let make_ref = |name: String| ExtractedRef {
         source_symbol_index: 0,
         target_name: name,
@@ -539,7 +550,7 @@ fn parse_collected_import(text: &str, line_num: u32) -> Vec<ExtractedRef> {
         line: line_num,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -573,7 +584,7 @@ fn parse_collected_import(text: &str, line_num: u32) -> Vec<ExtractedRef> {
 /// Nim `include` is textual inclusion; the included file's symbols become
 /// visible in the including module's scope.  We model it as an `Imports` edge
 /// so the resolver can walk it.
-fn parse_include_line(line: &str, line_num: u32) -> Option<ExtractedRef> {
+fn parse_include_line(line: &str, line_num: u32, byte_offset: u32) -> Option<ExtractedRef> {
     let rest = line.strip_prefix("include ")?;
     let name = rest.trim().split_whitespace().next()?.to_string();
     if name.is_empty() { return None; }
@@ -584,7 +595,7 @@ fn parse_include_line(line: &str, line_num: u32) -> Option<ExtractedRef> {
         line: line_num,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     })

@@ -28,7 +28,7 @@ fn make_partial_ref(target: &str) -> ExtractedRef {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -240,7 +240,7 @@ fn calls_kind_refs_are_not_resolved_by_partial_resolver() {
             line: 0,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
         }],

@@ -211,7 +211,7 @@ fn extract_prerequisites(
                                 line: prereq.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: prereq.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
                             });
@@ -387,7 +387,7 @@ fn extract_include_directive(
                 line: node.start_position().row as u32,
                 module: Some(path),
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
             });
@@ -438,7 +438,7 @@ fn extract_function_calls_in_subtree(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });

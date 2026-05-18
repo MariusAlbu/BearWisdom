@@ -241,7 +241,7 @@ fn emit_namespace_target_refs(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
             });
@@ -548,7 +548,7 @@ pub(super) fn push_include(
                     line: node.start_position().row as u32,
                     module: Some(path.to_string()),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

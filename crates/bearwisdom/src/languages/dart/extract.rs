@@ -211,10 +211,10 @@ fn visit(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -238,10 +238,10 @@ fn visit(
                                     line: grandchild.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    byte_offset: grandchild.start_byte() as u32,
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }
@@ -353,10 +353,10 @@ fn extract_factory_constructor_at_visit(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: child.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -383,10 +383,10 @@ fn scan_all_type_identifiers(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset: child.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         // Recurse into ALL children regardless

@@ -390,6 +390,15 @@ fn scan_class_name_from_source(src: &str) -> Option<(String, u32)> {
 
 /// Scan source lines for `extends ClassName` and emit an Inherits edge.
 fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Vec<ExtractedRef>) {
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in src.bytes() {
+            pos += 1;
+            if b == b'\n' { offsets.push(pos); }
+        }
+        offsets
+    };
     for (line_idx, line) in src.lines().enumerate() {
         let trimmed = line.trim();
         if !trimmed.contains("class ") || !trimmed.contains(" extends ") {
@@ -411,7 +420,7 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
                     line: line_idx as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: line_starts.get(line_idx).copied().unwrap_or(0),
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

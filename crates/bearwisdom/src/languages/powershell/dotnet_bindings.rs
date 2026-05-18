@@ -15,6 +15,15 @@ use crate::ecosystem::powershell_cmdlet_types::{cmdlet_result_module_tag, cmdlet
 use crate::types::{EdgeKind, ExtractedRef};
 
 pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
+    let line_starts: Vec<u32> = {
+        let mut offsets = vec![0u32];
+        let mut pos: u32 = 0;
+        for b in source.bytes() {
+            pos += 1;
+            if b == b'\n' { offsets.push(pos); }
+        }
+        offsets
+    };
     // Track which registry var names and pipeline-var bindings we've already
     // emitted so we only push one sentinel per binding per file (dedup).
     let mut emitted_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -39,7 +48,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                     line: line_no as u32,
                     module: Some(var_name),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -61,7 +70,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                         line: line_no as u32,
                         module: Some(key),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -80,7 +89,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                 line: line_no as u32,
                 module: Some("_".to_string()),
                 chain: None,
-                byte_offset: 0,
+                byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -98,7 +107,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                     line: line_no as u32,
                     module: Some(tag),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -124,7 +133,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                     line: line_no as u32,
                     module: Some(lhs),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

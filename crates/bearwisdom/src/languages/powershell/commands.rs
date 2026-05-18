@@ -73,7 +73,7 @@ pub(super) fn extract_command(
                         line: node.start_position().row as u32,
                         module: Some(module),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -91,7 +91,7 @@ pub(super) fn extract_command(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -106,7 +106,7 @@ pub(super) fn extract_command(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -144,7 +144,7 @@ pub(super) fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &
                     line: child.start_position().row as u32,
                     module,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

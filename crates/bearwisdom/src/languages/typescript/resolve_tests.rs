@@ -40,7 +40,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         line,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -54,7 +54,7 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         line,
         module: Some(module.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -997,7 +997,7 @@ fn make_reexport_ref(source_idx: usize, exported_name: &str, from_module: &str, 
         line,
         module: Some(from_module.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -1722,7 +1722,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
         line: 1,
         module: Some("./quick-create-button".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -1957,7 +1957,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
         line: 1,
         module: Some("react-i18next".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -2131,7 +2131,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -2142,7 +2142,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -2198,7 +2198,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -2209,7 +2209,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         line: 1,
         module: Some("chai".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -2313,7 +2313,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         source_symbol_index: 2, // npm_globals_expect_sym is index 2
         target_name: "chai.Assertion".to_string(),
         kind: EdgeKind::TypeRef,
-        line: 0, module: None, chain: None, byte_offset: 0,
+        line: 0, module: None, chain: None, byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -2365,7 +2365,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -2553,7 +2553,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -2593,7 +2593,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -2769,7 +2769,7 @@ fn alias_expansion_handles_array_type_form() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -2808,7 +2808,7 @@ fn alias_expansion_handles_array_type_form() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -2919,7 +2919,7 @@ fn alias_expansion_refuses_union_aliases() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -2958,7 +2958,7 @@ fn alias_expansion_refuses_union_aliases() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3056,7 +3056,7 @@ fn typeof_alias_dereferences_to_value_type() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3105,7 +3105,7 @@ fn typeof_alias_dereferences_to_value_type() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3144,7 +3144,7 @@ fn typeof_alias_dereferences_to_value_type() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3301,7 +3301,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3312,7 +3312,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3351,7 +3351,7 @@ fn transparent_mapped_partial_resolves_through_source() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3477,7 +3477,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3488,7 +3488,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3527,7 +3527,7 @@ fn phase2_inheritance_resolves_inherited_field() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3635,7 +3635,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3646,7 +3646,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3657,7 +3657,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         line: 0,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3696,7 +3696,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -3843,7 +3843,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                 },
             ],
         }),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -6785,7 +6785,7 @@ fn test_di_binding_inject_decorator_emits() {
         line: 5,
         module: Some("USER_REPO".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -6846,7 +6846,7 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
         line: 5,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
@@ -6898,7 +6898,7 @@ fn test_di_binding_inject_without_token_still_emits() {
         line: 5,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };

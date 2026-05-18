@@ -67,7 +67,7 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
                 parent_index: Some(host_index),
             });
         }
-        collect_link_refs(line, line_no, host_index, &mut refs);
+        collect_link_refs(line, line_no, ls as u32, host_index, &mut refs);
         line_no += 1;
         ls = le + 1;
     }
@@ -139,6 +139,7 @@ fn parse_atx_heading(line: &[u8]) -> Option<(u32, String)> {
 fn collect_link_refs(
     line: &[u8],
     line_no: u32,
+    line_byte_start: u32,
     host_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
@@ -158,6 +159,11 @@ fn collect_link_refs(
                         if !is_image {
                             let target: String = chars[close + 2..paren_close].iter().collect();
                             if let Some(normalized) = normalize_link_target(&target) {
+                                // Byte offset of the `[` within the full source.
+                                let col_bytes: u32 = chars[..i]
+                                    .iter()
+                                    .map(|c| c.len_utf8() as u32)
+                                    .sum();
                                 refs.push(ExtractedRef {
                                     source_symbol_index: host_index,
                                     target_name: normalized,
@@ -165,10 +171,10 @@ fn collect_link_refs(
                                     line: line_no,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    byte_offset: line_byte_start + col_bytes,
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         i = paren_close + 1;

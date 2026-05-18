@@ -39,6 +39,9 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
     let lines: Vec<&str> = source.lines().collect();
+    let line_starts: Vec<u32> = std::iter::once(0)
+        .chain(source.match_indices('\n').map(|(idx, _)| (idx + 1) as u32))
+        .collect();
     let mut i = 0;
 
     while i < lines.len() {
@@ -134,7 +137,8 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     });
                 } else {
                     // Model/view/type field: `fieldName FieldType[?][] [@attributes]`
-                    extract_field(body_line, i as u32, parent_index, &mut symbols, &mut refs);
+                    let line_byte_start = line_starts.get(i).copied().unwrap_or(0);
+                    extract_field(body_line, i as u32, line_byte_start, parent_index, &mut symbols, &mut refs);
                 }
 
                 i += 1;
@@ -154,6 +158,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
 fn extract_field(
     line: &str,
     line_num: u32,
+    line_byte_start: u32,
     parent_index: usize,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
@@ -210,10 +215,10 @@ fn extract_field(
             line: line_num,
             module: None,
             chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            byte_offset: line_byte_start,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     // Scan the rest of the line for @relation(... references mentions

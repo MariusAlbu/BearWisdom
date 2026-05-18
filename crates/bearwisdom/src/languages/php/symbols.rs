@@ -100,10 +100,10 @@ pub(super) fn extract_class(
                             line: base_child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            byte_offset: base_child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -127,10 +127,10 @@ pub(super) fn extract_class(
                         line: bc.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: bc.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -165,10 +165,10 @@ pub(super) fn extract_interface_list(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                byte_offset: child.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         } else {
             extract_interface_list(&child, src, refs, class_idx, edge_kind);
         }

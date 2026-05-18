@@ -53,6 +53,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     handle_tag(
                         body.trim(),
                         line_at(bytes, i),
+                        i as u32,
                         &template_name,
                         host_index,
                         &mut symbols,
@@ -87,6 +88,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
 fn handle_tag(
     body: &str,
     line: u32,
+    byte_offset: u32,
     template_name: &str,
     host_index: usize,
     symbols: &mut Vec<ExtractedSymbol>,
@@ -142,10 +144,10 @@ fn handle_tag(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         "use" | "import" => {
@@ -158,10 +160,10 @@ fn handle_tag(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         "from" => {
@@ -176,10 +178,10 @@ fn handle_tag(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    byte_offset,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         _ => {}

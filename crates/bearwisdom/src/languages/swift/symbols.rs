@@ -555,10 +555,10 @@ pub(super) fn push_import(
         line: node.start_position().row as u32,
         module: Some(full),
         chain: None,
-        byte_offset: 0,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        byte_offset: node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 pub(super) fn extract_type_inheritance(
@@ -592,10 +592,10 @@ pub(super) fn extract_type_inheritance(
                                     line: inherited.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    byte_offset: inherited.start_byte() as u32,
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         _ => {}
@@ -617,10 +617,10 @@ pub(super) fn extract_type_inheritance(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             _ => {}
