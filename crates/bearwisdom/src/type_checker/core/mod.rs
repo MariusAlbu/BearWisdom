@@ -6,10 +6,16 @@
 // =============================================================================
 
 pub mod generics;
+pub mod inference;
+pub mod members;
+pub mod supertype;
 pub mod symbol_types;
 pub mod types;
 
 pub use generics::{substitute, GenericEnv};
+pub use inference::{infer_expression_type, unwrap_await, unwrap_iterator};
+pub use members::MembersIndex;
+pub use supertype::{SupertypeGraph, SupertypeWalk};
 pub use symbol_types::{SymbolIdMap, SymbolTypeData, SymbolTypeMap};
 pub use types::{
     GenericParamData, GenericParamId, LitValue, PrimKind, Type, TypeArena, TypeId,
