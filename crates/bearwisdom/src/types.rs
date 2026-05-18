@@ -98,8 +98,30 @@ pub enum EdgeKind {
 pub enum FlowEdgeKind {
     /// Frontend fetch → backend route.
     HttpCall,
+    /// GraphQL operation (query, mutation, subscription).
+    #[strum(serialize = "graphql_op")]
+    #[serde(rename = "graphql_op")]
+    GraphQLOp,
+    /// gRPC / JSON-RPC caller.
+    RpcCall,
+    /// gRPC / JSON-RPC handler.
+    RpcHandle,
+    /// WebSocket message.
+    #[strum(serialize = "websocket")]
+    #[serde(rename = "websocket")]
+    WebSocket,
+    /// IPC command (e.g. Tauri `invoke`, Electron `ipcRenderer.invoke`).
+    IpcCall,
+    /// Background job producer.
+    BgJob,
+    /// Email / push template dispatch.
+    Mailer,
     /// ORM mapping to table.
     DbEntity,
+    /// Query or mutation against a known entity.
+    DbQuery,
+    /// Migration script for a table.
+    MigrationTarget,
     /// Event producer.
     EventEmit,
     /// Event consumer.
@@ -108,12 +130,18 @@ pub enum FlowEdgeKind {
     QueueProduce,
     /// Queue consumer.
     QueueConsume,
-    /// gRPC / JSON-RPC caller.
-    RpcCall,
-    /// gRPC / JSON-RPC handler.
-    RpcHandle,
     /// DI interface → implementation binding.
-    DiBind,
+    DiBinding,
+    /// Environment variable / config key read.
+    ConfigLookup,
+    /// Feature flag evaluation.
+    FeatureFlag,
+    /// Authorization requirement on a handler.
+    AuthGuard,
+    /// CLI command registration.
+    CliCommand,
+    /// Scheduled job registration.
+    ScheduledJob,
     /// Edge produced by an LSP server.
     LspResolved,
 }

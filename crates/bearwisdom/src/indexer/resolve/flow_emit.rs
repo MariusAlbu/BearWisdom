@@ -97,6 +97,11 @@ pub enum NamedChannelKind {
 
 impl NamedChannelKind {
     /// The `edge_type` value written to `flow_edges.edge_type`.
+    ///
+    /// This is role-neutral: both Producer and Consumer sides of an
+    /// `EventBus`/`MessageQueue` channel share the same `edge_type` string in
+    /// the DB. Use `to_flow_edge_kind(role)` when the role-split `FlowEdgeKind`
+    /// variant is needed.
     pub fn edge_type_str(self) -> &'static str {
         match self {
             NamedChannelKind::HttpCall => "http_call",
@@ -108,6 +113,32 @@ impl NamedChannelKind {
             NamedChannelKind::Mailer => "mailer",
             NamedChannelKind::MessageQueue => "message_queue",
             NamedChannelKind::EventBus => "event_bus",
+        }
+    }
+
+    /// Maps this channel kind and role to the canonical `FlowEdgeKind`.
+    ///
+    /// `EventBus` and `MessageQueue` split by role: Producers map to
+    /// `EventEmit`/`QueueProduce`; Consumers map to `EventHandle`/`QueueConsume`.
+    /// All other kinds are role-invariant.
+    pub fn to_flow_edge_kind(self, role: ChannelRole) -> crate::types::FlowEdgeKind {
+        use crate::types::FlowEdgeKind;
+        match self {
+            NamedChannelKind::HttpCall => FlowEdgeKind::HttpCall,
+            NamedChannelKind::GraphQLOp => FlowEdgeKind::GraphQLOp,
+            NamedChannelKind::RpcCall => FlowEdgeKind::RpcCall,
+            NamedChannelKind::WebSocket => FlowEdgeKind::WebSocket,
+            NamedChannelKind::IpcCall => FlowEdgeKind::IpcCall,
+            NamedChannelKind::BgJob => FlowEdgeKind::BgJob,
+            NamedChannelKind::Mailer => FlowEdgeKind::Mailer,
+            NamedChannelKind::MessageQueue => match role {
+                ChannelRole::Producer => FlowEdgeKind::QueueProduce,
+                ChannelRole::Consumer => FlowEdgeKind::QueueConsume,
+            },
+            NamedChannelKind::EventBus => match role {
+                ChannelRole::Producer => FlowEdgeKind::EventEmit,
+                ChannelRole::Consumer => FlowEdgeKind::EventHandle,
+            },
         }
     }
 
@@ -459,6 +490,26 @@ impl FlowEmission {
             | FlowEmission::CliCommand { .. }
             | FlowEmission::ScheduledJob { .. }
         )
+    }
+
+    /// The canonical `FlowEdgeKind` for this emission.
+    ///
+    /// `NamedChannel` delegatesto `NamedChannelKind::to_flow_edge_kind(role)` so
+    /// that `EventBus` and `MessageQueue` resolve to the correct role-split variant.
+    pub fn flow_edge_kind(&self) -> crate::types::FlowEdgeKind {
+        use crate::types::FlowEdgeKind;
+        match self {
+            FlowEmission::NamedChannel { kind, role, .. } => kind.to_flow_edge_kind(*role),
+            FlowEmission::DbEntity { .. } => FlowEdgeKind::DbEntity,
+            FlowEmission::DbQuery { .. } => FlowEdgeKind::DbQuery,
+            FlowEmission::MigrationTarget { .. } => FlowEdgeKind::MigrationTarget,
+            FlowEmission::DiBinding { .. } => FlowEdgeKind::DiBinding,
+            FlowEmission::ConfigLookup { .. } => FlowEdgeKind::ConfigLookup,
+            FlowEmission::FeatureFlag { .. } => FlowEdgeKind::FeatureFlag,
+            FlowEmission::AuthGuard { .. } => FlowEdgeKind::AuthGuard,
+            FlowEmission::CliCommand { .. } => FlowEdgeKind::CliCommand,
+            FlowEmission::ScheduledJob { .. } => FlowEdgeKind::ScheduledJob,
+        }
     }
 }
 

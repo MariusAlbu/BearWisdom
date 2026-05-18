@@ -2,6 +2,50 @@ use super::*;
 use std::str::FromStr;
 
 #[test]
+fn flow_edge_kind_roundtrip() {
+    for (kind, expected_str) in [
+        (FlowEdgeKind::HttpCall, "http_call"),
+        (FlowEdgeKind::GraphQLOp, "graphql_op"),
+        (FlowEdgeKind::RpcCall, "rpc_call"),
+        (FlowEdgeKind::RpcHandle, "rpc_handle"),
+        (FlowEdgeKind::WebSocket, "websocket"),
+        (FlowEdgeKind::IpcCall, "ipc_call"),
+        (FlowEdgeKind::BgJob, "bg_job"),
+        (FlowEdgeKind::Mailer, "mailer"),
+        (FlowEdgeKind::DbEntity, "db_entity"),
+        (FlowEdgeKind::DbQuery, "db_query"),
+        (FlowEdgeKind::MigrationTarget, "migration_target"),
+        (FlowEdgeKind::EventEmit, "event_emit"),
+        (FlowEdgeKind::EventHandle, "event_handle"),
+        (FlowEdgeKind::QueueProduce, "queue_produce"),
+        (FlowEdgeKind::QueueConsume, "queue_consume"),
+        (FlowEdgeKind::DiBinding, "di_binding"),
+        (FlowEdgeKind::ConfigLookup, "config_lookup"),
+        (FlowEdgeKind::FeatureFlag, "feature_flag"),
+        (FlowEdgeKind::AuthGuard, "auth_guard"),
+        (FlowEdgeKind::CliCommand, "cli_command"),
+        (FlowEdgeKind::ScheduledJob, "scheduled_job"),
+        (FlowEdgeKind::LspResolved, "lsp_resolved"),
+    ] {
+        assert_eq!(kind.as_str(), expected_str, "as_str mismatch for {kind:?}");
+        let back = FlowEdgeKind::from_str(expected_str).ok();
+        assert_eq!(back, Some(kind), "from_str round-trip failed for {kind:?}");
+    }
+}
+
+#[test]
+fn flow_edge_kind_display_matches_as_str() {
+    for kind in [
+        FlowEdgeKind::HttpCall,
+        FlowEdgeKind::GraphQLOp,
+        FlowEdgeKind::WebSocket,
+        FlowEdgeKind::DiBinding,
+    ] {
+        assert_eq!(kind.to_string(), kind.as_str());
+    }
+}
+
+#[test]
 fn symbol_kind_roundtrip() {
     for kind in [
         SymbolKind::Class,

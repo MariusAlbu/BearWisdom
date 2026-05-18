@@ -65,6 +65,68 @@ fn named_channel_kind_protocol_strings() {
 }
 
 // ---------------------------------------------------------------------------
+// NamedChannelKind::to_flow_edge_kind
+// ---------------------------------------------------------------------------
+
+#[test]
+fn named_channel_kind_to_flow_edge_kind_role_invariant() {
+    use crate::types::FlowEdgeKind;
+    assert_eq!(
+        NamedChannelKind::HttpCall.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::HttpCall,
+    );
+    assert_eq!(
+        NamedChannelKind::HttpCall.to_flow_edge_kind(ChannelRole::Consumer),
+        FlowEdgeKind::HttpCall,
+    );
+    assert_eq!(
+        NamedChannelKind::GraphQLOp.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::GraphQLOp,
+    );
+    assert_eq!(
+        NamedChannelKind::WebSocket.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::WebSocket,
+    );
+    assert_eq!(
+        NamedChannelKind::RpcCall.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::RpcCall,
+    );
+    assert_eq!(
+        NamedChannelKind::IpcCall.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::IpcCall,
+    );
+    assert_eq!(
+        NamedChannelKind::BgJob.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::BgJob,
+    );
+    assert_eq!(
+        NamedChannelKind::Mailer.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::Mailer,
+    );
+}
+
+#[test]
+fn named_channel_kind_to_flow_edge_kind_role_split() {
+    use crate::types::FlowEdgeKind;
+    assert_eq!(
+        NamedChannelKind::MessageQueue.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::QueueProduce,
+    );
+    assert_eq!(
+        NamedChannelKind::MessageQueue.to_flow_edge_kind(ChannelRole::Consumer),
+        FlowEdgeKind::QueueConsume,
+    );
+    assert_eq!(
+        NamedChannelKind::EventBus.to_flow_edge_kind(ChannelRole::Producer),
+        FlowEdgeKind::EventEmit,
+    );
+    assert_eq!(
+        NamedChannelKind::EventBus.to_flow_edge_kind(ChannelRole::Consumer),
+        FlowEdgeKind::EventHandle,
+    );
+}
+
+// ---------------------------------------------------------------------------
 // FlowEmission helpers
 // ---------------------------------------------------------------------------
 
@@ -454,4 +516,128 @@ fn http_call_streaming_str_is_always_none() {
     };
     // streaming_str gates on kind == RpcCall.
     assert_eq!(e.streaming_str(), None);
+}
+
+// ---------------------------------------------------------------------------
+// FlowEmission::flow_edge_kind
+// ---------------------------------------------------------------------------
+
+#[test]
+fn flow_edge_kind_named_channel_delegates_to_channel_kind() {
+    use crate::types::FlowEdgeKind;
+    let e = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: "/api".to_string(),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: None,
+    };
+    assert_eq!(e.flow_edge_kind(), FlowEdgeKind::HttpCall);
+}
+
+#[test]
+fn flow_edge_kind_event_bus_producer_maps_to_event_emit() {
+    use crate::types::FlowEdgeKind;
+    let e = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::EventBus,
+        name: "user.created".to_string(),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: None,
+    };
+    assert_eq!(e.flow_edge_kind(), FlowEdgeKind::EventEmit);
+}
+
+#[test]
+fn flow_edge_kind_event_bus_consumer_maps_to_event_handle() {
+    use crate::types::FlowEdgeKind;
+    let e = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::EventBus,
+        name: "user.created".to_string(),
+        role: ChannelRole::Consumer,
+        method: None,
+        streaming: None,
+    };
+    assert_eq!(e.flow_edge_kind(), FlowEdgeKind::EventHandle);
+}
+
+#[test]
+fn flow_edge_kind_message_queue_role_split() {
+    use crate::types::FlowEdgeKind;
+    let prod = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::MessageQueue,
+        name: "orders".to_string(),
+        role: ChannelRole::Producer,
+        method: None,
+        streaming: None,
+    };
+    let cons = FlowEmission::NamedChannel {
+        kind: NamedChannelKind::MessageQueue,
+        name: "orders".to_string(),
+        role: ChannelRole::Consumer,
+        method: None,
+        streaming: None,
+    };
+    assert_eq!(prod.flow_edge_kind(), FlowEdgeKind::QueueProduce);
+    assert_eq!(cons.flow_edge_kind(), FlowEdgeKind::QueueConsume);
+}
+
+#[test]
+fn flow_edge_kind_non_channel_variants() {
+    use crate::types::FlowEdgeKind;
+    assert_eq!(
+        FlowEmission::DbEntity {
+            base_symbol_id: None,
+            base_name_hint: "Model".to_string(),
+            table_name_hint: None,
+        }.flow_edge_kind(),
+        FlowEdgeKind::DbEntity,
+    );
+    assert_eq!(
+        FlowEmission::DbQuery {
+            entity_name: "User".to_string(),
+            operation: DbQueryOp::Select,
+        }.flow_edge_kind(),
+        FlowEdgeKind::DbQuery,
+    );
+    assert_eq!(
+        FlowEmission::MigrationTarget {
+            table_name: "users".to_string(),
+            direction: MigrationDirection::Up,
+        }.flow_edge_kind(),
+        FlowEdgeKind::MigrationTarget,
+    );
+    assert_eq!(
+        FlowEmission::DiBinding {
+            service_symbol_id: 1,
+            container: None,
+        }.flow_edge_kind(),
+        FlowEdgeKind::DiBinding,
+    );
+    assert_eq!(
+        FlowEmission::ConfigLookup { key: "DATABASE_URL".to_string() }.flow_edge_kind(),
+        FlowEdgeKind::ConfigLookup,
+    );
+    assert_eq!(
+        FlowEmission::FeatureFlag { flag_name: "dark_mode".to_string() }.flow_edge_kind(),
+        FlowEdgeKind::FeatureFlag,
+    );
+    assert_eq!(
+        FlowEmission::AuthGuard {
+            requirement: "admin".to_string(),
+            kind: AuthGuardKind::Role,
+        }.flow_edge_kind(),
+        FlowEdgeKind::AuthGuard,
+    );
+    assert_eq!(
+        FlowEmission::CliCommand {
+            command_name: "deploy".to_string(),
+            framework: None,
+        }.flow_edge_kind(),
+        FlowEdgeKind::CliCommand,
+    );
+    assert_eq!(
+        FlowEmission::ScheduledJob { schedule: "0 * * * *".to_string() }.flow_edge_kind(),
+        FlowEdgeKind::ScheduledJob,
+    );
 }
