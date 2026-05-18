@@ -45,7 +45,7 @@ fn make_import_ref(
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
     }
 }
 
@@ -138,7 +138,7 @@ fn test_init_reexport_submodule_resolution() {
         line: 5,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
 };
@@ -194,7 +194,7 @@ fn test_init_reexport_windows_path() {
         line: 3,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
 };

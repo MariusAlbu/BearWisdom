@@ -135,6 +135,7 @@ pub(super) fn extract_refs_from_body(
                     let name = node_text(&n, source);
                     if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
                         let type_ref_line = n.start_position().row as u32;
+                        let type_ref_byte = n.start_byte() as u32;
                         // First TypeRef — consumed by the `qualified_type` budget.
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -143,7 +144,7 @@ pub(super) fn extract_refs_from_body(
                             line: type_ref_line,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: type_ref_byte,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -156,7 +157,7 @@ pub(super) fn extract_refs_from_body(
                             line: type_ref_line,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: type_ref_byte,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -177,7 +178,7 @@ pub(super) fn extract_refs_from_body(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -201,7 +202,7 @@ pub(super) fn extract_refs_from_body(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: type_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -246,7 +247,7 @@ pub(super) fn extract_refs_from_body(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -272,7 +273,7 @@ pub(super) fn extract_refs_from_body(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

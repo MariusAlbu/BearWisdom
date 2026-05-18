@@ -409,7 +409,7 @@ fn extract_class_parameter(
                 line: tn.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: tn.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -557,7 +557,7 @@ pub(super) fn emit_import(
                         line: child.start_position().row as u32,
                         module: Some(full),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -571,7 +571,7 @@ pub(super) fn emit_import(
                         line: child.start_position().row as u32,
                         module: Some(full),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -588,7 +588,7 @@ pub(super) fn emit_import(
                     line: child.start_position().row as u32,
                     module: Some(full),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -631,7 +631,7 @@ pub(super) fn extract_delegation_specifiers(
                                 line: spec.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: spec.start_byte() as u32,
                                                             namespace_segments: Vec::new(),
                                                             call_args: Vec::new(),
 });

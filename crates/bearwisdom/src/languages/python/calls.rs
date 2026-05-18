@@ -291,7 +291,7 @@ fn emit_isinstance_type_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -311,7 +311,7 @@ fn emit_isinstance_type_node(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: child.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -330,7 +330,7 @@ fn emit_isinstance_type_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -426,7 +426,7 @@ pub(super) fn extract_import_statement(
                     line: child.start_position().row as u32,
                     module,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -448,7 +448,7 @@ pub(super) fn extract_import_statement(
                         line: child.start_position().row as u32,
                         module,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -493,7 +493,7 @@ pub(super) fn extract_import_from_statement(
                     line: child.start_position().row as u32,
                     module: module.clone(),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -508,7 +508,7 @@ pub(super) fn extract_import_from_statement(
                         line: child.start_position().row as u32,
                         module: module.clone(),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -522,7 +522,7 @@ pub(super) fn extract_import_from_statement(
                     line: child.start_position().row as u32,
                     module: module.clone(),
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

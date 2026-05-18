@@ -40,7 +40,7 @@ pub(super) fn extract_extern_crate(
         line: name_node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: name_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -104,7 +104,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 module: if module.is_empty() { None } else { Some(module) },
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -172,7 +172,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -191,7 +191,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -214,7 +214,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });

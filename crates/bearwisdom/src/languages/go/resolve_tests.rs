@@ -40,7 +40,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         line,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -59,7 +59,7 @@ fn make_import_ref(
         line,
         module: Some(full_path.to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -353,7 +353,7 @@ fn test_build_file_context_alias_import() {
         line: 3,
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -390,7 +390,7 @@ fn test_build_file_context_blank_import_skipped() {
         line: 3,
         module: Some("database/sql/driver".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -617,7 +617,7 @@ fn test_import_alias_resolution() {
         line: 3,
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -1020,7 +1020,7 @@ fn test_is_visible_public_always() {
         line: 1,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -1064,7 +1064,7 @@ fn test_is_visible_private_same_dir() {
         line: 1,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -1108,7 +1108,7 @@ fn test_is_visible_private_different_dir() {
         line: 1,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -1160,7 +1160,7 @@ fn test_instantiates_ref_resolution() {
                 line: 10,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: 1,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 },

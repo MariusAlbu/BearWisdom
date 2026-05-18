@@ -118,7 +118,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: type_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -315,7 +315,7 @@ fn extract_catch_clause_refs(
                                 line: type_node.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: type_node.start_byte() as u32,
                                                             namespace_segments: Vec::new(),
                                                             call_args: Vec::new(),
 });
@@ -375,7 +375,7 @@ fn extract_try_with_resources_refs(
                             line: tn.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: tn.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -414,7 +414,7 @@ fn extract_cast_expression_refs(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: type_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -495,7 +495,7 @@ fn extract_method_reference_calls(
                     line: recv.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: recv.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -529,7 +529,7 @@ fn extract_enhanced_for_refs(
                 line: tn.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: tn.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -577,7 +577,7 @@ fn extract_class_literal_ref(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -640,7 +640,7 @@ fn extract_instanceof_refs(
         line: type_node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: type_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -664,7 +664,7 @@ fn extract_instanceof_refs(
                         line: c.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: c.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

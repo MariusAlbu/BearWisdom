@@ -93,7 +93,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: child.start_byte() as u32,
                                                             namespace_segments: Vec::new(),
                                                             call_args: Vec::new(),
 });
@@ -145,7 +145,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: method_node.start_position().row as u32,
                             module: None,
                             chain,
-                            byte_offset: 0,
+                            byte_offset: method_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args,
 });
@@ -164,7 +164,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                     line: gc.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: gc.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -195,7 +195,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: method_node.start_position().row as u32,
                             module: None,
                             chain,
-                            byte_offset: 0,
+                            byte_offset: method_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args,
 });
@@ -279,7 +279,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -298,7 +298,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

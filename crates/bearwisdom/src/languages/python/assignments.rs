@@ -195,7 +195,7 @@ fn infer_python_variable_type(
         line: rhs.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: rhs.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -258,7 +258,7 @@ pub(super) fn extract_augmented_assignment(
                         line: left.start_position().row as u32,
                         module: None,
                         chain: Some(chain),
-                        byte_offset: 0,
+                        byte_offset: left.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

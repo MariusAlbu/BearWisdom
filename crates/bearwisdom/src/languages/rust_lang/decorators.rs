@@ -80,7 +80,7 @@ pub(super) fn extract_decorators(
                         line: attr_item.start_position().row as u32,
                         module: url_or_none.map(String::from),
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: attr_item.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });
@@ -216,7 +216,7 @@ fn extract_trait_names_from_token_tree(
                     line,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });
@@ -234,7 +234,7 @@ fn extract_trait_names_from_token_tree(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });

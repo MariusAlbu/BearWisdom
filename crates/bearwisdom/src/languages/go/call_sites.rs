@@ -106,7 +106,7 @@ pub(super) fn extract_call_ref(
             line: func_node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: func_node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -171,7 +171,7 @@ fn extract_make_chan_type_ref(
                         line: elem.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: elem.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -244,7 +244,7 @@ pub(super) fn extract_composite_literal_ref(
         line: type_node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: type_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -290,7 +290,7 @@ pub(super) fn extract_type_assertion_ref(
         line: type_node.start_position().row as u32,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: type_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 });
@@ -330,7 +330,7 @@ pub(super) fn extract_type_switch_refs(
                                 line: type_child.start_position().row as u32,
                                 module: None,
                                 chain: None,
-                                byte_offset: 0,
+                                byte_offset: type_child.start_byte() as u32,
                                                             namespace_segments: Vec::new(),
                                                             call_args: Vec::new(),
 });

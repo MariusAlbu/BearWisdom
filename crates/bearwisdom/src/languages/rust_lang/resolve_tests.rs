@@ -36,7 +36,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         line,
         module: None,
         chain: None,
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     }
@@ -590,7 +590,7 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
         line: 1,
         module: None,
         chain: Some(chain),
-        byte_offset: 0,
+        byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };

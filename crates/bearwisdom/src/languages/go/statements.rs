@@ -143,7 +143,7 @@ pub(super) fn extract_short_var_decl(
                                     line: rhs_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: rhs_node.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -176,7 +176,7 @@ pub(super) fn extract_short_var_decl(
                                     line: rhs_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: rhs_node.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -360,7 +360,7 @@ fn extract_const_var_spec(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });

@@ -552,7 +552,7 @@ fn emit_annotation_ref(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -627,7 +627,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -660,7 +660,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -689,7 +689,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -732,7 +732,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -853,7 +853,7 @@ fn infer_type_from_initializer(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: child.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -871,7 +871,7 @@ fn infer_type_from_initializer(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

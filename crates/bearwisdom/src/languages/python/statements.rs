@@ -154,7 +154,7 @@ fn extract_with_item(
                                 line: expr.start_position().row as u32,
                                 module: None,
                                 chain: Some(chain),
-                                byte_offset: 0,
+                                byte_offset: expr.start_byte() as u32,
                                                             namespace_segments: Vec::new(),
                                                             call_args: Vec::new(),
 });
@@ -316,7 +316,7 @@ pub(super) fn extract_named_expression(
                         line: value_node.start_position().row as u32,
                         module: None,
                         chain: Some(chain),
-                        byte_offset: 0,
+                        byte_offset: value_node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -488,7 +488,7 @@ fn extract_pattern_refs(
                         line: class_node.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: class_node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -845,7 +845,7 @@ pub(super) fn extract_except_clause(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -887,7 +887,7 @@ fn extract_except_type_refs(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -904,7 +904,7 @@ fn extract_except_type_refs(
                         line: attr.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: attr.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -955,7 +955,7 @@ pub(super) fn extract_raise_statement(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -974,7 +974,7 @@ pub(super) fn extract_raise_statement(
                                     line: func.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: func.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -991,7 +991,7 @@ pub(super) fn extract_raise_statement(
                                         line: attr.start_position().row as u32,
                                         module: None,
                                         chain: None,
-                                        byte_offset: 0,
+                                        byte_offset: attr.start_byte() as u32,
                                                                             namespace_segments: Vec::new(),
                                                                             call_args: Vec::new(),
 });

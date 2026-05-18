@@ -171,7 +171,7 @@ pub(super) fn extract_from_node(
                                     line: fc.start_position().row as u32,
                                     module: Some("__future__".to_string()),
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: fc.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
                                 });
@@ -332,7 +332,7 @@ fn emit_type_ref_from_annotation(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -356,7 +356,7 @@ fn emit_type_ref_from_annotation(
                         line: attr.start_position().row as u32,
                         module,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: attr.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -407,7 +407,7 @@ fn scan_type_annotation_nodes(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });
@@ -422,7 +422,7 @@ fn scan_type_annotation_nodes(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });
@@ -456,7 +456,7 @@ fn emit_type_ref_from_type_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });

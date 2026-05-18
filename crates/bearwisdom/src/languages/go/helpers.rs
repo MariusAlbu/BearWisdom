@@ -252,7 +252,7 @@ pub(super) fn extract_function_type_refs(
                                         line: tn.start_position().row as u32,
                                         module: None,
                                         chain: None,
-                                        byte_offset: 0,
+                                        byte_offset: tn.start_byte() as u32,
                                                                             namespace_segments: Vec::new(),
                                                                             call_args: Vec::new(),
 });
@@ -270,7 +270,7 @@ pub(super) fn extract_function_type_refs(
                                     line: param_child.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: param_child.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });

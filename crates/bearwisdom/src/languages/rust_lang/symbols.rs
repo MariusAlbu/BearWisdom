@@ -654,7 +654,7 @@ pub(super) fn extract_type_refs_from_type_node(
         "type_identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() && !is_rust_primitive(&name) {
-                refs.push(make_type_ref(sym_index, name, node.start_position().row as u32));
+                refs.push(make_type_ref(sym_index, name, node.start_position().row as u32, node.start_byte() as u32));
             }
         }
 
@@ -684,7 +684,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     line,
                     module,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });
@@ -737,7 +737,7 @@ pub(super) fn extract_type_refs_from_type_node(
             // consumed, THEN also emit TypeRefs for the inner trait name(s).
             let trait_name = super::calls::rust_type_node_name(node, source);
             if !trait_name.is_empty() && !is_rust_primitive(&trait_name) {
-                refs.push(make_type_ref(sym_index, trait_name, node.start_position().row as u32));
+                refs.push(make_type_ref(sym_index, trait_name, node.start_position().row as u32, node.start_byte() as u32));
             }
             // Also recurse so that individual type_identifier nodes inside are covered.
             let mut cursor = node.walk();
@@ -785,7 +785,7 @@ pub(super) fn extract_type_refs_from_type_node(
     }
 }
 
-fn make_type_ref(sym_index: usize, name: String, line: u32) -> ExtractedRef {
+fn make_type_ref(sym_index: usize, name: String, line: u32, byte_offset: u32) -> ExtractedRef {
     ExtractedRef {
         source_symbol_index: sym_index,
         target_name: name,
@@ -795,7 +795,7 @@ fn make_type_ref(sym_index: usize, name: String, line: u32) -> ExtractedRef {
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
         chain: None,
-        byte_offset: 0,
+        byte_offset,
     }
 }
 

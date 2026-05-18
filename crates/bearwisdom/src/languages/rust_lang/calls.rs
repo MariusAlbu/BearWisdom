@@ -83,7 +83,7 @@ pub(super) fn extract_impl(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: type_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -105,7 +105,7 @@ pub(super) fn extract_impl(
                 line: trait_node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: trait_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -215,7 +215,7 @@ pub(super) fn extract_impl(
                                     line: ty_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: ty_node.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -515,7 +515,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: type_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -609,7 +609,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: name_node.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: name_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -708,7 +708,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -738,7 +738,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });
@@ -1057,7 +1057,7 @@ fn infer_rust_variable_type(
                         line: name_node.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: name_node.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -1102,7 +1102,7 @@ fn infer_rust_variable_type(
                         line: func.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: func.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

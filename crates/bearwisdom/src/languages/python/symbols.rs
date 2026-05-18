@@ -486,7 +486,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     line: type_node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: type_node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -655,7 +655,7 @@ fn extract_superclass_refs(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -673,7 +673,7 @@ fn extract_superclass_refs(
                         line: child.start_position().row as u32,
                         module: obj,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

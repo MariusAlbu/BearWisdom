@@ -157,7 +157,7 @@ pub(super) fn emit_type_refs_from_type_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -181,7 +181,7 @@ pub(super) fn emit_type_refs_from_type_node(
                         line,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: n.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -192,7 +192,7 @@ pub(super) fn emit_type_refs_from_type_node(
                         line,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: n.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

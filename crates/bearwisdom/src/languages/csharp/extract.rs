@@ -689,7 +689,7 @@ fn extract_constructor_initializer_call(
             line: initializer.start_position().row as u32,
             module: None,
             chain: None,
-            byte_offset: 0,
+            byte_offset: initializer.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
 });
@@ -780,7 +780,7 @@ fn scan_all_type_positions(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -864,7 +864,7 @@ fn emit_csharp_type_ref(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
-                    byte_offset: 0,
+                    byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
 });
@@ -884,7 +884,7 @@ fn emit_csharp_type_ref(
                             line: id_child.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: id_child.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });

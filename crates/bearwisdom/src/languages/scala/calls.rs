@@ -103,7 +103,7 @@ pub(super) fn extract_calls_from_body(
                             line: op.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: op.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -128,7 +128,7 @@ pub(super) fn extract_calls_from_body(
                                     line: inner.start_position().row as u32,
                                     module: None,
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: inner.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -146,7 +146,7 @@ pub(super) fn extract_calls_from_body(
                                     line: inner.start_position().row as u32,
                                     module: Some(name),
                                     chain: None,
-                                    byte_offset: 0,
+                                    byte_offset: inner.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
@@ -197,7 +197,7 @@ fn extract_type_refs_from_type_arguments(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });

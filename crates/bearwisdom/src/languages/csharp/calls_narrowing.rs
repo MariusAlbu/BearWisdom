@@ -69,7 +69,7 @@ pub(super) fn extract_is_expression_refs(
                             line: inner.start_position().row as u32,
                             module: None,
                             chain: None,
-                            byte_offset: 0,
+                            byte_offset: inner.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
                                                     call_args: Vec::new(),
 });
@@ -144,7 +144,7 @@ pub(super) fn extract_is_expression_refs(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
@@ -191,7 +191,7 @@ fn extract_pattern_type_refs_recursive(
                         line: inner.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: inner.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
 });
@@ -252,7 +252,7 @@ fn emit_pattern_type_ref(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
-                byte_offset: 0,
+                byte_offset: type_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
 });
