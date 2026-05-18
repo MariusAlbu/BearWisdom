@@ -202,7 +202,7 @@ pub(super) fn emit_new_ref(
                 line: constructor.start_position().row as u32,
                 module: None,
                 chain,
-                byte_offset: 0,
+                byte_offset: constructor.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args,
 });

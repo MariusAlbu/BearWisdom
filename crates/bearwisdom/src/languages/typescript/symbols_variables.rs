@@ -92,7 +92,7 @@ pub(super) fn push_variable_decl(
                                             line: init_node.start_position().row as u32,
                                             module: None,
                                             chain: Some(chain),
-                                            byte_offset: 0,
+                                            byte_offset: init_node.start_byte() as u32,
                                                                                     namespace_segments: Vec::new(),
                                                                                     call_args: Vec::new(),
 });
@@ -138,7 +138,7 @@ pub(super) fn push_variable_decl(
                                         line: init_node.start_position().row as u32,
                                         module: None,
                                         chain: Some(chain),
-                                        byte_offset: 0,
+                                        byte_offset: init_node.start_byte() as u32,
                                                                             namespace_segments: Vec::new(),
                                                                             call_args: Vec::new(),
 });
@@ -255,7 +255,7 @@ pub(super) fn push_variable_decl(
                                 line: prop.start_position().row as u32,
                                 module: None,
                                 chain: Some(prop_chain),
-                                byte_offset: 0,
+                                byte_offset: prop.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
                             });
@@ -357,9 +357,13 @@ pub(super) fn push_variable_decl(
                         if !is_rest {
                             if let Some(ref base_chain) = source_chain {
                                 let mut elem_chain = base_chain.clone();
+                                // The final segment carries the binding name so that
+                                // the chain's last segment matches target_name (contract
+                                // REF-004). The tuple index is stored in node_kind for
+                                // type-inference consumers that need the positional slot.
                                 elem_chain.segments.push(ChainSegment {
-                                    name: elem_index.to_string(),
-                                    node_kind: "tuple_index".to_string(),
+                                    name: elem_name.clone(),
+                                    node_kind: format!("tuple_index:{}", elem_index),
                                     kind: SegmentKind::ComputedAccess,
                                     declared_type: None,
                                     type_args: vec![],
@@ -372,7 +376,7 @@ pub(super) fn push_variable_decl(
                                     line: elem_node.start_position().row as u32,
                                     module: None,
                                     chain: Some(elem_chain),
-                                    byte_offset: 0,
+                                    byte_offset: elem_node.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });

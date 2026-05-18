@@ -110,7 +110,7 @@ pub(super) fn extract_refs_from_body(
                                     } else {
                                         None
                                     },
-                                    byte_offset: 0,
+                                    byte_offset: field_node.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });

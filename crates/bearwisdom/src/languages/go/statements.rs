@@ -127,7 +127,7 @@ pub(super) fn extract_short_var_decl(
                                     line: rhs_node.start_position().row as u32,
                                     module: None,
                                     chain: Some(chain),
-                                    byte_offset: 0,
+                                    byte_offset: rhs_node.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
