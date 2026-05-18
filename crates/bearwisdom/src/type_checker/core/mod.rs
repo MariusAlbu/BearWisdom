@@ -24,3 +24,7 @@ pub use types::{
 #[cfg(test)]
 #[path = "foundation_gate_tests.rs"]
 mod foundation_gate_tests;
+
+#[cfg(test)]
+#[path = "lookup_gate_tests.rs"]
+mod lookup_gate_tests;

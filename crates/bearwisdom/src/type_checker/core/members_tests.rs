@@ -327,6 +327,36 @@ fn function_and_tuple_and_literal_carry_no_members() {
 }
 
 #[test]
+fn restrictive_kind_table_filters_incompatible_kinds() {
+    // Construct a profile that only accepts Method as a target for Calls.
+    // A field with matching name must be skipped.
+    use crate::type_checker::profile::language_profile::LanguageProfile;
+    use crate::types::SymbolKind;
+
+    const STRICT_TABLE: crate::type_checker::profile::language_profile::KindTable =
+        &[(EdgeKind::Calls, &[SymbolKind::Method])];
+
+    let strict_profile = LanguageProfile {
+        kind_compatible_table: STRICT_TABLE,
+        ..crate::type_checker::profile::language_profile::DEFAULT_PROFILE
+    };
+
+    let mut arena = TypeArena::new();
+    let user = arena.class("User");
+    let mut index = MembersIndex::new();
+    // Field named `greet` (wrong kind for Calls) AND method named `greet`
+    // declared in that order. Restrictive table must skip the field.
+    index.add_direct(user, sym(1, "greet", "User.greet", "field", Some("User")));
+    index.add_direct(user, sym(2, "greet", "User.greet", "method", Some("User")));
+
+    let graph = empty_supertypes();
+    let found = index
+        .lookup(user, "greet", EdgeKind::Calls, &graph, &arena, &strict_profile)
+        .expect("method should resolve despite field shadowing the name");
+    assert_eq!(found.id, 2, "field skipped by kind filter; method wins");
+}
+
+#[test]
 fn direct_keys_iterates_registered_types() {
     let mut arena = TypeArena::new();
     let a = arena.class("A");

@@ -145,6 +145,7 @@ fn is_type_defining(kind: SymbolKind) -> bool {
         SymbolKind::Class
             | SymbolKind::Struct
             | SymbolKind::Interface
+            | SymbolKind::Trait
             | SymbolKind::Enum
             | SymbolKind::TypeAlias
     )
