@@ -17,6 +17,18 @@
 //
 // Spec: research/architecture/02-engine-internal-architecture.html § Layer 4
 //       research/architecture/04-implementation-phases.html § Phase 4
+//
+// Known scope limitations honoured by Phase 5+ migrations:
+//   - Optional-chaining (`a?.b`) preserves the chain miss/hit on `b` but the
+//     yield type does not re-wrap in Optional. Affects flow-typing of the
+//     downstream binding, not target-symbol resolution.
+//   - Per-segment narrowings (FlowMeta.narrowings) are not consulted here;
+//     the resolver loop in Phase 5 threads them via SymbolLookup's cursor.
+//   - Dispatch axis enforcement: the walker uses receiver dispatch via
+//     MembersIndex::lookup. MultiArg (R/Clojure) and ReturnType (Haskell)
+//     callers invoke `dispatch::select_method` directly with a synthesised
+//     DispatchQuery; their per-language hook will replace this lookup call
+//     when Wave B migrations land.
 // =============================================================================
 
 use super::types::{Type, TypeArena, TypeId};
@@ -86,17 +98,24 @@ impl RootResolver for DefaultRootResolver {
             | SegmentKind::NamespaceAccess
             | SegmentKind::Construction => Some(arena.class(&seg.name)),
             SegmentKind::Identifier => {
+                // 1. Local-variable inferred type wins over global symbols
+                //    of the same name. `local_type` consults the per-file
+                //    LocalTypeCache that the resolver loop populates as it
+                //    encounters assignments; the cursor is moved before
+                //    each ref so narrowings honour the current position.
+                if let Some(local_qname) = lookup.local_type(&seg.name) {
+                    return Some(arena.class(&local_qname));
+                }
+                // 2. Unique type symbol with this simple name.
                 let matches = lookup.types_by_name(&seg.name);
                 if matches.len() == 1 {
-                    Some(arena.class(&matches[0].qualified_name))
-                } else {
-                    // Bare identifier with no unique type match — fall
-                    // back to treating it as a class qname. Chain walkers
-                    // for languages with strict scope tracking (Rust,
-                    // C#) will plug their own RootResolver that handles
-                    // locals + uses + module paths properly.
-                    Some(arena.class(&seg.name))
+                    return Some(arena.class(&matches[0].qualified_name));
                 }
+                // 3. Fall back to interning the bare identifier as a class
+                //    qname. Per-language scope tracking (Rust use, C#
+                //    using, TS imports) plugs its own RootResolver to
+                //    rewrite module-relative names before this fallback.
+                Some(arena.class(&seg.name))
             }
             SegmentKind::Property | SegmentKind::ComputedAccess => None,
         }

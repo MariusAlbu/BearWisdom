@@ -97,6 +97,7 @@ struct EmptyLookup {
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
     types: rustc_hash::FxHashMap<String, Vec<SymbolInfo>>,
+    locals: rustc_hash::FxHashMap<String, String>,
 }
 
 impl EmptyLookup {
@@ -105,11 +106,16 @@ impl EmptyLookup {
             empty: Vec::new(),
             empty_reexports: Vec::new(),
             types: Default::default(),
+            locals: Default::default(),
         }
     }
     fn with_type(mut self, name: &str, qname: &str) -> Self {
         let info = sym_info(1, name, qname, "class", None);
         self.types.entry(name.to_string()).or_default().push(info);
+        self
+    }
+    fn with_local(mut self, name: &str, qname: &str) -> Self {
+        self.locals.insert(name.to_string(), qname.to_string());
         self
     }
 }
@@ -126,6 +132,9 @@ impl SymbolLookup for EmptyLookup {
     }
     fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
         self.types.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+    fn local_type(&self, name: &str) -> Option<String> {
+        self.locals.get(name).cloned()
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -611,6 +620,153 @@ fn self_ref_root_resolves_through_enclosing_scope() {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn identifier_root_resolves_local_variable_via_lookup() {
+    // const u: User = ...;  chain = u.name → `u` is a local of type User.
+    // DefaultRootResolver must consult lookup.local_type before treating
+    // the identifier as a class.
+    let mut arena = TypeArena::new();
+    let user_ty = arena.class("User");
+    let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(user_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(user_ty, 1);
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            declared_type: Some(str_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        user_ty,
+        sym_info(2, "name", "User.name", "field", Some("User")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local("u", "User");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("u", SegmentKind::Identifier),
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("local variable's type bridges to its members");
+    assert_eq!(result.target_symbol_id, 2);
+    assert_eq!(result.resolved_yield_type, str_ty);
+}
+
+#[test]
+fn identifier_root_local_wins_over_same_named_global_type() {
+    // A local `User` of type Admin shadows the global User class. The
+    // walker must resolve to Admin's members, not User's.
+    let mut arena = TypeArena::new();
+    let user_ty = arena.class("User");
+    let admin_ty = arena.class("Admin");
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(user_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(user_ty, 1);
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(admin_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(admin_ty, 2);
+    symbol_types.insert(
+        3,
+        SymbolTypeData {
+            declared_type: Some(int_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        admin_ty,
+        sym_info(3, "level", "Admin.level", "field", Some("Admin")),
+    );
+    // User does NOT have `level`.
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("User", "User")
+        .with_local("User", "Admin");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("User", SegmentKind::Identifier),
+            seg("level", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("level");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("local shadowing must route through Admin");
+    assert_eq!(result.target_symbol_id, 3);
+    assert_eq!(result.resolved_yield_type, int_ty);
+}
+
+#[test]
 fn chain_expands_alias_before_member_lookup() {
     // type UserAlias = User;  chain = UserAlias.name → walks through the
     // alias to User, then looks up `name` on User.
@@ -865,6 +1021,152 @@ export class User {
         .walk(&chain, &ref_ctx, &fc)
         .expect("real-extraction User.name must resolve");
     assert_eq!(result.target_symbol_id, name_sym_id);
+    assert_eq!(result.resolved_yield_type, str_ty);
+}
+
+#[test]
+fn gate_real_go_struct_method_chain_walks() {
+    // Go: type Repo struct {} ; func (r *Repo) Get() *User { ... }
+    //     type User struct { Name string }
+    // chain: Repo.Get().Name → method yield User → field Name → string.
+    // The gate proves the chain walker works against a non-TS extractor.
+    use crate::languages::go::extract;
+
+    let source = r#"
+package main
+
+type User struct {
+    Name string
+}
+
+type Repo struct {}
+
+func (r *Repo) Get() *User {
+    return &User{Name: "x"}
+}
+"#;
+    let extraction = extract::extract(source);
+    let pf = crate::types::ParsedFile {
+        path: "main.go".to_string(),
+        language: "go".to_string(),
+        content_hash: String::new(),
+        size: source.len() as u64,
+        line_count: source.lines().count() as u32,
+        mtime: None,
+        package_id: None,
+        symbols: extraction.symbols,
+        refs: extraction.refs,
+        routes: extraction.routes,
+        db_sets: extraction.db_sets,
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: Some(source.to_string()),
+        has_errors: extraction.has_errors,
+        flow: Default::default(),
+        demand_contributions: extraction.demand_contributions,
+        alias_targets: extraction.alias_targets,
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut sym_ids = crate::type_checker::core::SymbolIdMap::default();
+    for (idx, _) in pf.symbols.iter().enumerate() {
+        sym_ids.insert((pf.path.clone(), idx), idx as i64 + 1);
+    }
+
+    let mut arena = TypeArena::new();
+    let members = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+    );
+
+    // Pull the qnames the extractor emitted for Repo / User / Get / Name.
+    let user_qname = pf
+        .symbols
+        .iter()
+        .find(|s| s.name == "User" && s.kind == SymbolKind::Struct)
+        .map(|s| s.qualified_name.clone())
+        .expect("User struct extracted");
+    let repo_qname = pf
+        .symbols
+        .iter()
+        .find(|s| s.name == "Repo" && s.kind == SymbolKind::Struct)
+        .map(|s| s.qualified_name.clone())
+        .expect("Repo struct extracted");
+    let user_ty = arena.class(&user_qname);
+    let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
+
+    let mut symbol_types = SymbolTypeMap::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+        &DEFAULT_PROFILE,
+    );
+    // Splice in `Get` return type and `Name` declared type, as Phase 5+
+    // extractor migration will eventually surface these directly.
+    let get_idx = pf
+        .symbols
+        .iter()
+        .position(|s| s.name == "Get" && s.kind == SymbolKind::Method)
+        .expect("Get method extracted");
+    let get_id = sym_ids[&(pf.path.clone(), get_idx)];
+    symbol_types.insert(
+        get_id,
+        SymbolTypeData {
+            return_type: Some(user_ty),
+            ..Default::default()
+        },
+    );
+    let name_idx = pf
+        .symbols
+        .iter()
+        .position(|s| s.name == "Name" && matches!(s.kind, SymbolKind::Property | SymbolKind::Field))
+        .expect("Name field extracted");
+    let name_id = sym_ids[&(pf.path.clone(), name_idx)];
+    symbol_types.insert(
+        name_id,
+        SymbolTypeData {
+            declared_type: Some(str_ty),
+            ..Default::default()
+        },
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_type("Repo", &repo_qname);
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg(&repo_qname, SegmentKind::TypeAccess),
+            seg("Get", SegmentKind::Property),
+            seg("Name", SegmentKind::Property),
+        ],
+    };
+    let source_sym = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("Name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("Repo.Get().Name resolves end-to-end on real Go extraction");
+    assert_eq!(result.target_symbol_id, name_id);
     assert_eq!(result.resolved_yield_type, str_ty);
 }
 
