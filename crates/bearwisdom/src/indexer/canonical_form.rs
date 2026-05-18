@@ -211,6 +211,67 @@ fn expected_byte(line_starts: &[u32], line: u32, col: u32) -> Option<u32> {
     line_starts.get(line as usize).map(|&s| s.saturating_add(col))
 }
 
+/// Wrap an `ExtractionResult` as a `ParsedFile` for validation. Extractor
+/// unit tests pass `source` so the populate_positions pass can derive the
+/// new position fields from content. `path` and `language` shape the
+/// validator's location messages and govern the external-files exemption.
+pub fn validate_extraction(
+    extraction: crate::types::ExtractionResult,
+    source: &str,
+    path: &str,
+    language: &str,
+) -> Vec<ContractViolation> {
+    let size = source.len() as u64;
+    let line_count = source.lines().count() as u32;
+    let mut parsed = ParsedFile {
+        path: path.to_string(),
+        language: language.to_string(),
+        content_hash: String::new(),
+        size,
+        line_count,
+        mtime: None,
+        package_id: None,
+        symbols: extraction.symbols,
+        refs: extraction.refs,
+        routes: extraction.routes,
+        db_sets: extraction.db_sets,
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: Some(source.to_string()),
+        has_errors: extraction.has_errors,
+        flow: Default::default(),
+        demand_contributions: extraction.demand_contributions,
+        alias_targets: extraction.alias_targets,
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    populate_positions(&mut parsed);
+    validate(&parsed)
+}
+
+/// Like `validate_extraction` but panics on any violation; the natural shape
+/// for extractor lib tests that should never produce contract violations.
+pub fn assert_extraction_canonical(
+    extraction: crate::types::ExtractionResult,
+    source: &str,
+    path: &str,
+    language: &str,
+) {
+    let violations = validate_extraction(extraction, source, path, language);
+    if violations.is_empty() {
+        return;
+    }
+    let mut buf = String::with_capacity(violations.len() * 80);
+    buf.push_str("canonical-form contract violations:\n");
+    for v in &violations {
+        buf.push_str("  - ");
+        buf.push_str(&v.to_string());
+        buf.push('\n');
+    }
+    panic!("{buf}");
+}
+
 /// Panics with the full violation list when `validate(file)` is non-empty.
 /// When the env var `BW_CANONICAL_FORM_REPORT` is set, the violations are
 /// written to stderr instead of panicking — for sweep-style triage runs.

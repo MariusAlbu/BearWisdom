@@ -6,6 +6,25 @@ fn sym(source: &str) -> Vec<ExtractedSymbol> { extract::extract(source, false).s
 fn refs(source: &str) -> Vec<ExtractedRef>    { extract::extract(source, false).refs }
 
 #[test]
+fn extraction_satisfies_canonical_form_contract() {
+    let src = r#"
+import { Kysely } from 'kysely';
+class Repo {
+  constructor(private db: Kysely<any>) {}
+  query() {
+    return this.db.selectFrom('users').innerJoin('posts').execute();
+  }
+}
+"#;
+    crate::indexer::canonical_form::assert_extraction_canonical(
+        extract::extract(src, false),
+        src,
+        "src/repo.ts",
+        "typescript",
+    );
+}
+
+#[test]
 fn debug_kysely_chain_ref_shape() {
     let src = r#"
 import { Kysely } from 'kysely';
