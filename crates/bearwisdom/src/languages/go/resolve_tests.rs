@@ -29,6 +29,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -43,7 +44,8 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 
 fn make_import_ref(
@@ -62,7 +64,8 @@ fn make_import_ref(
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
@@ -351,6 +354,7 @@ fn test_build_file_context_alias_import() {
         target_name: "mygin".to_string(),
         kind: EdgeKind::Imports,
         line: 3,
+        col: 0,
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
         byte_offset: 1,
@@ -388,6 +392,7 @@ fn test_build_file_context_blank_import_skipped() {
         target_name: "_".to_string(),
         kind: EdgeKind::Imports,
         line: 3,
+        col: 0,
         module: Some("database/sql/driver".to_string()),
         chain: None,
         byte_offset: 1,
@@ -615,6 +620,7 @@ fn test_import_alias_resolution() {
         target_name: "mygin".to_string(),
         kind: EdgeKind::Imports,
         line: 3,
+        col: 0,
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
         byte_offset: 1,
@@ -1018,6 +1024,7 @@ fn test_is_visible_public_always() {
         target_name: "Exported".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -1062,6 +1069,7 @@ fn test_is_visible_private_same_dir() {
         target_name: "unexported".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -1106,6 +1114,7 @@ fn test_is_visible_private_different_dir() {
         target_name: "unexported".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -1158,6 +1167,7 @@ fn test_instantiates_ref_resolution() {
                 target_name: "UserHandler".to_string(),
                 kind: EdgeKind::Instantiates,
                 line: 10,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: 1,
@@ -1212,6 +1222,7 @@ fn make_chain(segments: &[&str]) -> MemberChain {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             })
             .collect(),
     }

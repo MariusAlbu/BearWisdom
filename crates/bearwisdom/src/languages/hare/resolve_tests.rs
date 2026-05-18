@@ -10,6 +10,7 @@ fn test_hare_http_emit() {
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: Some("net::http::client".to_string()),
         chain: None,
         byte_offset: 1,
@@ -21,6 +22,7 @@ fn test_hare_http_emit() {
         kind: SymbolKind::Function, visibility: Some(Visibility::Public),
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
@@ -34,6 +36,7 @@ fn test_hare_no_emit_for_non_http_module() {
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: Some("io::map".to_string()),
         chain: None,
         byte_offset: 1,
@@ -45,6 +48,7 @@ fn test_hare_no_emit_for_non_http_module() {
         kind: SymbolKind::Function, visibility: Some(Visibility::Public),
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
@@ -58,6 +62,7 @@ fn test_hare_no_emit_for_non_url_arg() {
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: Some("net::http".to_string()),
         chain: None,
         byte_offset: 1,
@@ -69,6 +74,7 @@ fn test_hare_no_emit_for_non_url_arg() {
         kind: SymbolKind::Function, visibility: Some(Visibility::Public),
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };

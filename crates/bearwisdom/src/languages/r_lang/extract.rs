@@ -170,6 +170,7 @@ fn make_function_symbol(name: &str, line: u32) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -243,7 +244,8 @@ fn extract_binary_operator(
             doc_comment: None,
             scope_path: None,
             parent_index,
-        });
+                    byte_offset: 0,
+});
         return Some(idx);
     }
 
@@ -271,7 +273,8 @@ fn extract_binary_operator(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             Some(idx)
         }
         "call" => {
@@ -295,7 +298,8 @@ fn extract_binary_operator(
                     doc_comment: None,
                     scope_path: None,
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
                 // For R6Class, emit Method symbols from public/private/active list args.
                 // Other class systems (setClass, setRefClass) use separate setMethod()
                 // calls, so only R6Class gets this treatment.
@@ -309,6 +313,7 @@ fn extract_binary_operator(
                     target_name: callee,
                     kind: EdgeKind::Calls,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -334,7 +339,8 @@ fn extract_binary_operator(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             Some(idx)
         }
         _ => {
@@ -353,7 +359,8 @@ fn extract_binary_operator(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             Some(idx)
         }
     }
@@ -410,7 +417,8 @@ fn extract_call(
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-            });
+                            col: 0,
+});
             return None;
         }
     }
@@ -432,6 +440,7 @@ fn extract_call(
                 byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
+    col: 0,
 });
         }
         return None;
@@ -453,7 +462,8 @@ fn extract_call(
             doc_comment: None,
             scope_path: None,
             parent_index,
-        });
+                    byte_offset: 0,
+});
         return Some(idx);
     }
 
@@ -473,7 +483,8 @@ fn extract_call(
             doc_comment: None,
             scope_path: None,
             parent_index,
-        });
+                    byte_offset: 0,
+});
         return Some(idx);
     }
 
@@ -488,6 +499,7 @@ fn extract_call(
         byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
+    col: 0,
 });
     None
 }
@@ -574,6 +586,7 @@ fn extract_r6_methods(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: Some(class_idx),
+                byte_offset: 0,
             });
         }
     }
@@ -606,6 +619,7 @@ fn extract_namespace_operator(
         target_name: func,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
+        col: 0,
         module: Some(pkg),
         chain: None,
         byte_offset: node.start_byte() as u32,

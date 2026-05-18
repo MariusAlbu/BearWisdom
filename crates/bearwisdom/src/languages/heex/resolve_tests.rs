@@ -21,6 +21,7 @@ fn make_method_symbol(name: &str, qname: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -38,6 +39,7 @@ fn make_class_symbol(name: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -47,6 +49,7 @@ fn make_calls_ref(target: &str) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,

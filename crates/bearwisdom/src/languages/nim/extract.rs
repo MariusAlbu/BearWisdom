@@ -262,6 +262,7 @@ fn extract_calls(line: &str, line_num: u32, out: &mut Vec<ExtractedRef>) {
                 target_name: target,
                 kind: if is_method_call { EdgeKind::Calls } else { EdgeKind::Calls },
                 line: line_num,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: id_start as u32,
@@ -548,6 +549,7 @@ fn parse_collected_import(text: &str, line_num: u32, byte_offset: u32) -> Vec<Ex
         target_name: name,
         kind: EdgeKind::Imports,
         line: line_num,
+        col: 0,
         module: None,
         chain: None,
         byte_offset,
@@ -593,6 +595,7 @@ fn parse_include_line(line: &str, line_num: u32, byte_offset: u32) -> Option<Ext
         target_name: name,
         kind: EdgeKind::Imports,
         line: line_num,
+        col: 0,
         module: None,
         chain: None,
         byte_offset,
@@ -689,6 +692,7 @@ fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u3
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 

@@ -23,6 +23,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     let host_index = 0usize;
     let line_starts: Vec<u32> = std::iter::once(0)
@@ -53,6 +54,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     doc_comment: None,
                     scope_path: Some(file_name.clone()),
                     parent_index: Some(host_index),
+                    byte_offset: 0,
                 });
             }
         } else if let Some(rest) = trimmed.strip_prefix("include ") {
@@ -68,7 +70,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
             }
         } else if let Some(rest) = trimmed.strip_prefix("extends ") {
             let target = normalize_template_path(rest.trim());
@@ -83,7 +86,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
             }
         }
     }

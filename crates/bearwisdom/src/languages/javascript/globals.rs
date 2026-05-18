@@ -60,6 +60,7 @@ pub(super) fn scan_all_type_identifiers(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -200,7 +201,8 @@ fn push_typed_global_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Examine one statement node (or the body of a recursively-walked IIFE)
@@ -512,5 +514,6 @@ fn push_global_symbol(name: &str, anchor: &Node, symbols: &mut Vec<Sym>) {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
-    });
+            byte_offset: 0,
+});
 }

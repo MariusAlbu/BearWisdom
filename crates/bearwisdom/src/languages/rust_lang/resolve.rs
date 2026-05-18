@@ -755,6 +755,7 @@ impl LanguageResolver for RustResolver {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             },
             crate::types::ChainSegment {
                 name: "new".to_string(),
@@ -763,6 +764,7 @@ impl LanguageResolver for RustResolver {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             },
         ];
         new_segments.extend(chain.segments.iter().skip(1).cloned());

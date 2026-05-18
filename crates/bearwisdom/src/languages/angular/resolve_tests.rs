@@ -128,6 +128,7 @@ fn selector_map_hit_resolves_to_class() {
         visibility: Some(Visibility::Public),
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     };
 
     let extracted = ExtractedRef {
@@ -135,6 +136,7 @@ fn selector_map_hit_resolves_to_class() {
         target_name: "AppUserCard".to_string(),
         kind: EdgeKind::Calls,
         line: 5,
+        col: 0,
         // Raw selector stored by template extractor.
         module: Some("app-user-card".to_string()),
         chain: None,
@@ -180,6 +182,7 @@ fn selector_map_miss_falls_through() {
         visibility: Some(Visibility::Public),
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     };
 
     let extracted = ExtractedRef {
@@ -187,6 +190,7 @@ fn selector_map_miss_falls_through() {
         target_name: "AppUserCard".to_string(),
         kind: EdgeKind::Calls,
         line: 5,
+        col: 0,
         module: Some("app-user-card".to_string()),
         chain: None,
         byte_offset: 1,

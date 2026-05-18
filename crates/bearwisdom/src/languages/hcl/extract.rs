@@ -286,6 +286,7 @@ fn extract_module_block(
             target_name: source_val.clone(),
             kind: EdgeKind::Imports,
             line: node.start_position().row as u32,
+            col: 0,
             module: Some(source_val),
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -541,6 +542,7 @@ fn extract_reference_chain(
         target_name: target,
         kind: EdgeKind::TypeRef,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -562,6 +564,7 @@ fn extract_function_call_ref(
             target_name: name,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -682,6 +685,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
+    byte_offset: 0,
     }
 }
 

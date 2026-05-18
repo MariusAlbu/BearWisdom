@@ -139,6 +139,7 @@ pub(super) fn extract_calls_from_body(
                             target_name: name,
                             kind: EdgeKind::Calls,
                             line: callee.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain,
                             byte_offset: callee.start_byte() as u32,
@@ -159,6 +160,7 @@ pub(super) fn extract_calls_from_body(
                             target_name: name,
                             kind: EdgeKind::Instantiates,
                             line: type_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
@@ -263,6 +265,7 @@ pub(super) fn extract_calls_from_body(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: c.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: c.start_byte() as u32,
@@ -414,6 +417,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -426,6 +430,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -438,6 +443,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -461,6 +467,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -493,6 +500,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -513,6 +521,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: true,
+                byte_offset: 0,
             });
             Some(())
         }

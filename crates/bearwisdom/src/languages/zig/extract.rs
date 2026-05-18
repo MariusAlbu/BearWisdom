@@ -111,6 +111,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 doc_comment: doc,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
             i = end_line as usize + 1;
             continue;
@@ -134,6 +135,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 doc_comment: doc,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
             // Scan body lines for call expressions
             extract_calls_from_body(&body_lines, fn_idx, start_line + 1, &mut refs, &line_starts);
@@ -166,12 +168,14 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     doc_comment: doc,
                     scope_path: None,
                     parent_index: None,
+                    byte_offset: 0,
                 });
                 refs.push(ExtractedRef {
                     source_symbol_index: decl_idx,
                     target_name: path,
                     kind: EdgeKind::Imports,
                     line: start_line,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: line_starts.get(i).copied().unwrap_or(0),
@@ -202,6 +206,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         doc_comment: doc,
                         scope_path: None,
                         parent_index: None,
+                        byte_offset: 0,
                     });
                     extract_struct_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs, &line_starts);
                     i = end_line as usize + 1;
@@ -226,6 +231,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         doc_comment: doc,
                         scope_path: None,
                         parent_index: None,
+                        byte_offset: 0,
                     });
                     extract_enum_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs, &line_starts);
                     i = end_line as usize + 1;
@@ -247,6 +253,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         doc_comment: doc,
                         scope_path: None,
                         parent_index: None,
+                        byte_offset: 0,
                     });
                     // Scan the declaration line for @builtin( calls
                     // (e.g. `const X = @This()`, `const X = @cImport({...})`,
@@ -319,6 +326,7 @@ fn extract_struct_body(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: Some(parent_idx),
+                byte_offset: 0,
             });
 
             // Scan body for calls
@@ -347,6 +355,7 @@ fn extract_struct_body(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: Some(parent_idx),
+                byte_offset: 0,
             });
 
             // Emit TypeRef for non-primitive types
@@ -356,6 +365,7 @@ fn extract_struct_body(
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
                     line: line_num,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: line_starts.get(line_num as usize).copied().unwrap_or(0),
@@ -422,6 +432,7 @@ fn extract_enum_body(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: Some(parent_idx),
+                byte_offset: 0,
             });
 
             if end_j > j {
@@ -456,6 +467,7 @@ fn extract_enum_body(
             doc_comment: None,
             scope_path: None,
             parent_index: Some(parent_idx),
+            byte_offset: 0,
         });
         j += 1;
     }
@@ -661,6 +673,7 @@ fn extract_call_identifiers(
                     target_name: ident.to_string(),
                     kind: EdgeKind::Calls,
                     line: line_num,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset,

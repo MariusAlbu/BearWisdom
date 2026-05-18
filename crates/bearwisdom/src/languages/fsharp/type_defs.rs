@@ -62,7 +62,8 @@ pub(super) fn extract_type_def(
             doc_comment: None,
             scope_path,
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         // Walk members — emit child symbols for compound types and scan for refs
         match child.kind() {
@@ -120,7 +121,8 @@ fn extract_union_cases(
             doc_comment: None,
             scope_path,
             parent_index,
-        });
+                    byte_offset: 0,
+});
     });
 }
 
@@ -151,7 +153,8 @@ fn extract_enum_cases(
             doc_comment: None,
             scope_path,
             parent_index,
-        });
+                    byte_offset: 0,
+});
     });
 }
 
@@ -182,7 +185,8 @@ fn extract_record_fields(
             doc_comment: None,
             scope_path,
             parent_index,
-        });
+                    byte_offset: 0,
+});
     });
 }
 

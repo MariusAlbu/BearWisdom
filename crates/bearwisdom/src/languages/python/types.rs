@@ -59,7 +59,8 @@ pub(super) fn extract_type_alias(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract TypeRef edges from the aliased type expression.
     // The "right" field holds the aliased type (also wrapped in a "type" node).
@@ -86,6 +87,7 @@ fn extract_type_refs_from_annotation(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -112,6 +114,7 @@ fn extract_type_refs_from_annotation(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: attr.start_position().row as u32,
+                        col: 0,
                         module,
                         chain: None,
                         byte_offset: attr.start_byte() as u32,

@@ -434,6 +434,7 @@ fn push_if_missing(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     existing.insert(name.to_string());
 }

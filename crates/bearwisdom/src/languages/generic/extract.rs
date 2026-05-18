@@ -348,6 +348,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 target_name,
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
+                col: 0,
                 module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -414,6 +415,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 doc_comment: None,
                 scope_path: sp,
                 parent_index: ctx.parent_symbol_index(),
+                byte_offset: 0,
             });
 
             // Push parent index for nested symbols, and recurse.
@@ -445,6 +447,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 target_name: callee_name,
                 kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -467,6 +470,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                         target_name: name.to_string(),
                         kind: EdgeKind::TypeRef,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,

@@ -92,6 +92,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: name_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain,
                             byte_offset: name_node.start_byte() as u32,
@@ -116,6 +117,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             target_name: name,
                             kind: EdgeKind::Instantiates,
                             line: type_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
@@ -237,6 +239,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         target_name: target,
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -313,6 +316,7 @@ fn extract_catch_clause_refs(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: type_node.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: type_node.start_byte() as u32,
@@ -373,6 +377,7 @@ fn extract_try_with_resources_refs(
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
                             line: tn.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: tn.start_byte() as u32,
@@ -412,6 +417,7 @@ fn extract_cast_expression_refs(
                 target_name: name,
                 kind: EdgeKind::TypeRef,
                 line: type_node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
@@ -464,6 +470,7 @@ fn extract_method_reference_calls(
                 target_name: name,
                 kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -493,6 +500,7 @@ fn extract_method_reference_calls(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: recv.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: recv.start_byte() as u32,
@@ -527,6 +535,7 @@ fn extract_enhanced_for_refs(
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
                 line: tn.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: tn.start_byte() as u32,
@@ -575,6 +584,7 @@ fn extract_class_literal_ref(
                 target_name: name,
                 kind: EdgeKind::TypeRef,
                 line: child.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
@@ -638,6 +648,7 @@ fn extract_instanceof_refs(
         target_name: type_name.clone(),
         kind: EdgeKind::TypeRef,
         line: type_node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: type_node.start_byte() as u32,
@@ -662,6 +673,7 @@ fn extract_instanceof_refs(
                         target_name: type_name.clone(),
                         kind: EdgeKind::TypeRef,
                         line: c.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: c.start_byte() as u32,
@@ -742,6 +754,7 @@ fn make_variable_symbol(name: String, node: &Node, parent_index: usize) -> Extra
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
+        byte_offset: node.start_byte() as u32,
         signature: None,
         doc_comment: None,
         scope_path: None,
@@ -786,6 +799,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -798,6 +812,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -810,6 +825,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -827,6 +843,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -843,6 +860,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }

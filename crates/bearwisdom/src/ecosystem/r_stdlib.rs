@@ -793,6 +793,7 @@ fn make_sym(name: &str, pkg: &str, kind: SymbolKind) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 

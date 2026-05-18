@@ -51,7 +51,8 @@ pub(in super::super) fn push_indexer_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // TypeRef for return type and parameter types.
     if let Some(type_node) = node.child_by_field_name("type") {
@@ -117,7 +118,8 @@ pub(in super::super) fn push_operator_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // TypeRef for return type and parameters.
     if let Some(type_node) = node.child_by_field_name("type") {
@@ -179,7 +181,8 @@ pub(in super::super) fn push_conversion_operator_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(type_node) = node.child_by_field_name("type") {
         extract_type_refs_from_type_node(type_node, src, idx, refs);
@@ -224,7 +227,8 @@ pub(in super::super) fn push_destructor_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -270,7 +274,8 @@ pub(in super::super) fn push_local_function_decl(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -316,7 +321,8 @@ pub(in super::super) fn push_event_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(type_node) = node.child_by_field_name("type") {
         extract_type_refs_from_type_node(type_node, src, idx, refs);
@@ -354,6 +360,7 @@ pub(in super::super) fn push_using_directive(
                             target_name: full.clone(),
                             kind: EdgeKind::Imports,
                             line: child.start_position().row as u32,
+                            col: 0,
                             module: Some(full),
                             chain: None,
                             byte_offset: child.start_byte() as u32,
@@ -382,6 +389,7 @@ pub(in super::super) fn push_using_directive(
                     target_name: name.clone(),
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: Some(name),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -397,6 +405,7 @@ pub(in super::super) fn push_using_directive(
                     target_name: full.clone(),
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: Some(full),
                     chain: None,
                     byte_offset: child.start_byte() as u32,

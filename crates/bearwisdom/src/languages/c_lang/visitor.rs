@@ -302,6 +302,7 @@ pub(super) fn extract_node<'a>(
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
                                     line: type_node.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: type_node.start_byte() as u32,

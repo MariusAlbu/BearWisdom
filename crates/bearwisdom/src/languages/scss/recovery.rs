@@ -81,6 +81,7 @@ pub(super) fn recover_mixin_symbols_from_text(source: &str, symbols: &mut Vec<Ex
                             doc_comment: None,
                             scope_path: None,
                             parent_index: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -148,6 +149,7 @@ pub(super) fn recover_class_symbols_from_text(source: &str, symbols: &mut Vec<Ex
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
         }
     }
@@ -188,6 +190,7 @@ pub(super) fn recover_sass_indented_symbols_from_text(source: &str, symbols: &mu
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
         }
     }

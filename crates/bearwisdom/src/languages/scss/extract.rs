@@ -102,6 +102,7 @@ pub(super) fn make_sym(
         doc_comment: None,
         scope_path: None,
         parent_index,
+        byte_offset: node.start_byte() as u32,
     }
 }
 

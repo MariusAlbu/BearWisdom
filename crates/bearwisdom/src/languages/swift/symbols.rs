@@ -208,7 +208,8 @@ pub(super) fn push_type_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -243,7 +244,8 @@ pub(super) fn push_extension(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -289,7 +291,8 @@ pub(super) fn push_function_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -323,7 +326,8 @@ pub(super) fn push_init(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -353,7 +357,8 @@ pub(super) fn push_deinit(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 pub(super) fn push_property(
@@ -411,7 +416,8 @@ pub(super) fn push_property(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Emit a TypeAlias symbol for `typealias Name = Type`.
@@ -446,7 +452,8 @@ pub(super) fn push_typealias(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Emit TypeRef for the aliased type — the type node appears after `=`.
     // Walk children: after `=` take the first named node that looks like a type.
@@ -520,7 +527,8 @@ pub(super) fn push_subscript(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -553,6 +561,7 @@ pub(super) fn push_import(
         target_name: target,
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: Some(full),
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -590,6 +599,7 @@ pub(super) fn extract_type_inheritance(
                                     target_name: name,
                                     kind,
                                     line: inherited.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: inherited.start_byte() as u32,
@@ -615,6 +625,7 @@ pub(super) fn extract_type_inheritance(
                         target_name: name,
                         kind,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -656,7 +667,8 @@ fn push_enum_member(
         doc_comment: None,
         scope_path: scope_tree::scope_path(scope),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Emit a TypeAlias symbol for `associatedtype Element` in a protocol.
@@ -702,7 +714,8 @@ pub(super) fn push_associatedtype(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Dispatch the `class_declaration` node to the correct handler.

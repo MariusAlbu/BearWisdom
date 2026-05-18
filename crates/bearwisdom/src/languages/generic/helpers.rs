@@ -563,7 +563,8 @@ pub(super) fn for_each_type_child<'src>(
                     byte_offset: child.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
             }
         }
     }

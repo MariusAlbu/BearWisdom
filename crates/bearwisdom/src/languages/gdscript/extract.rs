@@ -144,7 +144,8 @@ fn extract_class_name_stmt(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(base) = extends {
         if base.is_empty() {
@@ -160,6 +161,7 @@ fn extract_class_name_stmt(
             byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
+    col: 0,
 });
     }
 }
@@ -193,6 +195,7 @@ fn extract_extends_stmt(
         target_name: base,
         kind: EdgeKind::Inherits,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -241,7 +244,8 @@ fn extract_inner_class(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(base) = extends {
         if !base.is_empty() {
@@ -255,7 +259,8 @@ fn extract_inner_class(
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-            });
+                            col: 0,
+});
         }
     }
 
@@ -297,7 +302,8 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     collect_calls(node, src, idx, refs);
     // Walk function body for nested variable declarations, const, and enum nodes.
@@ -327,7 +333,8 @@ fn extract_constructor(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     collect_calls(node, src, idx, refs);
     // Walk constructor body for nested variable declarations.
@@ -364,7 +371,8 @@ fn extract_signal(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -397,7 +405,8 @@ fn extract_export_var(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -452,7 +461,8 @@ fn extract_variable(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Walk the initializer for calls so `preload(...)` / `load(...)` on the
     // RHS emits its Imports edge via collect_calls.
@@ -518,7 +528,8 @@ fn extract_const(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // `const Foo := preload(...)` — walk the initializer so the preload call
     // emits its Imports edge via collect_calls.
@@ -556,7 +567,8 @@ fn extract_enum(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +597,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                         byte_offset: child.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
+    col: 0,
 });
 
                     // `preload("res://path/to/foo.gd")` and `load(...)` bring another
@@ -617,6 +630,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                                     byte_offset: child.start_byte() as u32,
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
+    col: 0,
 });
                             }
                         }

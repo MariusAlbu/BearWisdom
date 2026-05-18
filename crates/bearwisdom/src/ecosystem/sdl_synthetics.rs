@@ -232,6 +232,7 @@ fn fn_sym(name: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -249,6 +250,7 @@ fn enum_sym(name: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -266,6 +268,7 @@ fn type_sym(name: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 

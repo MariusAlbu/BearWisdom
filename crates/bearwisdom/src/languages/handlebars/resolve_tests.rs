@@ -17,6 +17,7 @@ fn make_class_symbol(name: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -26,6 +27,7 @@ fn make_partial_ref(target: &str) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -238,6 +240,7 @@ fn calls_kind_refs_are_not_resolved_by_partial_resolver() {
             target_name: "eq".to_string(),
             kind: EdgeKind::Calls,
             line: 0,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: 1,

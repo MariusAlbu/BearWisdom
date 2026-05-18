@@ -124,6 +124,7 @@ fn extract_create_table(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // Extract column definitions as Field children
@@ -167,6 +168,7 @@ fn extract_create_view(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -198,6 +200,7 @@ fn extract_create_function(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -230,6 +233,7 @@ fn extract_create_trigger(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -265,6 +269,7 @@ fn extract_create_index(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // TypeRef to the table the index is on (object_reference child)
@@ -274,6 +279,7 @@ fn extract_create_index(
             target_name: table_name,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -300,6 +306,7 @@ fn extract_alter_table(
             target_name: name,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -340,6 +347,7 @@ fn extract_cte(
                         doc_comment: None,
                         scope_path: None,
                         parent_index: None,
+                        byte_offset: 0,
                     });
                     found_name = true;
                     break;
@@ -364,6 +372,7 @@ fn extract_cte(
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }
@@ -413,6 +422,7 @@ fn collect_all_cte_nodes(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
         }
         // Recurse to find nested CTEs
@@ -488,6 +498,7 @@ fn collect_all_column_definitions(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
         }
         return; // Don't recurse inside column_definition
@@ -684,6 +695,7 @@ fn extract_column(
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
+        byte_offset: 0,
     });
 
     // TypeRef for custom type
@@ -693,6 +705,7 @@ fn extract_column(
             target_name: ct,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -730,6 +743,7 @@ fn extract_fk_refs(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -779,6 +793,7 @@ fn extract_ddl_fallback(
                     doc_comment: None,
                     scope_path: None,
                     parent_index: None,
+                    byte_offset: 0,
                 });
             }
         } else if upper.starts_with("CREATE INDEX") || upper.starts_with("CREATE UNIQUE INDEX") {
@@ -796,6 +811,7 @@ fn extract_ddl_fallback(
                     doc_comment: None,
                     scope_path: None,
                     parent_index: None,
+                    byte_offset: 0,
                 });
             }
         } else if upper.starts_with("CREATE VIEW") || upper.starts_with("CREATE OR REPLACE VIEW")
@@ -815,6 +831,7 @@ fn extract_ddl_fallback(
                     doc_comment: None,
                     scope_path: None,
                     parent_index: None,
+                    byte_offset: 0,
                 });
             }
         }

@@ -60,7 +60,8 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
                     byte_offset: i as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
                 i += consumed;
                 continue;
             }
@@ -172,6 +173,7 @@ fn build_jsx_ref(raw: &str) -> (String, Option<MemberChain>) {
             declared_type: None,
             type_args: Vec::new(),
             optional_chaining: false,
+            byte_offset: 0,
         });
     }
     let leaf = parts.last().unwrap_or(&raw).to_string();

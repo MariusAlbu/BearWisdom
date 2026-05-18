@@ -65,6 +65,7 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // Walk the document to find template elements and extract component usages.
@@ -128,6 +129,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             target_name: component_name,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -203,6 +205,7 @@ fn try_extract_event_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef
         target_name: handler,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,

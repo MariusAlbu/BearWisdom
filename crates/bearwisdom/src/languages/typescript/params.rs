@@ -81,7 +81,8 @@ pub(super) fn extract_constructor_params(
             doc_comment: None,
             scope_path,
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         // Extract TypeRef from the type annotation.
         if let Some(type_ann) = param.child_by_field_name("type") {
@@ -175,7 +176,8 @@ pub(super) fn extract_catch_variable(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Emit TypeRef if the catch variable has a type annotation.
     // Annotation may live on the `catch_parameter` node or directly on `param`.
@@ -263,7 +265,8 @@ pub(super) fn extract_for_loop_var(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Build a chain from the iterable (right side) so the index builder can
     // infer the element type.  For `for (const item of this.repo.findAll())`,
@@ -302,6 +305,7 @@ pub(super) fn extract_for_loop_var(
                 target_name: target,
                 kind: EdgeKind::TypeRef,
                 line: right.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: Some(chain),
                 byte_offset: iterable_node.start_byte() as u32,
@@ -324,6 +328,7 @@ pub(super) fn extract_for_loop_var(
                 target_name: target,
                 kind: EdgeKind::TypeRef,
                 line: right.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: iterable_node.start_byte() as u32,

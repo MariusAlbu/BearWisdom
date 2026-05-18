@@ -38,6 +38,7 @@ pub(super) fn build_receiver_chain(
         declared_type: None,
         type_args: Vec::new(),
         optional_chaining: false,
+        byte_offset: 0,
     });
 
     if segments.len() < 2 {
@@ -78,6 +79,7 @@ fn collect_receiver_segments(
                 declared_type,
                 type_args: Vec::new(),
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -89,6 +91,7 @@ fn collect_receiver_segments(
                 declared_type: None,
                 type_args: Vec::new(),
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -108,6 +111,7 @@ fn collect_receiver_segments(
                 declared_type: None,
                 type_args: Vec::new(),
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -132,6 +136,7 @@ fn collect_receiver_segments(
                     declared_type: None,
                     type_args: Vec::new(),
                     optional_chaining: false,
+                    byte_offset: 0,
                 });
                 return Some(());
             }
@@ -142,6 +147,7 @@ fn collect_receiver_segments(
                 declared_type: None,
                 type_args: Vec::new(),
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }

@@ -42,6 +42,7 @@ pub(super) fn extract_class_definition(
             target_name: parent,
             kind: EdgeKind::Inherits,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,

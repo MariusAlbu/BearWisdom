@@ -72,6 +72,7 @@ pub(super) fn salvage_missed_defines(source: &str, symbols: &mut Vec<ExtractedSy
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
         existing.insert(name.to_string());
     }

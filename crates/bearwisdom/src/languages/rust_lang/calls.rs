@@ -72,6 +72,7 @@ pub(super) fn extract_impl(
             doc_comment: None,
             scope_path: scope_from_prefix(outer_prefix),
             parent_index: None,
+            byte_offset: 0,
         });
 
         // TypeRef to the implementing type — coverage signal for ref_node_kinds.
@@ -81,6 +82,7 @@ pub(super) fn extract_impl(
                 target_name: type_name.clone(),
                 kind: EdgeKind::TypeRef,
                 line: type_node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
@@ -103,6 +105,7 @@ pub(super) fn extract_impl(
                 target_name: trait_name,
                 kind: EdgeKind::Implements,
                 line: trait_node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: trait_node.start_byte() as u32,
@@ -203,6 +206,7 @@ pub(super) fn extract_impl(
                             doc_comment: None,
                             scope_path: scope_from_prefix(&impl_prefix),
                             parent_index: None,
+                            byte_offset: 0,
                         });
                         // Emit TypeRef if the RHS type is a named type.
                         if let Some(ty_node) = child.child_by_field_name("type") {
@@ -213,6 +217,7 @@ pub(super) fn extract_impl(
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,
                                     line: ty_node.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: ty_node.start_byte() as u32,
@@ -477,6 +482,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             target_name: target,
                             kind: EdgeKind::Calls,
                             line: macro_node.start_position().row as u32,
+                            col: 0,
                             module,
                             chain: None,
                             byte_offset: macro_node.start_byte() as u32,
@@ -513,6 +519,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
                             line: type_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
@@ -595,6 +602,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             target_name: name.clone(),
                             kind: EdgeKind::Calls,
                             line: name_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: name_node.start_byte() as u32,
@@ -607,6 +615,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             target_name: name,
                             kind: EdgeKind::TypeRef,
                             line: name_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: name_node.start_byte() as u32,
@@ -669,6 +678,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: func.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain,
                             byte_offset: func.start_byte() as u32,
@@ -706,6 +716,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -736,6 +747,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         target_name: target,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -809,6 +821,7 @@ fn make_closure_variable(name: String, node: &Node, parent_index: usize) -> Extr
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
+        byte_offset: node.start_byte() as u32,
         signature: None,
         doc_comment: None,
         scope_path: None,
@@ -841,6 +854,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -853,6 +867,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -868,6 +883,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -883,6 +899,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
+                    byte_offset: 0,
                 });
             } else {
                 for (i, part) in parts.iter().enumerate() {
@@ -907,6 +924,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                         declared_type: None,
                         type_args: vec![],
                         optional_chaining: false,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -1055,6 +1073,7 @@ fn infer_rust_variable_type(
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
                         line: name_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: name_node.start_byte() as u32,
@@ -1100,6 +1119,7 @@ fn infer_rust_variable_type(
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
                         line: func.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: func.start_byte() as u32,

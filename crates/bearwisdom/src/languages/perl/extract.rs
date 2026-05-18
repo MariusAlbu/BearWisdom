@@ -80,6 +80,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                     target_name: module.clone(),
                     kind: EdgeKind::Imports,
                     line: line_u32,
+                    col: 0,
                     module: Some(module),
                     chain: None,
                     byte_offset: line_starts.get(lineno).copied().unwrap_or(0),
@@ -155,5 +156,6 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }

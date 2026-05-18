@@ -115,12 +115,14 @@ fn walk_node(
                         doc_comment: None,
                         scope_path: None,
                         parent_index: parent_idx,
+                        byte_offset: 0,
                     });
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Imports,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -166,6 +168,7 @@ fn walk_node(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: node.start_position().row as u32,
+                            col: 0,
                             module,
                             chain: None,
                             byte_offset: node.start_byte() as u32,
@@ -226,6 +229,7 @@ fn walk_node(
                         target_name: name,
                         kind: EdgeKind::Inherits,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -249,6 +253,7 @@ fn walk_node(
                             target_name: name,
                             kind: EdgeKind::Instantiates,
                             line: node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: node.start_byte() as u32,
@@ -311,6 +316,7 @@ fn extract_value_def(
                     doc_comment: None,
                     scope_path,
                     parent_index: parent_idx,
+                    byte_offset: 0,
                 });
                 return Some(idx);
             }
@@ -369,6 +375,7 @@ fn extract_type_def(
                 doc_comment: None,
                 scope_path: scope_path.clone(),
                 parent_index: parent_idx,
+                byte_offset: 0,
             });
 
             // For variant types, emit each constructor as a child symbol so
@@ -430,6 +437,7 @@ fn extract_variant_constructors(
                 doc_comment: None,
                 scope_path: module_scope.map(str::to_string),
                 parent_index: parent_idx,
+                byte_offset: 0,
             });
         }
     }
@@ -467,6 +475,7 @@ fn extract_module_def(
                         doc_comment: None,
                         scope_path,
                         parent_index: parent_idx,
+                        byte_offset: 0,
                     });
                     return Some(idx);
                 }
@@ -507,6 +516,7 @@ fn extract_exception_def(
                 doc_comment: None,
                 scope_path,
                 parent_index: parent_idx,
+                byte_offset: 0,
             });
             return Some(idx);
         }
@@ -545,6 +555,7 @@ fn extract_module_type_def(
                 doc_comment: None,
                 scope_path,
                 parent_index: parent_idx,
+                byte_offset: 0,
             });
             return Some(idx);
         }
@@ -586,6 +597,7 @@ fn extract_class_def(
                         doc_comment: None,
                         scope_path,
                         parent_index: parent_idx,
+                        byte_offset: 0,
                     });
                     return Some(idx);
                 }
@@ -624,6 +636,7 @@ fn extract_external(
                 doc_comment: None,
                 scope_path,
                 parent_index: parent_idx,
+                byte_offset: 0,
             });
             return;
         }
@@ -660,6 +673,7 @@ fn extract_value_specification(
                 doc_comment: None,
                 scope_path,
                 parent_index: parent_idx,
+                byte_offset: 0,
             });
             return;
         }

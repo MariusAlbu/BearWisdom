@@ -24,6 +24,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -38,7 +39,8 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         byte_offset: if line > 0 { 1 } else { 0 },
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 
 fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> ExtractedRef {
@@ -52,7 +54,8 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         byte_offset: if line > 0 { 1 } else { 0 },
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 
 fn make_file(

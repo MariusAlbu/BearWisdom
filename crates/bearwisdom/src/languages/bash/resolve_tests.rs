@@ -60,6 +60,7 @@ fn make_fn_sym(name: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -76,6 +77,7 @@ fn make_source_import(raw_path: &str) -> ExtractedRef {
         target_name: stem,
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some(raw_path.to_string()),
         chain: None,
         byte_offset: 1,
@@ -90,6 +92,7 @@ fn make_calls_ref(target: &str) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
         line: 5,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,

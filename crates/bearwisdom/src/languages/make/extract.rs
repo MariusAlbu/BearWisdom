@@ -209,6 +209,7 @@ fn extract_prerequisites(
                                 target_name: name,
                                 kind: EdgeKind::Calls,
                                 line: prereq.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: prereq.start_byte() as u32,
@@ -385,6 +386,7 @@ fn extract_include_directive(
                 target_name: path.clone(),
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: Some(path),
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -436,6 +438,7 @@ fn extract_function_calls_in_subtree(
                     target_name: func_name,
                     kind: EdgeKind::Calls,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -497,6 +500,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
+    byte_offset: 0,
     }
 }
 

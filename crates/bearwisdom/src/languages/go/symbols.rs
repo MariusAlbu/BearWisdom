@@ -43,6 +43,7 @@ pub(super) fn extract_package_clause(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
             return;
         }
@@ -125,6 +126,7 @@ fn emit_import_ref(
         target_name,
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -181,7 +183,8 @@ pub(super) fn extract_function_declaration(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract TypeRef edges from parameter and return types.
     super::calls::extract_fn_signature_type_refs(node, source, idx, refs);
@@ -282,7 +285,8 @@ pub(super) fn extract_method_declaration(
         doc_comment,
         scope_path: scope_from_prefix(&method_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract TypeRef edges from parameter and return types.
     super::calls::extract_fn_signature_type_refs(node, source, idx, refs);
@@ -458,13 +462,15 @@ pub(super) fn extract_go_typed_params_as_symbols(
                 doc_comment: None,
                 scope_path,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
 
             refs.push(ExtractedRef {
                 source_symbol_index: param_idx,
                 target_name: type_name.clone(),
                 kind: EdgeKind::TypeRef,
                 line: child.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,

@@ -46,6 +46,7 @@ pub fn append_jquery_fn_plugin_globals(
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }

@@ -112,7 +112,8 @@ fn walk_synthetic_macro_calls(
                                 byte_offset,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                            });
+                                                            col: 0,
+});
                         }
                     } else if !raw.contains(['.', '(']) {
                         // Plain identifier call: foo(...).
@@ -126,7 +127,8 @@ fn walk_synthetic_macro_calls(
                             byte_offset,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                                    col: 0,
+});
                     }
                 }
                 // Continue walking arguments — nested calls like foo(bar()) need both.

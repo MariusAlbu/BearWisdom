@@ -152,7 +152,8 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract body — use the function's own index as parent
     if let Some(body) = node.child_by_field_name("body") {
@@ -201,7 +202,8 @@ fn extract_variable(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +255,8 @@ fn extract_declaration(
                         doc_comment: None,
                         scope_path: None,
                         parent_index,
-                    });
+                                            byte_offset: 0,
+});
                     break; // one symbol per declaration
                 }
             }
@@ -304,6 +307,7 @@ fn extract_source_import(
                 target_name: target,
                 kind: EdgeKind::Imports,
                 line: child.start_position().row as u32,
+                col: 0,
                 module: Some(raw),
                 chain: None,
                 byte_offset: child.start_byte() as u32,
@@ -341,6 +345,7 @@ fn extract_command_call(
         target_name: cmd,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,

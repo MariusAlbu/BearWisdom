@@ -44,7 +44,8 @@ pub(super) fn push_ts_field(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract TypeRef from field type annotation: `db: DatabaseRepository`
     if let Some(type_ann) = node.child_by_field_name("type") {
@@ -90,6 +91,7 @@ fn infer_field_type_from_initializer(
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: constructor.start_byte() as u32,
@@ -116,6 +118,7 @@ fn infer_field_type_from_initializer(
                             target_name: arg_name,
                             kind: EdgeKind::TypeRef,
                             line: arg.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: arg.start_byte() as u32,

@@ -171,6 +171,7 @@ pub(super) fn walk_method_body(
                         target_name: name,
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,

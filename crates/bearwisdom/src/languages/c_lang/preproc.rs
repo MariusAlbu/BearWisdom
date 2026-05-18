@@ -50,7 +50,8 @@ pub(super) fn push_preproc_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -93,5 +94,6 @@ pub(super) fn push_preproc_function_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }

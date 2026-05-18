@@ -72,7 +72,8 @@ pub(super) fn extract_function_definition(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(params) = node.child_by_field_name("parameters") {
         extract_python_typed_params_as_symbols(
@@ -477,13 +478,15 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     doc_comment: None,
                     scope_path,
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
 
                 refs.push(ExtractedRef {
                     source_symbol_index: param_idx,
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
@@ -515,7 +518,8 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     doc_comment: None,
                     scope_path: Some(func_qualified_name.to_string()),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
             }
 
             // `*args` — list splat parameter.
@@ -539,7 +543,8 @@ pub(super) fn extract_python_typed_params_as_symbols(
                                 doc_comment: None,
                                 scope_path: Some(func_qualified_name.to_string()),
                                 parent_index,
-                            });
+                                                            byte_offset: 0,
+});
                         }
                         break;
                     }
@@ -566,7 +571,8 @@ pub(super) fn extract_python_typed_params_as_symbols(
                                 doc_comment: None,
                                 scope_path: Some(func_qualified_name.to_string()),
                                 parent_index,
-                            });
+                                                            byte_offset: 0,
+});
                         }
                         break;
                     }
@@ -626,7 +632,8 @@ pub(super) fn extract_class_definition(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(superclasses) = node.child_by_field_name("superclasses") {
         extract_superclass_refs(&superclasses, source, refs, idx);
@@ -653,6 +660,7 @@ fn extract_superclass_refs(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -671,6 +679,7 @@ fn extract_superclass_refs(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: obj,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -798,7 +807,8 @@ pub(super) fn extract_lambda(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     }
 

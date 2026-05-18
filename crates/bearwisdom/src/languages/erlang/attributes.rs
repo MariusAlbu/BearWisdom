@@ -79,6 +79,7 @@ pub(super) fn extract_module(node: &Node, src: &str, symbols: &mut Vec<Extracted
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -106,6 +107,7 @@ pub(super) fn extract_record(node: &Node, src: &str, symbols: &mut Vec<Extracted
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -134,6 +136,7 @@ pub(super) fn extract_behaviour(
         target_name: behaviour.clone(),
         kind: EdgeKind::Implements,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -194,7 +197,8 @@ pub(super) fn extract_import_attr(
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                    col: 0,
+});
         emitted = true;
     }
 
@@ -211,7 +215,8 @@ pub(super) fn extract_import_attr(
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                    col: 0,
+});
     }
 }
 
@@ -241,6 +246,7 @@ pub(super) fn extract_include(
             target_name: file.clone(),
             kind: EdgeKind::Imports,
             line: node.start_position().row as u32,
+            col: 0,
             module: Some(file),
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -280,6 +286,7 @@ pub(super) fn extract_type_alias(node: &Node, src: &str, symbols: &mut Vec<Extra
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }
@@ -309,6 +316,7 @@ pub(super) fn extract_callback(node: &Node, src: &str, symbols: &mut Vec<Extract
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }
@@ -351,6 +359,7 @@ pub(super) fn extract_wild_attr(node: &Node, src: &str, symbols: &mut Vec<Extrac
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }

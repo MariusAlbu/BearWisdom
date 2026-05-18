@@ -150,7 +150,8 @@ pub fn scan_expression(
             byte_offset,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                    col: 0,
+});
 
         prev_ident = Some(head);
         after_pipe = false;

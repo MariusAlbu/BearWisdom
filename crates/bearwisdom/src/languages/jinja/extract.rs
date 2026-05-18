@@ -37,6 +37,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     let host_index = 0usize;
 
@@ -171,6 +172,7 @@ fn handle_directive(
                 doc_comment: None,
                 scope_path: Some(file_name.to_string()),
                 parent_index: Some(host_index),
+                byte_offset: 0,
             });
         }
         return;
@@ -274,6 +276,7 @@ fn handle_directive(
                 doc_comment: None,
                 scope_path: Some(file_name.to_string()),
                 parent_index: Some(host_index),
+                byte_offset: 0,
             });
             for param in split_macro_params(after) {
                 if is_valid_jinja_ident(&param) {
@@ -305,6 +308,7 @@ fn make_local_var(
         doc_comment: None,
         scope_path: Some(file_name.to_string()),
         parent_index: Some(host_index),
+        byte_offset: 0,
     }
 }
 
@@ -387,6 +391,7 @@ fn make_imports_ref(source_idx: usize, target: String, line: u32, byte_offset: u
         target_name: target,
         kind: EdgeKind::Imports,
         line,
+        col: 0,
         module: None,
         chain: None,
         byte_offset,

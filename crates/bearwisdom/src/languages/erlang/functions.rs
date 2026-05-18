@@ -49,6 +49,7 @@ pub(super) fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // Extract calls inside function body
@@ -170,6 +171,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                                         target_name: format!("{}/{}", fun_name, arg_count),
                                         kind: EdgeKind::Calls,
                                         line: call_line,
+                                        col: 0,
                                         module,
                                         chain: None,
                                         byte_offset: child.start_byte() as u32,
@@ -207,6 +209,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             target_name: target,
                             kind: EdgeKind::Calls,
                             line: call_line,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
@@ -242,7 +245,8 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                                    col: 0,
+});
                     }
                 }
             }
@@ -274,7 +278,8 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                                    col: 0,
+});
                     }
                 }
             }
@@ -299,7 +304,8 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                                    col: 0,
+});
                     }
                 }
                 collect_calls(&child, src, source_idx, refs);

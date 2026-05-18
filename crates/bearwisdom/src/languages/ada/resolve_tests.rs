@@ -148,6 +148,7 @@ fn make_extracted_sym(name: &str, qname: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -157,6 +158,7 @@ fn make_extracted_ref(target: &str) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
@@ -688,6 +690,7 @@ fn test_ada_exec_select_emits_db_select() {
         target_name: "Exec".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -699,6 +702,7 @@ fn test_ada_exec_select_emits_db_select() {
         kind: SymbolKind::Function, visibility: Some(crate::types::Visibility::Public),
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
@@ -717,6 +721,7 @@ fn test_ada_no_emit_for_non_sql() {
         target_name: "Put_Line".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -728,6 +733,7 @@ fn test_ada_no_emit_for_non_sql() {
         kind: SymbolKind::Function, visibility: Some(crate::types::Visibility::Public),
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };

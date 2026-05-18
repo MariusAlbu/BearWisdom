@@ -54,7 +54,8 @@ pub(in super::super) fn push_method_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -113,7 +114,8 @@ pub(in super::super) fn push_constructor_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -170,7 +172,8 @@ pub(in super::super) fn push_property_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Emit a TypeRef edge for the property's declared type.
     if let Some(type_node) = node.child_by_field_name("type") {
@@ -235,7 +238,8 @@ pub(in super::super) fn push_accessor_decl(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -291,7 +295,8 @@ pub(in super::super) fn push_field_decl(
                     doc_comment: doc_comment.clone(),
                     scope_path: scope_path.clone(),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
                 // Emit a TypeRef for the field's declared type.
                 if let Some(tn) = type_node_opt {
                     extract_type_refs_from_type_node(tn, src, idx, refs);
@@ -346,7 +351,8 @@ pub(in super::super) fn push_event_field_decl(
                     doc_comment: doc_comment.clone(),
                     scope_path: scope_path.clone(),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
             }
         }
     }
@@ -395,5 +401,6 @@ pub(in super::super) fn push_delegate_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }

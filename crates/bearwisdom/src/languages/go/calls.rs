@@ -316,6 +316,7 @@ fn extract_for_range_vars(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index: Some(enclosing_idx),
+                byte_offset: 0,
             });
         }
 

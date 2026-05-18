@@ -19,6 +19,7 @@ fn make_pug_file(path: &str, host_name: &str, refs: Vec<ExtractedRef>) -> Parsed
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     };
     ParsedFile {
         path: path.to_string(),
@@ -52,6 +53,7 @@ fn import_ref(target: &str) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,

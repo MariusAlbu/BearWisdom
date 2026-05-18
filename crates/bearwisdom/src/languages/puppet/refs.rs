@@ -45,6 +45,7 @@ pub(super) fn extract_resource_declaration(
         target_name: res_type,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -107,6 +108,7 @@ pub(super) fn extract_include_or_require(
                 target_name: name.clone(),
                 kind: EdgeKind::Imports,
                 line: child.start_position().row as u32,
+                col: 0,
                 module: Some(name.clone()),
                 chain: None,
                 byte_offset: child.start_byte() as u32,
@@ -119,6 +121,7 @@ pub(super) fn extract_include_or_require(
                 target_name: name,
                 kind: EdgeKind::Calls,
                 line: child.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
@@ -174,6 +177,7 @@ pub(super) fn extract_function_call(
         byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
+    col: 0,
 });
 }
 
@@ -213,6 +217,7 @@ pub(super) fn collect_all_function_calls(
             byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
+    col: 0,
 });
         // Recurse into function_call children to find nested calls
         let mut cursor = node.walk();
@@ -260,6 +265,7 @@ pub(super) fn collect_resource_references(
             byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
+    col: 0,
 });
         // Still recurse to find nested resource_references
         let mut cursor = node.walk();

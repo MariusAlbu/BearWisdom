@@ -42,7 +42,8 @@ pub(super) fn extract_class(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     extract_dart_heritage(node, src, idx, refs);
 
@@ -82,7 +83,8 @@ pub(super) fn extract_mixin(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(body) = node.child_by_field_name("body") {
         extract_class_body(&body, src, symbols, refs, Some(idx), &new_prefix);
@@ -117,7 +119,8 @@ pub(super) fn extract_extension(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(body) = node.child_by_field_name("body") {
         extract_class_body(&body, src, symbols, refs, Some(idx), &new_prefix);
@@ -153,7 +156,8 @@ pub(super) fn extract_enum(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Enum constants live inside an `enum_body` child (Dart grammar 0.1).
     // Walk the direct children first; if we find an enum_body, recurse into it.
@@ -177,6 +181,7 @@ pub(super) fn extract_enum(
             doc_comment: None,
             scope_path: Some(qualified_name.clone()),
             parent_index: Some(idx),
+            byte_offset: 0,
         });
     };
 
@@ -343,7 +348,8 @@ fn extract_method(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // The function body is the next sibling of `node` (method_signature) within class_member.
     if let Some(body) = node.next_sibling() {
@@ -391,7 +397,8 @@ fn extract_constructor(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 fn extract_field(
@@ -437,7 +444,8 @@ fn extract_field(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     }
 }
@@ -469,7 +477,8 @@ pub(super) fn extract_top_level_function(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 pub(super) fn extract_variable(
@@ -499,7 +508,8 @@ pub(super) fn extract_variable(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -545,6 +555,7 @@ fn extract_import_spec_recursive(
                     target_name: target,
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: Some(module),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -580,6 +591,7 @@ pub(super) fn extract_part_directive(
                 target_name: target,
                 kind: EdgeKind::Imports,
                 line: child.start_position().row as u32,
+                col: 0,
                 module: Some(module),
                 chain: None,
                 byte_offset: child.start_byte() as u32,
@@ -630,7 +642,8 @@ pub(super) fn extract_typedef(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Emit Method symbols for `getter_signature` and `setter_signature` nodes.
@@ -673,7 +686,8 @@ pub(super) fn extract_getter_setter(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract calls from the body (sibling node).
     if let Some(body) = node.next_sibling() {
@@ -745,7 +759,8 @@ fn extract_factory_constructor(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Emit TypeRef edges for the declared type of a field declaration.
@@ -818,6 +833,7 @@ pub(super) fn extract_dart_heritage(
                     target_name: name,
                     kind: EdgeKind::Inherits,
                     line: type_node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
@@ -835,6 +851,7 @@ pub(super) fn extract_dart_heritage(
                         target_name: node_text(n, src),
                         kind: EdgeKind::Inherits,
                         line: n.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: n.start_byte() as u32,
@@ -857,6 +874,7 @@ pub(super) fn extract_dart_heritage(
                     target_name: node_text(n, src),
                     kind: EdgeKind::Implements,
                     line: n.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: n.start_byte() as u32,
@@ -879,6 +897,7 @@ pub(super) fn extract_dart_heritage(
                     target_name: node_text(n, src),
                     kind: EdgeKind::TypeRef,
                     line: n.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: n.start_byte() as u32,
@@ -957,6 +976,7 @@ fn infer_type_from_dart_initializer(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -977,6 +997,7 @@ fn infer_type_from_dart_initializer(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: inner.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: inner.start_byte() as u32,

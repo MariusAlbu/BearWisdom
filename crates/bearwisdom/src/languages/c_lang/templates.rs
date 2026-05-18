@@ -119,7 +119,8 @@ pub(super) fn push_concept_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     Some(idx)
 }
@@ -192,7 +193,8 @@ pub(super) fn push_alias_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // TypeRef for the aliased type.
     let mut cursor = node.walk();
@@ -225,6 +227,7 @@ pub(super) fn push_using_decl(
                         target_name: name,
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,

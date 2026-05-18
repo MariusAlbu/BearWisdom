@@ -27,6 +27,7 @@ fn make_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -41,6 +42,7 @@ fn make_import_ref(
         target_name: target.to_string(),
         kind,
         line: 1,
+        col: 0,
         module: Some(module.to_string()),
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
@@ -136,6 +138,7 @@ fn test_init_reexport_submodule_resolution() {
         target_name: "Person".to_string(),
         kind: EdgeKind::Calls,
         line: 5,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -192,6 +195,7 @@ fn test_init_reexport_windows_path() {
         target_name: "Team".to_string(),
         kind: EdgeKind::TypeRef,
         line: 3,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,

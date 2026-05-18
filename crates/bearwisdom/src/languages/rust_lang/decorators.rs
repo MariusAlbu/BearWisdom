@@ -78,6 +78,7 @@ pub(super) fn extract_decorators(
                         target_name: name.clone(),
                         kind: EdgeKind::TypeRef,
                         line: attr_item.start_position().row as u32,
+                        col: 0,
                         module: url_or_none.map(String::from),
                         chain: None,
                         byte_offset: attr_item.start_byte() as u32,
@@ -219,7 +220,8 @@ fn extract_trait_names_from_token_tree(
                     byte_offset: child.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
                 i = j;
                 continue;
             }
@@ -232,6 +234,7 @@ fn extract_trait_names_from_token_tree(
                         target_name: full_name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -337,6 +340,7 @@ pub(super) fn synthesize_derive_methods(
                 doc_comment: None,
                 scope_path: Some(qualified_prefix.to_string()),
                 parent_index: Some(parent_sym_idx),
+                byte_offset: 0,
             });
         }
     }

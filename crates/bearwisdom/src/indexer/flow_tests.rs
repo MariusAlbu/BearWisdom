@@ -55,6 +55,7 @@ fn mk_sym(name: &str, kind: SymbolKind, start_line: u32) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -69,7 +70,8 @@ fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
         byte_offset,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 
 #[test]
@@ -149,6 +151,7 @@ fn flow_type_args_populate_chain_segment() {
         target_name: "findOne".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -159,7 +162,8 @@ fn flow_type_args_populate_chain_segment() {
                     declared_type: None,
                     type_args: Vec::new(),
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "findOne".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -167,7 +171,8 @@ fn flow_type_args_populate_chain_segment() {
                     declared_type: None,
                     type_args: Vec::new(),
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 5, // inside the `findOne` span (5..12)

@@ -87,7 +87,8 @@ pub(super) fn extract_enum_class_body(
                         doc_comment: None,
                         scope_path: if enum_qname.is_empty() { None } else { Some(enum_qname.clone()) },
                         parent_index,
-                    });
+                                            byte_offset: 0,
+});
                 }
             }
             _ => {
@@ -143,7 +144,8 @@ pub(super) fn push_type_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -192,7 +194,8 @@ pub(super) fn push_function_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -250,7 +253,8 @@ pub(super) fn push_property_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Emit a Class symbol for a `companion object [Name]` declaration.
@@ -286,7 +290,8 @@ pub(super) fn push_companion_object(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -333,7 +338,8 @@ pub(super) fn extract_primary_constructor_params(
                 doc_comment: extract_doc_comment(&child, src),
                 scope_path,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
 
             let mut pc = child.walk();
             for inner in child.children(&mut pc) {
@@ -407,6 +413,7 @@ fn extract_class_parameter(
                 target_name: type_name,
                 kind: crate::types::EdgeKind::TypeRef,
                 line: tn.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: tn.start_byte() as u32,
@@ -439,7 +446,8 @@ fn extract_class_parameter(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Emit TypeRef edges for upper bounds of `type_parameter` nodes inside a
@@ -509,7 +517,8 @@ pub(super) fn push_secondary_constructor(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -555,6 +564,7 @@ pub(super) fn emit_import(
                         target_name: target,
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: Some(full),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -569,6 +579,7 @@ pub(super) fn emit_import(
                         target_name: target,
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: Some(full),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -586,6 +597,7 @@ pub(super) fn emit_import(
                     target_name: target,
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: Some(full),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -629,6 +641,7 @@ pub(super) fn extract_delegation_specifiers(
                                 target_name: name,
                                 kind,
                                 line: spec.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: spec.start_byte() as u32,
@@ -729,7 +742,8 @@ pub(super) fn push_getter_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Extract a setter declaration as a Method symbol.
@@ -772,5 +786,6 @@ pub(super) fn push_setter_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }

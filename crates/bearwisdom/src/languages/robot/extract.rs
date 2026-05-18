@@ -193,6 +193,7 @@ fn extract_settings_line(
                         target_name: t.clone(),
                         kind: EdgeKind::Imports,
                         line: lineno,
+                        col: 0,
                         module: Some(t),
                         chain: None,
                         byte_offset,
@@ -313,6 +314,7 @@ fn emit_keyword_call(
         target_name,
         kind: EdgeKind::Calls,
         line: lineno,
+        col: 0,
         module,
         chain: None,
         byte_offset,
@@ -406,6 +408,7 @@ fn extract_keyword_invocation(
         target_name,
         kind: EdgeKind::Calls,
         line: lineno,
+        col: 0,
         module,
         chain: None,
         byte_offset,
@@ -484,5 +487,6 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }

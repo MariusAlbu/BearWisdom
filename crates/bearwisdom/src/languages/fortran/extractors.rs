@@ -172,6 +172,7 @@ pub(super) fn extract_extends(
                                     target_name: base_name,
                                     kind: EdgeKind::Inherits,
                                     line: gc.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: gc.start_byte() as u32,
@@ -229,6 +230,7 @@ pub(super) fn extract_variable_declaration(
             doc_comment: None,
             scope_path: None,
             parent_index: parent_idx,
+            byte_offset: 0,
         });
         let _ = source_symbol_index; // used for scope association via parent_idx
     }
@@ -343,6 +345,7 @@ pub(super) fn emit_reexport_synthetics(
             doc_comment: None,
             scope_path: None,
             parent_index: Some(module_sym_idx),
+            byte_offset: 0,
         });
     }
 }
@@ -419,6 +422,7 @@ fn emit_procedure_statement_members(
                         doc_comment: None,
                         scope_path: None,
                         parent_index: Some(type_sym_idx),
+                        byte_offset: 0,
                     });
                 }
             }
@@ -456,6 +460,7 @@ fn emit_procedure_statement_members(
                         doc_comment: None,
                         scope_path: None,
                         parent_index: Some(type_sym_idx),
+                        byte_offset: 0,
                     });
                 }
             }

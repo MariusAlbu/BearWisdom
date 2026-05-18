@@ -34,6 +34,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // Scan for `{% tag ... %}` constructs.
@@ -114,6 +115,7 @@ fn handle_tag(
                     doc_comment: None,
                     scope_path: Some(template_name.to_string()),
                     parent_index: Some(host_index),
+                    byte_offset: 0,
                 });
             }
         }
@@ -132,6 +134,7 @@ fn handle_tag(
                     doc_comment: None,
                     scope_path: Some(template_name.to_string()),
                     parent_index: Some(host_index),
+                    byte_offset: 0,
                 });
             }
         }
@@ -147,7 +150,8 @@ fn handle_tag(
                     byte_offset,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
             }
         }
         "use" | "import" => {
@@ -163,7 +167,8 @@ fn handle_tag(
                     byte_offset,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
             }
         }
         "from" => {
@@ -181,7 +186,8 @@ fn handle_tag(
                     byte_offset,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
             }
         }
         _ => {}

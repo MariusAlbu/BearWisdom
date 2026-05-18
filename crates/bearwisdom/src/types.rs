@@ -269,6 +269,8 @@ pub struct ExtractedSymbol {
     pub end_line: u32,
     pub start_col: u32,
     pub end_col: u32,
+    /// Absolute byte position of the declaration start in the source file.
+    pub byte_offset: u32,
     /// Function/method signature string, e.g. "Task<User> GetById(int id)".
     pub signature: Option<String>,
     /// C# XML doc comment or JSDoc, if present.
@@ -319,6 +321,8 @@ pub struct ChainSegment {
     pub type_args: Vec<String>,
     /// Whether this segment uses optional chaining (`?.`).
     pub optional_chaining: bool,
+    /// Absolute byte position of this segment's identifier in the source file.
+    pub byte_offset: u32,
 }
 
 /// A structured member access chain built from tree-sitter AST nodes.
@@ -390,6 +394,8 @@ pub struct ExtractedRef {
     pub kind: EdgeKind,
     /// 0-based source line of the reference site.
     pub line: u32,
+    /// 0-based column of the reference site identifier.
+    pub col: u32,
     /// **Resolved final module** the target is exported from.
     ///
     /// Set by per-ecosystem import-resolution passes (see

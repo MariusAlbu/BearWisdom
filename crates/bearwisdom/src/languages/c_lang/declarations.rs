@@ -66,7 +66,8 @@ pub(super) fn push_function_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -130,7 +131,8 @@ pub(super) fn push_specifier(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -162,7 +164,8 @@ pub(super) fn push_namespace(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -209,7 +212,8 @@ pub(super) fn push_namespace_alias(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Emit TypeRef for each `namespace_identifier` after the `=`. The first
     // child past the `=` token is the target; nested namespace targets
@@ -239,6 +243,7 @@ fn emit_namespace_target_refs(
                 target_name: name,
                 kind: EdgeKind::TypeRef,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -367,7 +372,8 @@ pub(super) fn push_typedef(
             doc_comment: extract_doc_comment(node, src),
             scope_path,
             parent_index,
-        });
+                    byte_offset: 0,
+});
         return;
     }
 
@@ -402,7 +408,8 @@ pub(super) fn push_typedef(
             doc_comment: doc.clone(),
             scope_path: scope_path.clone(),
             parent_index,
-        });
+                    byte_offset: 0,
+});
     }
 }
 
@@ -481,7 +488,8 @@ pub(super) fn push_declaration(
                 doc_comment: None,
                 scope_path: scope_path.clone(),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     }
 }
@@ -522,7 +530,8 @@ pub(super) fn extract_enum_body(
                     doc_comment: None,
                     scope_path: scope_tree::scope_path(scope),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
             }
         }
     }
@@ -546,6 +555,7 @@ pub(super) fn push_include(
                     target_name,
                     kind: EdgeKind::Imports,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: Some(path.to_string()),
                     chain: None,
                     byte_offset: node.start_byte() as u32,

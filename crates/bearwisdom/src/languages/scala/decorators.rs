@@ -63,6 +63,7 @@ fn emit_annotation(
             target_name: name,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: first_arg,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -213,6 +214,7 @@ fn extract_pattern_refs(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: type_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: type_node.start_byte() as u32,
@@ -234,6 +236,7 @@ fn extract_pattern_refs(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: child.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
@@ -357,6 +360,7 @@ fn push_class_param(
         doc_comment: None,
         scope_path: if parent_qname.is_empty() { None } else { Some(parent_qname.to_string()) },
         parent_index: Some(parent_index),
+        byte_offset: 0,
     });
 }
 

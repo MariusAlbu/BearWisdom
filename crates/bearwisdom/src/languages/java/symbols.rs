@@ -37,7 +37,8 @@ pub(super) fn push_package(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -85,7 +86,8 @@ pub(super) fn push_type_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -122,7 +124,8 @@ pub(super) fn push_enum_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -165,6 +168,7 @@ pub(super) fn extract_enum_body(
                         doc_comment: extract_doc_comment(&child, src),
                         scope_path: if enum_qname.is_empty() { None } else { Some(enum_qname.clone()) },
                         parent_index: enum_parent_index,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -215,7 +219,8 @@ pub(super) fn push_method_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -265,7 +270,8 @@ pub(super) fn push_annotation_element_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -313,7 +319,8 @@ pub(super) fn push_compact_constructor_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -363,7 +370,8 @@ pub(super) fn push_constructor_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -421,7 +429,8 @@ pub(super) fn push_field_decl(
                     doc_comment: doc_comment.clone(),
                     scope_path: scope_path.clone(),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
             }
         }
     }
@@ -461,6 +470,7 @@ pub(super) fn extract_type_refs_recursive(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
@@ -482,6 +492,7 @@ pub(super) fn extract_type_refs_recursive(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: child.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
@@ -514,6 +525,7 @@ pub(super) fn extract_type_refs_recursive(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
@@ -573,6 +585,7 @@ pub(super) fn push_import(
                         target_name: "*".to_string(),
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: Some(full),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -587,6 +600,7 @@ pub(super) fn push_import(
                         target_name: imported,
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: Some(full),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -603,6 +617,7 @@ pub(super) fn push_import(
                     target_name: name.clone(),
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: Some(name),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -638,6 +653,7 @@ pub(super) fn extract_class_inheritance(
                     target_name: name,
                     kind: EdgeKind::Inherits,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -703,6 +719,7 @@ fn extract_type_list_as_implements(
                         target_name: name,
                         kind: EdgeKind::Implements,
                         line: type_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: type_node.start_byte() as u32,
@@ -773,13 +790,15 @@ pub(super) fn extract_java_typed_params_as_symbols(
             doc_comment: None,
             scope_path,
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         refs.push(ExtractedRef {
             source_symbol_index: param_idx,
             target_name: type_name,
             kind: EdgeKind::TypeRef,
             line: type_node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: type_node.start_byte() as u32,

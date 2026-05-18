@@ -135,7 +135,8 @@ fn extract_with_item(
             doc_comment: None,
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         if let Some(expr) = cm_expr {
             if expr.kind() == "call" {
@@ -152,6 +153,7 @@ fn extract_with_item(
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,
                                 line: expr.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: Some(chain),
                                 byte_offset: expr.start_byte() as u32,
@@ -234,7 +236,8 @@ fn extract_for_in_vars(
                     doc_comment: None,
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
             }
         }
         "pattern_list" | "tuple_pattern" => {
@@ -256,7 +259,8 @@ fn extract_for_in_vars(
                             doc_comment: None,
                             scope_path: scope_from_prefix(qualified_prefix),
                             parent_index,
-                        });
+                                                    byte_offset: 0,
+});
                     }
                 }
             }
@@ -300,7 +304,8 @@ pub(super) fn extract_named_expression(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     extract_calls_from_body(&value_node, source, enclosing_symbol_index, refs, import_map);
 
@@ -314,6 +319,7 @@ pub(super) fn extract_named_expression(
                         target_name: target,
                         kind: EdgeKind::TypeRef,
                         line: value_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: Some(chain),
                         byte_offset: value_node.start_byte() as u32,
@@ -486,6 +492,7 @@ fn extract_pattern_refs(
                         target_name: class_name,
                         kind: EdgeKind::TypeRef,
                         line: class_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: class_node.start_byte() as u32,
@@ -843,6 +850,7 @@ pub(super) fn extract_except_clause(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -885,6 +893,7 @@ fn extract_except_type_refs(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -902,6 +911,7 @@ fn extract_except_type_refs(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: attr.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: attr.start_byte() as u32,
@@ -953,6 +963,7 @@ pub(super) fn extract_raise_statement(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -972,6 +983,7 @@ pub(super) fn extract_raise_statement(
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
                                     line: func.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: func.start_byte() as u32,
@@ -989,6 +1001,7 @@ pub(super) fn extract_raise_statement(
                                         target_name: name,
                                         kind: EdgeKind::TypeRef,
                                         line: attr.start_position().row as u32,
+                                        col: 0,
                                         module: None,
                                         chain: None,
                                         byte_offset: attr.start_byte() as u32,

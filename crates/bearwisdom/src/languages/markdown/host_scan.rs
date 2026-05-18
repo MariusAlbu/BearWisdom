@@ -38,6 +38,7 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     let host_index: usize = 0;
 
@@ -65,6 +66,7 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
                 doc_comment: None,
                 scope_path: Some(file_name.clone()),
                 parent_index: Some(host_index),
+                byte_offset: 0,
             });
         }
         collect_link_refs(line, line_no, ls as u32, host_index, &mut refs);
@@ -89,6 +91,7 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
             doc_comment: None,
             scope_path: Some(file_name.clone()),
             parent_index: Some(host_index),
+            byte_offset: 0,
         });
     }
 
@@ -169,6 +172,7 @@ fn collect_link_refs(
                                     target_name: normalized,
                                     kind: EdgeKind::Imports,
                                     line: line_no,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: line_byte_start + col_bytes,

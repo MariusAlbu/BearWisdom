@@ -25,6 +25,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -34,6 +35,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
         target_name: target.to_string(),
         kind,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -47,6 +49,7 @@ fn make_use(source_idx: usize, alias: &str, fqn: &str) -> ExtractedRef {
         target_name: alias.to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some(fqn.to_string()),
         chain: None,
         byte_offset: 1,
@@ -435,6 +438,7 @@ fn test_inherited_method_via_this_resolves() {
                 target_name: "BaseService".to_string(),
                 kind: EdgeKind::Inherits,
                 line: 5,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: 1,
@@ -447,6 +451,7 @@ fn test_inherited_method_via_this_resolves() {
                 target_name: "$this->account".to_string(),
                 kind: EdgeKind::Calls,
                 line: 20,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: 1,
@@ -513,6 +518,7 @@ fn test_static_eloquent_call_via_type_access() {
                 target_name: "Model".to_string(),
                 kind: EdgeKind::Inherits,
                 line: 5,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: 1,
@@ -536,6 +542,7 @@ fn test_static_eloquent_call_via_type_access() {
                 target_name: "whereIn".to_string(),
                 kind: EdgeKind::Calls,
                 line: 15,
+                col: 0,
                 module: None,
                 chain: Some(MemberChain {
                     segments: vec![
@@ -546,7 +553,8 @@ fn test_static_eloquent_call_via_type_access() {
                             declared_type: None,
                             type_args: vec![],
                             optional_chaining: false,
-                        },
+                                                    byte_offset: 0,
+},
                         ChainSegment {
                             name: "whereIn".to_string(),
                             node_kind: "static_call_expression".to_string(),
@@ -554,7 +562,8 @@ fn test_static_eloquent_call_via_type_access() {
                             declared_type: None,
                             type_args: vec![],
                             optional_chaining: false,
-                        },
+                                                    byte_offset: 0,
+},
                     ],
                 }),
                 byte_offset: 1,
@@ -624,6 +633,7 @@ fn test_inherited_method_via_chain_selfref() {
                 target_name: "BaseService".to_string(),
                 kind: EdgeKind::Inherits,
                 line: 3,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: 1,
@@ -636,6 +646,7 @@ fn test_inherited_method_via_chain_selfref() {
                 target_name: "account".to_string(), // NOT "$this->account"
                 kind: EdgeKind::Calls,
                 line: 10,
+                col: 0,
                 module: None,
                 chain: Some(MemberChain {
                     segments: vec![
@@ -646,7 +657,8 @@ fn test_inherited_method_via_chain_selfref() {
                             declared_type: None,
                             type_args: vec![],
                             optional_chaining: false,
-                        },
+                                                    byte_offset: 0,
+},
                         ChainSegment {
                             name: "account".to_string(),
                             node_kind: "member_call_expression".to_string(),
@@ -654,7 +666,8 @@ fn test_inherited_method_via_chain_selfref() {
                             declared_type: None,
                             type_args: vec![],
                             optional_chaining: false,
-                        },
+                                                    byte_offset: 0,
+},
                     ],
                 }),
                 byte_offset: 1,
@@ -714,6 +727,7 @@ fn test_transitive_inherited_method_resolves() {
                 target_name: "BaseService".to_string(),
                 kind: EdgeKind::Inherits,
                 line: 3,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: 1,
@@ -734,6 +748,7 @@ fn test_transitive_inherited_method_resolves() {
                 target_name: "QueuableService".to_string(),
                 kind: EdgeKind::Inherits,
                 line: 3,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: 1,
@@ -745,6 +760,7 @@ fn test_transitive_inherited_method_resolves() {
                 target_name: "$this->account".to_string(),
                 kind: EdgeKind::Calls,
                 line: 15,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: 1,
@@ -797,6 +813,7 @@ fn make_static_chain(segments: &[&str]) -> MemberChain {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             })
             .collect(),
     }
@@ -815,6 +832,7 @@ fn make_instance_chain(segments: &[&str]) -> MemberChain {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             })
             .collect(),
     }

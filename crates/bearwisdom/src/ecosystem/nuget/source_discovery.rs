@@ -151,6 +151,7 @@ pub(crate) fn parse_cs_source_file(
             doc_comment: None,
             scope_path: if sym.scope.is_empty() { None } else { Some(sym.scope) },
             parent_index: None,
+            byte_offset: 0,
         })
         .collect();
 

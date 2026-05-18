@@ -103,6 +103,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
 
             // Retroactively fix scope_path on orphan methods so the inheritance
@@ -347,6 +348,7 @@ fn scan_methods_from_source(
             doc_comment: None,
             scope_path: Some(class_qname.to_string()),
             parent_index: Some(parent_idx),
+            byte_offset: 0,
         });
     }
     methods
@@ -418,6 +420,7 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
                     target_name: superclass.to_string(),
                     kind: EdgeKind::Inherits,
                     line: line_idx as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: line_starts.get(line_idx).copied().unwrap_or(0),

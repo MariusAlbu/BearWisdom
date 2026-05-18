@@ -130,6 +130,7 @@ pub(super) fn emit_call_ref(
                 target_name,
                 kind: EdgeKind::Calls,
                 line: func_node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain,
                 byte_offset: func_node.start_byte() as u32,
@@ -168,6 +169,7 @@ pub(super) fn emit_new_ref(
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
+                    byte_offset: 0,
                 }],
             });
             // Side-channel synthetic ref: when this `new X(...)` is the
@@ -187,6 +189,7 @@ pub(super) fn emit_new_ref(
                         target_name: format!("__ts_bgjob_queue_binding__:{}", bound),
                         kind: EdgeKind::Imports,
                         line: constructor.start_position().row as u32,
+                        col: 0,
                         module: Some(queue_name),
                         chain: None,
                         byte_offset: constructor.start_byte() as u32,
@@ -200,6 +203,7 @@ pub(super) fn emit_new_ref(
                 target_name: name,
                 kind: EdgeKind::Instantiates,
                 line: constructor.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain,
                 byte_offset: constructor.start_byte() as u32,
@@ -387,6 +391,7 @@ fn emit_config_lookup_ref(
         target_name: key,
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain,
         byte_offset: node.start_byte() as u32,
@@ -475,6 +480,7 @@ pub(super) fn extract_calls(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: func_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain,
                             byte_offset: func_node.start_byte() as u32,
@@ -525,6 +531,7 @@ pub(super) fn extract_calls(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: tag.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain,
                             byte_offset: tag.start_byte() as u32,
@@ -589,6 +596,7 @@ pub(super) fn emit_jsx_component_ref(
         target_name: target,
         kind: EdgeKind::Calls,
         line: tag_node.start_position().row as u32,
+        col: 0,
         module: None,
         chain,
         byte_offset: tag_node.start_byte() as u32,
@@ -634,6 +642,7 @@ pub(super) fn build_chain_inner(
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -646,6 +655,7 @@ pub(super) fn build_chain_inner(
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -665,6 +675,7 @@ pub(super) fn build_chain_inner(
                 declared_type: Some("Promise".to_string()),
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -680,6 +691,7 @@ pub(super) fn build_chain_inner(
                 declared_type: Some("Array".to_string()),
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -694,6 +706,7 @@ pub(super) fn build_chain_inner(
                 declared_type: Some("Object".to_string()),
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -708,6 +721,7 @@ pub(super) fn build_chain_inner(
                 declared_type: Some("String".to_string()),
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -723,6 +737,7 @@ pub(super) fn build_chain_inner(
                 declared_type: Some("Number".to_string()),
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -736,6 +751,7 @@ pub(super) fn build_chain_inner(
                 declared_type: Some("RegExp".to_string()),
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -761,6 +777,7 @@ pub(super) fn build_chain_inner(
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: is_optional,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -779,6 +796,7 @@ pub(super) fn build_chain_inner(
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }

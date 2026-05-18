@@ -75,6 +75,7 @@ fn emit_annotation(
             target_name: name,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: first_arg,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -275,6 +276,7 @@ fn extract_when_entry_condition(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: node.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
@@ -290,6 +292,7 @@ fn extract_when_entry_condition(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: node.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
@@ -437,6 +440,7 @@ fn push_lambda_param(
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
+        byte_offset: 0,
     });
 }
 

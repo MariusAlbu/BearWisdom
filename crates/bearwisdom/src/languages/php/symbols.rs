@@ -41,7 +41,8 @@ pub(super) fn extract_namespace(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(body) = node.child_by_field_name("body") {
         super::extract::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, &ns_prefix);
@@ -80,7 +81,8 @@ pub(super) fn extract_class(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Scan children for inheritance/implements (tree-sitter-php 0.24 unnamed children)
     let mut cc = node.walk();
@@ -98,6 +100,7 @@ pub(super) fn extract_class(
                             target_name: node_text(&base_child, src),
                             kind: EdgeKind::Inherits,
                             line: base_child.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: base_child.start_byte() as u32,
@@ -125,6 +128,7 @@ pub(super) fn extract_class(
                         target_name: node_text(&bc, src),
                         kind: EdgeKind::Inherits,
                         line: bc.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: bc.start_byte() as u32,
@@ -163,6 +167,7 @@ pub(super) fn extract_interface_list(
                 target_name: node_text(&child, src),
                 kind: edge_kind,
                 line: child.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
@@ -245,7 +250,8 @@ pub(super) fn extract_method(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     super::decorators::extract_decorators(node, src, idx, refs);
 
@@ -335,7 +341,8 @@ fn extract_promoted_params(
             doc_comment: None,
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         if let Some(type_node) = type_node_opt {
             extract_type_refs_from_php_type(&type_node, src, refs, prop_idx);
@@ -413,7 +420,8 @@ pub(super) fn extract_function(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract TypeRefs from typed parameters.
     if let Some(params) = node.child_by_field_name("parameters") {
@@ -518,7 +526,8 @@ pub(super) fn extract_property_declaration(
                         doc_comment: None,
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
-                    });
+                                            byte_offset: 0,
+});
                     // Emit TypeRef for the property type hint.
                     if let Some(tn) = type_node_opt {
                         extract_type_refs_from_php_type(&tn, src, refs, prop_idx);
@@ -568,7 +577,8 @@ pub(super) fn extract_const_declaration(
                     doc_comment: None,
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
             }
         }
     }
@@ -604,7 +614,8 @@ pub(super) fn extract_global_static_vars(
                     doc_comment: None,
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
             }
         }
         // `static $cache = []` — static_variable_declaration wraps a `variable_name`.
@@ -626,7 +637,8 @@ pub(super) fn extract_global_static_vars(
                         doc_comment: None,
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
-                    });
+                                            byte_offset: 0,
+});
                 }
             }
         }
@@ -726,7 +738,8 @@ pub(super) fn extract_enum(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // PHP grammar: class_interface_clause is an unnamed child of enum_declaration,
     // not a named field — child_by_field_name("class_implements") always returns None.
@@ -763,6 +776,7 @@ pub(super) fn extract_enum(
                                 doc_comment: None,
                                 scope_path: Some(new_prefix.clone()),
                                 parent_index: Some(idx),
+                                byte_offset: 0,
                             });
                         }
                     }

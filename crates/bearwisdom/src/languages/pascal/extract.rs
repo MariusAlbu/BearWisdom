@@ -540,6 +540,7 @@ pub(super) fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
+    byte_offset: 0,
     }
 }
 

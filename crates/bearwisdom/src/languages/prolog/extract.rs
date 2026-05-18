@@ -217,6 +217,7 @@ fn process_directive(
                 byte_offset,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
+    col: 0,
 });
         }
         return;
@@ -260,6 +261,7 @@ fn process_directive(
                 byte_offset,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
+    col: 0,
 });
         }
         return;
@@ -328,6 +330,7 @@ fn extract_body_goals(
             byte_offset,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
+    col: 0,
 });
     }
 }
@@ -606,5 +609,6 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }

@@ -193,6 +193,7 @@ fn infer_python_variable_type(
         target_name: type_name,
         kind: EdgeKind::TypeRef,
         line: rhs.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: rhs.start_byte() as u32,
@@ -232,7 +233,8 @@ pub(super) fn push_variable_symbol(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 pub(super) fn extract_augmented_assignment(
@@ -256,6 +258,7 @@ pub(super) fn extract_augmented_assignment(
                         target_name: target,
                         kind: EdgeKind::Calls,
                         line: left.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: Some(chain),
                         byte_offset: left.start_byte() as u32,

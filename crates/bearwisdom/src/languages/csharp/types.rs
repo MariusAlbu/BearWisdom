@@ -60,6 +60,7 @@ pub(super) fn extract_base_types(
                             target_name: name,
                             kind,
                             line: base.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: base.start_byte() as u32,
@@ -113,6 +114,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
@@ -130,6 +132,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
@@ -152,6 +155,7 @@ pub(super) fn extract_type_refs_from_type_node(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: child.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
@@ -290,7 +294,8 @@ pub(super) fn extract_csharp_typed_params_as_symbols(
             doc_comment: None,
             scope_path,
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         // Emit a TypeRef from the param symbol to its type.
         extract_type_refs_from_type_node(type_node, src, param_idx, refs);

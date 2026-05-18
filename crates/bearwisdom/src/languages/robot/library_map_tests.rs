@@ -11,6 +11,7 @@ fn import_ref(target: &str) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some(target.to_string()),
         chain: None,
         byte_offset: 1,

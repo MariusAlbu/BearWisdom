@@ -95,6 +95,7 @@ fn walk_node(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: parent_idx,
+                byte_offset: 0,
             });
             walk_children(node, src, symbols, refs, Some(idx));
         }
@@ -136,6 +137,7 @@ fn walk_node(
                         target_name: name,
                         kind: EdgeKind::Imports,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -160,6 +162,7 @@ fn walk_node(
                         target_name: name,
                         kind: EdgeKind::Imports,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -182,6 +185,7 @@ fn walk_node(
                             target_name: name,
                             kind: EdgeKind::Inherits,
                             line: node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: node.start_byte() as u32,
@@ -202,6 +206,7 @@ fn walk_node(
                         target_name: name,
                         kind: EdgeKind::Calls,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -222,6 +227,7 @@ fn walk_node(
                         target_name: name,
                         kind: EdgeKind::Instantiates,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -244,6 +250,7 @@ fn walk_node(
                     target_name: base,
                     kind: EdgeKind::Inherits,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -269,6 +276,7 @@ fn walk_node(
                         doc_comment: None,
                         scope_path: None,
                         parent_index: parent_idx,
+                        byte_offset: 0,
                     });
                 }
                 walk_children(node, src, symbols, refs, parent_idx);
@@ -326,6 +334,7 @@ fn push_named(
         doc_comment: None,
         scope_path: None,
         parent_index: parent_idx,
+        byte_offset: 0,
     });
     idx
 }

@@ -69,6 +69,7 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // Walk for component usages, event handlers, and block references.
@@ -134,6 +135,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             target_name: component_name,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -211,6 +213,7 @@ fn try_extract_on_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) 
         target_name: handler,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -242,6 +245,7 @@ fn extract_svelte_blocks(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
                     target_name: ident,
                     kind: EdgeKind::Calls,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,

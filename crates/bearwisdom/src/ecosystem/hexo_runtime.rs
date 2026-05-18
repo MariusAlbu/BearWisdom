@@ -229,6 +229,7 @@ pub(crate) fn synthesise_hexo_helpers(project_root: &Path) -> Vec<ParsedFile> {
             doc_comment: None,
             scope_path: Some(scope.to_string()),
             parent_index: None,
+            byte_offset: 0,
         });
     }
 

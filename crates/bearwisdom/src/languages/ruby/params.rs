@@ -171,6 +171,7 @@ pub(super) fn extract_rescue(
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,
                                     line: exc.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: exc.start_byte() as u32,
@@ -226,5 +227,6 @@ fn make_param_variable(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index: Some(parent_index),
+        byte_offset: 0,
     }
 }

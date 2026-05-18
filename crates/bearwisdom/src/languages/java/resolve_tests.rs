@@ -24,6 +24,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -38,7 +39,8 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 fn make_import_ref(source_idx: usize, name: &str, module: &str) -> ExtractedRef {
     ExtractedRef {
@@ -46,6 +48,7 @@ fn make_import_ref(source_idx: usize, name: &str, module: &str) -> ExtractedRef 
         target_name: name.to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some(module.to_string()),
         chain: None,
         byte_offset: 1,
@@ -412,6 +415,7 @@ fn make_chain(segments: &[&str]) -> MemberChain {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             })
             .collect(),
     }

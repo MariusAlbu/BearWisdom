@@ -295,5 +295,6 @@ fn push_variable_symbol(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }

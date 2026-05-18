@@ -721,6 +721,7 @@ fn make_symbol(short: &str, qname: &str, sig: &str, line: u32) -> ExtractedSymbo
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -949,6 +950,7 @@ pub fn synth_builtin_rules() -> ParsedFile {
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         })
         .collect();
 

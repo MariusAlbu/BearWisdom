@@ -62,6 +62,7 @@ pub fn extract(source: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     walk(root, src, &mut symbols, &mut refs, None);
@@ -134,6 +135,7 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index: parent_idx,
+        byte_offset: 0,
     });
     Some(idx)
 }
@@ -185,6 +187,7 @@ fn extract_assignment(
         doc_comment: None,
         scope_path: None,
         parent_index: parent_idx,
+        byte_offset: 0,
     });
 
     // Emit a call ref for the RHS callee if applicable.
@@ -221,6 +224,7 @@ fn extract_assignment(
                         target_name,
                         kind: EdgeKind::Calls,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain,
                         byte_offset: fn_node.start_byte() as u32,
@@ -346,6 +350,7 @@ fn extract_call(
                 target_name,
                 kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain,
                 byte_offset: fn_node.start_byte() as u32,
@@ -391,6 +396,7 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -409,6 +415,7 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -447,6 +454,7 @@ fn extract_load_refs(
             target_name: module_label.clone(),
             kind: EdgeKind::Imports,
             line: call_node.start_position().row as u32,
+            col: 0,
             module: Some(module_label.clone()),
             chain: None,
             byte_offset: call_node.start_byte() as u32,
@@ -479,6 +487,7 @@ fn extract_load_refs(
                     target_name: sym,
                     kind: EdgeKind::Imports,
                     line: call_node.start_position().row as u32,
+                    col: 0,
                     module: Some(module_label.clone()),
                     chain: None,
                     byte_offset: call_node.start_byte() as u32,

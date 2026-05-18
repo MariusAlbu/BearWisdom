@@ -172,7 +172,8 @@ fn extract_namespace(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     visit(*node, src, symbols, refs, Some(idx));
 }
@@ -215,7 +216,8 @@ fn extract_module_defn(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if !is_alias {
         visit(*node, src, symbols, refs, Some(idx));
@@ -326,6 +328,7 @@ fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
             target_name: assembly.to_string(),
             kind: EdgeKind::Imports,
             line: line_idx as u32,
+            col: 0,
             module: Some(assembly.to_string()),
             chain: None,
             byte_offset: line_starts.get(line_idx).copied().unwrap_or(0),
@@ -356,6 +359,7 @@ fn extract_open(
         target_name: module.clone(),
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: Some(module),
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -403,7 +407,8 @@ fn extract_let(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Collect calls in the body and recurse for nested let bindings
     collect_applications(node, src, idx, refs);
@@ -511,7 +516,8 @@ fn extract_module_abbrev(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// `exception MyError of string` → Struct symbol named `MyError`.
@@ -544,7 +550,8 @@ fn extract_exception_def(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// `interface IFoo with ...` → Implements edge targeting the interface name.
@@ -579,6 +586,7 @@ pub(super) fn extract_interface_implementation(
                 target_name: iface_name,
                 kind: EdgeKind::Implements,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -615,6 +623,7 @@ pub(super) fn extract_class_inherits(
                 target_name: base_name,
                 kind: EdgeKind::Inherits,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,

@@ -230,6 +230,7 @@ mod tests {
             target_name: target.to_string(),
             kind,
             line: 0,
+            col: 0,
             module: module.map(|s| s.to_string()),
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
@@ -244,6 +245,7 @@ mod tests {
             target_name: target.to_string(),
             kind: EdgeKind::Calls,
             line: 0,
+            col: 0,
             module: None,
             chain: Some(MemberChain {
                 segments: vec![
@@ -254,7 +256,8 @@ mod tests {
                         declared_type: None,
                         type_args: Vec::new(),
                         optional_chaining: false,
-                    },
+                                            byte_offset: 0,
+},
                     ChainSegment {
                         name: target.to_string(),
                         node_kind: "property_identifier".into(),
@@ -262,7 +265,8 @@ mod tests {
                         declared_type: None,
                         type_args: Vec::new(),
                         optional_chaining: false,
-                    },
+                                            byte_offset: 0,
+},
                 ],
             }),
             namespace_segments: Vec::new(),

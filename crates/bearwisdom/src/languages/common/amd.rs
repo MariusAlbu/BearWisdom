@@ -63,7 +63,8 @@ pub fn append_amd_define_imports(
             byte_offset: line_starts.get(line as usize).copied().unwrap_or(0),
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                    col: 0,
+});
     }
 }
 

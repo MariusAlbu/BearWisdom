@@ -89,20 +89,22 @@ fn host(stem: &str) -> ExtractedSymbol {
     ExtractedSymbol { name: stem.into(), qualified_name: stem.into(),
         kind: SymbolKind::Class, visibility: Some(Visibility::Public),
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None }
+        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0 }
 }
 fn field(stem: &str, name: &str, line: u32, sig: &str) -> ExtractedSymbol {
     ExtractedSymbol { name: name.into(), qualified_name: format!("{stem}.{name}"),
         kind: SymbolKind::Field, visibility: Some(Visibility::Public),
         start_line: line, end_line: line, start_col: 0, end_col: 0,
         signature: Some(sig.into()), doc_comment: None,
-        scope_path: Some(stem.into()), parent_index: Some(0) }
+        scope_path: Some(stem.into()), parent_index: Some(0),
+        byte_offset: 0 }
 }
 fn imports_ref(name: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     let p = std::path::Path::new(name);
     let target = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
     ExtractedRef { source_symbol_index: 0, target_name: target,
-        kind: EdgeKind::Imports, line, module: None,
+        kind: EdgeKind::Imports, line, col: 0, module: None,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
         chain: None,

@@ -246,6 +246,7 @@ pub(super) fn push_sym(
         doc_comment: None,
         scope_path: None,
         parent_index: parent_idx,
+        byte_offset: 0,
     });
     idx
 }

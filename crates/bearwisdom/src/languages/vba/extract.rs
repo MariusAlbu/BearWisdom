@@ -222,6 +222,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                     target_name: target,
                     kind: EdgeKind::Calls,
                     line: row,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: line_starts.get(lineno).copied().unwrap_or(0),
@@ -533,5 +534,6 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
+        byte_offset: 0,
     }
 }

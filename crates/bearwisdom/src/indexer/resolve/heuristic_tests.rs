@@ -50,6 +50,7 @@ fn make_sym_kind(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -98,6 +99,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         target_name: "NS".to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some("NS".to_string()),
         chain: None,
         byte_offset: 1,
@@ -109,6 +111,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         target_name: "Foo".to_string(),
         kind: EdgeKind::TypeRef,
         line: 5,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,

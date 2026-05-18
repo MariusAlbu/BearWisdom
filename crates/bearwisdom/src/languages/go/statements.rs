@@ -103,7 +103,8 @@ pub(super) fn extract_short_var_decl(
             doc_comment: None,
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         // If the corresponding RHS value is a call_expression, emit a
         // chain-bearing TypeRef so the resolution engine can follow the chain.
@@ -125,6 +126,7 @@ pub(super) fn extract_short_var_decl(
                                     target_name: target,
                                     kind: EdgeKind::TypeRef,
                                     line: rhs_node.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: Some(chain),
                                     byte_offset: rhs_node.start_byte() as u32,
@@ -141,6 +143,7 @@ pub(super) fn extract_short_var_decl(
                                     target_name: target,
                                     kind: EdgeKind::TypeRef,
                                     line: rhs_node.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: rhs_node.start_byte() as u32,
@@ -174,6 +177,7 @@ pub(super) fn extract_short_var_decl(
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,
                                     line: rhs_node.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: rhs_node.start_byte() as u32,
@@ -358,6 +362,7 @@ fn extract_const_var_spec(
                 target_name: t.clone(),
                 kind: EdgeKind::TypeRef,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -390,7 +395,8 @@ fn extract_const_var_spec(
             doc_comment: extract_go_doc_comment(node, source),
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         // When the declared type is an anonymous struct, extract its fields as
         // Field symbols scoped to the variable (e.g. `var opts struct{ Verbose bool }`

@@ -46,7 +46,8 @@ pub(super) fn push_class(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -83,7 +84,8 @@ pub(super) fn push_interface(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -129,7 +131,8 @@ pub(super) fn push_function(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -176,7 +179,8 @@ pub(super) fn push_construct_signature(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -222,7 +226,8 @@ pub(super) fn push_call_signature(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -274,7 +279,8 @@ pub(super) fn push_method(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -313,7 +319,8 @@ pub(super) fn push_enum(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Enum members.
     if let Some(body) = node.child_by_field_name("body") {
@@ -343,6 +350,7 @@ pub(super) fn push_enum(
                         doc_comment: None,
                         scope_path: Some(qualified_name.clone()),
                         parent_index: Some(idx),
+                        byte_offset: 0,
                     });
                 }
             }
@@ -386,7 +394,8 @@ pub(super) fn push_type_alias(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract TypeRef from type alias value: `type UserId = string`
     if let Some(value) = node.child_by_field_name("value") {
@@ -431,7 +440,8 @@ pub(super) fn push_namespace(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -489,7 +499,8 @@ pub(super) fn push_index_signature(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract TypeRef from the value type annotation (the type after the closing `]:`).
     // The index_signature has a `type` field for the value type in tree-sitter.

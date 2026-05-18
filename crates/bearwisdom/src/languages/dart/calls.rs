@@ -78,6 +78,7 @@ pub(super) fn emit_dart_type_ref(
             target_name: name,
             kind: EdgeKind::TypeRef,
             line: type_node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: type_node.start_byte() as u32,
@@ -143,6 +144,7 @@ pub(super) fn extract_dart_calls(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: child.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain,
                             byte_offset: child.start_byte() as u32,
@@ -205,6 +207,7 @@ pub(super) fn extract_dart_calls(
                             target_name: name,
                             kind: EdgeKind::Calls,
                             line: child.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
@@ -362,6 +365,7 @@ fn extract_postfix_call(
             target_name: target,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -466,6 +470,7 @@ fn extract_inline_call_from_statement(
             target_name: target,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -535,6 +540,7 @@ fn extract_new_expression_ref(
                 target_name: name,
                 kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -555,6 +561,7 @@ fn extract_new_expression_ref(
                     target_name: name,
                     kind: EdgeKind::Calls,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -612,6 +619,7 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -624,6 +632,7 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -636,6 +645,7 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -665,6 +675,7 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -689,6 +700,7 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -801,6 +813,7 @@ pub(super) fn extract_const_object_refs(
                         target_name: name,
                         kind: EdgeKind::Instantiates,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,

@@ -122,7 +122,8 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -152,7 +153,8 @@ fn extract_external_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -182,7 +184,8 @@ fn extract_type_def(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -212,7 +215,8 @@ fn extract_type_alias(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -251,7 +255,8 @@ fn extract_data_constructors(
                         doc_comment: None,
                         scope_path: None,
                         parent_index,
-                    });
+                                            byte_offset: 0,
+});
                 }
             }
         }
@@ -284,7 +289,8 @@ fn extract_external_type(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -354,7 +360,8 @@ fn extract_constant(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -400,6 +407,7 @@ fn extract_import(
         target_name: target,
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: Some(module_text),
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -463,6 +471,7 @@ fn extract_call_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         target_name: name,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -510,6 +519,7 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
                     target_name: name,
                     kind: EdgeKind::Calls,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -534,6 +544,7 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
             target_name: op_text,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,

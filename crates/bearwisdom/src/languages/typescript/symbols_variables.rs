@@ -57,7 +57,8 @@ pub(super) fn push_variable_decl(
                         doc_comment: None,
                         scope_path: scope_path.clone(),
                         parent_index,
-                    });
+                                            byte_offset: 0,
+});
 
                     // Extract TypeRef from variable type annotation: `const repo: Repository`
                     if let Some(type_ann) = child.child_by_field_name("type") {
@@ -90,6 +91,7 @@ pub(super) fn push_variable_decl(
                                             target_name: target,
                                             kind: EdgeKind::TypeRef,
                                             line: init_node.start_position().row as u32,
+                                            col: 0,
                                             module: None,
                                             chain: Some(chain),
                                             byte_offset: init_node.start_byte() as u32,
@@ -114,6 +116,7 @@ pub(super) fn push_variable_decl(
                                         target_name: type_name,
                                         kind: EdgeKind::TypeRef,
                                         line: init_node.start_position().row as u32,
+                                        col: 0,
                                         module: None,
                                         chain: None,
                                         byte_offset: constructor.start_byte() as u32,
@@ -136,6 +139,7 @@ pub(super) fn push_variable_decl(
                                         target_name: target,
                                         kind: EdgeKind::TypeRef,
                                         line: init_node.start_position().row as u32,
+                                        col: 0,
                                         module: None,
                                         chain: Some(chain),
                                         byte_offset: init_node.start_byte() as u32,
@@ -234,7 +238,8 @@ pub(super) fn push_variable_decl(
                             doc_comment: None,
                             scope_path: scope_path.clone(),
                             parent_index,
-                        });
+                                                    byte_offset: 0,
+});
 
                         // Emit chain to source with property name appended so the
                         // index builder can resolve the type of this property.
@@ -247,12 +252,14 @@ pub(super) fn push_variable_decl(
                                 declared_type: None,
                                 type_args: vec![],
                                 optional_chaining: false,
+                                byte_offset: 0,
                             });
                             refs.push(ExtractedRef {
                                 source_symbol_index: prop_idx,
                                 target_name: source_prop,
                                 kind: EdgeKind::TypeRef,
                                 line: prop.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: Some(prop_chain),
                                 byte_offset: prop.start_byte() as u32,
@@ -347,7 +354,8 @@ pub(super) fn push_variable_decl(
                             doc_comment: None,
                             scope_path: scope_path.clone(),
                             parent_index,
-                        });
+                                                    byte_offset: 0,
+});
 
                         // Rest elements (`...rest`) bind an array of the
                         // remaining tuple elements — tuple-index inference
@@ -368,12 +376,14 @@ pub(super) fn push_variable_decl(
                                     declared_type: None,
                                     type_args: vec![],
                                     optional_chaining: false,
+                                    byte_offset: 0,
                                 });
                                 refs.push(ExtractedRef {
                                     source_symbol_index: elem_sym_idx,
                                     target_name: elem_name,
                                     kind: EdgeKind::TypeRef,
                                     line: elem_node.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: Some(elem_chain),
                                     byte_offset: elem_node.start_byte() as u32,

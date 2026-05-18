@@ -97,7 +97,8 @@ pub(super) fn push_misparsed_class(
         doc_comment: super::helpers::extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -134,6 +135,7 @@ pub(super) fn emit_misparsed_base_class_refs(
                     target_name: text.to_string(),
                     kind: EdgeKind::Inherits,
                     line: inner.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: inner.start_byte() as u32,

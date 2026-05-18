@@ -47,7 +47,8 @@ pub(super) fn extract_calls(
                                 byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                            });
+                                    col: 0,
+                                });
                         }
                     }
                     // import('foo') — dynamic import → Imports edge
@@ -63,7 +64,8 @@ pub(super) fn extract_calls(
                                 byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                            });
+                                    col: 0,
+                                });
                         }
                     }
                     // Regular call — emit with chain for member access resolution.
@@ -92,7 +94,8 @@ pub(super) fn extract_calls(
                                 byte_offset: func_node.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                            });
+                                    col: 0,
+                                });
                         }
                     }
                 }
@@ -114,7 +117,8 @@ pub(super) fn extract_calls(
                             byte_offset: constructor.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                col: 0,
+                            });
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -135,7 +139,8 @@ pub(super) fn extract_calls(
                             byte_offset: tag.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                col: 0,
+                            });
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -187,7 +192,8 @@ pub(super) fn extract_calls(
                             byte_offset: tag_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                col: 0,
+                            });
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -283,7 +289,8 @@ pub(super) fn emit_call_ref_js(
                 byte_offset: call_node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-            });
+                    col: 0,
+                });
         }
     } else if callee == "import" {
         if let Some(module) = extract_first_string_arg(call_node, src) {
@@ -297,7 +304,8 @@ pub(super) fn emit_call_ref_js(
                 byte_offset: call_node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-            });
+                    col: 0,
+                });
         }
     } else if !callee.is_empty() && !is_js_keyword(&callee) {
         // Parameter-shadow filter: `(setter) => setter(e.target.value)`
@@ -331,7 +339,8 @@ pub(super) fn emit_call_ref_js(
             byte_offset: func_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                col: 0,
+            });
     }
 }
 
@@ -487,6 +496,7 @@ pub(super) fn emit_new_ref_js(
             byte_offset: constructor.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                col: 0,
+            });
     }
 }

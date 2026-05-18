@@ -312,6 +312,7 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     let class_index = 0usize;
 
@@ -347,6 +348,7 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
+            byte_offset: 0,
         });
     }
 
@@ -367,6 +369,7 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
+            byte_offset: 0,
         });
     }
 
@@ -382,6 +385,7 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
+            byte_offset: 0,
         });
     }
 
@@ -397,6 +401,7 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
+            byte_offset: 0,
         });
     }
 
@@ -412,6 +417,7 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
+            byte_offset: 0,
         });
         for value in iter_array(en, "values") {
             let Some(v_name) = value.get("name").and_then(|v| v.as_str()) else { continue };
@@ -425,6 +431,7 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
                 doc_comment: None,
                 scope_path: Some(format!("{name}.{e_name}")),
                 parent_index: None,
+                byte_offset: 0,
             });
         }
     }
@@ -448,6 +455,7 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 
@@ -482,6 +490,7 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 
@@ -497,6 +506,7 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
         for value in iter_array(enu, "values") {
             let Some(v_name) = value.get("name").and_then(|v| v.as_str()) else { continue };
@@ -510,6 +520,7 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
                 doc_comment: None,
                 scope_path: Some(name.to_string()),
                 parent_index: None,
+                byte_offset: 0,
             });
             // Godot convention: enum values ALSO act as global constants
             // (e.g. `SIDE_LEFT`). Emit a top-level variable so project code
@@ -524,6 +535,7 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
         }
     }
@@ -540,6 +552,7 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 

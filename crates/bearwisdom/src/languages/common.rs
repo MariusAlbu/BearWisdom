@@ -44,6 +44,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -56,6 +57,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -79,6 +81,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: is_optional,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -96,6 +99,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -255,6 +259,7 @@ pub fn emit_chain_type_ref(
             target_name: type_seg.name.clone(),
             kind: crate::types::EdgeKind::TypeRef,
             line: func_node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: func_node.start_byte() as u32,

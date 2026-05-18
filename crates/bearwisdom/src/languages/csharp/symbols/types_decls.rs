@@ -44,7 +44,8 @@ pub(in super::super) fn push_namespace(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -97,7 +98,8 @@ pub(in super::super) fn push_type_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -158,6 +160,7 @@ pub(in super::super) fn extract_record_primary_params(
             doc_comment: None,
             scope_path,
             parent_index: Some(record_sym_idx),
+            byte_offset: 0,
         });
     }
 }
@@ -194,7 +197,8 @@ pub(in super::super) fn push_enum_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract enum members.
     if let Some(body) = node.child_by_field_name("body") {
@@ -217,6 +221,7 @@ pub(in super::super) fn push_enum_decl(
                         doc_comment: extract_doc_comment(&member, src),
                         scope_path: Some(qualified_name.clone()),
                         parent_index: Some(idx),
+                        byte_offset: 0,
                     });
                 }
             }

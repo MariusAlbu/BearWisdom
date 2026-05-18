@@ -59,6 +59,7 @@ pub fn append_ember_helper_default_export(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -176,6 +177,7 @@ pub fn append_handlebars_register_helper_globals(
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }

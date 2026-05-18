@@ -97,7 +97,8 @@ pub fn push_import_refs(
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-            });
+                            col: 0,
+});
         }
     }
 
@@ -129,7 +130,8 @@ pub fn push_import_refs(
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-            });
+                            col: 0,
+});
         }
     }
 }
@@ -151,6 +153,7 @@ fn emit_clause_refs(
                     target_name: text_of(item, src),
                     kind: EdgeKind::TypeRef,
                     line: item.start_position().row as u32,
+                    col: 0,
                     module: module_path.clone(),
                     chain: None,
                     byte_offset: item.start_byte() as u32,
@@ -176,6 +179,7 @@ fn emit_clause_refs(
                         target_name: imported_name,
                         kind: EdgeKind::TypeRef,
                         line: spec.start_position().row as u32,
+                        col: 0,
                         module: module_path.clone(),
                         chain: None,
                         byte_offset: spec.start_byte() as u32,
@@ -194,6 +198,7 @@ fn emit_clause_refs(
                             target_name: text_of(ns_child, src),
                             kind: EdgeKind::TypeRef,
                             line: ns_child.start_position().row as u32,
+                            col: 0,
                             module: module_path.clone(),
                             chain: None,
                             byte_offset: ns_child.start_byte() as u32,
@@ -237,6 +242,7 @@ fn emit_require_clause_ref(
             target_name: local_name,
             kind: EdgeKind::Imports,
             line: clause.start_position().row as u32,
+            col: 0,
             module: require_module,
             chain: None,
             byte_offset: clause.start_byte() as u32,

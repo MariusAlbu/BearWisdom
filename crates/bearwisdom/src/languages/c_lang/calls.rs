@@ -87,6 +87,7 @@ pub(super) fn extract_calls_from_body(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: fn_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain,
                             byte_offset: fn_node.start_byte() as u32,
@@ -136,6 +137,7 @@ pub(super) fn extract_calls_from_body(
                                             target_name: name,
                                             kind: EdgeKind::TypeRef,
                                             line: pchild.start_position().row as u32,
+                                            col: 0,
                                             module: None,
                                             chain: None,
                                             byte_offset: pchild.start_byte() as u32,
@@ -169,6 +171,7 @@ pub(super) fn extract_calls_from_body(
                                     target_name: name.clone(),
                                     kind: EdgeKind::Instantiates,
                                     line: inner.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: inner.start_byte() as u32,
@@ -180,6 +183,7 @@ pub(super) fn extract_calls_from_body(
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
                                     line: inner.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: inner.start_byte() as u32,
@@ -198,6 +202,7 @@ pub(super) fn extract_calls_from_body(
                                             target_name: name.clone(),
                                             kind: EdgeKind::Instantiates,
                                             line: name_node.start_position().row as u32,
+                                            col: 0,
                                             module: None,
                                             chain: None,
                                             byte_offset: name_node.start_byte() as u32,
@@ -209,6 +214,7 @@ pub(super) fn extract_calls_from_body(
                                             target_name: name,
                                             kind: EdgeKind::TypeRef,
                                             line: name_node.start_position().row as u32,
+                                            col: 0,
                                             module: None,
                                             chain: None,
                                             byte_offset: name_node.start_byte() as u32,
@@ -302,6 +308,7 @@ fn extract_lambda_param_typerefs(
                                         target_name: name,
                                         kind: EdgeKind::TypeRef,
                                         line: inner.start_position().row as u32,
+                                        col: 0,
                                         module: None,
                                         chain: None,
                                         byte_offset: inner.start_byte() as u32,
@@ -340,6 +347,7 @@ fn extract_catch_typerefs(
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
                                 line: inner.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: inner.start_byte() as u32,
@@ -358,6 +366,7 @@ fn extract_catch_typerefs(
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
                                     line: name_node.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: name_node.start_byte() as u32,
@@ -404,6 +413,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -416,6 +426,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -438,6 +449,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args,
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -457,6 +469,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args,
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -478,6 +491,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 declared_type: None,
                 type_args,
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }

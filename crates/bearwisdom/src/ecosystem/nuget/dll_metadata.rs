@@ -352,6 +352,7 @@ fn parse_dotnet_dll(
             doc_comment: None,
             scope_path: if namespace.is_empty() { None } else { Some(namespace.clone()) },
             parent_index: None,
+            byte_offset: 0,
         });
 
         for (_, method_ref) in type_def.methods.iter() {
@@ -383,6 +384,7 @@ fn parse_dotnet_dll(
                 doc_comment: None,
                 scope_path: Some(qualified_name.clone()),
                 parent_index: None,
+                byte_offset: 0,
             });
         }
     }

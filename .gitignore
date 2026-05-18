@@ -28,3 +28,4 @@ benchmark.md
 CLAUDE.md
 !crates/**/CLAUDE.md
 .r-lib-cache/
+.tmp/*

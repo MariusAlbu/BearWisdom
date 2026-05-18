@@ -12,6 +12,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         kind: SymbolKind::Class, visibility: Some(Visibility::Public),
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     }];
     let host_index = 0usize;
     let mut refs: Vec<ExtractedRef> = Vec::new();
@@ -36,6 +37,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         doc_comment: None,
                         scope_path: Some(stem.clone()),
                         parent_index: Some(host_index),
+                        byte_offset: 0,
                     });
                 }
             }
@@ -46,6 +48,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     target_name: strip_ext(&file),
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
+                    col: 0,
                     module: None, chain: None,
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),
@@ -59,6 +62,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     target_name: strip_ext(&file),
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
+                    col: 0,
                     module: None, chain: None,
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),

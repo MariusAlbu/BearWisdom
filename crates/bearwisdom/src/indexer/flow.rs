@@ -304,6 +304,7 @@ fn run_type_args_query(
         declared_type: None,
         type_args: Vec::new(),
         optional_chaining: false,
+        byte_offset: 0,
     };
 }
 

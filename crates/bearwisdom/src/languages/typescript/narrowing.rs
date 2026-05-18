@@ -99,6 +99,7 @@ fn emit_type_ref_for_type_node(
         target_name: type_name,
         kind: EdgeKind::TypeRef,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,

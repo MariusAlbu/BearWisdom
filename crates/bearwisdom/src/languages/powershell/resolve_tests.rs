@@ -212,6 +212,7 @@ fn make_member_ref(target: &str, module: &str, kind: EdgeKind) -> ExtractedRef {
         target_name: target.to_string(),
         kind,
         line: 5,
+        col: 0,
         module: Some(module.to_string()),
         chain: None,
         byte_offset: 1,
@@ -234,6 +235,7 @@ fn make_source_sym() -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -301,6 +303,7 @@ fn test_infer_external_ns_cmdlet_no_module() {
         target_name: "Write-Host".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,

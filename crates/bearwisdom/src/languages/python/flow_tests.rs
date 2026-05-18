@@ -28,6 +28,7 @@ fn make_chain(segments: &[&str]) -> MemberChain {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             })
             .collect(),
     }

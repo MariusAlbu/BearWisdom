@@ -42,6 +42,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     let host_index = 0usize;
 
@@ -55,6 +56,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             target_name: sr.url.clone(),
             kind: EdgeKind::Imports,
             line: sr.line,
+            col: 0,
             module: Some(sr.url),
             chain: None,
             byte_offset: sr.byte_offset,
@@ -128,6 +130,7 @@ fn collect_anchors(
                     doc_comment: None,
                     scope_path: Some(file_name.to_string()),
                     parent_index: Some(host_index),
+                    byte_offset: 0,
                 });
             }
         }

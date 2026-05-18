@@ -60,7 +60,8 @@ pub(super) fn extract_class(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Inheritance: `class Foo < Bar`
     if let Some(superclass_node) = node.child_by_field_name("superclass") {
@@ -83,6 +84,7 @@ pub(super) fn extract_class(
             target_name: super_name,
             kind: EdgeKind::Inherits,
             line: superclass_node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: superclass_node.start_byte() as u32,
@@ -131,7 +133,8 @@ pub(super) fn extract_module(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(body) = node.child_by_field_name("body") {
         super::extract::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, false);
@@ -183,7 +186,8 @@ pub(super) fn extract_method(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract parameter names as Variable symbols scoped to this method.
     if let Some(params_node) = node.child_by_field_name("parameters") {
@@ -230,7 +234,8 @@ pub(super) fn extract_singleton_method(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract parameter names as Variable symbols.
     if let Some(params_node) = node.child_by_field_name("parameters") {
@@ -285,7 +290,8 @@ pub(super) fn extract_singleton_class(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     if let Some(body) = node.child_by_field_name("body") {
         super::extract::extract_from_node(body, src, symbols, refs, Some(idx), qualified_prefix, true);
@@ -327,6 +333,7 @@ pub(super) fn extract_call_statement(
                                 target_name: name,
                                 kind: EdgeKind::Implements,
                                 line: arg.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: arg.start_byte() as u32,
@@ -357,6 +364,7 @@ pub(super) fn extract_call_statement(
                             target_name: assoc_name,
                             kind: EdgeKind::TypeRef,
                             line: arg.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: arg.start_byte() as u32,
@@ -380,6 +388,7 @@ pub(super) fn extract_call_statement(
                                 target_name: recv_text,
                                 kind: EdgeKind::Instantiates,
                                 line: node.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
@@ -392,6 +401,7 @@ pub(super) fn extract_call_statement(
                                 target_name: mname.to_string(),
                                 kind: EdgeKind::Calls,
                                 line: node.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
@@ -406,6 +416,7 @@ pub(super) fn extract_call_statement(
                         target_name: mname.to_string(),
                         kind: EdgeKind::Calls,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -461,6 +472,7 @@ fn extract_require(
                     target_name: target,
                     kind: EdgeKind::Imports,
                     line: arg.start_position().row as u32,
+                    col: 0,
                     module,
                     chain: None,
                     byte_offset: arg.start_byte() as u32,
@@ -523,7 +535,8 @@ fn extract_attr_macro(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     }
 }

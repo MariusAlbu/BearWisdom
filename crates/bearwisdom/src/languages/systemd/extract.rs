@@ -9,6 +9,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         kind: SymbolKind::Class, visibility: Some(Visibility::Public),
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        byte_offset: 0,
     }];
     let mut current_section: Option<String> = None;
     for (line_no, line) in source.lines().enumerate() {
@@ -32,6 +33,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     signature: None, doc_comment: None,
                     scope_path: Some(scope),
                     parent_index: Some(0),
+                    byte_offset: 0,
                 });
             }
         }

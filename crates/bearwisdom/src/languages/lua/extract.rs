@@ -153,7 +153,8 @@ fn extract_function_declaration(
         doc_comment: None,
         scope_path: scope,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -189,7 +190,8 @@ fn extract_local_function(
         doc_comment: None,
         scope_path: scope,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -266,7 +268,8 @@ fn extract_variable_declaration(
                     doc_comment: None,
                     scope_path: scope,
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
                 extract_table_fields(&rhs_node, src, idx, symbols, refs);
                 return Some(idx);
             }
@@ -294,7 +297,8 @@ fn extract_variable_declaration(
         doc_comment: None,
         scope_path: scope,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -367,7 +371,8 @@ fn extract_assignment_statement(
                 doc_comment: None,
                 scope_path: scope,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             Some(idx)
         }
         "identifier" => {
@@ -396,7 +401,8 @@ fn extract_assignment_statement(
                             doc_comment: None,
                             scope_path: scope,
                             parent_index,
-                        });
+                                                    byte_offset: 0,
+});
                         extract_table_fields(&rhs_node, src, idx, symbols, refs);
                         return Some(idx);
                     }
@@ -423,7 +429,8 @@ fn extract_assignment_statement(
                 doc_comment: None,
                 scope_path: scope,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             Some(idx)
         }
         _ => {
@@ -451,7 +458,8 @@ fn extract_assignment_statement(
                 doc_comment: None,
                 scope_path: scope,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             Some(idx)
         }
     }
@@ -502,6 +510,7 @@ fn extract_table_fields(
             doc_comment: None,
             scope_path: None,
             parent_index: Some(parent_idx),
+            byte_offset: 0,
         });
     }
 }
@@ -543,6 +552,7 @@ fn extract_function_call(
                         byte_offset: call_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
+    col: 0,
 });
                 }
             } else if name == "setmetatable" {
@@ -559,6 +569,7 @@ fn extract_function_call(
                     byte_offset: call_byte_offset,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
+    col: 0,
 });
                 if let Some(parent) = extract_setmetatable_parent(node, src) {
                     refs.push(ExtractedRef {
@@ -571,6 +582,7 @@ fn extract_function_call(
                         byte_offset: call_byte_offset,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
+    col: 0,
 });
                 }
             } else if !name.is_empty() {
@@ -584,6 +596,7 @@ fn extract_function_call(
                     byte_offset: call_byte_offset,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
+    col: 0,
 });
             }
         }
@@ -600,6 +613,7 @@ fn extract_function_call(
                     byte_offset: call_byte_offset,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
+    col: 0,
 });
             }
         }
@@ -616,6 +630,7 @@ fn extract_function_call(
                     byte_offset: call_byte_offset,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
+    col: 0,
 });
             }
         }
@@ -829,6 +844,7 @@ fn extract_all_fields(
             doc_comment: None,
             scope_path: None,
             parent_index: Some(parent_idx),
+            byte_offset: 0,
         });
     }
 }

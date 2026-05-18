@@ -30,6 +30,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }];
 
     let refs = collect_include_refs(source);
@@ -131,7 +132,8 @@ fn collect_include_refs(source: &str) -> Vec<ExtractedRef> {
                 byte_offset: absolute as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-            });
+                            col: 0,
+});
         }
         i = k + 1;
     }

@@ -233,6 +233,7 @@ fn extract_inner(
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 
@@ -825,6 +826,7 @@ fn extract_node(
                                 target_name: type_name,
                                 kind: EdgeKind::TypeRef,
                                 line: right.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: right.start_byte() as u32,
@@ -873,6 +875,7 @@ fn extract_node(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -896,6 +899,7 @@ fn extract_node(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,

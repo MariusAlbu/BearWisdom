@@ -29,6 +29,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -43,7 +44,8 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 /// Make an import binding ref — the TS extractor emits these as TypeRef with module set.
 fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> ExtractedRef {
@@ -57,7 +59,8 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 fn make_ts_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
@@ -1000,7 +1003,8 @@ fn make_reexport_ref(source_idx: usize, exported_name: &str, from_module: &str, 
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 #[test]
 fn test_barrel_named_reexport() {
@@ -1720,6 +1724,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
         target_name: "QuickCreateButton".to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some("./quick-create-button".to_string()),
         chain: None,
         byte_offset: 1,
@@ -1955,6 +1960,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
         target_name: "Trans".to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some("react-i18next".to_string()),
         chain: None,
         byte_offset: 1,
@@ -2108,6 +2114,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         doc_comment: None,
         scope_path: Some("chai".to_string()),
         parent_index: None,
+        byte_offset: 0,
     };
     let chai_tobe_sym = ExtractedSymbol {
         name: "toBe".to_string(),
@@ -2122,6 +2129,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         doc_comment: None,
         scope_path: Some("chai.Assertion".to_string()),
         parent_index: None,
+        byte_offset: 0,
     };
     // Return-type refs: chai.expect → chai.Assertion, chai.Assertion.toBe → chai.Assertion
     let expect_rt_ref = ExtractedRef {
@@ -2129,6 +2137,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         target_name: "chai.Assertion".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -2140,6 +2149,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         target_name: "chai.Assertion".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -2177,6 +2187,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         target_name: "toBe".to_string(),
         kind: EdgeKind::Calls,
         line: 5,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -2187,7 +2198,8 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "toBe".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -2195,7 +2207,8 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -2207,6 +2220,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         target_name: "expect".to_string(),
         kind: EdgeKind::TypeRef,
         line: 1,
+        col: 0,
         module: Some("chai".to_string()),
         chain: None,
         byte_offset: 1,
@@ -2284,6 +2298,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         signature: None, doc_comment: None,
         scope_path: Some("chai".to_string()),
         parent_index: None,
+        byte_offset: 0,
     };
     let chai_matcher_sym = ExtractedSymbol {
         name: "toHaveBeenCalledOnce".to_string(),
@@ -2295,6 +2310,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         doc_comment: None,
         scope_path: Some("chai.Assertion".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     // __npm_globals__.expect → return_type = "chai.Assertion"
     let npm_globals_expect_sym = ExtractedSymbol {
@@ -2307,6 +2323,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         doc_comment: None,
         scope_path: Some("__npm_globals__".to_string()),
         parent_index: None,
+        byte_offset: 0,
     };
     // TypeRef: __npm_globals__.expect → chai.Assertion
     let globals_expect_ref = ExtractedRef {
@@ -2314,6 +2331,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         target_name: "chai.Assertion".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0, module: None, chain: None, byte_offset: 1,
+        col: 0,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
@@ -2344,6 +2362,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         target_name: "toHaveBeenCalledOnce".to_string(),
         kind: EdgeKind::Calls,
         line: 10,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -2354,7 +2373,8 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "toHaveBeenCalledOnce".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -2362,7 +2382,8 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -2459,6 +2480,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     };
     let map_get = ExtractedSymbol {
         name: "get".to_string(),
@@ -2473,6 +2495,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         doc_comment: None,
         scope_path: Some("Map".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     let synth_file = ParsedFile {
         path: "ext:ts:lib/__bw_synthetic__.d.ts".to_string(),
@@ -2528,6 +2551,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         doc_comment: None,
         scope_path: Some("UserManager".to_string()),
         parent_index: Some(2),
+        byte_offset: 0,
     };
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
@@ -2542,6 +2566,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         doc_comment: None,
         scope_path: Some("UserManager".to_string()),
         parent_index: Some(2),
+        byte_offset: 0,
     };
 
     // TypeRef from UserManager.users → "UserMap" — the engine reads this
@@ -2551,6 +2576,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         target_name: "UserMap".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -2564,6 +2590,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -2574,7 +2601,8 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "users".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -2582,7 +2610,8 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "get".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -2590,7 +2619,8 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -2685,6 +2715,7 @@ fn alias_expansion_handles_array_type_form() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     };
     let array_map = ExtractedSymbol {
         name: "map".to_string(),
@@ -2699,6 +2730,7 @@ fn alias_expansion_handles_array_type_form() {
         doc_comment: None,
         scope_path: Some("Array".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     let synth_file = ParsedFile {
         path: "ext:ts:lib/__bw_synthetic_arr__.d.ts".to_string(),
@@ -2746,6 +2778,7 @@ fn alias_expansion_handles_array_type_form() {
         doc_comment: None,
         scope_path: Some("C".to_string()),
         parent_index: Some(1),
+        byte_offset: 0,
     };
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
@@ -2760,6 +2793,7 @@ fn alias_expansion_handles_array_type_form() {
         doc_comment: None,
         scope_path: Some("C".to_string()),
         parent_index: Some(1),
+        byte_offset: 0,
     };
 
     let ns_typeref = ExtractedRef {
@@ -2767,6 +2801,7 @@ fn alias_expansion_handles_array_type_form() {
         target_name: "Numbers".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -2779,6 +2814,7 @@ fn alias_expansion_handles_array_type_form() {
         target_name: "map".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -2789,7 +2825,8 @@ fn alias_expansion_handles_array_type_form() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "ns".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -2797,7 +2834,8 @@ fn alias_expansion_handles_array_type_form() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "map".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -2805,7 +2843,8 @@ fn alias_expansion_handles_array_type_form() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -2896,6 +2935,7 @@ fn alias_expansion_refuses_union_aliases() {
         doc_comment: None,
         scope_path: Some("C".to_string()),
         parent_index: Some(1),
+        byte_offset: 0,
     };
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
@@ -2910,6 +2950,7 @@ fn alias_expansion_refuses_union_aliases() {
         doc_comment: None,
         scope_path: Some("C".to_string()),
         parent_index: Some(1),
+        byte_offset: 0,
     };
 
     let s_typeref = ExtractedRef {
@@ -2917,6 +2958,7 @@ fn alias_expansion_refuses_union_aliases() {
         target_name: "Status".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -2929,6 +2971,7 @@ fn alias_expansion_refuses_union_aliases() {
         target_name: "foo".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -2939,7 +2982,8 @@ fn alias_expansion_refuses_union_aliases() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "s".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -2947,7 +2991,8 @@ fn alias_expansion_refuses_union_aliases() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "foo".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -2955,7 +3000,8 @@ fn alias_expansion_refuses_union_aliases() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -3032,6 +3078,7 @@ fn typeof_alias_dereferences_to_value_type() {
         doc_comment: None,
         scope_path: Some("User".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     // The value `api: User`. Variable kind so the engine reads the
     // first TypeRef into `field_type["api"] = "User"`.
@@ -3048,12 +3095,14 @@ fn typeof_alias_dereferences_to_value_type() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     };
     let api_typeref = ExtractedRef {
         source_symbol_index: 2, // api_value
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3082,6 +3131,7 @@ fn typeof_alias_dereferences_to_value_type() {
         doc_comment: None,
         scope_path: Some("C".to_string()),
         parent_index: Some(4),
+        byte_offset: 0,
     };
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
@@ -3096,6 +3146,7 @@ fn typeof_alias_dereferences_to_value_type() {
         doc_comment: None,
         scope_path: Some("C".to_string()),
         parent_index: Some(4),
+        byte_offset: 0,
     };
 
     let a_typeref = ExtractedRef {
@@ -3103,6 +3154,7 @@ fn typeof_alias_dereferences_to_value_type() {
         target_name: "ApiType".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3115,6 +3167,7 @@ fn typeof_alias_dereferences_to_value_type() {
         target_name: "greet".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -3125,7 +3178,8 @@ fn typeof_alias_dereferences_to_value_type() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "a".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3133,7 +3187,8 @@ fn typeof_alias_dereferences_to_value_type() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "greet".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3141,7 +3196,8 @@ fn typeof_alias_dereferences_to_value_type() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -3231,6 +3287,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     };
     let user_greet = ExtractedSymbol {
         name: "greet".to_string(),
@@ -3245,6 +3302,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         doc_comment: None,
         scope_path: Some("User".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     // Partial<T> alias — generic param T captured via signature.
     let partial_alias = ExtractedSymbol {
@@ -3260,6 +3318,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     };
     let c_class = make_symbol("C", "C", SymbolKind::Class, Visibility::Public, None);
     // `p: Partial<User>` — engine sees TypeRef(Partial) followed by
@@ -3278,6 +3337,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         doc_comment: None,
         scope_path: Some("C".to_string()),
         parent_index: Some(3),
+        byte_offset: 0,
     };
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
@@ -3292,6 +3352,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         doc_comment: None,
         scope_path: Some("C".to_string()),
         parent_index: Some(3),
+        byte_offset: 0,
     };
 
     let p_typeref_partial = ExtractedRef {
@@ -3299,6 +3360,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         target_name: "Partial".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3310,6 +3372,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3322,6 +3385,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         target_name: "greet".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -3332,7 +3396,8 @@ fn transparent_mapped_partial_resolves_through_source() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "p".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3340,7 +3405,8 @@ fn transparent_mapped_partial_resolves_through_source() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "greet".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3348,7 +3414,8 @@ fn transparent_mapped_partial_resolves_through_source() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -3438,6 +3505,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         doc_comment: None,
         scope_path: Some("Repo".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     let base = make_symbol("Base", "Base", SymbolKind::Class, Visibility::Public, None);
     let base_db = ExtractedSymbol {
@@ -3453,6 +3521,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         doc_comment: None,
         scope_path: Some("Base".to_string()),
         parent_index: Some(2),
+        byte_offset: 0,
     };
     let child = make_symbol("Child", "Child", SymbolKind::Class, Visibility::Public, None);
     let do_method = ExtractedSymbol {
@@ -3468,6 +3537,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         doc_comment: None,
         scope_path: Some("Child".to_string()),
         parent_index: Some(4),
+        byte_offset: 0,
     };
 
     let base_db_typeref = ExtractedRef {
@@ -3475,6 +3545,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         target_name: "Repo".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3486,6 +3557,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         target_name: "Base".to_string(),
         kind: EdgeKind::Inherits,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3498,6 +3570,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         target_name: "find".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -3508,7 +3581,8 @@ fn phase2_inheritance_resolves_inherited_field() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "db".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3516,7 +3590,8 @@ fn phase2_inheritance_resolves_inherited_field() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "find".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3524,7 +3599,8 @@ fn phase2_inheritance_resolves_inherited_field() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -3595,6 +3671,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         doc_comment: None,
         scope_path: Some("Svc".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     let grand = make_symbol("Grand", "Grand", SymbolKind::Class, Visibility::Public, None);
     let grand_svc = ExtractedSymbol {
@@ -3610,6 +3687,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         doc_comment: None,
         scope_path: Some("Grand".to_string()),
         parent_index: Some(2),
+        byte_offset: 0,
     };
     let mid = make_symbol("Mid", "Mid", SymbolKind::Class, Visibility::Public, None);
     let leaf = make_symbol("Leaf", "Leaf", SymbolKind::Class, Visibility::Public, None);
@@ -3626,6 +3704,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         doc_comment: None,
         scope_path: Some("Leaf".to_string()),
         parent_index: Some(5),
+        byte_offset: 0,
     };
 
     let grand_svc_typeref = ExtractedRef {
@@ -3633,6 +3712,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         target_name: "Svc".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3644,6 +3724,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         target_name: "Grand".to_string(),
         kind: EdgeKind::Inherits,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3655,6 +3736,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         target_name: "Mid".to_string(),
         kind: EdgeKind::Inherits,
         line: 0,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -3667,6 +3749,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         target_name: "run".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -3677,7 +3760,8 @@ fn phase2_inheritance_resolves_through_two_hops() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "svc".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3685,7 +3769,8 @@ fn phase2_inheritance_resolves_through_two_hops() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "run".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3693,7 +3778,8 @@ fn phase2_inheritance_resolves_through_two_hops() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -3773,6 +3859,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         doc_comment: None,
         scope_path: Some("Builder".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     let set_b = ExtractedSymbol {
         name: "setB".to_string(),
@@ -3787,6 +3874,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         doc_comment: None,
         scope_path: Some("Builder".to_string()),
         parent_index: Some(0),
+        byte_offset: 0,
     };
     let caller = ExtractedSymbol {
         name: "build".to_string(),
@@ -3801,6 +3889,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     };
 
     // Each method's signature carries the `: this` return — the type
@@ -3810,6 +3899,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         target_name: "setB".to_string(),
         kind: EdgeKind::Calls,
         line: 0,
+        col: 0,
         module: None,
         chain: Some(MemberChain {
             segments: vec![
@@ -3824,7 +3914,8 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "setA".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3832,7 +3923,8 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
                 ChainSegment {
                     name: "setB".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -3840,7 +3932,8 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                },
+                                    byte_offset: 0,
+},
             ],
         }),
         byte_offset: 1,
@@ -3910,6 +4003,7 @@ fn make_chain_segs(segments: &[(&str, crate::types::SegmentKind)]) -> crate::typ
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             })
             .collect(),
     }
@@ -4714,6 +4808,7 @@ fn make_chain_with_typed_root(
                 declared_type: Some(root_type.to_string()),
                 type_args: root_type_args.iter().map(|s| s.to_string()).collect(),
                 optional_chaining: false,
+                byte_offset: 0,
             },
             ChainSegment {
                 name: leaf_name.to_string(),
@@ -4722,6 +4817,7 @@ fn make_chain_with_typed_root(
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             },
         ],
     }
@@ -6783,6 +6879,7 @@ fn test_di_binding_inject_decorator_emits() {
         target_name: "Inject".to_string(),
         kind: EdgeKind::TypeRef,
         line: 5,
+        col: 0,
         module: Some("USER_REPO".to_string()),
         chain: None,
         byte_offset: 1,
@@ -6802,6 +6899,7 @@ fn test_di_binding_inject_decorator_emits() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }];
     let ref_ctx = RefContext {
         extracted_ref: &r,
@@ -6844,6 +6942,7 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
         line: 5,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -6863,6 +6962,7 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }];
     let ref_ctx = RefContext {
         extracted_ref: &r,
@@ -6896,6 +6996,7 @@ fn test_di_binding_inject_without_token_still_emits() {
         target_name: "Inject".to_string(),
         kind: EdgeKind::TypeRef,
         line: 5,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -6915,6 +7016,7 @@ fn test_di_binding_inject_without_token_still_emits() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }];
     let ref_ctx = RefContext {
         extracted_ref: &r,

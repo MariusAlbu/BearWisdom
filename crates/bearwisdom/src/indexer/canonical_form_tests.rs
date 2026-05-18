@@ -48,6 +48,7 @@ fn make_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -57,6 +58,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
         target_name: target.to_string(),
         kind,
         line: 3,
+        col: 0,
         module: None,
         namespace_segments: Vec::new(),
         chain: None,
@@ -73,6 +75,7 @@ fn seg(name: &str, kind: SegmentKind) -> ChainSegment {
         declared_type: None,
         type_args: Vec::new(),
         optional_chaining: false,
+        byte_offset: 0,
     }
 }
 

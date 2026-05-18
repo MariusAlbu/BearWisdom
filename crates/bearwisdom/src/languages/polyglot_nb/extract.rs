@@ -24,6 +24,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     let host_index: usize = 0;
 
@@ -43,6 +44,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             doc_comment: None,
             scope_path: Some(file_name.clone()),
             parent_index: Some(host_index),
+            byte_offset: 0,
         });
     }
 

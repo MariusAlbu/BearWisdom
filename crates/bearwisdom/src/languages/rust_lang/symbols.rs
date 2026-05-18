@@ -40,7 +40,8 @@ pub(super) fn extract_function(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 /// Same as `extract_function` but always emits `Method` kind (used inside impl blocks).
@@ -76,7 +77,8 @@ pub(super) fn extract_method_from_fn(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 pub(super) fn extract_struct(
@@ -109,7 +111,8 @@ pub(super) fn extract_struct(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 pub(super) fn extract_enum(
@@ -138,7 +141,8 @@ pub(super) fn extract_enum(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 /// Extract `enum_variant` children from an enum body into the symbol list.
@@ -184,7 +188,8 @@ pub(super) fn extract_enum_variants(
                     doc_comment: extract_doc_comment(&child, source),
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
 
                 // Extract attributes on the enum variant (e.g. #[default], #[serde(rename="...")]).
                 super::decorators::extract_decorators(&child, source, sym_idx, refs);
@@ -254,7 +259,8 @@ pub(super) fn extract_trait(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 pub(super) fn extract_type_alias(
@@ -283,7 +289,8 @@ pub(super) fn extract_type_alias(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 pub(super) fn extract_const(
@@ -317,7 +324,8 @@ pub(super) fn extract_const(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 pub(super) fn extract_static(
@@ -351,7 +359,8 @@ pub(super) fn extract_static(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 /// `macro_rules! foo { ... }` — emit a Function symbol for the macro name.
@@ -389,7 +398,8 @@ pub(super) fn extract_macro_rules(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 pub(super) fn extract_mod(
@@ -418,7 +428,8 @@ pub(super) fn extract_mod(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    })
+            byte_offset: 0,
+})
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +500,7 @@ pub(super) fn extract_struct_fields(
             doc_comment: extract_doc_comment(&child, source),
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index: Some(struct_sym_index),
+            byte_offset: 0,
         });
 
         // Emit TypeRef for non-primitive field types.
@@ -587,6 +599,7 @@ pub(super) fn extract_callable_fn_params(
             doc_comment: None,
             scope_path: None,
             parent_index: Some(fn_sym_index),
+            byte_offset: 0,
         });
     }
 }
@@ -687,7 +700,8 @@ pub(super) fn extract_type_refs_from_type_node(
                     byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                                    col: 0,
+});
             }
         }
 
@@ -791,6 +805,7 @@ fn make_type_ref(sym_index: usize, name: String, line: u32, byte_offset: u32) ->
         target_name: name,
         kind: EdgeKind::TypeRef,
         line,
+        col: 0,
         module: None,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
@@ -868,6 +883,7 @@ pub(super) fn extract_trait_associated_types(
             doc_comment: extract_doc_comment(&child, source),
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index: Some(trait_sym_index),
+            byte_offset: 0,
         });
         // Emit TypeRef for bounds if present.
         if let Some(bounds) = child.child_by_field_name("bounds") {

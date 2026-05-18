@@ -25,6 +25,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -39,7 +40,8 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    }
+            col: 0,
+}
 }
 
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
@@ -220,6 +222,7 @@ fn make_chain(segments: &[(&str, SegmentKind)]) -> MemberChain {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             })
             .collect(),
     }
@@ -579,8 +582,8 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
 
     let chain = MemberChain {
         segments: vec![
-            ChainSegment { name: "c".to_string(), node_kind: "identifier".to_string(), kind: SegmentKind::Identifier, declared_type: None, type_args: vec![], optional_chaining: false },
-            ChainSegment { name: "say_hello".to_string(), node_kind: "field_expression".to_string(), kind: SegmentKind::Property, declared_type: None, type_args: vec![], optional_chaining: false },
+            ChainSegment { name: "c".to_string(), node_kind: "identifier".to_string(), kind: SegmentKind::Identifier, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0 },
+            ChainSegment { name: "say_hello".to_string(), node_kind: "field_expression".to_string(), kind: SegmentKind::Property, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0 },
         ],
     };
     let extracted_ref = ExtractedRef {
@@ -588,6 +591,7 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
         target_name: "say_hello".to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: Some(chain),
         byte_offset: 1,
@@ -603,6 +607,7 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
         signature: None, doc_comment: None,
         scope_path: Some("main".to_string()),
         parent_index: None,
+        byte_offset: 0,
     };
     let ref_ctx = RefContext {
         extracted_ref: &extracted_ref,

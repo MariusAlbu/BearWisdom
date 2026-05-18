@@ -462,6 +462,7 @@ fn scan_all_type_identifiers(
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,

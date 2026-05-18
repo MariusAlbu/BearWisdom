@@ -54,6 +54,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 target_name: target,
                 kind: EdgeKind::Imports,
                 line: i as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: line_starts.get(i).copied().unwrap_or(0),
@@ -240,6 +241,7 @@ fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u3
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 

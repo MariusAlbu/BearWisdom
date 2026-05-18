@@ -134,7 +134,8 @@ fn push_enum_member(
         doc_comment: None,
         scope_path: scope_tree::scope_path(scope),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +184,8 @@ pub(super) fn push_type_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -227,7 +229,8 @@ pub(super) fn push_function_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -320,7 +323,8 @@ pub(super) fn push_val_var(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// Emit a TypeAlias symbol for a Scala `type` definition.
@@ -359,7 +363,8 @@ pub(super) fn push_type_definition(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Emit TypeRef for the aliased type (field `type`).
     if let Some(type_node) = node.child_by_field_name("type") {
@@ -370,6 +375,7 @@ pub(super) fn push_type_definition(
                 target_name: alias_name,
                 kind: EdgeKind::TypeRef,
                 line: type_node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
@@ -420,7 +426,8 @@ pub(super) fn push_given_definition(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Emit TypeRef for the given's return_type.
     if let Some(rt) = node.child_by_field_name("return_type") {
@@ -431,6 +438,7 @@ pub(super) fn push_given_definition(
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
                 line: rt.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: rt.start_byte() as u32,
@@ -498,7 +506,8 @@ pub(super) fn push_extension_definition(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -559,7 +568,8 @@ pub(super) fn push_package_clause(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+});
     Some(idx)
 }
 
@@ -590,6 +600,7 @@ pub(super) fn push_export(
                     target_name: target,
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: Some(full),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -627,6 +638,7 @@ pub(super) fn push_import(
                     target_name: target,
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: Some(full),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -671,6 +683,7 @@ fn emit_import_expression(
                             target_name: name,
                             kind: EdgeKind::Imports,
                             line: sel.start_position().row as u32,
+                            col: 0,
                             module: Some(module),
                             chain: None,
                             byte_offset: sel.start_byte() as u32,
@@ -692,6 +705,7 @@ fn emit_import_expression(
             target_name: target,
             kind: EdgeKind::Imports,
             line: node.start_position().row as u32,
+            col: 0,
             module: Some(full),
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -737,6 +751,7 @@ pub(super) fn extract_extends_with_node(
                 target_name: name,
                 kind: edge,
                 line: child.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
@@ -808,6 +823,7 @@ pub(super) fn extract_extends_with(
                             target_name: name,
                             kind,
                             line: type_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
@@ -828,6 +844,7 @@ pub(super) fn extract_extends_with(
                             target_name: name,
                             kind: EdgeKind::Implements,
                             line: type_node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,

@@ -290,6 +290,7 @@ fn make_helper_symbol(name: &str) -> ExtractedSymbol {
         ),
         scope_path: Some("Routes".to_string()),
         parent_index: None,
+        byte_offset: 0,
     }
 }
 

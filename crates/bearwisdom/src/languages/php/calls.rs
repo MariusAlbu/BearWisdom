@@ -122,6 +122,7 @@ pub(super) fn extract_calls_from_body(
                         target_name: callee,
                         kind: EdgeKind::Calls,
                         line: name_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain,
                         byte_offset: name_node.start_byte() as u32,
@@ -145,6 +146,7 @@ pub(super) fn extract_calls_from_body(
                         target_name: callee,
                         kind: EdgeKind::Calls,
                         line: name_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain,
                         byte_offset: name_node.start_byte() as u32,
@@ -182,6 +184,7 @@ pub(super) fn extract_calls_from_body(
                         target_name: cls_name,
                         kind: EdgeKind::Instantiates,
                         line: cls_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: cls_node.start_byte() as u32,
@@ -201,6 +204,7 @@ pub(super) fn extract_calls_from_body(
                         target_name: simple,
                         kind: EdgeKind::Calls,
                         line: fn_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: fn_node.start_byte() as u32,
@@ -289,6 +293,7 @@ pub(super) fn extract_include_require(
                 target_name: target,
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
+                col: 0,
                 module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -381,7 +386,8 @@ pub(super) fn extract_foreach_vars(
                     doc_comment: None,
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
             }
         }
     }
@@ -434,7 +440,8 @@ fn push_php_foreach_var(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     }
 }
@@ -483,7 +490,8 @@ pub(super) fn extract_try_catch_types(
                             doc_comment: None,
                             scope_path: scope_from_prefix(qualified_prefix),
                             parent_index,
-                        });
+                                                    byte_offset: 0,
+});
                     }
                 }
                 // Recurse into catch body.
@@ -525,6 +533,7 @@ fn extract_catch_type_refs(
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -582,7 +591,8 @@ pub(super) fn extract_list_destructuring(
                         doc_comment: None,
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
-                    });
+                                            byte_offset: 0,
+});
                 }
             }
             // Nested array destructure element.
@@ -656,6 +666,7 @@ pub(super) fn extract_type_refs_from_php_type(
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -698,6 +709,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -710,6 +722,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -725,6 +738,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -740,6 +754,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -759,6 +774,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             segments.push(ChainSegment {
                 name: node_text(&name_node, src),
@@ -767,6 +783,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -841,7 +858,8 @@ fn push_fq_import(
         byte_offset,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-    });
+            col: 0,
+});
 }
 
 pub(super) fn extract_trait_use(
@@ -866,6 +884,7 @@ pub(super) fn extract_trait_use(
                 target_name: target,
                 kind: EdgeKind::Implements,
                 line: child.start_position().row as u32,
+                col: 0,
                 module,
                 chain: None,
                 byte_offset: child.start_byte() as u32,

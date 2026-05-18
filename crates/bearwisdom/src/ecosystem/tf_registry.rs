@@ -535,6 +535,7 @@ fn synthesize_bundled_providers() -> Vec<ParsedFile> {
                 doc_comment: None,
                 scope_path: Some(provider.to_string()),
                 parent_index: None,
+                byte_offset: 0,
             });
         }
 

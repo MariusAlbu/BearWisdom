@@ -145,6 +145,7 @@ fn extract_import(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     let target = path
@@ -157,6 +158,7 @@ fn extract_import(
         target_name: target,
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -208,7 +210,8 @@ fn extract_procedure(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract calls from the procedure body
     extract_calls_in_subtree(node, src, idx, refs);
@@ -253,6 +256,7 @@ fn extract_typed_decl(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -290,6 +294,7 @@ fn extract_var_decl(
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }
@@ -320,6 +325,7 @@ fn extract_const_type_decl(
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }
@@ -363,6 +369,7 @@ fn extract_using(
                 target_name: id,
                 kind: EdgeKind::TypeRef,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -402,6 +409,7 @@ fn extract_calls_in_subtree(
                     target_name: target,
                     kind: EdgeKind::Calls,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,

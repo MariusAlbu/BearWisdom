@@ -23,6 +23,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     let host_index = 0usize;
 
@@ -66,6 +67,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             doc_comment: None,
                             scope_path: Some(file_name.clone()),
                             parent_index: Some(host_index),
+                            byte_offset: 0,
                         });
                     }
                 } else if let Some(rest) = trimmed.strip_prefix('>') {
@@ -87,7 +89,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             byte_offset: i as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                                    col: 0,
+});
                     }
                 }
             }

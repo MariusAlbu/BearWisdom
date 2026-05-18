@@ -209,6 +209,7 @@ fn visit(
                             target_name: name,
                             kind: EdgeKind::TypeRef,
                             line: child.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
@@ -236,6 +237,7 @@ fn visit(
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
                                     line: grandchild.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: grandchild.start_byte() as u32,
@@ -338,7 +340,8 @@ fn extract_factory_constructor_at_visit(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
     // Also emit TypeRef for type_identifier children (return type annotations, params).
     let idx = symbols.len() - 1;
     let mut tc = node.walk();
@@ -351,6 +354,7 @@ fn extract_factory_constructor_at_visit(
                     target_name: t,
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -381,6 +385,7 @@ fn scan_all_type_identifiers(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,

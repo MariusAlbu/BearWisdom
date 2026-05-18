@@ -107,6 +107,7 @@ fn visit_expr(
                     target_name: name,
                     kind: EdgeKind::Calls,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -298,7 +299,8 @@ fn extract_binding(
             doc_comment: None,
             scope_path: None,
             parent_index,
-        });
+                    byte_offset: 0,
+});
         i
     } else {
         // Name not statically extractable (interpolated attrpath).
@@ -344,6 +346,7 @@ pub(super) fn extract_value_refs(
                     target_name: name,
                     kind: EdgeKind::Calls,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,

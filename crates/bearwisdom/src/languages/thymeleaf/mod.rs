@@ -26,6 +26,7 @@ impl LanguagePlugin for ThymeleafPlugin {
             kind: SymbolKind::Class, visibility: Some(Visibility::Public),
             start_line: 0, end_line: 0, start_col: 0, end_col: 0,
             signature: None, doc_comment: None, scope_path: None, parent_index: None,
+            byte_offset: 0,
         }];
         ExtractionResult { symbols, refs: Vec::new(), routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
             demand_contributions: Vec::new(),

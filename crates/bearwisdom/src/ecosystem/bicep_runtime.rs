@@ -234,6 +234,7 @@ fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
             doc_comment: None,
             scope_path: Some(module.to_string()),
             parent_index: None,
+            byte_offset: 0,
         });
     };
 

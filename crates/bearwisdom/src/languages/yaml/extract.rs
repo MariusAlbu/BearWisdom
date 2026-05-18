@@ -42,6 +42,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }];
 
     // Walk source for lines of the form `key:` at column 0 (top-level).
@@ -72,6 +73,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     doc_comment: None,
                     scope_path: Some(stem.clone()),
                     parent_index: Some(0),
+                    byte_offset: 0,
                 });
             }
         }
@@ -124,6 +126,7 @@ fn collect_uses_refs(source: &str, file_path: &str) -> Vec<ExtractedRef> {
             target_name: value.to_string(),
             kind: EdgeKind::Imports,
             line: line_no as u32,
+            col: 0,
             module: Some(value.to_string()),
             chain: None,
             byte_offset: line_starts.get(line_no).copied().unwrap_or(0),

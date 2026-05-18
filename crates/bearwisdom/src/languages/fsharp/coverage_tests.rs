@@ -432,6 +432,7 @@ fn infer_external_namespace_from_hash_r_import() {
         target_name: "Fornax.Core".to_string(),
         kind: EdgeKind::Imports,
         line: 0,
+        col: 0,
         module: Some("Fornax.Core".to_string()),
         chain: None,
         byte_offset: 1,
@@ -455,6 +456,7 @@ fn infer_external_namespace_from_hash_r_import() {
         target_name: "div".to_string(),
         kind: EdgeKind::Calls,
         line: 20,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -474,6 +476,7 @@ fn infer_external_namespace_from_hash_r_import() {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     };
     let ref_ctx = RefContext {
         extracted_ref: &div_ref,

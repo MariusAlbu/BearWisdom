@@ -213,6 +213,7 @@ fn test_symbol_index_by_name() {
                 doc_comment: None,
                 scope_path: Some("NS".to_string()),
                 parent_index: None,
+                byte_offset: 0,
             },
         ],
         refs: vec![],
@@ -272,6 +273,7 @@ fn make_class_sym(name: &str, qname: &str) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 

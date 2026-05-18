@@ -76,6 +76,7 @@ pub(super) fn extract_bare_reexports_via_imports(
                     target_name: exported_in_source,
                     kind: EdgeKind::Imports,
                     line: spec.start_position().row as u32,
+                    col: 0,
                     module: Some(import.module.clone()),
                     chain: None,
                     byte_offset: spec.start_byte() as u32,
@@ -109,6 +110,7 @@ pub(super) fn extract_bare_reexports_via_imports(
                         doc_comment: None,
                         scope_path: None,
                         parent_index: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -239,6 +241,7 @@ fn emit_triple_slash_ref(
         target_name: module.clone(),
         kind: EdgeKind::Imports,
         line: line as u32,
+        col: 0,
         module: Some(module),
         chain: None,
         byte_offset: byte_offset as u32,
@@ -349,6 +352,7 @@ pub(super) fn extract_reexports(
                                 target_name: original_name.clone(),
                                 kind: EdgeKind::Imports,
                                 line: spec.start_position().row as u32,
+                                col: 0,
                                 module: module_path.clone(),
                                 chain: None,
                                 byte_offset: spec.start_byte() as u32,
@@ -397,6 +401,7 @@ pub(super) fn extract_reexports(
                                 doc_comment: None,
                                 scope_path: None,
                                 parent_index: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -426,6 +431,7 @@ pub(super) fn extract_reexports(
             byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
+    col: 0,
 });
     }
 }

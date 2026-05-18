@@ -34,6 +34,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // Directive scan — single pass over the source. Position for emitted
@@ -61,6 +62,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                                 doc_comment: None,
                                 scope_path: Some(template_name.clone()),
                                 parent_index: Some(host_index),
+                                byte_offset: 0,
                             });
                             i = payload_end;
                             continue;
@@ -76,7 +78,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                                 byte_offset: i as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                            });
+                                                            col: 0,
+});
                             i = payload_end;
                             continue;
                         }

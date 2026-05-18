@@ -155,6 +155,7 @@ pub(super) fn emit_type_refs_from_type_node(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -184,6 +185,7 @@ pub(super) fn emit_type_refs_from_type_node(
                         byte_offset: n.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
+    col: 0,
 });
                     refs.push(ExtractedRef {
                         source_symbol_index,
@@ -195,6 +197,7 @@ pub(super) fn emit_type_refs_from_type_node(
                         byte_offset: n.start_byte() as u32,
                                             namespace_segments: Vec::new(),
                                             call_args: Vec::new(),
+    col: 0,
 });
                 }
             }

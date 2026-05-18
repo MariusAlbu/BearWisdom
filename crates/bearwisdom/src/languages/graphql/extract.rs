@@ -139,6 +139,7 @@ fn extract_object_type(
         doc_comment: doc,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // implements_interfaces → Implements edges
@@ -177,6 +178,7 @@ fn extract_interface_type(
         doc_comment: doc,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     extract_implements(node, src, idx, refs);
@@ -213,6 +215,7 @@ fn extract_enum_type(
         doc_comment: doc,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // enum_value_definition children
@@ -256,6 +259,7 @@ fn extract_enum_values(
                 doc_comment: None,
                 scope_path: None,
                 parent_index: Some(parent_index),
+                byte_offset: 0,
             });
         }
     }
@@ -299,6 +303,7 @@ fn extract_union_type(
         doc_comment: doc,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // TypeRef for each member type
@@ -308,6 +313,7 @@ fn extract_union_type(
             target_name: member.clone(),
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -379,6 +385,7 @@ fn extract_scalar_type(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol
         doc_comment: doc,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -412,6 +419,7 @@ fn extract_input_type(
         doc_comment: doc,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // input_fields_definition → input_value_definition
@@ -470,6 +478,7 @@ fn extract_input_value(
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
+        byte_offset: 0,
     });
 
     if let Some(t) = type_ref {
@@ -478,6 +487,7 @@ fn extract_input_value(
             target_name: t,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -510,6 +520,7 @@ fn extract_directive_def(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymb
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -537,6 +548,7 @@ fn extract_schema_def(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // root_operation_type_definition → named_type references
@@ -549,6 +561,7 @@ fn extract_schema_def(
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -586,6 +599,7 @@ fn extract_operation_def(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymb
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 }
 
@@ -642,6 +656,7 @@ fn extract_fragment_def(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     if let Some(t) = on_type {
@@ -650,6 +665,7 @@ fn extract_fragment_def(
             target_name: t,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -675,6 +691,7 @@ fn extract_type_extension(
             target_name: name,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -740,6 +757,7 @@ fn extract_field_def(
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
+        byte_offset: 0,
     });
 
     if let Some(t) = type_ref {
@@ -748,6 +766,7 @@ fn extract_field_def(
             target_name: t,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -811,6 +830,7 @@ fn collect_implements_interfaces(
                             target_name: name,
                             kind: EdgeKind::Implements,
                             line: child.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,

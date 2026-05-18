@@ -61,6 +61,7 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     extract_from_node(root, src, &mut syms, &mut refs, None, "", "");
@@ -339,6 +340,7 @@ fn scan_type_refs_inner(
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -361,6 +363,7 @@ fn scan_type_refs_inner(
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -403,6 +406,7 @@ fn scan_type_refs_inner(
                             target_name: name,
                             kind: crate::types::EdgeKind::TypeRef,
                             line: rhs.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: rhs.start_byte() as u32,

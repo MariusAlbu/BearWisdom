@@ -180,6 +180,7 @@ fn extract_from(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     // Imports edge to the base image
@@ -189,6 +190,7 @@ fn extract_from(
             target_name: img.clone(),
             kind: EdgeKind::Imports,
             line: node.start_position().row as u32,
+            col: 0,
             module: Some(img.clone()),
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -201,6 +203,7 @@ fn extract_from(
             target_name: img.clone(),
             kind: EdgeKind::Inherits,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -277,7 +280,8 @@ fn extract_arg(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +338,8 @@ fn extract_env_pair(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -387,7 +392,8 @@ fn extract_label(
                     doc_comment: None,
                     scope_path: None,
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
                 emitted = true;
             }
         }
@@ -418,7 +424,8 @@ fn extract_label(
                     doc_comment: None,
                     scope_path: None,
                     parent_index,
-                });
+                                    byte_offset: 0,
+});
                 break; // one symbol per label_instruction in fallback mode
             }
         }
@@ -463,6 +470,7 @@ fn extract_copy(
                     target_name,
                     kind: EdgeKind::Calls,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -481,6 +489,7 @@ fn extract_copy(
             target_name: ".".to_string(),
             kind: EdgeKind::Imports,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -533,7 +542,8 @@ fn extract_entry_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------

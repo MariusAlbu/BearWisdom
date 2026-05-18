@@ -47,6 +47,7 @@ pub(super) fn extract_normal_command(
             target_name: cmd.clone(),
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -491,6 +492,7 @@ fn extract_include_command(
         target_name: path.clone(),
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: Some(path),
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -523,6 +525,7 @@ fn extract_find_package_command(
         target_name: pkg.clone(),
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: Some(pkg.clone()),
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -590,6 +593,7 @@ fn extract_add_subdirectory_command(
         target_name: dir.clone(),
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: Some(dir),
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -647,6 +651,7 @@ fn extract_target_link_libraries(
             target_name: norm.clone(),
             kind,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -771,6 +776,7 @@ pub(super) fn collect_all_normal_commands(
                     byte_offset: node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
+    col: 0,
 });
             }
         }

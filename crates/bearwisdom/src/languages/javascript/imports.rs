@@ -60,7 +60,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 byte_offset: spec.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                            });
+                                    col: 0,
+                                });
                         }
                     }
                 }
@@ -79,7 +80,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                         byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
-                    });
+                            col: 0,
+                        });
                 }
             }
 
@@ -97,7 +99,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                         byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
-                    });
+                            col: 0,
+                        });
                 }
             }
 
@@ -130,7 +133,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                     byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
-                                });
+                                        col: 0,
+                                    });
                                 break 'outer_lex;
                             }
                         }
@@ -168,7 +172,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                            });
+                                    col: 0,
+                                });
                         }
                     }
                 }
@@ -192,7 +197,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                            });
+                                    col: 0,
+                                });
                         }
                     }
                 }
@@ -219,7 +225,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                col: 0,
+            });
     }
 }
 
@@ -326,7 +333,8 @@ pub(super) fn extract_module_exports(
             byte_offset: child.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                col: 0,
+            });
     }
 }
 
@@ -426,7 +434,8 @@ pub(super) fn extract_prototype_method(
             doc_comment: extract_jsdoc(stmt_node, src),
             scope_path,
             parent_index,
-        });
+                byte_offset: 0,
+            });
 
         // Harvest calls inside the function body so in-method refs attach
         // to the method symbol rather than the enclosing scope.
@@ -469,6 +478,7 @@ pub(super) fn try_emit_require(
             byte_offset: init_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                col: 0,
+            });
     }
 }

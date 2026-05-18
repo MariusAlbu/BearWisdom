@@ -145,6 +145,7 @@ pub fn extract_ansible(source: &str, file_path: &str, scope: &str) -> Extraction
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }];
 
     for (line_no, line) in source.lines().enumerate() {
@@ -179,6 +180,7 @@ pub fn extract_ansible(source: &str, file_path: &str, scope: &str) -> Extraction
                     doc_comment: None,
                     scope_path: Some(scope.to_string()),
                     parent_index: Some(0),
+                    byte_offset: 0,
                 });
             }
         }

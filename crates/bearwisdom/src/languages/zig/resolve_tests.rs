@@ -8,6 +8,7 @@ fn make_ref_calls(target: &str, args: Vec<CallArg>) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
         line: 1,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -30,6 +31,7 @@ fn make_sym() -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 

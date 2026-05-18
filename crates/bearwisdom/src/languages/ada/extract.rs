@@ -436,6 +436,7 @@ fn walk_node(
                         target_name: alias.clone(),
                         kind: EdgeKind::Imports,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: Some(target.clone()),
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -472,6 +473,7 @@ fn walk_node(
                                 target_name: name,
                                 kind: EdgeKind::Imports,
                                 line: node.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
@@ -489,6 +491,7 @@ fn walk_node(
                                 target_name: name,
                                 kind: EdgeKind::Imports,
                                 line: node.start_position().row as u32,
+                                col: 0,
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
@@ -519,6 +522,7 @@ fn walk_node(
                             target_name: name,
                             kind: EdgeKind::Calls,
                             line: node.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: node.start_byte() as u32,
@@ -680,6 +684,7 @@ fn push_sym(
         doc_comment: None,
         scope_path: None,
         parent_index: parent_idx,
+        byte_offset: 0,
     });
     idx
 }

@@ -306,7 +306,8 @@ fn push_class(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+        });
     Some(idx)
 }
 
@@ -348,7 +349,8 @@ fn push_function(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+        });
     Some(idx)
 }
 
@@ -391,7 +393,8 @@ fn push_method(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+        });
     Some(idx)
 }
 
@@ -430,7 +433,8 @@ fn push_field(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+        });
 }
 
 fn push_variable_decl(
@@ -493,7 +497,8 @@ fn push_variable_decl(
                             doc_comment: extract_jsdoc(node, src),
                             scope_path: scope_path.clone(),
                             parent_index,
-                        });
+                                byte_offset: 0,
+                            });
                         // Extract calls and nested declarations from arrow body.
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
@@ -528,7 +533,8 @@ fn push_variable_decl(
                             doc_comment: extract_jsdoc(node, src),
                             scope_path: scope_path.clone(),
                             parent_index,
-                        });
+                                byte_offset: 0,
+                            });
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
                                 extract_calls(&body, src, idx, refs);
@@ -554,7 +560,8 @@ fn push_variable_decl(
                             doc_comment: extract_jsdoc(node, src),
                             scope_path: scope_path.clone(),
                             parent_index,
-                        });
+                                byte_offset: 0,
+                            });
                         // Recurse into the class body for methods/fields.
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
@@ -579,7 +586,8 @@ fn push_variable_decl(
                             doc_comment: None,
                             scope_path: scope_path.clone(),
                             parent_index,
-                        });
+                                byte_offset: 0,
+                            });
                         if let Some(init_node) = &init {
                             match init_node.kind() {
                                 // `const x = new Foo()` → Calls edge (JS convention)
@@ -727,7 +735,8 @@ fn push_destructured_var(
         doc_comment: None,
         scope_path: scope_path.clone(),
         parent_index,
-    });
+            byte_offset: 0,
+        });
 }
 
 /// Inner recursion for class bodies (method_definition, field_definition only).
@@ -802,7 +811,8 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                             byte_offset: n.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                        });
+                                col: 0,
+                            });
                     }
                     "extends_clause" => {
                         let mut ec = n.walk();
@@ -818,7 +828,8 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                                     byte_offset: type_node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
-                                });
+                                        col: 0,
+                                    });
                             }
                         }
                     }
@@ -895,7 +906,8 @@ fn extract_for_loop_var(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+        });
 
     // Emit a TypeRef to the iterable so the index builder can infer element type.
     if let Some(right) = node.child_by_field_name("right") {
@@ -919,7 +931,8 @@ fn extract_for_loop_var(
                     byte_offset: right.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                });
+                        col: 0,
+                    });
             }
         }
     }
@@ -997,7 +1010,8 @@ fn extract_catch_variable(
         doc_comment: None,
         scope_path,
         parent_index,
-    });
+            byte_offset: 0,
+        });
 }
 
 // build_import_map moved to crate::ecosystem::ecmascript_imports — both TS

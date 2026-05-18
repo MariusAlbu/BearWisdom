@@ -156,6 +156,7 @@ fn visit(
                         target_name: name,
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -206,7 +207,8 @@ fn extract_function_indexed(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     visit_for_calls(node, src, idx, refs);
     Some(idx)
@@ -245,7 +247,8 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract calls inside function body
     visit_for_calls(node, src, idx, refs);
@@ -283,7 +286,8 @@ fn extract_class(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Detect inheritance: `class Foo : Bar` — the grammar emits two `simple_name`
     // children separated by `:`. The first is the class name (already captured),
@@ -304,6 +308,7 @@ fn extract_class(
                             target_name: base,
                             kind: EdgeKind::Inherits,
                             line: child.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
@@ -363,6 +368,7 @@ fn extract_method(
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
+        byte_offset: 0,
     });
 
     visit_for_calls(node, src, idx, refs);
@@ -398,6 +404,7 @@ fn extract_property(
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
+        byte_offset: 0,
     });
 }
 
@@ -433,7 +440,8 @@ fn extract_enum(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract individual enum members
     let mut cursor = node.walk();
@@ -455,6 +463,7 @@ fn extract_enum(
                         doc_comment: None,
                         scope_path: None,
                         parent_index: Some(enum_idx),
+                        byte_offset: 0,
                     });
                 }
             }
@@ -496,6 +505,7 @@ fn extract_using(
             byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
+    col: 0,
 });
     }
 }
@@ -535,7 +545,8 @@ fn extract_script_parameters_recursive(
                         doc_comment: None,
                         scope_path: None,
                         parent_index,
-                    });
+                                            byte_offset: 0,
+});
                 }
             }
         } else {
@@ -604,6 +615,7 @@ fn extract_top_level_assignment(
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
     }
 }
@@ -685,6 +697,7 @@ fn extract_member_access(
             target_name: name,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
+            col: 0,
             module,
             chain: None,
             byte_offset: node.start_byte() as u32,

@@ -104,7 +104,8 @@ fn extract_type_alias_decl(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 /// `type_spec` children (positional, named):
@@ -174,7 +175,8 @@ fn extract_type_spec(
                 doc_comment,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             extract_struct_fields(&type_node, source, symbols, refs, Some(idx), &struct_prefix);
         }
 
@@ -195,7 +197,8 @@ fn extract_type_spec(
                 doc_comment,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             extract_interface_methods_with_refs(&type_node, source, symbols, refs, Some(idx), &iface_prefix);
         }
 
@@ -216,7 +219,8 @@ fn extract_type_spec(
                 doc_comment,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     }
 }
@@ -360,6 +364,7 @@ fn extract_field_declaration(
                 target_name: et.clone(),
                 kind: EdgeKind::Inherits,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -380,7 +385,8 @@ fn extract_field_declaration(
                 doc_comment: None,
                 scope_path: scope_from_prefix(struct_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     } else {
         // Named fields.
@@ -414,7 +420,8 @@ fn extract_field_declaration(
                 doc_comment: tag_doc.clone(),
                 scope_path: scope_from_prefix(struct_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     }
 }
@@ -448,6 +455,7 @@ fn emit_type_refs_from_subtree(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -481,6 +489,7 @@ fn emit_type_refs_from_subtree(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: pkg,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
@@ -586,7 +595,8 @@ fn extract_interface_methods(
             doc_comment: None,
             scope_path: scope_from_prefix(iface_prefix),
             parent_index,
-        });
+                    byte_offset: 0,
+});
     }
 }
 
@@ -632,7 +642,8 @@ fn extract_interface_methods_with_refs(
             doc_comment: None,
             scope_path: scope_from_prefix(iface_prefix),
             parent_index,
-        });
+                    byte_offset: 0,
+});
 
         // Emit TypeRef edges for parameter and return types of this method_elem.
         super::calls::extract_fn_signature_type_refs(&child, source, sym_idx, refs);

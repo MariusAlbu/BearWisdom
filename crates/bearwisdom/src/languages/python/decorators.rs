@@ -45,6 +45,7 @@ pub(super) fn extract_decorators(
                     target_name: name,
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: first_arg,
                     chain: None,
                     byte_offset: child.start_byte() as u32,

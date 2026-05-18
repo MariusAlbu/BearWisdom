@@ -82,6 +82,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 doc_comment: extract_preceding_doc_comment(&lines, i),
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
 
             // Consume the block body
@@ -134,6 +135,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         doc_comment: None,
                         scope_path: None,
                         parent_index: Some(parent_index),
+                        byte_offset: 0,
                     });
                 } else {
                     // Model/view/type field: `fieldName FieldType[?][] [@attributes]`
@@ -203,6 +205,7 @@ fn extract_field(
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
+        byte_offset: 0,
     });
 
     // Emit TypeRef for non-scalar types
@@ -213,6 +216,7 @@ fn extract_field(
             target_name: base_type.to_string(),
             kind: EdgeKind::TypeRef,
             line: line_num,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: line_byte_start,

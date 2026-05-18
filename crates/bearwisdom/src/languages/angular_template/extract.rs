@@ -47,6 +47,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
     let host_index = 0usize;
 
@@ -126,6 +127,7 @@ fn collect_component_refs(
                         target_name: normalized,
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: raw_selector,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -193,6 +195,7 @@ fn collect_attribute_directive_refs(
                     target_name: selector.clone(),
                     kind: EdgeKind::Calls,
                     line: attr.start_position().row as u32,
+                    col: 0,
                     // Raw selector stored in `module` for resolver lookup.
                     module: Some(selector),
                     chain: None,

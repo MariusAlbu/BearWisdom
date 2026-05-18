@@ -91,7 +91,8 @@ fn extract_package(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +137,8 @@ fn extract_class(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract superclass (extends) → Inherits edge
     if let Some(superclass_node) = node.child_by_field_name("superclass") {
@@ -150,6 +152,7 @@ fn extract_class(
                         target_name: target,
                         kind: EdgeKind::Inherits,
                         line: superclass_node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: superclass_node.start_byte() as u32,
@@ -243,7 +246,8 @@ fn extract_interface(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Extract parent interfaces (extends_interfaces child → type_list)
     let mut cursor = node.walk();
@@ -291,7 +295,8 @@ fn extract_field(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-            });
+                            byte_offset: 0,
+});
         }
     }
 }
@@ -318,6 +323,7 @@ fn extract_type_list_refs(
                         target_name: name,
                         kind,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -378,7 +384,8 @@ fn extract_function(
         // the enclosing class for bare method calls like `assertSingleViolation()`.
         scope_path: class_scope.map(|s| s.to_string()),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     let local_types = scan_local_types(node, src);
     emit_local_variable_symbols(node, src, idx, symbols);
@@ -434,7 +441,8 @@ fn extract_method_declaration(
         // the enclosing class for bare method calls.
         scope_path: class_scope.map(|s| s.to_string()),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     let local_types = scan_local_types(node, src);
     emit_local_variable_symbols(node, src, idx, symbols);
@@ -477,6 +485,7 @@ fn emit_local_variable_symbols(
                                 doc_comment: None,
                                 scope_path: None,
                                 parent_index: Some(parent_index),
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -545,6 +554,7 @@ fn extract_import(
         target_name,
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
+        col: 0,
         module: Some(module_path),
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -587,6 +597,7 @@ pub(super) fn extract_call(
         target_name: name,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain,
         byte_offset: node.start_byte() as u32,

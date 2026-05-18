@@ -166,6 +166,7 @@ fn visit_def_body(
                         target_name: name,
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -204,6 +205,7 @@ pub(super) fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
+    byte_offset: 0,
     }
 }
 
@@ -238,6 +240,7 @@ fn collect_variable_refs(
                 target_name: target,
                 kind: EdgeKind::TypeRef,
                 line: node.start_position().row as u32,
+                col: 0,
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,

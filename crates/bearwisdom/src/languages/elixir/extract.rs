@@ -200,6 +200,7 @@ fn visit(
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
+                    col: 0,
                     module: if name.contains('.') { Some(name) } else { None },
                     chain: None,
                     byte_offset: child.start_byte() as u32,
@@ -260,6 +261,7 @@ fn dispatch_call(
                 target_name: name,
                 kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
+                col: 0,
                 module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
@@ -314,7 +316,8 @@ fn extract_module(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     let do_block_idx = find_do_block_index(node);
     if let Some(i) = do_block_idx {
@@ -369,7 +372,8 @@ fn extract_function(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     let do_block_idx = find_do_block_index(node);
     if let Some(i) = do_block_idx {
@@ -413,7 +417,8 @@ fn extract_struct(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -455,7 +460,8 @@ fn extract_exception(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -488,7 +494,8 @@ fn extract_protocol(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     let do_block_idx = find_do_block_index(node);
     if let Some(i) = do_block_idx {
@@ -530,7 +537,8 @@ fn extract_implementation(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-    });
+            byte_offset: 0,
+});
 
     // Emit TypeRef to the protocol being implemented
     refs.push(ExtractedRef {
@@ -538,6 +546,7 @@ fn extract_implementation(
         target_name: impl_name,
         kind: EdgeKind::TypeRef,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -587,7 +596,8 @@ fn dispatch_attribute(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-            });
+                            byte_offset: 0,
+});
             // For @type and @spec, extract module references (alias nodes) as TypeRef edges.
             if attr_name == "type" || attr_name == "spec" || attr_name == "callback" {
                 let ref_idx = parent_index.unwrap_or(sym_idx);
@@ -606,6 +616,7 @@ fn dispatch_attribute(
                     target_name,
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
+                    col: 0,
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,

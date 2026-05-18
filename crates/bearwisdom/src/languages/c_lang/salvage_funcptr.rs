@@ -44,6 +44,7 @@ pub(super) fn salvage_missed_function_pointer_decls(source: &str, symbols: &mut 
             doc_comment: None,
             scope_path: None,
             parent_index: None,
+            byte_offset: 0,
         });
         existing.insert(name.to_string());
     }

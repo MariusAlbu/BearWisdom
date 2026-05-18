@@ -57,6 +57,7 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     });
 
     visit_node(&tree.root_node(), source, &mut refs);
@@ -102,6 +103,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             target_name: pascal,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -117,6 +119,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             target_name: tag,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -185,6 +188,7 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             target_name: class_name,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
+            col: 0,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
@@ -231,6 +235,7 @@ fn extract_handler_from_value(value: &str, node: &Node, refs: &mut Vec<Extracted
         target_name: handler,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
@@ -296,7 +301,8 @@ fn extract_pipes_from_expression(
             byte_offset: part_offset,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-        });
+                    col: 0,
+});
     }
 }
 

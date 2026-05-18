@@ -232,6 +232,7 @@ fn walk_node(
                                 target_name: method_text,
                                 kind: EdgeKind::Calls,
                                 line: node.start_position().row as u32,
+                                col: 0,
                                 module: if module_text.is_empty() { None } else { Some(module_text) },
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
@@ -277,6 +278,7 @@ fn walk_node(
                         target_name: target,
                         kind: EdgeKind::Calls,
                         line: node.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
@@ -326,6 +328,7 @@ fn make_sym(
         doc_comment: None,
         scope_path: None,
         parent_index: parent_idx,
+        byte_offset: 0,
     }
 }
 

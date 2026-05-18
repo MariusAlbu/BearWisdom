@@ -74,6 +74,7 @@ pub(super) fn extract_calls_from_body(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: callee.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain,
                             byte_offset: callee.start_byte() as u32,
@@ -101,6 +102,7 @@ pub(super) fn extract_calls_from_body(
                             target_name,
                             kind: EdgeKind::Calls,
                             line: op.start_position().row as u32,
+                            col: 0,
                             module: None,
                             chain: None,
                             byte_offset: op.start_byte() as u32,
@@ -126,6 +128,7 @@ pub(super) fn extract_calls_from_body(
                                     target_name: name,
                                     kind: EdgeKind::Calls,
                                     line: inner.start_position().row as u32,
+                                    col: 0,
                                     module: None,
                                     chain: None,
                                     byte_offset: inner.start_byte() as u32,
@@ -144,6 +147,7 @@ pub(super) fn extract_calls_from_body(
                                     target_name: simple,
                                     kind: EdgeKind::Calls,
                                     line: inner.start_position().row as u32,
+                                    col: 0,
                                     module: Some(name),
                                     chain: None,
                                     byte_offset: inner.start_byte() as u32,
@@ -195,6 +199,7 @@ fn extract_type_refs_from_type_arguments(
                         target_name: name,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
+                        col: 0,
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
@@ -235,6 +240,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -247,6 +253,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -259,6 +266,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }
@@ -277,6 +285,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             });
             Some(())
         }

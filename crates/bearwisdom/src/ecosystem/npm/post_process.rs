@@ -68,6 +68,7 @@ pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile,
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
         }
         // Shadow entry under the synthetic globals namespace so the
@@ -94,6 +95,7 @@ pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile,
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
+                byte_offset: 0,
             });
         }
     }

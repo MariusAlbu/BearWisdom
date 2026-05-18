@@ -36,6 +36,7 @@ fn make_sym(name: &str, kind: SymbolKind) -> ExtractedSymbol {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -45,6 +46,7 @@ fn make_ref_plain(source_idx: usize, target: &str) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
         line: 2,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -58,6 +60,7 @@ fn make_ref_with_module(source_idx: usize, target: &str, module: &str) -> Extrac
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
         line: 2,
+        col: 0,
         module: Some(module.to_string()),
         chain: None,
         byte_offset: 1,
@@ -71,6 +74,7 @@ fn make_import(source_idx: usize, target: &str) -> ExtractedRef {
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some(target.to_string()),
         chain: None,
         byte_offset: 1,

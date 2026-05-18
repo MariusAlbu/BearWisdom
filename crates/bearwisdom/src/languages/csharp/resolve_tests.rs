@@ -24,6 +24,7 @@ fn make_symbol(
         doc_comment: None,
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
+        byte_offset: 0,
     }
 }
 
@@ -33,6 +34,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         target_name: target.to_string(),
         kind,
         line,
+        col: 0,
         module: None,
         chain: None,
         byte_offset: 1,
@@ -250,6 +252,7 @@ fn test_using_directive_resolution() {
         target_name: "App.Models".to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some("App.Models".to_string()),
         chain: None,
         byte_offset: 1,
@@ -359,6 +362,7 @@ fn test_private_visibility_cross_file() {
         target_name: "App.Internal".to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some("App.Internal".to_string()),
         chain: None,
         byte_offset: 1,
@@ -619,6 +623,7 @@ fn test_infer_no_false_positive_on_project_ref() {
         target_name: "App.Models".to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some("App.Models".to_string()),
         chain: None,
         byte_offset: 1,
@@ -668,6 +673,7 @@ fn test_infer_without_project_context_fallback() {
         target_name: "App.Models".to_string(),
         kind: EdgeKind::Imports,
         line: 1,
+        col: 0,
         module: Some("App.Models".to_string()),
         chain: None,
         byte_offset: 1,
@@ -708,6 +714,7 @@ fn workspace_project_namespace_not_classified_as_external() {
         byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
+    col: 0,
 };
     let file = make_file(
         "App/Foo.cs",
@@ -758,6 +765,7 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
         byte_offset: 1,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
+    col: 0,
 };
     let file = make_file(
         "App/Foo.cs",
@@ -811,6 +819,7 @@ fn make_chain(segments: &[&str]) -> MemberChain {
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
+                byte_offset: 0,
             })
             .collect(),
     }
