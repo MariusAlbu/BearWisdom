@@ -72,14 +72,9 @@ impl fmt::Display for ContractViolation {
 // ---------------------------------------------------------------------------
 
 /// Validate `file` against the canonical contract. Returns one entry per
-/// violation; empty Vec means the file is contract-clean. External-origin
-/// files (`ext:<ecosystem>:...`) are skipped — their refs are filtered out
-/// of the resolve loop and the contract applies to internal extraction.
+/// violation; empty Vec means the file is contract-clean.
 pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
     let mut out = Vec::new();
-    if file.path.starts_with("ext:") {
-        return out;
-    }
     check_file_parallel_vecs(file, &mut out);
     check_flow_meta(file, &mut out);
     for (idx, sym) in file.symbols.iter().enumerate() {
@@ -376,10 +371,8 @@ fn check_ref_001(
     }
 }
 
-/// REF-002: byte_offset must be non-zero on refs the resolver uses for flow
-/// correlation and narrowing-scope lookup. Scope: kind=Calls OR chain.is_some().
-/// Embedded-region splices are exempt — the splicer does not rebase the
-/// sub-extractor's region-local byte_offset to host-file coordinates.
+/// REF-002: byte_offset must point inside the file. A 0 value is only valid
+/// at line 0 (the very start of the file).
 fn check_ref_002(
     file: &ParsedFile,
     idx: usize,
@@ -389,21 +382,10 @@ fn check_ref_002(
     if file.size == 0 {
         return;
     }
-    if !matches!(r.kind, EdgeKind::Calls) && r.chain.is_none() {
-        return;
-    }
     if r.byte_offset != 0 {
         return;
     }
     if r.line == 0 {
-        return;
-    }
-    if file
-        .ref_origin_languages
-        .get(idx)
-        .map(|o| o.is_some())
-        .unwrap_or(false)
-    {
         return;
     }
     out.push(ContractViolation {

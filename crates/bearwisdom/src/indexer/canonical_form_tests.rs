@@ -229,37 +229,23 @@ fn ref_002_flags_zero_byte_offset_on_calls_ref() {
 }
 
 #[test]
-fn ref_002_flags_zero_byte_offset_on_chain_bearing_ref() {
+fn ref_002_flags_zero_byte_offset_on_typeref() {
     let sym = make_sym("foo", "foo", SymbolKind::Function);
     let mut r = make_ref(0, "Bar", EdgeKind::TypeRef);
     r.byte_offset = 0;
     r.line = 10;
-    r.chain = Some(MemberChain {
-        segments: vec![seg("Bar", SegmentKind::Identifier)],
-    });
     let pf = make_pf(vec![sym], vec![r]);
     assert_eq!(codes(&validate(&pf)), vec!["REF-002"]);
 }
 
 #[test]
-fn ref_002_tolerates_zero_byte_offset_on_bare_typeref() {
+fn ref_002_flags_zero_byte_offset_on_imports() {
     let sym = make_sym("foo", "foo", SymbolKind::Function);
-    let mut r = make_ref(0, "Bar", EdgeKind::TypeRef);
+    let mut r = make_ref(0, "lodash", EdgeKind::Imports);
     r.byte_offset = 0;
-    r.line = 10;
+    r.line = 5;
     let pf = make_pf(vec![sym], vec![r]);
-    assert!(validate(&pf).is_empty());
-}
-
-#[test]
-fn ref_002_tolerates_zero_byte_offset_on_embedded_origin_ref() {
-    let sym = make_sym("foo", "foo", SymbolKind::Function);
-    let mut r = make_ref(0, "bar", EdgeKind::Calls);
-    r.byte_offset = 0;
-    r.line = 10;
-    let mut pf = make_pf(vec![sym], vec![r]);
-    pf.ref_origin_languages = vec![Some("typescript".to_string())];
-    assert!(validate(&pf).is_empty());
+    assert_eq!(codes(&validate(&pf)), vec!["REF-002"]);
 }
 
 #[test]
@@ -441,16 +427,6 @@ fn file_004_flags_invalid_flow_binding_value() {
 // ---------------------------------------------------------------------------
 // assert_canonical
 // ---------------------------------------------------------------------------
-
-#[test]
-fn external_files_are_exempt() {
-    let sym = make_sym("Bar", "Foo.Baz", SymbolKind::Class); // would be SYM-001
-    let pf = ParsedFile {
-        path: "ext:python:site-packages/foo/bar.py".to_string(),
-        ..make_pf(vec![sym], Vec::new())
-    };
-    assert!(validate(&pf).is_empty());
-}
 
 #[test]
 fn assert_canonical_succeeds_on_clean_file() {
