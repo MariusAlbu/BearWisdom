@@ -52,9 +52,16 @@ impl SymbolTypeData {
 /// Symbol id → SymbolTypeData lookup. The DB-side `symbols.id` is the key
 /// because TypeIds and ExtractedSymbol indices are not durable across
 /// indexing runs; symbol id is.
+///
+/// A parallel TypeId → sym_id index records the *self-yielding* mapping:
+/// when a type-defining symbol's `return_type` equals `arena.class(qname)`,
+/// this index lets the chain walker recover the symbol's generic params and
+/// other metadata from a TypeId encountered mid-chain (typically the `base`
+/// of a `Type::Apply`).
 #[derive(Debug, Default)]
 pub struct SymbolTypeMap {
     by_symbol_id: FxHashMap<i64, SymbolTypeData>,
+    self_yielding: FxHashMap<TypeId, i64>,
 }
 
 impl SymbolTypeMap {
@@ -65,7 +72,23 @@ impl SymbolTypeMap {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             by_symbol_id: FxHashMap::with_capacity_and_hasher(cap, Default::default()),
+            self_yielding: FxHashMap::default(),
         }
+    }
+
+    /// Look up the SymbolTypeData for the type-defining symbol whose
+    /// self-yield equals `ty`. Lets the chain walker recover generic
+    /// parameters or members from a Class TypeId without an O(n) scan.
+    pub fn data_for_class(&self, ty: TypeId) -> Option<&SymbolTypeData> {
+        self.self_yielding
+            .get(&ty)
+            .and_then(|sid| self.by_symbol_id.get(sid))
+    }
+
+    /// sym_id of the symbol whose self-yield TypeId is `ty`. None when no
+    /// type-defining symbol claims this TypeId.
+    pub fn sym_id_for_class(&self, ty: TypeId) -> Option<i64> {
+        self.self_yielding.get(&ty).copied()
     }
 
     /// Number of symbols with non-empty type metadata recorded.
@@ -86,10 +109,24 @@ impl SymbolTypeMap {
     /// discarded so `get` returns None for "no type info recorded."
     pub fn insert(&mut self, sym_id: i64, data: SymbolTypeData) {
         if data.is_empty() {
-            self.by_symbol_id.remove(&sym_id);
+            // Drop the stale self-yielding entry too if there was one.
+            if let Some(prev) = self.by_symbol_id.remove(&sym_id) {
+                if let Some(prev_ty) = prev.return_type {
+                    if self.self_yielding.get(&prev_ty) == Some(&sym_id) {
+                        self.self_yielding.remove(&prev_ty);
+                    }
+                }
+            }
             return;
         }
         self.by_symbol_id.insert(sym_id, data);
+    }
+
+    /// Mark `ty` as the self-yielding TypeId of `sym_id`. Used by the
+    /// builder to register type-defining symbols in the reverse index.
+    /// Idempotent — overwrites any prior owner of `ty`.
+    pub fn mark_self_yielding(&mut self, ty: TypeId, sym_id: i64) {
+        self.self_yielding.insert(ty, sym_id);
     }
 
     /// Mutable handle for incremental population (constructors-yield-self
@@ -141,10 +178,17 @@ impl SymbolTypeMap {
                 // override the default for symbols where "callable yields
                 // self" isn't the right answer (e.g. a future Python
                 // metaclass profile that wants the metaclass instance).
-                let return_type = match (extractor_return, is_type_defining(sym.kind)) {
-                    (Some(ty), _) => Some(ty),
-                    (None, true) => Some(arena.class(&sym.qualified_name)),
-                    (None, false) => None,
+                let (return_type, is_self_yield) = match (extractor_return, is_type_defining(sym.kind)) {
+                    (Some(ty), defining) => {
+                        // Honour extractor's choice. If it happens to match
+                        // arena.class(qname), it's still a self-yield —
+                        // mark accordingly so the reverse index works.
+                        let self_yield = defining
+                            && arena.class_lookup(&sym.qualified_name) == Some(ty);
+                        (Some(ty), self_yield)
+                    }
+                    (None, true) => (Some(arena.class(&sym.qualified_name)), true),
+                    (None, false) => (None, false),
                 };
 
                 let data = SymbolTypeData {
@@ -156,6 +200,11 @@ impl SymbolTypeMap {
 
                 if !data.is_empty() {
                     map.insert(sym_id, data);
+                    if is_self_yield {
+                        if let Some(ty) = return_type {
+                            map.mark_self_yielding(ty, sym_id);
+                        }
+                    }
                 }
             }
         }

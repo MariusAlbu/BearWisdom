@@ -224,6 +224,72 @@ fn build_extractor_return_type_overrides_self_yield_for_type_defining_kinds() {
 }
 
 #[test]
+fn build_records_self_yielding_reverse_index_for_type_defining_kinds() {
+    use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
+
+    let mut arena = TypeArena::new();
+    let class_sym = ExtractedSymbol {
+        name: "User".to_string(),
+        qualified_name: "User".to_string(),
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    };
+    let pf = ParsedFile {
+        path: "x.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: vec![class_sym],
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("x.ts".to_string(), 0), 99);
+
+    let map = SymbolTypeMap::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+        &DEFAULT_PROFILE,
+    );
+
+    let user_ty = arena.class("User");
+    let data = map
+        .data_for_class(user_ty)
+        .expect("reverse index resolves class TypeId → SymbolTypeData");
+    assert_eq!(data.return_type, Some(user_ty));
+    assert_eq!(map.sym_id_for_class(user_ty), Some(99));
+}
+
+#[test]
 fn symbol_type_data_is_empty_detects_default_state() {
     assert!(SymbolTypeData::default().is_empty());
     let mut arena = TypeArena::new();

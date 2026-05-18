@@ -5,16 +5,22 @@
 // consumes. symbol_types.rs maps DB symbol ids to per-symbol type metadata.
 // =============================================================================
 
+pub mod chain;
+pub mod dispatch;
 pub mod generics;
 pub mod inference;
 pub mod members;
+pub mod pattern;
 pub mod supertype;
 pub mod symbol_types;
 pub mod types;
 
+pub use chain::{ChainResolution, ChainWalker, DefaultRootResolver, RootResolver};
+pub use dispatch::{select_method, DispatchQuery};
 pub use generics::{substitute, GenericEnv};
 pub use inference::{infer_expression_type, unwrap_await, unwrap_iterator};
 pub use members::MembersIndex;
+pub use pattern::{bind as bind_pattern, Pattern};
 pub use supertype::{SupertypeGraph, SupertypeWalk};
 pub use symbol_types::{SymbolIdMap, SymbolTypeData, SymbolTypeMap};
 pub use types::{
