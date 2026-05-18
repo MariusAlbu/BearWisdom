@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::types::AliasTarget;
 use std::collections::HashMap;
 
@@ -172,4 +173,172 @@ fn empty_strings_are_undecidable() {
     let lookup = SubtypeFixture::new();
     assert_eq!(is_assignable_to("", "User", &lookup), None);
     assert_eq!(is_assignable_to("User", "", &lookup), None);
+}
+
+// ---------------------------------------------------------------------------
+// TypeId-form tests — mirror the string form's coverage and add the cases
+// it can't represent (union variance, primitive identity, optional peeling).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn typed_identity_is_yes() {
+    let mut arena = TypeArena::new();
+    let user = arena.class("User");
+    let lookup = SubtypeFixture::new();
+    assert_eq!(
+        is_assignable_to_typed(user, user, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+}
+
+#[test]
+fn typed_anything_assignable_to_any_or_unknown() {
+    let mut arena = TypeArena::new();
+    let user = arena.class("User");
+    let any = arena.class("any");
+    let unknown = arena.class("unknown");
+    let lookup = SubtypeFixture::new();
+
+    assert_eq!(
+        is_assignable_to_typed(user, any, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+    assert_eq!(
+        is_assignable_to_typed(user, unknown, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+}
+
+#[test]
+fn typed_never_assignable_to_anything() {
+    let mut arena = TypeArena::new();
+    let never_prim = arena.primitive(PrimKind::Never);
+    let never_class = arena.class("never");
+    let user = arena.class("User");
+    let lookup = SubtypeFixture::new();
+
+    assert_eq!(
+        is_assignable_to_typed(never_prim, user, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+    assert_eq!(
+        is_assignable_to_typed(never_class, user, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+}
+
+#[test]
+fn typed_inheritance_walk_one_and_multi_hop() {
+    let mut arena = TypeArena::new();
+    let user = arena.class("User");
+    let admin = arena.class("Admin");
+    let super_admin = arena.class("SuperAdmin");
+    let lookup = SubtypeFixture::new()
+        .with_parent("Admin", "User")
+        .with_parent("SuperAdmin", "Admin");
+
+    assert_eq!(
+        is_assignable_to_typed(admin, user, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+    assert_eq!(
+        is_assignable_to_typed(super_admin, user, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+}
+
+#[test]
+fn typed_inheritance_cycle_returns_unknown() {
+    let mut arena = TypeArena::new();
+    let a = arena.class("A");
+    let c = arena.class("C");
+    let lookup = SubtypeFixture::new()
+        .with_parent("A", "B")
+        .with_parent("B", "A");
+    assert_eq!(
+        is_assignable_to_typed(a, c, &arena, &lookup),
+        SubtypeResult::Unknown
+    );
+}
+
+#[test]
+fn typed_distinct_primitives_are_not_assignable() {
+    let mut arena = TypeArena::new();
+    let s = arena.primitive(PrimKind::Str);
+    let n = arena.primitive(PrimKind::Int);
+    let lookup = SubtypeFixture::new();
+    assert_eq!(
+        is_assignable_to_typed(s, n, &arena, &lookup),
+        SubtypeResult::No
+    );
+}
+
+#[test]
+fn typed_equal_primitives_are_assignable() {
+    let mut arena = TypeArena::new();
+    let s1 = arena.primitive(PrimKind::Str);
+    let s2 = arena.primitive(PrimKind::Str);
+    let lookup = SubtypeFixture::new();
+    // Interning ensures identity.
+    assert_eq!(s1, s2);
+    assert_eq!(
+        is_assignable_to_typed(s1, s2, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+}
+
+#[test]
+fn typed_optional_target_peels_one_layer() {
+    let mut arena = TypeArena::new();
+    let user = arena.class("User");
+    let opt_user = arena.intern(Type::Optional(user));
+    let lookup = SubtypeFixture::new();
+    assert_eq!(
+        is_assignable_to_typed(user, opt_user, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+}
+
+#[test]
+fn typed_union_source_assignable_when_all_branches_are() {
+    let mut arena = TypeArena::new();
+    let user = arena.class("User");
+    let admin = arena.class("Admin");
+    let union = arena.intern(Type::Union(vec![user, admin]));
+    let lookup = SubtypeFixture::new().with_parent("Admin", "User");
+    // Admin → User; User → User by identity; union → User.
+    assert_eq!(
+        is_assignable_to_typed(union, user, &arena, &lookup),
+        SubtypeResult::Yes
+    );
+}
+
+#[test]
+fn typed_union_source_fails_when_any_branch_fails() {
+    // string | number  → string. The number branch is disjoint
+    // primitives (Int vs Str → No) so the whole union → No, even
+    // though the string branch matches by identity.
+    let mut arena = TypeArena::new();
+    let string_ty = arena.primitive(PrimKind::Str);
+    let number_ty = arena.primitive(PrimKind::Int);
+    let union = arena.intern(Type::Union(vec![string_ty, number_ty]));
+    let lookup = SubtypeFixture::new();
+    assert_eq!(
+        is_assignable_to_typed(union, string_ty, &arena, &lookup),
+        SubtypeResult::No
+    );
+}
+
+#[test]
+fn typed_union_target_assignable_when_any_branch_matches() {
+    let mut arena = TypeArena::new();
+    let admin = arena.class("Admin");
+    let user = arena.class("User");
+    let order = arena.class("Order");
+    let union = arena.intern(Type::Union(vec![user, order]));
+    let lookup = SubtypeFixture::new().with_parent("Admin", "User");
+    assert_eq!(
+        is_assignable_to_typed(admin, union, &arena, &lookup),
+        SubtypeResult::Yes
+    );
 }

@@ -27,6 +27,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::SymbolLookup;
+use crate::type_checker::core::types::{PrimKind, Type, TypeArena, TypeId};
 
 /// TypeScript primitives the conservative branch uses to detect
 /// disjoint primitive pairs (e.g. `"string" extends number ? ...`).
@@ -90,6 +91,154 @@ pub fn is_assignable_to(check: &str, extends: &str, lookup: &dyn SymbolLookup) -
         return Some(false);
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// TypeId form — Phase 2 of the engine pivot.
+//
+// The legacy string fn above remains for chain-walker callers still on the
+// string path. New code working off `TypeArena` calls `is_assignable_to_typed`
+// and matches on `SubtypeResult` directly. Both implementations share the
+// same conservative semantics: only commit to Yes/No when the answer is
+// unambiguous; return Unknown to let the caller fall through to a clean miss.
+// ---------------------------------------------------------------------------
+
+/// Three-valued result for the conservative subtype check.
+///
+/// `Unknown` is load-bearing: returning a guess (Yes/No) instead would let a
+/// conditional alias pick a branch on shaky evidence and silently corrupt
+/// downstream resolution. Callers translate Unknown to "miss" rather than
+/// "wrong target."
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubtypeResult {
+    Yes,
+    No,
+    Unknown,
+}
+
+/// TypeId form of `is_assignable_to`. Decides whether `source` is assignable
+/// to `target` using only the type's structural shape in the arena plus the
+/// supertype chain reachable through `SymbolLookup::parent_class_qname`.
+///
+/// Recognized:
+/// - Identity (TypeId equality, integer comparison).
+/// - Top types: target is `Class("any")` / `Class("unknown")`.
+/// - Bottom: source is `Primitive(Never)` or `Class("never")`.
+/// - `Optional<T>` target: source assignable when assignable to `T`.
+/// - `Union` source: assignable when *every* branch is.
+/// - `Union` target: assignable when *any* branch is.
+/// - `Class` → `Class`: walk inheritance via parent_class_qname (capped to
+///   `MAX_INHERITANCE_HOPS` matching the string form).
+/// - `Primitive` → `Primitive`: equal kinds → Yes, different kinds → No.
+///
+/// Everything else returns `Unknown`.
+pub fn is_assignable_to_typed(
+    source: TypeId,
+    target: TypeId,
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+) -> SubtypeResult {
+    if source == target {
+        return SubtypeResult::Yes;
+    }
+
+    let src_ty = arena.get(source).clone();
+    let tgt_ty = arena.get(target).clone();
+
+    // Top types — `any` / `unknown` accept every source. Recognized via
+    // Class(qname) until the arena gains dedicated Any/Unknown primitives
+    // (the canonical Type::Unknown marks "engine bailed", not "is the TS
+    // top type").
+    if let Type::Class(qname) = &tgt_ty {
+        if matches!(qname.as_str(), "any" | "unknown") {
+            return SubtypeResult::Yes;
+        }
+    }
+
+    // Bottom — `never` is vacuously assignable to everything.
+    if matches!(src_ty, Type::Primitive(PrimKind::Never)) {
+        return SubtypeResult::Yes;
+    }
+    if let Type::Class(qname) = &src_ty {
+        if qname == "never" {
+            return SubtypeResult::Yes;
+        }
+    }
+
+    // Optional target: peel one layer. `T` is assignable to `T | undefined`.
+    if let Type::Optional(inner) = tgt_ty {
+        return is_assignable_to_typed(source, inner, arena, lookup);
+    }
+
+    // Union source: every branch must be assignable; one Unknown taints the
+    // result to Unknown so we don't commit to Yes on incomplete evidence.
+    if let Type::Union(branches) = &src_ty {
+        let mut any_unknown = false;
+        for b in branches {
+            match is_assignable_to_typed(*b, target, arena, lookup) {
+                SubtypeResult::Yes => continue,
+                SubtypeResult::No => return SubtypeResult::No,
+                SubtypeResult::Unknown => any_unknown = true,
+            }
+        }
+        return if any_unknown {
+            SubtypeResult::Unknown
+        } else {
+            SubtypeResult::Yes
+        };
+    }
+
+    // Union target: any branch suffices. Unknown branches propagate only
+    // when no Yes wins outright.
+    if let Type::Union(branches) = &tgt_ty {
+        let mut any_unknown = false;
+        for b in branches {
+            match is_assignable_to_typed(source, *b, arena, lookup) {
+                SubtypeResult::Yes => return SubtypeResult::Yes,
+                SubtypeResult::No => continue,
+                SubtypeResult::Unknown => any_unknown = true,
+            }
+        }
+        return if any_unknown {
+            SubtypeResult::Unknown
+        } else {
+            SubtypeResult::No
+        };
+    }
+
+    // Class → Class via inheritance walk. Reuses the string lookup until
+    // Phase 3's SupertypeGraph lands.
+    if let (Type::Class(src_q), Type::Class(tgt_q)) = (&src_ty, &tgt_ty) {
+        let mut ancestor = src_q.clone();
+        for _ in 0..MAX_INHERITANCE_HOPS {
+            let Some(parent) = lookup.parent_class_qname(&ancestor) else {
+                return SubtypeResult::Unknown;
+            };
+            if parent == tgt_q {
+                return SubtypeResult::Yes;
+            }
+            if parent == ancestor {
+                break;
+            }
+            ancestor = parent.to_string();
+        }
+        // Walked the full chain without finding the target. We don't know
+        // the full supertype lattice yet (interfaces, structural types,
+        // multi-inheritance) so call this Unknown rather than No — matches
+        // the string form's "primitive vs user-type is undecidable" stance.
+        return SubtypeResult::Unknown;
+    }
+
+    // Primitive → Primitive: equal kinds → Yes, different → No.
+    if let (Type::Primitive(a), Type::Primitive(b)) = (&src_ty, &tgt_ty) {
+        return if a == b {
+            SubtypeResult::Yes
+        } else {
+            SubtypeResult::No
+        };
+    }
+
+    SubtypeResult::Unknown
 }
 
 #[cfg(test)]

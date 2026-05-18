@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::type_checker::core::types::{Type, TypeArena};
 use crate::types::AliasTarget;
 use std::collections::HashMap;
 
@@ -610,4 +611,280 @@ fn deep_chain_caps_at_max_expansion_depth() {
         root.starts_with('a') || root == "string",
         "head landed somewhere reasonable, got {root}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// TypeId-form tests — verify expand_alias_typed and build_alias_index produce
+// the structural Type variants the new engine consumes. The single-hop
+// semantics here are intentional; recursive alias-of-alias collapse is
+// driven by the chain walker re-entering, not by an internal loop.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn typed_unknown_alias_returns_none() {
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let aliases = build_alias_index(&[], &mut arena);
+    let cls = arena.class("Nope");
+    assert_eq!(expand_alias_typed(cls, &mut arena, &aliases, &lookup), None);
+}
+
+#[test]
+fn typed_application_no_args_returns_root_class() {
+    // type Id = string  →  expand → Class("string")
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "Id".to_string(),
+        AliasTarget::Application {
+            root: "string".to_string(),
+            args: Vec::new(),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let id_ty = arena.class("Id");
+    let out = expand_alias_typed(id_ty, &mut arena, &aliases, &lookup).expect("expanded");
+    assert_eq!(arena.get(out), &Type::Class("string".into()));
+}
+
+#[test]
+fn typed_application_with_args_builds_apply() {
+    // type UserMap = Map<string, User>  →  Apply<Map, [string, User]>
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "UserMap".to_string(),
+        AliasTarget::Application {
+            root: "Map".to_string(),
+            args: s(&["string", "User"]),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let usermap_ty = arena.class("UserMap");
+
+    let out = expand_alias_typed(usermap_ty, &mut arena, &aliases, &lookup).expect("expanded");
+    let map_ty = arena.class("Map");
+    let string_ty = arena.class("string");
+    let user_ty = arena.class("User");
+    assert_eq!(
+        arena.get(out),
+        &Type::Apply {
+            base: map_ty,
+            args: vec![string_ty, user_ty],
+        }
+    );
+}
+
+#[test]
+fn typed_union_builds_union_type() {
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "Status".to_string(),
+        AliasTarget::Union(s(&["Ok", "Err"])),
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let status = arena.class("Status");
+    let out = expand_alias_typed(status, &mut arena, &aliases, &lookup).expect("expanded");
+    let ok_ty = arena.class("Ok");
+    let err_ty = arena.class("Err");
+    assert_eq!(arena.get(out), &Type::Union(vec![ok_ty, err_ty]));
+}
+
+#[test]
+fn typed_intersection_builds_intersection_type() {
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "Mix".to_string(),
+        AliasTarget::Intersection(s(&["A", "B"])),
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let mix = arena.class("Mix");
+    let out = expand_alias_typed(mix, &mut arena, &aliases, &lookup).expect("expanded");
+    let a = arena.class("A");
+    let b = arena.class("B");
+    assert_eq!(arena.get(out), &Type::Intersection(vec![a, b]));
+}
+
+#[test]
+fn typed_typeof_uses_field_type_lookup() {
+    // type Foo = typeof someValue  with  someValue: User  →  Class("User")
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new().with_field_type("someValue", "User");
+    let pairs = vec![(
+        "Foo".to_string(),
+        AliasTarget::Typeof("someValue".to_string()),
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let foo = arena.class("Foo");
+    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
+    assert_eq!(arena.get(out), &Type::Class("User".into()));
+}
+
+#[test]
+fn typed_typeof_falls_back_to_return_type() {
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new().with_return_type("someFn", "Result");
+    let pairs = vec![(
+        "Foo".to_string(),
+        AliasTarget::Typeof("someFn".to_string()),
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let foo = arena.class("Foo");
+    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
+    assert_eq!(arena.get(out), &Type::Class("Result".into()));
+}
+
+#[test]
+fn typed_typeof_misses_when_value_unknown() {
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "Foo".to_string(),
+        AliasTarget::Typeof("never_indexed".to_string()),
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let foo = arena.class("Foo");
+    assert_eq!(expand_alias_typed(foo, &mut arena, &aliases, &lookup), None);
+}
+
+#[test]
+fn typed_indexed_access_uses_dotted_field_lookup() {
+    // type Foo = T["name"]  →  field_type("T.name") = "string"  →  Class("string")
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new().with_field_type("T.name", "string");
+    let pairs = vec![(
+        "Foo".to_string(),
+        AliasTarget::IndexedAccess {
+            object: "T".to_string(),
+            key: "name".to_string(),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let foo = arena.class("Foo");
+    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
+    assert_eq!(arena.get(out), &Type::Class("string".into()));
+}
+
+#[test]
+fn typed_transparent_mapped_returns_source() {
+    // type Foo<T> = { [K in keyof T]: T[K] } → mapped source T
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "Foo".to_string(),
+        AliasTarget::Mapped {
+            source: "User".to_string(),
+            value_template: "User[K]".to_string(),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let foo = arena.class("Foo");
+    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
+    assert_eq!(arena.get(out), &Type::Class("User".into()));
+}
+
+#[test]
+fn typed_non_transparent_mapped_returns_none() {
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "Foo".to_string(),
+        AliasTarget::Mapped {
+            source: "User".to_string(),
+            value_template: "boolean".to_string(),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let foo = arena.class("Foo");
+    assert_eq!(expand_alias_typed(foo, &mut arena, &aliases, &lookup), None);
+}
+
+#[test]
+fn typed_conditional_picks_true_branch_on_assignable() {
+    // type C = User extends User ? Yes : No  →  Class("Yes")
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "C".to_string(),
+        AliasTarget::Conditional {
+            check: "User".to_string(),
+            extends: "User".to_string(),
+            true_branch: "Yes".to_string(),
+            false_branch: "No".to_string(),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let c = arena.class("C");
+    let out = expand_alias_typed(c, &mut arena, &aliases, &lookup).expect("expanded");
+    assert_eq!(arena.get(out), &Type::Class("Yes".into()));
+}
+
+#[test]
+fn typed_conditional_returns_none_when_undecidable() {
+    // type C = A extends B ? Yes : No  with no inheritance info →
+    // subtype check returns Unknown → expand returns None.
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "C".to_string(),
+        AliasTarget::Conditional {
+            check: "A".to_string(),
+            extends: "B".to_string(),
+            true_branch: "Yes".to_string(),
+            false_branch: "No".to_string(),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let c = arena.class("C");
+    assert_eq!(expand_alias_typed(c, &mut arena, &aliases, &lookup), None);
+}
+
+#[test]
+fn typed_keyof_object_other_return_none() {
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![
+        ("K1".to_string(), AliasTarget::Keyof("User".to_string())),
+        ("K2".to_string(), AliasTarget::Object),
+        ("K3".to_string(), AliasTarget::Other),
+    ];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let k1 = arena.class("K1");
+    let k2 = arena.class("K2");
+    let k3 = arena.class("K3");
+    assert_eq!(expand_alias_typed(k1, &mut arena, &aliases, &lookup), None);
+    assert_eq!(expand_alias_typed(k2, &mut arena, &aliases, &lookup), None);
+    assert_eq!(expand_alias_typed(k3, &mut arena, &aliases, &lookup), None);
+}
+
+#[test]
+fn typed_build_alias_index_interns_each_qname() {
+    // Two aliases with overlapping names should produce two distinct
+    // TypeId keys; lookup against a non-aliased name returns None.
+    let mut arena = TypeArena::new();
+    let pairs = vec![
+        (
+            "A".to_string(),
+            AliasTarget::Application {
+                root: "X".to_string(),
+                args: Vec::new(),
+            },
+        ),
+        (
+            "B".to_string(),
+            AliasTarget::Application {
+                root: "Y".to_string(),
+                args: Vec::new(),
+            },
+        ),
+    ];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let a = arena.class("A");
+    let b = arena.class("B");
+    let c = arena.class("C");
+    assert!(aliases.contains_key(&a));
+    assert!(aliases.contains_key(&b));
+    assert!(!aliases.contains_key(&c));
 }

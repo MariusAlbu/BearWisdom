@@ -17,9 +17,13 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::SymbolLookup;
-use crate::type_checker::subtype::is_assignable_to;
+use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::subtype::{
+    is_assignable_to, is_assignable_to_typed, SubtypeResult,
+};
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::types::AliasTarget;
+use rustc_hash::FxHashMap;
 
 /// Maximum alias-of-alias hops to follow before giving up.
 ///
@@ -272,6 +276,124 @@ fn is_transparent_mapped(source: &str, value_template: &str) -> bool {
         return false;
     };
     rest.trim_end().ends_with(']')
+}
+
+// ---------------------------------------------------------------------------
+// TypeId form — Phase 2 of the engine pivot.
+//
+// The legacy string fn above remains for chain-walker callers that still
+// operate on alias qnames. New code working off `TypeArena` calls
+// `expand_alias_typed` and walks the resulting TypeId tree directly. The
+// TypeId path performs one expansion hop per call — recursive alias-of-alias
+// is handled by re-entry from the chain walker, not by an internal loop, so
+// generic substitution can interpose between hops at a single, principled
+// site (Phase 3's MembersIndex::lookup).
+// ---------------------------------------------------------------------------
+
+/// TypeId-keyed alias-target map. Built once per indexing run from
+/// `ParsedFile::alias_targets` by `build_alias_index`; consumed by
+/// `expand_alias_typed` thereafter.
+pub type AliasIndex = FxHashMap<TypeId, AliasTarget>;
+
+/// Project the string-keyed `(alias_qname, AliasTarget)` pairs emitted by
+/// extractors into a TypeId-keyed map. Each alias qname is interned as a
+/// Class TypeId so subsequent lookups match the same TypeId the chain walker
+/// holds.
+pub fn build_alias_index(
+    pairs: &[(String, AliasTarget)],
+    arena: &mut TypeArena,
+) -> AliasIndex {
+    let mut idx = AliasIndex::with_capacity_and_hasher(pairs.len(), Default::default());
+    for (name, target) in pairs {
+        let id = arena.class(name);
+        idx.insert(id, target.clone());
+    }
+    idx
+}
+
+/// TypeId form of `expand_alias`. Resolves a single alias hop, producing the
+/// alias's concrete head type as a fresh TypeId in `arena`.
+///
+/// Returns `Some(TypeId)` when:
+/// - `Application` → builds `Type::Apply { base, args }` (or returns `base`
+///   for the no-arg form so the chain walker doesn't carry an empty Apply
+///   through unnecessary intern hops).
+/// - `Union` / `Intersection` → builds the corresponding Type variant.
+/// - `Typeof(name)` → dereferences the value's `field_type_name` (then
+///   `return_type_name`) via `lookup` and interns the result as a Class.
+/// - `IndexedAccess { object, key }` → looks up `field_type_name("object.key")`
+///   and interns as Class.
+/// - `Mapped` → transparent-pattern case returns `arena.class(source)`.
+/// - `Conditional` → consults `is_assignable_to_typed`; picks the deciding
+///   branch and interns as Class.
+///
+/// Returns `None` for `Keyof`, `Object`, `Other`, and any `Typeof` /
+/// `IndexedAccess` whose underlying lookup misses — the chain walker treats
+/// None as "miss against the alias name" rather than guessing.
+pub fn expand_alias_typed(
+    alias_ty: TypeId,
+    arena: &mut TypeArena,
+    aliases: &AliasIndex,
+    lookup: &dyn SymbolLookup,
+) -> Option<TypeId> {
+    let target = aliases.get(&alias_ty)?.clone();
+    match target {
+        AliasTarget::Application { root, args } => {
+            let base = arena.class(&root);
+            if args.is_empty() {
+                return Some(base);
+            }
+            let arg_ids: Vec<TypeId> = args.iter().map(|a| arena.class(a)).collect();
+            Some(arena.intern(Type::Apply {
+                base,
+                args: arg_ids,
+            }))
+        }
+        AliasTarget::Union(branches) => {
+            let ids: Vec<TypeId> = branches.iter().map(|b| arena.class(b)).collect();
+            Some(arena.intern(Type::Union(ids)))
+        }
+        AliasTarget::Intersection(branches) => {
+            let ids: Vec<TypeId> = branches.iter().map(|b| arena.class(b)).collect();
+            Some(arena.intern(Type::Intersection(ids)))
+        }
+        AliasTarget::Typeof(value_name) => {
+            let resolved = lookup
+                .field_type_name(&value_name)
+                .or_else(|| lookup.return_type_name(&value_name))
+                .map(|s| s.to_string())?;
+            Some(arena.class(&resolved))
+        }
+        AliasTarget::IndexedAccess { object, key } => {
+            let member_qname = format!("{object}.{key}");
+            let resolved = lookup.field_type_name(&member_qname).map(|s| s.to_string())?;
+            Some(arena.class(&resolved))
+        }
+        AliasTarget::Mapped {
+            source,
+            value_template,
+        } => {
+            if !is_transparent_mapped(&source, &value_template) {
+                return None;
+            }
+            Some(arena.class(&source))
+        }
+        AliasTarget::Conditional {
+            check,
+            extends,
+            true_branch,
+            false_branch,
+        } => {
+            let check_id = arena.class(&check);
+            let extends_id = arena.class(&extends);
+            match is_assignable_to_typed(check_id, extends_id, arena, lookup) {
+                SubtypeResult::Yes => Some(arena.class(&true_branch)),
+                SubtypeResult::No => Some(arena.class(&false_branch)),
+                SubtypeResult::Unknown => None,
+            }
+        }
+        AliasTarget::Keyof(_) | AliasTarget::Object | AliasTarget::Other => None,
+    }
 }
 
 #[cfg(test)]
