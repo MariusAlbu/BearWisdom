@@ -75,12 +75,14 @@ impl fmt::Display for ContractViolation {
 /// violation; empty Vec means the file is contract-clean.
 pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
     let mut out = Vec::new();
+    let line_starts = file.content.as_deref().map(build_line_starts);
     check_file_parallel_vecs(file, &mut out);
     check_flow_meta(file, &mut out);
     for (idx, sym) in file.symbols.iter().enumerate() {
         check_sym_001(file, idx, sym, &mut out);
         check_sym_002(file, idx, sym, &mut out);
         check_sym_003(file, idx, sym, &mut out);
+        check_sym_004(file, idx, sym, line_starts.as_deref(), &mut out);
     }
     for (idx, r) in file.refs.iter().enumerate() {
         check_ref_001(file, idx, r, &mut out);
@@ -88,12 +90,125 @@ pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
         check_ref_003(file, idx, r, &mut out);
         check_ref_004(file, idx, r, &mut out);
         check_ref_005(file, idx, r, &mut out);
+        check_ref_006(file, idx, r, line_starts.as_deref(), &mut out);
         if let Some(chain) = r.chain.as_ref() {
             check_chain_001(file, idx, r, chain, &mut out);
             check_chain_002(file, idx, r, chain, &mut out);
+            check_chain_003(file, idx, r, chain, &mut out);
         }
     }
     out
+}
+
+/// Derive byte_offset on Symbols and col on Refs from their existing line and
+/// column data + file content. Also assigns monotonically-increasing
+/// byte_offsets to chain segments that don't already have them so CHAIN-003
+/// holds. Called once per file after extraction; only fills slots whose
+/// current value is the sentinel 0.
+pub fn populate_positions(file: &mut ParsedFile) {
+    let Some(content) = file.content.as_deref() else { return };
+    let line_starts = build_line_starts(content);
+
+    for sym in &mut file.symbols {
+        if sym.byte_offset == 0 {
+            if let Some(b) = expected_byte(&line_starts, sym.start_line, sym.start_col) {
+                sym.byte_offset = b;
+            }
+        }
+    }
+
+    for r in &mut file.refs {
+        if r.col == 0 {
+            if let Some(&ls) = line_starts.get(r.line as usize) {
+                if r.byte_offset >= ls {
+                    r.col = r.byte_offset - ls;
+                }
+            }
+        }
+        if let Some(chain) = r.chain.as_mut() {
+            populate_chain_segments(chain, content, r.byte_offset);
+        }
+    }
+}
+
+/// Assign byte_offsets to chain segments by scanning forward from the ref's
+/// byte_offset in the source content. Each segment's name is searched for
+/// after the previous segment's position; if found, the segment is anchored
+/// at that byte position. Falls back to a monotonic synthetic offset when
+/// the literal name can't be located (rare — happens for synthesized
+/// segments or chain segments expressed via non-trivial source forms).
+fn populate_chain_segments(
+    chain: &mut crate::types::MemberChain,
+    content: &str,
+    ref_byte_offset: u32,
+) {
+    let bytes = content.as_bytes();
+    let mut cursor = ref_byte_offset as usize;
+    let mut prev: u32 = 0;
+    for (i, seg) in chain.segments.iter_mut().enumerate() {
+        if seg.byte_offset == 0 {
+            let needle = seg.name.as_bytes();
+            let from = cursor.min(bytes.len());
+            let found = if !needle.is_empty() {
+                find_subslice(bytes, needle, from)
+            } else {
+                None
+            };
+            let candidate = match found {
+                Some(pos) => pos as u32,
+                None => {
+                    if i == 0 {
+                        ref_byte_offset
+                    } else {
+                        prev.saturating_add(1)
+                    }
+                }
+            };
+            seg.byte_offset = if i > 0 && candidate <= prev {
+                prev.saturating_add(1)
+            } else {
+                candidate
+            };
+        }
+        if let Some(pos) = (seg.byte_offset as usize).checked_add(seg.name.len()) {
+            cursor = pos;
+        }
+        prev = seg.byte_offset;
+    }
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() || from >= haystack.len() {
+        return None;
+    }
+    let end = haystack.len() - needle.len();
+    let mut i = from;
+    while i <= end {
+        if haystack[i..i + needle.len()] == *needle {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Build per-line byte-start indices once per file so SYM-004 / REF-006 can
+/// cross-check (line, col) against byte_offset in O(1).
+fn build_line_starts(content: &str) -> Vec<u32> {
+    let mut starts = Vec::with_capacity(content.len() / 40);
+    starts.push(0u32);
+    for (i, b) in content.bytes().enumerate() {
+        if b == b'\n' {
+            starts.push((i + 1) as u32);
+        }
+    }
+    starts
+}
+
+/// Returns the expected byte offset of (line, col) given the precomputed line
+/// starts. Clamps to file length on out-of-range positions.
+fn expected_byte(line_starts: &[u32], line: u32, col: u32) -> Option<u32> {
+    line_starts.get(line as usize).map(|&s| s.saturating_add(col))
 }
 
 /// Panics with the full violation list when `validate(file)` is non-empty.
@@ -521,6 +636,101 @@ fn check_chain_002(
             ),
             location: ref_loc(file, idx, r),
         });
+    }
+}
+
+/// SYM-004: byte_offset must equal the byte position of (start_line, start_col)
+/// against the file content.
+fn check_sym_004(
+    file: &ParsedFile,
+    idx: usize,
+    sym: &ExtractedSymbol,
+    line_starts: Option<&[u32]>,
+    out: &mut Vec<ContractViolation>,
+) {
+    let Some(starts) = line_starts else { return };
+    let Some(expected) = expected_byte(starts, sym.start_line, sym.start_col) else {
+        return;
+    };
+    if sym.byte_offset != expected {
+        out.push(ContractViolation {
+            code: "SYM-004",
+            message: format!(
+                "byte_offset {} does not match expected {} for (line {}, col {})",
+                sym.byte_offset, expected, sym.start_line, sym.start_col,
+            ),
+            location: sym_loc(file, idx, sym),
+        });
+    }
+}
+
+/// REF-006: byte_offset must equal the byte position of (line, col) against
+/// the file content.
+fn check_ref_006(
+    file: &ParsedFile,
+    idx: usize,
+    r: &ExtractedRef,
+    line_starts: Option<&[u32]>,
+    out: &mut Vec<ContractViolation>,
+) {
+    let Some(starts) = line_starts else { return };
+    if file
+        .ref_origin_languages
+        .get(idx)
+        .map(|o| o.is_some())
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let Some(expected) = expected_byte(starts, r.line, r.col) else {
+        return;
+    };
+    if r.byte_offset != expected {
+        out.push(ContractViolation {
+            code: "REF-006",
+            message: format!(
+                "byte_offset {} does not match expected {} for (line {}, col {})",
+                r.byte_offset, expected, r.line, r.col,
+            ),
+            location: ref_loc(file, idx, r),
+        });
+    }
+}
+
+/// CHAIN-003: segment byte_offsets within a chain strictly increase.
+fn check_chain_003(
+    file: &ParsedFile,
+    idx: usize,
+    r: &ExtractedRef,
+    chain: &MemberChain,
+    out: &mut Vec<ContractViolation>,
+) {
+    let mut prev: Option<u32> = None;
+    for (seg_idx, seg) in chain.segments.iter().enumerate() {
+        if seg.byte_offset == 0 && seg_idx > 0 {
+            out.push(ContractViolation {
+                code: "CHAIN-003",
+                message: format!(
+                    "segment #{} '{}' has byte_offset 0; only the first segment may sit at byte 0",
+                    seg_idx, seg.name,
+                ),
+                location: ref_loc(file, idx, r),
+            });
+            continue;
+        }
+        if let Some(p) = prev {
+            if seg.byte_offset <= p {
+                out.push(ContractViolation {
+                    code: "CHAIN-003",
+                    message: format!(
+                        "segment #{} '{}' byte_offset {} is not strictly greater than previous segment's {}",
+                        seg_idx, seg.name, seg.byte_offset, p,
+                    ),
+                    location: ref_loc(file, idx, r),
+                });
+            }
+        }
+        prev = Some(seg.byte_offset);
     }
 }
 

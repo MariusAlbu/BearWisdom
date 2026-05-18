@@ -68,6 +68,10 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
 }
 
 fn seg(name: &str, kind: SegmentKind) -> ChainSegment {
+    seg_at(name, kind, 1)
+}
+
+fn seg_at(name: &str, kind: SegmentKind, byte_offset: u32) -> ChainSegment {
     ChainSegment {
         name: name.to_string(),
         node_kind: "identifier".to_string(),
@@ -75,7 +79,7 @@ fn seg(name: &str, kind: SegmentKind) -> ChainSegment {
         declared_type: None,
         type_args: Vec::new(),
         optional_chaining: false,
-        byte_offset: 0,
+        byte_offset,
     }
 }
 
@@ -112,8 +116,8 @@ fn dotted_call_with_chain_is_clean() {
     let mut r = make_ref(0, "save", EdgeKind::Calls);
     r.chain = Some(MemberChain {
         segments: vec![
-            seg("repo", SegmentKind::Identifier),
-            seg("save", SegmentKind::Property),
+            seg_at("repo", SegmentKind::Identifier, 1),
+            seg_at("save", SegmentKind::Property, 6),
         ],
     });
     let pf = make_pf(vec![sym], vec![r]);
@@ -303,8 +307,8 @@ fn ref_004_flags_last_segment_mismatch_with_target_name() {
     let mut r = make_ref(0, "save", EdgeKind::Calls);
     r.chain = Some(MemberChain {
         segments: vec![
-            seg("repo", SegmentKind::Identifier),
-            seg("delete", SegmentKind::Property), // doesn't match target_name "save"
+            seg_at("repo", SegmentKind::Identifier, 1),
+            seg_at("delete", SegmentKind::Property, 6),
         ],
     });
     let pf = make_pf(vec![sym], vec![r]);
