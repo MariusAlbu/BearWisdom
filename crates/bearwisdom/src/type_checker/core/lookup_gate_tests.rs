@@ -9,9 +9,12 @@
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 use crate::languages::typescript::extract;
 use crate::type_checker::core::{
-    MembersIndex, SymbolIdMap, SupertypeGraph,
+    infer_expression_type, MembersIndex, SupertypeGraph, SymbolIdMap, SymbolTypeMap,
+    Type, TypeArena,
 };
-use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+use crate::type_checker::profile::language_profile::{
+    LanguageProfile, SupertypeDiscovery, DEFAULT_PROFILE,
+};
 use crate::types::{AliasTarget, EdgeKind, ParsedFile};
 use std::sync::Arc;
 
@@ -257,6 +260,218 @@ export class HelloGreeter implements Greeter {
         .lookup(g_ty, "greet", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
         .expect("greet on Greeter interface");
     assert_eq!(gm.qualified_name, "Greeter.greet");
+}
+
+#[test]
+fn members_and_symbol_types_key_consistently_for_same_parsed_file() {
+    // Phase 4 will look up a SymbolInfo via MembersIndex then dereference
+    // its declared/return TypeId through SymbolTypeMap. Both maps must be
+    // built off the same arena and the same sym_id_map; this gate verifies
+    // the two halves agree on TypeIds for every type-defining symbol in a
+    // real extraction.
+    let source = r#"
+export class Repository<T> {
+    items: T[] = [];
+    push(item: T): void { this.items.push(item); }
+}
+export interface Identified {
+    id: string;
+}
+"#;
+    let pf = wrap_as_parsed_file("src/repo.ts", source);
+    let sym_ids = deterministic_ids(&pf);
+
+    let mut arena = crate::type_checker::core::TypeArena::new();
+    let members = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+    );
+    let types = SymbolTypeMap::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+        &DEFAULT_PROFILE,
+    );
+
+    // For every type-defining symbol, the TypeId in SymbolTypeMap.return_type
+    // must equal arena.class(qname) — the same TypeId MembersIndex would have
+    // keyed for that type.
+    for (idx, sym) in pf.symbols.iter().enumerate() {
+        if !matches!(
+            sym.kind,
+            crate::types::SymbolKind::Class
+                | crate::types::SymbolKind::Interface
+                | crate::types::SymbolKind::Struct
+                | crate::types::SymbolKind::Trait
+                | crate::types::SymbolKind::Enum
+                | crate::types::SymbolKind::TypeAlias
+                | crate::types::SymbolKind::Delegate
+        ) {
+            continue;
+        }
+        let id = sym_ids[&(pf.path.clone(), idx)];
+        let data = types
+            .get(id)
+            .unwrap_or_else(|| panic!("SymbolTypeMap missing entry for {}", sym.qualified_name));
+        let return_ty = data
+            .return_type
+            .expect("type-defining symbol should self-yield");
+        let class_ty = arena.class(&sym.qualified_name);
+        assert_eq!(
+            return_ty, class_ty,
+            "SymbolTypeMap and MembersIndex must key the same TypeId for {}",
+            sym.qualified_name
+        );
+        // The member-set keyed under that TypeId is what the chain walker
+        // will hit when it derefs the self-yield. For Repository / Identified
+        // there must be at least one direct member registered.
+        assert!(
+            !members.direct_of(class_ty).is_empty(),
+            "expected direct members under {} (TypeId from SymbolTypeMap)",
+            sym.qualified_name
+        );
+    }
+}
+
+#[test]
+fn infer_expression_type_recognises_real_instantiates_ref() {
+    // Build a tiny TS program with a `new Foo()` site; locate that ref
+    // and feed it through infer_expression_type. The inference fallback
+    // should produce arena.class("Foo") even without a Resolution.
+    let source = r#"
+export class Foo { id: number = 0; }
+export function makeFoo(): Foo { return new Foo(); }
+"#;
+    let pf = wrap_as_parsed_file("src/foo.ts", source);
+
+    let inst_ref = pf
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Instantiates && r.target_name == "Foo")
+        .expect("extractor must emit Instantiates ref for `new Foo()`");
+
+    let mut arena = crate::type_checker::core::TypeArena::new();
+    let out = infer_expression_type(inst_ref, None, &mut arena, &DEFAULT_PROFILE)
+        .expect("Instantiates fallback yields the class TypeId");
+    let foo = arena.class("Foo");
+    assert_eq!(out, foo);
+    // And dereferencing the TypeId yields the canonical Class shape.
+    assert_eq!(arena.get(out), &Type::Class("Foo".into()));
+}
+
+#[test]
+fn structural_typing_finds_interface_member_on_implementing_struct_from_real_go() {
+    // Go's structural typing: a struct satisfies an interface implicitly
+    // when its method set is a superset. The supertype builder must
+    // discover that relationship without any explicit `implements` ref
+    // in the parsed file.
+    use crate::languages::go::extract;
+
+    let source = r#"
+package main
+
+type Writer interface {
+    Write(p []byte) (int, error)
+}
+
+type FileBuffer struct {
+    data []byte
+}
+
+func (f *FileBuffer) Write(p []byte) (int, error) {
+    f.data = append(f.data, p...)
+    return len(p), nil
+}
+
+func (f *FileBuffer) Close() error {
+    return nil
+}
+"#;
+    let extraction = extract::extract(source);
+    let pf = ParsedFile {
+        path: "main.go".to_string(),
+        language: "go".to_string(),
+        content_hash: String::new(),
+        size: source.len() as u64,
+        line_count: source.lines().count() as u32,
+        mtime: None,
+        package_id: None,
+        symbols: extraction.symbols,
+        refs: extraction.refs,
+        routes: extraction.routes,
+        db_sets: extraction.db_sets,
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: Some(source.to_string()),
+        has_errors: extraction.has_errors,
+        flow: Default::default(),
+        demand_contributions: extraction.demand_contributions,
+        alias_targets: extraction.alias_targets,
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let sym_ids = deterministic_ids(&pf);
+    let lookup = ParsedFileLookup::from(&pf, &sym_ids);
+
+    let mut arena = TypeArena::new();
+    let members = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+    );
+
+    let go_structural_profile = LanguageProfile {
+        supertype_discovery: SupertypeDiscovery::Structural,
+        ..DEFAULT_PROFILE
+    };
+    let graph = SupertypeGraph::build(
+        std::slice::from_ref(&pf),
+        &mut arena,
+        &go_structural_profile,
+        &members,
+        &lookup,
+    );
+
+    // Find the interface and struct qnames produced by the extractor.
+    // Go extractor qualifies with package name (`main`).
+    let writer_qname = pf
+        .symbols
+        .iter()
+        .find(|s| s.name == "Writer" && s.kind == crate::types::SymbolKind::Interface)
+        .map(|s| s.qualified_name.clone())
+        .expect("Writer interface must be extracted");
+    let buf_qname = pf
+        .symbols
+        .iter()
+        .find(|s| s.name == "FileBuffer" && s.kind == crate::types::SymbolKind::Struct)
+        .map(|s| s.qualified_name.clone())
+        .expect("FileBuffer struct must be extracted");
+
+    let writer_ty = arena.class(&writer_qname);
+    let buf_ty = arena.class(&buf_qname);
+
+    assert!(
+        graph.parents_of(buf_ty).contains(&writer_ty),
+        "FileBuffer must structurally satisfy Writer (parents = {:?})",
+        graph.parents_of(buf_ty)
+    );
+
+    // And the chain walker's path also works: lookup on FileBuffer for the
+    // Write method must succeed by walking up to Writer (where the method
+    // is also declared) or by hitting the FileBuffer's own Write.
+    let write_member = members
+        .lookup(
+            buf_ty,
+            "Write",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &go_structural_profile,
+        )
+        .expect("Write must resolve on FileBuffer");
+    assert_eq!(write_member.name, "Write");
 }
 
 #[test]

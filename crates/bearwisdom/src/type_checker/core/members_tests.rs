@@ -127,6 +127,36 @@ fn apply_recurses_to_base() {
 }
 
 #[test]
+fn optional_returns_none_when_profile_disables_peel() {
+    use crate::type_checker::profile::language_profile::LanguageProfile;
+
+    let no_peel_profile = LanguageProfile {
+        look_through_optional: false,
+        ..crate::type_checker::profile::language_profile::DEFAULT_PROFILE
+    };
+
+    let mut arena = TypeArena::new();
+    let user = arena.class("User");
+    let opt_user = arena.intern(Type::Optional(user));
+
+    let mut index = MembersIndex::new();
+    index.add_direct(user, sym(1, "id", "User.id", "field", Some("User")));
+
+    let graph = empty_supertypes();
+    // Member exists on the unwrapped User but profile gate forbids peeling.
+    assert!(index
+        .lookup(
+            opt_user,
+            "id",
+            EdgeKind::TypeRef,
+            &graph,
+            &arena,
+            &no_peel_profile,
+        )
+        .is_none());
+}
+
+#[test]
 fn optional_peels_when_profile_allows() {
     // DEFAULT_PROFILE has look_through_optional = true.
     let mut arena = TypeArena::new();

@@ -148,6 +148,7 @@ fn is_type_defining(kind: SymbolKind) -> bool {
             | SymbolKind::Trait
             | SymbolKind::Enum
             | SymbolKind::TypeAlias
+            | SymbolKind::Delegate
     )
 }
 
