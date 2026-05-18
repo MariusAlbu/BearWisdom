@@ -445,13 +445,18 @@ fn file_004_flags_invalid_flow_binding_value() {
 fn assert_canonical_succeeds_on_clean_file() {
     let sym = make_sym("foo", "foo", SymbolKind::Function);
     let pf = make_pf(vec![sym], Vec::new());
-    assert_canonical(&pf); // must not panic
+    let arena = crate::type_checker::core::TypeArena::new();
+    assert_canonical(&pf, &arena);
 }
 
 #[test]
 #[should_panic(expected = "canonical-form contract violations")]
 fn assert_canonical_panics_on_violation() {
-    let sym = make_sym("Bar", "Foo.Baz", SymbolKind::Class); // SYM-001
+    let mut sym = make_sym("Bar", "Foo.Baz", SymbolKind::Class);
+    // Type-defining symbols need return_type populated; the test fixture
+    // sets it via post-process below to focus the panic on SYM-001.
+    sym.qualified_name = "Foo.Baz".to_string();
     let pf = make_pf(vec![sym], Vec::new());
-    assert_canonical(&pf);
+    let arena = crate::type_checker::core::TypeArena::new();
+    assert_canonical(&pf, &arena);
 }

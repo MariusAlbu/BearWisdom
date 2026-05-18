@@ -246,10 +246,10 @@ pub(crate) fn parse_file_with_demand(
         plugin_flow_emissions,
     };
 
-    super::canonical_form::populate_positions(&mut parsed);
+    let _canonical_arena = super::canonical_form::populate_positions(&mut parsed);
 
     #[cfg(feature = "canonical-form-checked")]
-    crate::indexer::canonical_form::assert_canonical(&parsed);
+    crate::indexer::canonical_form::assert_canonical(&parsed, &_canonical_arena);
 
     Ok(parsed)
 }

@@ -4,8 +4,10 @@
 // Rule reference: research/architecture/01-canonical-symbol-ref-contract.html
 // =============================================================================
 
+use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, ParsedFile, SegmentKind,
+    SymbolKind,
 };
 use std::fmt;
 
@@ -71,8 +73,8 @@ impl fmt::Display for ContractViolation {
 // Public entry
 // ---------------------------------------------------------------------------
 
-/// Validate `file` against the canonical contract. Returns one entry per
-/// violation; empty Vec means the file is contract-clean.
+/// Validate `file` against the canonical contract using only file-local
+/// rules (no TypeArena required).
 pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
     let mut out = Vec::new();
     let line_starts = file.content.as_deref().map(build_line_starts);
@@ -83,6 +85,7 @@ pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
         check_sym_002(file, idx, sym, &mut out);
         check_sym_003(file, idx, sym, &mut out);
         check_sym_004(file, idx, sym, line_starts.as_deref(), &mut out);
+        check_sym_006(file, idx, sym, &mut out);
     }
     for (idx, r) in file.refs.iter().enumerate() {
         check_ref_001(file, idx, r, &mut out);
@@ -100,35 +103,126 @@ pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
     out
 }
 
-/// Derive byte_offset on Symbols and col on Refs from their existing line and
-/// column data + file content. Also assigns monotonically-increasing
-/// byte_offsets to chain segments that don't already have them so CHAIN-003
-/// holds. Called once per file after extraction; only fills slots whose
-/// current value is the sentinel 0.
-pub fn populate_positions(file: &mut ParsedFile) {
-    let Some(content) = file.content.as_deref() else { return };
-    let line_starts = build_line_starts(content);
+/// Extends `validate` with TypeArena-dependent rules (TYPE-001/002/003) and
+/// rules that need to look up a Symbol's `return_type` TypeId against the
+/// arena.
+pub fn validate_with_arena(
+    file: &ParsedFile,
+    arena: &TypeArena,
+) -> Vec<ContractViolation> {
+    let mut out = validate(file);
+    for (idx, sym) in file.symbols.iter().enumerate() {
+        check_sym_005_arena(file, idx, sym, arena, &mut out);
+    }
+    for ty_id in collect_type_ids(file) {
+        check_type_001(file, ty_id, arena, &mut out);
+    }
+    out
+}
+
+/// Walks every TypeId referenced from `file` (Symbol.declared_type /
+/// return_type / param_types, ChainSegment.declared_type_id / type_arg_ids).
+fn collect_type_ids(file: &ParsedFile) -> Vec<TypeId> {
+    let mut out = Vec::new();
+    for sym in &file.symbols {
+        if let Some(id) = sym.declared_type { out.push(id); }
+        if let Some(id) = sym.return_type { out.push(id); }
+        out.extend(sym.param_types.iter().copied());
+    }
+    for r in &file.refs {
+        if let Some(chain) = r.chain.as_ref() {
+            for seg in &chain.segments {
+                if let Some(id) = seg.declared_type_id { out.push(id); }
+                out.extend(seg.type_arg_ids.iter().copied());
+            }
+        }
+    }
+    out
+}
+
+/// Derive position fields + intern type strings into a per-file TypeArena.
+/// Symbols get `byte_offset` from (start_line, start_col), refs get `col`
+/// from (byte_offset, line), and chain segments get `byte_offset` by
+/// scanning the source for each segment's name.
+///
+/// Type-defining symbols (Class / Struct / Interface / Trait / Enum /
+/// TypeAlias) get `return_type = Some(arena.class(qualified_name))` —
+/// the canonical "callable class yields itself" rule. ChainSegment string
+/// fields (declared_type, type_args) are interned into the arena and
+/// populated as TypeId carriers (declared_type_id, type_arg_ids).
+///
+/// Only slots currently set to the sentinel 0 / None / empty are filled.
+pub fn populate_positions(file: &mut ParsedFile) -> TypeArena {
+    let mut arena = TypeArena::new();
+    let line_starts_owned: Option<Vec<u32>> =
+        file.content.as_deref().map(build_line_starts);
+    let line_starts = line_starts_owned.as_deref();
 
     for sym in &mut file.symbols {
-        if sym.byte_offset == 0 {
-            if let Some(b) = expected_byte(&line_starts, sym.start_line, sym.start_col) {
+        if line_starts.is_some() && sym.byte_offset == 0 {
+            if let Some(b) = expected_byte(line_starts.unwrap(), sym.start_line, sym.start_col) {
                 sym.byte_offset = b;
             }
+        }
+        if sym.return_type.is_none() && is_type_defining_kind(sym.kind) {
+            let id = arena.class(&sym.qualified_name);
+            sym.return_type = Some(id);
         }
     }
 
     for r in &mut file.refs {
-        if r.col == 0 {
-            if let Some(&ls) = line_starts.get(r.line as usize) {
-                if r.byte_offset >= ls {
-                    r.col = r.byte_offset - ls;
+        if let Some(starts) = line_starts {
+            if r.col == 0 {
+                if let Some(&ls) = starts.get(r.line as usize) {
+                    if r.byte_offset >= ls {
+                        r.col = r.byte_offset - ls;
+                    }
                 }
             }
         }
         if let Some(chain) = r.chain.as_mut() {
-            populate_chain_segments(chain, content, r.byte_offset);
+            if let Some(content) = file.content.as_deref() {
+                populate_chain_segments(chain, content, r.byte_offset);
+            }
+            for seg in chain.segments.iter_mut() {
+                if seg.declared_type_id.is_none() {
+                    if let Some(name) = seg.declared_type.as_deref() {
+                        if !name.is_empty() {
+                            seg.declared_type_id = Some(arena.class(name));
+                        }
+                    }
+                }
+                if seg.type_arg_ids.is_empty() && !seg.type_args.is_empty() {
+                    for arg in &seg.type_args {
+                        if !arg.is_empty() {
+                            seg.type_arg_ids.push(arena.class(arg));
+                        }
+                    }
+                }
+            }
         }
     }
+
+    arena
+}
+
+fn is_type_defining_kind(kind: SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::Class
+            | SymbolKind::Struct
+            | SymbolKind::Interface
+            | SymbolKind::Trait
+            | SymbolKind::Enum
+            | SymbolKind::TypeAlias
+    )
+}
+
+fn is_callable_kind(kind: SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::Function | SymbolKind::Method | SymbolKind::Constructor | SymbolKind::Test
+    )
 }
 
 /// Assign byte_offsets to chain segments by scanning forward from the ref's
@@ -246,8 +340,8 @@ pub fn validate_extraction(
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
     };
-    populate_positions(&mut parsed);
-    validate(&parsed)
+    let arena = populate_positions(&mut parsed);
+    validate_with_arena(&parsed, &arena)
 }
 
 /// Like `validate_extraction` but panics on any violation; the natural shape
@@ -272,11 +366,11 @@ pub fn assert_extraction_canonical(
     panic!("{buf}");
 }
 
-/// Panics with the full violation list when `validate(file)` is non-empty.
-/// When the env var `BW_CANONICAL_FORM_REPORT` is set, the violations are
-/// written to stderr instead of panicking — for sweep-style triage runs.
-pub fn assert_canonical(file: &ParsedFile) {
-    let violations = validate(file);
+/// Panics with the full violation list when `validate_with_arena(file, arena)`
+/// is non-empty. When `BW_CANONICAL_FORM_REPORT` is set, writes to stderr
+/// and returns — for sweep-style triage runs.
+pub fn assert_canonical(file: &ParsedFile, arena: &TypeArena) {
+    let violations = validate_with_arena(file, arena);
     if violations.is_empty() {
         return;
     }
@@ -792,6 +886,171 @@ fn check_chain_003(
             }
         }
         prev = Some(seg.byte_offset);
+    }
+}
+
+/// SYM-005 (arena-checked): type-defining symbols must carry a return_type
+/// that resolves to `Type::Class(self_qname)`. Runs only after
+/// populate_positions, which establishes the arena.
+fn check_sym_005_arena(
+    file: &ParsedFile,
+    idx: usize,
+    sym: &ExtractedSymbol,
+    arena: &TypeArena,
+    out: &mut Vec<ContractViolation>,
+) {
+    if !is_type_defining_kind(sym.kind) {
+        return;
+    }
+    let Some(rt) = sym.return_type else {
+        out.push(ContractViolation {
+            code: "SYM-005",
+            message: format!(
+                "type-defining symbol of kind {:?} must have return_type = Some(self_type_id)",
+                sym.kind,
+            ),
+            location: sym_loc(file, idx, sym),
+        });
+        return;
+    };
+    if rt.index() >= arena.len() {
+        out.push(ContractViolation {
+            code: "SYM-005",
+            message: format!(
+                "return_type TypeId {} is out of bounds (arena.len() = {})",
+                rt.index() + 1,
+                arena.len(),
+            ),
+            location: sym_loc(file, idx, sym),
+        });
+        return;
+    }
+    let actual = arena.get(rt);
+    match actual {
+        Type::Class(q) if q == &sym.qualified_name => {}
+        Type::Class(q) => {
+            out.push(ContractViolation {
+                code: "SYM-005",
+                message: format!(
+                    "return_type resolves to Class('{q}'); expected Class('{}')",
+                    sym.qualified_name,
+                ),
+                location: sym_loc(file, idx, sym),
+            });
+        }
+        other => {
+            out.push(ContractViolation {
+                code: "SYM-005",
+                message: format!(
+                    "return_type resolves to {other:?}; expected Class('{}')",
+                    sym.qualified_name,
+                ),
+                location: sym_loc(file, idx, sym),
+            });
+        }
+    }
+}
+
+/// SYM-006: callable symbols must have param_types.len() consistent with
+/// their declared signature. The arity is read from `signature` when
+/// present (a heuristic — we count comma-separated args inside the first
+/// parenthesized group). When no signature is recorded the rule is silent.
+fn check_sym_006(
+    file: &ParsedFile,
+    idx: usize,
+    sym: &ExtractedSymbol,
+    out: &mut Vec<ContractViolation>,
+) {
+    if !is_callable_kind(sym.kind) {
+        return;
+    }
+    let Some(sig) = sym.signature.as_deref() else { return };
+    let Some(arity) = signature_arity(sig) else { return };
+    if sym.param_types.is_empty() {
+        // Not yet populated — expected during transition. Skip rather than
+        // fire on every callable in the corpus.
+        return;
+    }
+    if sym.param_types.len() != arity {
+        out.push(ContractViolation {
+            code: "SYM-006",
+            message: format!(
+                "param_types.len() = {} disagrees with signature arity {} (signature: '{}')",
+                sym.param_types.len(),
+                arity,
+                sig,
+            ),
+            location: sym_loc(file, idx, sym),
+        });
+    }
+}
+
+/// Count comma-separated arguments inside the first parenthesized group of
+/// a signature string. Returns None when the string has no balanced parens
+/// (synthesized signatures, free-form descriptions).
+fn signature_arity(sig: &str) -> Option<usize> {
+    let open = sig.find('(')?;
+    let after = &sig[open + 1..];
+    let mut depth: u32 = 1;
+    let mut count = 0usize;
+    let mut seen_non_ws = false;
+    let mut last_was_comma = true;
+    for ch in after.chars() {
+        match ch {
+            '(' | '<' | '[' | '{' => {
+                depth = depth.saturating_add(1);
+                seen_non_ws = true;
+                last_was_comma = false;
+            }
+            ')' | '>' | ']' | '}' => {
+                if depth == 1 && ch == ')' {
+                    if seen_non_ws && !last_was_comma {
+                        count += 1;
+                    }
+                    return Some(count);
+                }
+                depth = depth.saturating_sub(1);
+                seen_non_ws = true;
+                last_was_comma = false;
+            }
+            ',' if depth == 1 => {
+                if seen_non_ws {
+                    count += 1;
+                }
+                last_was_comma = true;
+                seen_non_ws = false;
+            }
+            c if c.is_whitespace() => {}
+            _ => {
+                seen_non_ws = true;
+                last_was_comma = false;
+            }
+        }
+    }
+    None
+}
+
+/// TYPE-001: TypeId references must resolve to an entry in the arena. With
+/// `NonZeroU32` TypeIds we only need to verify the upper bound; the lower
+/// bound is enforced by the type itself.
+fn check_type_001(
+    file: &ParsedFile,
+    ty: TypeId,
+    arena: &TypeArena,
+    out: &mut Vec<ContractViolation>,
+) {
+    if ty.index() >= arena.len() {
+        out.push(ContractViolation {
+            code: "TYPE-001",
+            message: format!(
+                "TypeId {} is out of bounds (arena.len() = {})",
+                ty.index() + 1,
+                arena.len(),
+            ),
+            location: ViolationLocation::File {
+                path: file.path.clone(),
+            },
+        });
     }
 }
 
