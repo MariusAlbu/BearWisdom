@@ -203,7 +203,7 @@ pub(super) fn extract_calls_from_body(
                         line: fn_node.start_position().row as u32,
                         module: None,
                         chain: None,
-                        byte_offset: 0,
+                        byte_offset: fn_node.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args,
                     });

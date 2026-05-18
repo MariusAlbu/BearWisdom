@@ -48,7 +48,35 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    walk(tree.root_node(), src, &mut symbols, &mut refs, None);
+    let root = tree.root_node();
+    symbols.push(ExtractedSymbol {
+        name: String::new(),
+        qualified_name: String::new(),
+        kind: SymbolKind::Namespace,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: root.end_position().row as u32,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    });
+
+    walk(root, src, &mut symbols, &mut refs, None);
+
+    // SYM-002: when parent_index is Some, scope_path equals parent.qualified_name.
+    // SYM-001: nested symbol qnames must end with name preceded by a separator.
+    for i in 0..symbols.len() {
+        if let Some(p) = symbols[i].parent_index {
+            let parent_qname = symbols[p].qualified_name.clone();
+            symbols[i].scope_path = Some(parent_qname.clone());
+            if symbols[i].qualified_name == symbols[i].name {
+                symbols[i].qualified_name = format!("{}.{}", parent_qname, symbols[i].name);
+            }
+        }
+    }
 
     ExtractionResult::new(symbols, refs, tree.root_node().has_error())
 }
@@ -161,19 +189,46 @@ fn extract_assignment(
 
     // Emit a call ref for the RHS callee if applicable.
     if let Some(rhs) = right {
-        if let Some(callee) = rhs_callee_name(rhs, src) {
-            let sym_idx = parent_idx.unwrap_or(0);
-            refs.push(ExtractedRef {
-                source_symbol_index: sym_idx,
-                target_name: callee,
-                kind: EdgeKind::Calls,
-                line: node.start_position().row as u32,
-                module: None,
-                chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+        let actual = unwrap_expression(rhs);
+        if actual.kind() == "call" {
+            if let Some(fn_node) = actual.child_by_field_name("function") {
+                let callee = text(fn_node, src);
+                if !callee.is_empty()
+                    && !callee.contains('(')
+                    && !callee.contains('[')
+                    && !callee.contains('\n')
+                {
+                    let attr_node = {
+                        let unwrapped = unwrap_expression(fn_node);
+                        if unwrapped.kind() == "attribute" {
+                            Some(unwrapped)
+                        } else {
+                            None
+                        }
+                    };
+                    let chain = attr_node.and_then(|n| build_attribute_chain(n, src));
+                    let target_name = if let Some(ref mc) = chain {
+                        mc.segments
+                            .last()
+                            .map(|s| s.name.clone())
+                            .unwrap_or(callee)
+                    } else {
+                        callee
+                    };
+                    let sym_idx = parent_idx.unwrap_or(idx);
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name,
+                        kind: EdgeKind::Calls,
+                        line: node.start_position().row as u32,
+                        module: None,
+                        chain,
+                        byte_offset: fn_node.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
+            }
         }
     }
 
@@ -265,12 +320,18 @@ fn extract_call(
             // Build a MemberChain for dotted attribute access (`ctx.actions.run`).
             // When a chain is built, target_name is the last segment name only
             // (REF-004: chain last segment must equal target_name). The full
-            // dotted path is reconstructable from the chain segments.
-            let chain = if fn_node.kind() == "attribute" {
-                build_attribute_chain(fn_node, src)
-            } else {
-                None
+            // dotted path is reconstructable from the chain segments. The
+            // tree-sitter grammar may wrap the call's function in a
+            // `primary_expression`; unwrap before inspecting.
+            let attr_node = {
+                let unwrapped = unwrap_expression(fn_node);
+                if unwrapped.kind() == "attribute" {
+                    Some(unwrapped)
+                } else {
+                    None
+                }
             };
+            let chain = attr_node.and_then(|n| build_attribute_chain(n, src));
             let target_name = if let Some(ref mc) = chain {
                 mc.segments
                     .last()
