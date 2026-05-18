@@ -125,7 +125,7 @@ impl RootResolver for DefaultRootResolver {
 /// The unified chain walker. Owned references; consumers build a fresh
 /// walker per chain (cheap — just a struct of references).
 pub struct ChainWalker<'a> {
-    pub arena: &'a mut TypeArena,
+    pub arena: &'a TypeArena,
     pub members: &'a MembersIndex,
     pub supertypes: &'a SupertypeGraph,
     pub symbol_types: &'a SymbolTypeMap,
@@ -136,7 +136,7 @@ pub struct ChainWalker<'a> {
 
 impl<'a> ChainWalker<'a> {
     pub fn new(
-        arena: &'a mut TypeArena,
+        arena: &'a TypeArena,
         members: &'a MembersIndex,
         supertypes: &'a SupertypeGraph,
         symbol_types: &'a SymbolTypeMap,
@@ -161,7 +161,7 @@ impl<'a> ChainWalker<'a> {
     /// progress diagnostics consult the per-segment loop directly via
     /// `walk_with_root`.
     pub fn walk(
-        &mut self,
+        &self,
         chain: &MemberChain,
         ref_ctx: &RefContext,
         file_ctx: &FileContext,
@@ -171,7 +171,7 @@ impl<'a> ChainWalker<'a> {
 
     /// Walk with a caller-supplied root resolver.
     pub fn walk_with_root(
-        &mut self,
+        &self,
         chain: &MemberChain,
         ref_ctx: &RefContext,
         file_ctx: &FileContext,
@@ -241,7 +241,7 @@ impl<'a> ChainWalker<'a> {
     /// kinds yield self (callable class -> instance) when the segment is a
     /// Construction; otherwise they pass through as the type itself.
     fn yield_type_of(
-        &mut self,
+        &self,
         sym: &SymbolInfo,
         seg: &ChainSegment,
         env: &GenericEnv,
@@ -265,7 +265,7 @@ impl<'a> ChainWalker<'a> {
     /// Walk `current_ty` through alias expansion until a non-alias head is
     /// reached or the expander returns `None`. Bounded by the alias
     /// expander's own depth cap.
-    fn expand_aliases(&mut self, current_ty: TypeId) -> TypeId {
+    fn expand_aliases(&self, current_ty: TypeId) -> TypeId {
         let mut ty = current_ty;
         for _ in 0..8 {
             match expand_alias_typed(ty, self.arena, self.aliases, self.lookup) {
@@ -282,8 +282,8 @@ impl<'a> ChainWalker<'a> {
     /// generic params to `args` in `env` so subsequent segments substitute
     /// correctly. Bindings overwrite prior entries with the same id —
     /// matching the lexical-scope shadowing rule of nested generics.
-    fn bind_apply_args(&mut self, ty: TypeId, env: &mut GenericEnv) {
-        let (base, args) = match self.arena.get(ty).clone() {
+    fn bind_apply_args(&self, ty: TypeId, env: &mut GenericEnv) {
+        let (base, args) = match self.arena.get(ty) {
             Type::Apply { base, args } => (base, args),
             _ => return,
         };

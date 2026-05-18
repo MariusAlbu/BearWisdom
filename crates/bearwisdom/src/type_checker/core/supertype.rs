@@ -139,6 +139,9 @@ fn build_explicit(
     lookup: &dyn SymbolLookup,
 ) {
     for pf in parsed {
+        if pf.path.starts_with("ext:") {
+            continue;
+        }
         for r in &pf.refs {
             if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) {
                 continue;

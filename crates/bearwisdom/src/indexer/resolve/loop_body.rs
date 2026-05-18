@@ -128,6 +128,35 @@ fn resolve_iteration_body(
     let import_map = indexes::build_import_map(parsed);
     let file_namespace_map = indexes::build_file_namespace_map(parsed);
 
+    // Phase 5: build the type-checker Engine alongside the legacy lookup
+    // structures. Engine state is `Send + Sync` (TypeArena uses interior-
+    // mutable RwLock) so a single shared `&Engine` drives the parallel
+    // resolve closure below. We try engine.resolve as a fallback when the
+    // per-language resolver returns None — purely additive, can only
+    // improve resolution rates, never regress. Phase 6+ will swap the
+    // ordering once we have confidence in engine output across more
+    // languages.
+    //
+    // Convert the legacy `(path, qname) -> id` map into the engine's
+    // `(path, idx) -> id` shape so SymbolTypeMap + MembersIndex can key
+    // by canonical sym_id.
+    let engine_sym_id_map: crate::type_checker::core::SymbolIdMap = {
+        let mut map = crate::type_checker::core::SymbolIdMap::default();
+        for pf in parsed {
+            for (idx, sym) in pf.symbols.iter().enumerate() {
+                if let Some(&id) = merged_id_map_ref.get(&(pf.path.clone(), sym.qualified_name.clone())) {
+                    map.insert((pf.path.clone(), idx), id);
+                }
+            }
+        }
+        map
+    };
+    let type_engine = crate::type_checker::Engine::build_from_registry(
+        parsed,
+        &engine_sym_id_map,
+        index,
+    );
+
     // Fast companion lookup: HashMap<path, &ParsedFile> replaces the
     // per-iteration O(N) `parsed.iter().find` scan that resolve used
     // before. Bonus: when a companion file ISN'T in `parsed` (incremental
@@ -435,6 +464,30 @@ fn resolve_iteration_body(
                     if let Some(emission) = resolution.flow_emit {
                         buf.flow_emissions.push((pf.path.clone(), r.line, emission));
                     }
+                    local_stats.resolved += 1;
+                    local_stats.engine_resolved += 1;
+                    resolved_by_engine = true;
+                } else if let Some(resolution) = type_engine.resolve(&ref_ctx, file_ctx, index) {
+                    // Phase 5: type-checker engine fallback for refs the
+                    // per-language resolver couldn't deterministically
+                    // resolve. Purely additive — never overrides a legacy
+                    // hit. We deliberately do NOT call record_local_type
+                    // here: poisoning the LocalTypeCache with engine-
+                    // derived yields lets the legacy walker pick them up
+                    // for downstream refs, which on partially-typed code
+                    // produced regressions (16697 → 16599 edges on
+                    // ts-rallly during initial Phase 5 wiring). Engine
+                    // refs land as their own edges; flow inference stays
+                    // owned by the legacy path until Phase 6+ migrations
+                    // can validate engine yields against the cache.
+                    buf.edges.push((
+                        source_id,
+                        resolution.target_symbol_id,
+                        r.kind.as_str(),
+                        r.line,
+                        resolution.confidence,
+                        resolution.strategy,
+                    ));
                     local_stats.resolved += 1;
                     local_stats.engine_resolved += 1;
                     resolved_by_engine = true;

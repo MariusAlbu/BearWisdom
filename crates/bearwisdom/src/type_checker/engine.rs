@@ -77,14 +77,14 @@ impl<'a> Engine<'a> {
         profiles: FxHashMap<&'static str, &'a LanguageProfile>,
         lookup: &dyn SymbolLookup,
     ) -> Self {
-        let mut arena = TypeArena::new();
+        let arena = TypeArena::new();
 
         let members =
-            MembersIndex::build_from_parsed_files(parsed, sym_id_map, &mut arena);
+            MembersIndex::build_from_parsed_files(parsed, sym_id_map, &arena);
         let symbol_types = SymbolTypeMap::build_from_parsed_files(
             parsed,
             sym_id_map,
-            &mut arena,
+            &arena,
             // Use the first registered profile as the build profile. The
             // self-yield rule is language-agnostic so any profile suffices
             // here; per-language behavior switches at resolve time.
@@ -105,20 +105,25 @@ impl<'a> Engine<'a> {
             .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
         let supertypes = SupertypeGraph::build(
             parsed,
-            &mut arena,
+            &arena,
             default_profile,
             &members,
             lookup,
         );
 
         // Aliases: aggregate every per-file `(qname, AliasTarget)` pair.
+        // Externals contribute alias entries that the chain walker resolves
+        // *into* but doesn't walk from, so filter them out here too.
         let mut alias_pairs: Vec<(String, crate::types::AliasTarget)> = Vec::new();
         for pf in parsed {
+            if pf.path.starts_with("ext:") {
+                continue;
+            }
             for (qname, target) in &pf.alias_targets {
                 alias_pairs.push((qname.clone(), target.clone()));
             }
         }
-        let aliases = build_alias_index(&alias_pairs, &mut arena);
+        let aliases = build_alias_index(&alias_pairs, &arena);
 
         Self {
             arena,
@@ -136,7 +141,7 @@ impl<'a> Engine<'a> {
     /// Phase 5 migrates chain-bearing refs first, bare names follow as
     /// per-language hooks land).
     pub fn resolve(
-        &mut self,
+        &self,
         ref_ctx: &RefContext,
         file_ctx: &FileContext,
         lookup: &dyn SymbolLookup,
@@ -145,7 +150,7 @@ impl<'a> Engine<'a> {
         let chain = ref_ctx.extracted_ref.chain.as_ref()?;
 
         let mut walker = ChainWalker::new(
-            &mut self.arena,
+            &self.arena,
             &self.members,
             &self.supertypes,
             &self.symbol_types,
@@ -166,7 +171,7 @@ impl<'a> Engine<'a> {
     /// per-language hooks can override scope rules (Python `self`, Rust
     /// `&mut self`, C# `this`/`base`) without subclassing the engine.
     pub fn resolve_with_root(
-        &mut self,
+        &self,
         ref_ctx: &RefContext,
         file_ctx: &FileContext,
         lookup: &dyn SymbolLookup,
@@ -176,7 +181,7 @@ impl<'a> Engine<'a> {
         let chain = ref_ctx.extracted_ref.chain.as_ref()?;
 
         let mut walker = ChainWalker::new(
-            &mut self.arena,
+            &self.arena,
             &self.members,
             &self.supertypes,
             &self.symbol_types,
@@ -192,13 +197,13 @@ impl<'a> Engine<'a> {
     /// resolution. Used by the resolver loop to populate the local-type
     /// cache when a flow-binding ref doesn't yet have a chain.
     pub fn infer_yield(
-        &mut self,
+        &self,
         expr_ref: &crate::types::ExtractedRef,
         existing: Option<&Resolution>,
         language: &str,
     ) -> Option<TypeId> {
         let profile = self.profiles.get(language).copied()?;
-        infer_expression_type(expr_ref, existing, &mut self.arena, profile)
+        infer_expression_type(expr_ref, existing, &self.arena, profile)
     }
 
     pub fn arena(&self) -> &TypeArena {

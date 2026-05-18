@@ -60,6 +60,14 @@ impl MembersIndex {
     ) -> Self {
         let mut index = MembersIndex::new();
         for pf in parsed {
+            // External files (ext: prefix) carry thousands of symbols per
+            // dep — for ts-nextjs that's ~1M symbols. Engine chain walks
+            // resolve *into* internal types; external symbols stay
+            // lookup-only via SymbolIndex. Skipping them at build time
+            // turns a huge arena.class write storm into nothing.
+            if pf.path.starts_with("ext:") {
+                continue;
+            }
             let file_path: Arc<str> = Arc::from(pf.path.as_str());
             for (idx, sym) in pf.symbols.iter().enumerate() {
                 let Some(scope) = &sym.scope_path else {
@@ -165,7 +173,7 @@ impl MembersIndex {
         arena: &TypeArena,
         profile: &LanguageProfile,
     ) -> Option<SymbolInfo> {
-        match arena.get(ty).clone() {
+        match arena.get(ty) {
             Type::Apply { base, .. } => {
                 self.lookup(base, name, kind_filter, supertypes, arena, profile)
             }

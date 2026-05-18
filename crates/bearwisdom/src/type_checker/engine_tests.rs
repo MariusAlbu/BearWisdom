@@ -184,6 +184,14 @@ fn file_ctx_ts(path: &str) -> FileContext {
 }
 
 #[test]
+fn engine_is_send_and_sync() {
+    // The resolver loop runs in parallel via rayon; the engine state must
+    // be safely shareable across workers. Compile-time assertion.
+    fn require_send_sync<T: Send + Sync>() {}
+    require_send_sync::<Engine<'static>>();
+}
+
+#[test]
 fn engine_resolve_returns_none_when_ref_has_no_chain() {
     let pf = ts_parsed_file(
         "src/u.ts",

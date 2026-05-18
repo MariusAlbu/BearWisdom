@@ -72,7 +72,7 @@ pub fn substitute(ty: TypeId, env: &GenericEnv, arena: &TypeArena) -> TypeId {
     if env.is_empty() {
         return ty;
     }
-    let current = arena.get(ty).clone();
+    let current = arena.get(ty);
     match current {
         Type::Generic { param } => env.get(param).unwrap_or(ty),
         Type::Apply { base, args } => {

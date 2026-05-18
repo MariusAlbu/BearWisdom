@@ -163,6 +163,13 @@ impl SymbolTypeMap {
     ) -> Self {
         let mut map = SymbolTypeMap::new();
         for pf in parsed {
+            // Skip externals — see members.rs build for rationale.
+            // Externals are SymbolIndex lookup targets, not engine
+            // member-set entries; processing them at build time creates
+            // hundreds of thousands of redundant arena.class writes.
+            if pf.path.starts_with("ext:") {
+                continue;
+            }
             for (idx, sym) in pf.symbols.iter().enumerate() {
                 let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
                     continue;
