@@ -60,6 +60,23 @@ pub(super) fn dispatch_embedded_regions(
         // stats. Frontmatter (YAML/TOML/JSON) doesn't qualify.
         let region_is_snippet = matches!(region.origin, EmbeddedOrigin::MarkdownFence);
 
+        // Phase 1 — strip prefix and identify synthetic wrapper symbols.
+        //
+        // A synthetic wrapper (e.g. `__RazorBody`) has its qualified_name
+        // reduced to the empty string after prefix stripping because its name
+        // IS the prefix. Such symbols are host-injected scaffolding that must
+        // not appear in the final index.  We drop them and promote their direct
+        // children to top-level (parent_index cleared) so the canonical-form
+        // invariants hold:
+        //   SYM-001 — qualified_name ends with name
+        //   SYM-002 — scope_path matches parent qualified_name
+        //
+        // `sub_remap[sub_idx]` maps each sub-symbol's original index to its
+        // final index inside `r.symbols`, or `None` if the symbol is dropped.
+        let nsub = sub.symbols.len();
+        let mut processed: Vec<Option<crate::types::ExtractedSymbol>> = Vec::with_capacity(nsub);
+        let mut sub_remap: Vec<Option<usize>> = vec![None; nsub];
+
         for mut sym in sub.symbols {
             let start_on_first = sym.start_line == 0;
             let end_on_first = sym.end_line == 0;
@@ -70,9 +87,6 @@ pub(super) fn dispatch_embedded_regions(
             }
             if end_on_first {
                 sym.end_col = sym.end_col.saturating_add(col_offset);
-            }
-            if let Some(parent) = sym.parent_index.as_mut() {
-                *parent += symbol_offset;
             }
             // E1: host-injected wrapper prefix (e.g. Razor's synthetic
             // `__RazorBody` class) is stripped from qualified_name and
@@ -88,12 +102,54 @@ pub(super) fn dispatch_embedded_regions(
                     }
                 }
             }
+            // Symbols whose qualified_name is now empty are synthetic
+            // wrappers (the name itself was the stripped prefix).  Drop them.
+            if sym.qualified_name.is_empty() {
+                processed.push(None);
+            } else {
+                processed.push(Some(sym));
+            }
+        }
+
+        // Phase 2 — assign final indices, remap parent_index, push.
+        //
+        // A child whose parent was a synthetic wrapper (parent maps to None)
+        // is promoted to top-level: parent_index cleared, scope_path left as
+        // None (which is correct for a top-level symbol).
+        let mut next_final = symbol_offset;
+        for (sub_idx, slot) in processed.iter().enumerate() {
+            if slot.is_some() {
+                sub_remap[sub_idx] = Some(next_final);
+                next_final += 1;
+            }
+        }
+        for slot in processed {
+            let Some(mut sym) = slot else { continue };
+            let had_parent = sym.parent_index.is_some();
+            sym.parent_index = sym.parent_index.and_then(|old_parent_sub_idx| {
+                sub_remap[old_parent_sub_idx]
+            });
+            if had_parent && sym.parent_index.is_none() {
+                // The parent was a synthetic wrapper that was dropped.
+                // Promote this symbol to top-level by clearing scope_path.
+                // (scope_path is already None here because the prefix strip
+                // above reduced it to the empty string and cleared it.)
+                sym.scope_path = None;
+            }
             r.symbols.push(sym);
             origin_langs.push(Some(region.language_id.clone()));
             from_snippet.push(region_is_snippet);
         }
+
         for mut rf in sub.refs {
-            rf.source_symbol_index += symbol_offset;
+            // Remap source_symbol_index through the sub→final table.
+            // If the owning symbol was a synthetic wrapper that was dropped,
+            // fall back to the host file's root symbol (index 0).
+            let old_sub_idx = rf.source_symbol_index;
+            rf.source_symbol_index = sub_remap
+                .get(old_sub_idx)
+                .and_then(|m| *m)
+                .unwrap_or(0);
             rf.line = rf.line.saturating_add(line_offset);
             r.refs.push(rf);
             // Tag this ref with the embedded language so the resolver
@@ -102,11 +158,17 @@ pub(super) fn dispatch_embedded_regions(
             ref_origin_langs.push(Some(region.language_id.clone()));
         }
         for mut rt in sub.routes {
-            rt.handler_symbol_index += symbol_offset;
+            rt.handler_symbol_index = sub_remap
+                .get(rt.handler_symbol_index)
+                .and_then(|m| *m)
+                .unwrap_or(symbol_offset);
             r.routes.push(rt);
         }
         for mut ds in sub.db_sets {
-            ds.property_symbol_index += symbol_offset;
+            ds.property_symbol_index = sub_remap
+                .get(ds.property_symbol_index)
+                .and_then(|m| *m)
+                .unwrap_or(symbol_offset);
             r.db_sets.push(ds);
         }
         r.has_errors = r.has_errors || sub.has_errors;
