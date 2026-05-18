@@ -43,7 +43,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     let host_index = 0usize;
 
     // Script-src refs are collected via a byte-level scan that tolerates
@@ -131,7 +135,11 @@ fn collect_anchors(
                     scope_path: Some(file_name.to_string()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         }
         collect_anchors(&child, source, file_name, host_index, symbols);

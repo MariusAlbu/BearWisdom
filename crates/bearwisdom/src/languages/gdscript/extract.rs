@@ -145,6 +145,10 @@ fn extract_class_name_stmt(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(base) = extends {
@@ -245,6 +249,10 @@ fn extract_inner_class(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(base) = extends {
@@ -303,6 +311,10 @@ fn extract_function(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     collect_calls(node, src, idx, refs);
@@ -334,6 +346,10 @@ fn extract_constructor(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     collect_calls(node, src, idx, refs);
@@ -372,6 +388,10 @@ fn extract_signal(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -406,6 +426,10 @@ fn extract_export_var(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -462,6 +486,10 @@ fn extract_variable(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Walk the initializer for calls so `preload(...)` / `load(...)` on the
@@ -529,6 +557,10 @@ fn extract_const(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // `const Foo := preload(...)` — walk the initializer so the preload call
@@ -568,6 +600,10 @@ fn extract_enum(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 

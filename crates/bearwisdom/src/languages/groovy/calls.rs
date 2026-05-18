@@ -39,7 +39,9 @@ pub(super) fn build_receiver_chain(
         type_args: Vec::new(),
         optional_chaining: false,
         byte_offset: 0,
-    });
+            declared_type_id: None,
+        type_arg_ids: Vec::new(),
+});
 
     if segments.len() < 2 {
         return None;
@@ -80,7 +82,9 @@ fn collect_receiver_segments(
                 type_args: Vec::new(),
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
         "this" => {
@@ -92,7 +96,9 @@ fn collect_receiver_segments(
                 type_args: Vec::new(),
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
         "field_access" => {
@@ -112,7 +118,9 @@ fn collect_receiver_segments(
                 type_args: Vec::new(),
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
         "method_invocation" => {
@@ -137,7 +145,9 @@ fn collect_receiver_segments(
                     type_args: Vec::new(),
                     optional_chaining: false,
                     byte_offset: 0,
-                });
+                                    declared_type_id: None,
+                    type_arg_ids: Vec::new(),
+});
                 return Some(());
             }
             segments.push(ChainSegment {
@@ -148,7 +158,9 @@ fn collect_receiver_segments(
                 type_args: Vec::new(),
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
         _ => {

@@ -353,7 +353,11 @@ fn parse_dotnet_dll(
             scope_path: if namespace.is_empty() { None } else { Some(namespace.clone()) },
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
 
         for (_, method_ref) in type_def.methods.iter() {
             let Some(method) = method_ref.upgrade() else { continue };
@@ -385,7 +389,11 @@ fn parse_dotnet_dll(
                 scope_path: Some(qualified_name.clone()),
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 

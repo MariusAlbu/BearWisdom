@@ -349,7 +349,11 @@ pub(super) fn make_symbol(
         scope_path: None,
         parent_index,
         byte_offset: node.start_byte() as u32,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 pub(super) fn node_text(node: Node, src: &str) -> String {

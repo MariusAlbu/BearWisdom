@@ -60,7 +60,11 @@ pub fn append_ember_helper_default_export(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 /// Detect a Handlebars-callable export and return (stem, signature_hint)
@@ -178,7 +182,11 @@ pub fn append_handlebars_register_helper_globals(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 

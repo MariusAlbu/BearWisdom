@@ -35,7 +35,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // Directive scan — single pass over the source. Position for emitted
     // symbols and refs is the line where the `@directive(` token starts.
@@ -63,7 +67,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                                 scope_path: Some(template_name.clone()),
                                 parent_index: Some(host_index),
                                 byte_offset: 0,
-                            });
+                                                            declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+});
                             i = payload_end;
                             continue;
                         }

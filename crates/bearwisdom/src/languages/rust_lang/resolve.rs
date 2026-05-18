@@ -756,7 +756,9 @@ impl LanguageResolver for RustResolver {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            },
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+},
             crate::types::ChainSegment {
                 name: "new".to_string(),
                 node_kind: "rewritten_var".to_string(),
@@ -765,7 +767,9 @@ impl LanguageResolver for RustResolver {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            },
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+},
         ];
         new_segments.extend(chain.segments.iter().skip(1).cloned());
         let rewritten = crate::types::MemberChain { segments: new_segments };

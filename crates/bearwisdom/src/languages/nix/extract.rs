@@ -300,6 +300,10 @@ fn extract_binding(
             scope_path: None,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         i
     } else {

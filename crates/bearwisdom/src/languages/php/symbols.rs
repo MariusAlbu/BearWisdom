@@ -42,6 +42,10 @@ pub(super) fn extract_namespace(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(body) = node.child_by_field_name("body") {
@@ -82,6 +86,10 @@ pub(super) fn extract_class(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Scan children for inheritance/implements (tree-sitter-php 0.24 unnamed children)
@@ -251,6 +259,10 @@ pub(super) fn extract_method(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     super::decorators::extract_decorators(node, src, idx, refs);
@@ -342,6 +354,10 @@ fn extract_promoted_params(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         if let Some(type_node) = type_node_opt {
@@ -421,6 +437,10 @@ pub(super) fn extract_function(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract TypeRefs from typed parameters.
@@ -527,6 +547,10 @@ pub(super) fn extract_property_declaration(
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
                                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                     // Emit TypeRef for the property type hint.
                     if let Some(tn) = type_node_opt {
@@ -578,6 +602,10 @@ pub(super) fn extract_const_declaration(
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             }
         }
@@ -615,6 +643,10 @@ pub(super) fn extract_global_static_vars(
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             }
         }
@@ -638,6 +670,10 @@ pub(super) fn extract_global_static_vars(
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
                                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                 }
             }
@@ -739,6 +775,10 @@ pub(super) fn extract_enum(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // PHP grammar: class_interface_clause is an unnamed child of enum_declaration,
@@ -777,7 +817,11 @@ pub(super) fn extract_enum(
                                 scope_path: Some(new_prefix.clone()),
                                 parent_index: Some(idx),
                                 byte_offset: 0,
-                            });
+                                                            declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+});
                         }
                     }
                     "method_declaration" => {

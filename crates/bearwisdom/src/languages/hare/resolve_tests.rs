@@ -23,7 +23,11 @@ fn test_hare_http_emit() {
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
     assert!(matches!(HareResolver.detect_flow_emission(&fc, &rc).first(), Some(FlowEmission::NamedChannel { .. })));
@@ -49,7 +53,11 @@ fn test_hare_no_emit_for_non_http_module() {
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
     assert!(HareResolver.detect_flow_emission(&fc, &rc).is_empty());
@@ -75,7 +83,11 @@ fn test_hare_no_emit_for_non_url_arg() {
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
     assert!(HareResolver.detect_flow_emission(&fc, &rc).is_empty());

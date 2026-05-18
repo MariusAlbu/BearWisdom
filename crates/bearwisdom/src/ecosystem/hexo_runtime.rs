@@ -230,7 +230,11 @@ pub(crate) fn synthesise_hexo_helpers(project_root: &Path) -> Vec<ParsedFile> {
             scope_path: Some(scope.to_string()),
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     if symbols.is_empty() {

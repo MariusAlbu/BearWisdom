@@ -63,6 +63,10 @@ pub(super) fn extract_type_def(
             scope_path,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         // Walk members — emit child symbols for compound types and scan for refs
@@ -122,6 +126,10 @@ fn extract_union_cases(
             scope_path,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     });
 }
@@ -154,6 +162,10 @@ fn extract_enum_cases(
             scope_path,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     });
 }
@@ -186,6 +198,10 @@ fn extract_record_fields(
             scope_path,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     });
 }

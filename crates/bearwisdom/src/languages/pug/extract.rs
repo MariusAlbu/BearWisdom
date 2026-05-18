@@ -24,7 +24,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     let host_index = 0usize;
     let line_starts: Vec<u32> = std::iter::once(0)
         .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
@@ -55,7 +59,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     scope_path: Some(file_name.clone()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         } else if let Some(rest) = trimmed.strip_prefix("include ") {
             let target = normalize_template_path(rest.trim());

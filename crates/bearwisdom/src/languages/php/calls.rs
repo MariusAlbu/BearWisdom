@@ -387,6 +387,10 @@ pub(super) fn extract_foreach_vars(
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             }
         }
@@ -441,6 +445,10 @@ fn push_php_foreach_var(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     }
@@ -491,6 +499,10 @@ pub(super) fn extract_try_catch_types(
                             scope_path: scope_from_prefix(qualified_prefix),
                             parent_index,
                                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                     }
                 }
@@ -592,6 +604,10 @@ pub(super) fn extract_list_destructuring(
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
                                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                 }
             }
@@ -710,7 +726,9 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -723,7 +741,9 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -739,7 +759,9 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -755,7 +777,9 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -775,7 +799,9 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             segments.push(ChainSegment {
                 name: node_text(&name_node, src),
                 node_kind: "static_call_expression".to_string(),
@@ -784,7 +810,9 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 

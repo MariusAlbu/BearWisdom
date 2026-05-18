@@ -361,7 +361,11 @@ fn push_class_param(
         scope_path: if parent_qname.is_empty() { None } else { Some(parent_qname.to_string()) },
         parent_index: Some(parent_index),
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------

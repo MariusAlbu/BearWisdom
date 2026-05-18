@@ -38,7 +38,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     let host_index = 0usize;
 
     let bytes = source.as_bytes();
@@ -173,7 +177,11 @@ fn handle_directive(
                 scope_path: Some(file_name.to_string()),
                 parent_index: Some(host_index),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
         return;
     }
@@ -277,7 +285,11 @@ fn handle_directive(
                 scope_path: Some(file_name.to_string()),
                 parent_index: Some(host_index),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             for param in split_macro_params(after) {
                 if is_valid_jinja_ident(&param) {
                     symbols.push(make_local_var(&param, file_name, host_index, line, trimmed));
@@ -309,7 +321,11 @@ fn make_local_var(
         scope_path: Some(file_name.to_string()),
         parent_index: Some(host_index),
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 /// Locate the position of the top-level ` in ` token in a `for` binding

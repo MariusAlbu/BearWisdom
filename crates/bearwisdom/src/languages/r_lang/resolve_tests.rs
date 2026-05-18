@@ -21,7 +21,11 @@ fn fixture(target: &str, module: Option<&str>, args: Vec<CallArg>) -> (Extracted
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let fc = FileContext { file_path: "x.R".to_string(), language: "r".to_string(), imports: vec![], file_namespace: None };
     (r, sym, fc)
 }

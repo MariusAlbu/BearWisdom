@@ -174,7 +174,9 @@ fn build_jsx_ref(raw: &str) -> (String, Option<MemberChain>) {
             type_args: Vec::new(),
             optional_chaining: false,
             byte_offset: 0,
-        });
+                    declared_type_id: None,
+            type_arg_ids: Vec::new(),
+});
     }
     let leaf = parts.last().unwrap_or(&raw).to_string();
     (leaf, Some(MemberChain { segments }))

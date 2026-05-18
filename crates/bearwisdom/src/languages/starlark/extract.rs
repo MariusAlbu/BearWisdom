@@ -63,7 +63,11 @@ pub fn extract(source: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     walk(root, src, &mut symbols, &mut refs, None);
 
@@ -136,7 +140,11 @@ fn extract_function(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     Some(idx)
 }
 
@@ -188,7 +196,11 @@ fn extract_assignment(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // Emit a call ref for the RHS callee if applicable.
     if let Some(rhs) = right {
@@ -397,7 +409,9 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
         "attribute" => {
@@ -416,7 +430,9 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
         // Starlark `primary_expression` wrappers — unwrap one level.

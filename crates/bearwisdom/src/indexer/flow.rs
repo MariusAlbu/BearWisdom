@@ -305,7 +305,9 @@ fn run_type_args_query(
         type_args: Vec::new(),
         optional_chaining: false,
         byte_offset: 0,
-    };
+            declared_type_id: None,
+        type_arg_ids: Vec::new(),
+};
 }
 
 /// Strip surrounding quotes from a literal type string (used in

@@ -67,6 +67,10 @@ pub(super) fn push_function_def(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -132,6 +136,10 @@ pub(super) fn push_specifier(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -165,6 +173,10 @@ pub(super) fn push_namespace(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -213,6 +225,10 @@ pub(super) fn push_namespace_alias(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Emit TypeRef for each `namespace_identifier` after the `=`. The first
@@ -373,6 +389,10 @@ pub(super) fn push_typedef(
             scope_path,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         return;
     }
@@ -409,6 +429,10 @@ pub(super) fn push_typedef(
             scope_path: scope_path.clone(),
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     }
 }
@@ -489,6 +513,10 @@ pub(super) fn push_declaration(
                 scope_path: scope_path.clone(),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     }
@@ -531,6 +559,10 @@ pub(super) fn extract_enum_body(
                     scope_path: scope_tree::scope_path(scope),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             }
         }

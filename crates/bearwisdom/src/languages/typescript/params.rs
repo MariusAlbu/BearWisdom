@@ -82,6 +82,10 @@ pub(super) fn extract_constructor_params(
             scope_path,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         // Extract TypeRef from the type annotation.
@@ -177,6 +181,10 @@ pub(super) fn extract_catch_variable(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Emit TypeRef if the catch variable has a type annotation.
@@ -266,6 +274,10 @@ pub(super) fn extract_for_loop_var(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Build a chain from the iterable (right side) so the index builder can

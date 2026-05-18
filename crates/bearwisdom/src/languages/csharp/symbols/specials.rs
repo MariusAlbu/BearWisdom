@@ -52,6 +52,10 @@ pub(in super::super) fn push_indexer_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // TypeRef for return type and parameter types.
@@ -119,6 +123,10 @@ pub(in super::super) fn push_operator_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // TypeRef for return type and parameters.
@@ -182,6 +190,10 @@ pub(in super::super) fn push_conversion_operator_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(type_node) = node.child_by_field_name("type") {
@@ -228,6 +240,10 @@ pub(in super::super) fn push_destructor_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -275,6 +291,10 @@ pub(in super::super) fn push_local_function_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -322,6 +342,10 @@ pub(in super::super) fn push_event_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(type_node) = node.child_by_field_name("type") {

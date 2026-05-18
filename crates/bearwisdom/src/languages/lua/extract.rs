@@ -154,6 +154,10 @@ fn extract_function_declaration(
         scope_path: scope,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -191,6 +195,10 @@ fn extract_local_function(
         scope_path: scope,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -269,6 +277,10 @@ fn extract_variable_declaration(
                     scope_path: scope,
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                 extract_table_fields(&rhs_node, src, idx, symbols, refs);
                 return Some(idx);
@@ -298,6 +310,10 @@ fn extract_variable_declaration(
         scope_path: scope,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -372,6 +388,10 @@ fn extract_assignment_statement(
                 scope_path: scope,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             Some(idx)
         }
@@ -402,6 +422,10 @@ fn extract_assignment_statement(
                             scope_path: scope,
                             parent_index,
                                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                         extract_table_fields(&rhs_node, src, idx, symbols, refs);
                         return Some(idx);
@@ -430,6 +454,10 @@ fn extract_assignment_statement(
                 scope_path: scope,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             Some(idx)
         }
@@ -459,6 +487,10 @@ fn extract_assignment_statement(
                 scope_path: scope,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             Some(idx)
         }
@@ -511,7 +543,11 @@ fn extract_table_fields(
             scope_path: None,
             parent_index: Some(parent_idx),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 
@@ -845,6 +881,10 @@ fn extract_all_fields(
             scope_path: None,
             parent_index: Some(parent_idx),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }

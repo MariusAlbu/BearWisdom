@@ -555,7 +555,11 @@ fn make_symbol(
         scope_path: None,
         parent_index,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 /// Walk the entire tree and emit a Class symbol for every `resource_declaration` node

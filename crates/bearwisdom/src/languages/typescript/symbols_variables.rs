@@ -58,6 +58,10 @@ pub(super) fn push_variable_decl(
                         scope_path: scope_path.clone(),
                         parent_index,
                                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
                     // Extract TypeRef from variable type annotation: `const repo: Repository`
@@ -239,6 +243,10 @@ pub(super) fn push_variable_decl(
                             scope_path: scope_path.clone(),
                             parent_index,
                                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
                         // Emit chain to source with property name appended so the
@@ -253,7 +261,9 @@ pub(super) fn push_variable_decl(
                                 type_args: vec![],
                                 optional_chaining: false,
                                 byte_offset: 0,
-                            });
+                                                            declared_type_id: None,
+                                type_arg_ids: Vec::new(),
+});
                             refs.push(ExtractedRef {
                                 source_symbol_index: prop_idx,
                                 target_name: source_prop,
@@ -355,6 +365,10 @@ pub(super) fn push_variable_decl(
                             scope_path: scope_path.clone(),
                             parent_index,
                                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
                         // Rest elements (`...rest`) bind an array of the
@@ -377,7 +391,9 @@ pub(super) fn push_variable_decl(
                                     type_args: vec![],
                                     optional_chaining: false,
                                     byte_offset: 0,
-                                });
+                                                                    declared_type_id: None,
+                                    type_arg_ids: Vec::new(),
+});
                                 refs.push(ExtractedRef {
                                     source_symbol_index: elem_sym_idx,
                                     target_name: elem_name,

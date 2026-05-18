@@ -69,7 +69,11 @@ pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile,
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
         // Shadow entry under the synthetic globals namespace so the
         // resolver's bare-name fallback (`ts_npm_globals` strategy in
@@ -96,7 +100,11 @@ pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile,
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 }

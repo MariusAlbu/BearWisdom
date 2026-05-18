@@ -43,6 +43,10 @@ pub(super) fn extract_class(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     extract_dart_heritage(node, src, idx, refs);
@@ -84,6 +88,10 @@ pub(super) fn extract_mixin(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(body) = node.child_by_field_name("body") {
@@ -120,6 +128,10 @@ pub(super) fn extract_extension(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(body) = node.child_by_field_name("body") {
@@ -157,6 +169,10 @@ pub(super) fn extract_enum(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Enum constants live inside an `enum_body` child (Dart grammar 0.1).
@@ -182,7 +198,11 @@ pub(super) fn extract_enum(
             scope_path: Some(qualified_name.clone()),
             parent_index: Some(idx),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     };
 
     // Check both direct children and those inside `enum_body`.
@@ -349,6 +369,10 @@ fn extract_method(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // The function body is the next sibling of `node` (method_signature) within class_member.
@@ -398,6 +422,10 @@ fn extract_constructor(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -445,6 +473,10 @@ fn extract_field(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     }
@@ -478,6 +510,10 @@ pub(super) fn extract_top_level_function(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -509,6 +545,10 @@ pub(super) fn extract_variable(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -643,6 +683,10 @@ pub(super) fn extract_typedef(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -687,6 +731,10 @@ pub(super) fn extract_getter_setter(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract calls from the body (sibling node).
@@ -760,6 +808,10 @@ fn extract_factory_constructor(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 

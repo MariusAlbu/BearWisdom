@@ -149,7 +149,11 @@ fn make_extracted_sym(name: &str, qname: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_extracted_ref(target: &str) -> ExtractedRef {
@@ -703,7 +707,11 @@ fn test_ada_exec_select_emits_db_select() {
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
     let em = AdaResolver.detect_flow_emission(&fc, &rc);
@@ -734,7 +742,11 @@ fn test_ada_no_emit_for_non_sql() {
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
     assert!(AdaResolver.detect_flow_emission(&fc, &rc).is_empty());

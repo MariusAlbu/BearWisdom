@@ -88,7 +88,11 @@ fn push_salvaged_class(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     existing.insert(name.to_string());
 }
 

@@ -93,7 +93,11 @@ pub fn extract(source: &str) -> super::ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 
@@ -528,6 +532,10 @@ fn push_type_decl_alias(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 

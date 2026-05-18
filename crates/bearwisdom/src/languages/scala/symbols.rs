@@ -135,6 +135,10 @@ fn push_enum_member(
         scope_path: scope_tree::scope_path(scope),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -185,6 +189,10 @@ pub(super) fn push_type_def(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -230,6 +238,10 @@ pub(super) fn push_function_def(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -324,6 +336,10 @@ pub(super) fn push_val_var(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -364,6 +380,10 @@ pub(super) fn push_type_definition(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Emit TypeRef for the aliased type (field `type`).
@@ -427,6 +447,10 @@ pub(super) fn push_given_definition(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Emit TypeRef for the given's return_type.
@@ -507,6 +531,10 @@ pub(super) fn push_extension_definition(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -569,6 +597,10 @@ pub(super) fn push_package_clause(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }

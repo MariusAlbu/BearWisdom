@@ -171,7 +171,11 @@ fn make_function_symbol(name: &str, line: u32) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +249,10 @@ fn extract_binary_operator(
             scope_path: None,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         return Some(idx);
     }
@@ -274,6 +282,10 @@ fn extract_binary_operator(
                 scope_path: None,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             Some(idx)
         }
@@ -299,6 +311,10 @@ fn extract_binary_operator(
                     scope_path: None,
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                 // For R6Class, emit Method symbols from public/private/active list args.
                 // Other class systems (setClass, setRefClass) use separate setMethod()
@@ -340,6 +356,10 @@ fn extract_binary_operator(
                 scope_path: None,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             Some(idx)
         }
@@ -360,6 +380,10 @@ fn extract_binary_operator(
                 scope_path: None,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             Some(idx)
         }
@@ -463,6 +487,10 @@ fn extract_call(
             scope_path: None,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         return Some(idx);
     }
@@ -484,6 +512,10 @@ fn extract_call(
             scope_path: None,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         return Some(idx);
     }
@@ -587,7 +619,11 @@ fn extract_r6_methods(
                 scope_path: None,
                 parent_index: Some(class_idx),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 }

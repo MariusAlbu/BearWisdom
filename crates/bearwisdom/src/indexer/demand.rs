@@ -257,6 +257,8 @@ mod tests {
                         type_args: Vec::new(),
                         optional_chaining: false,
                                             byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                     ChainSegment {
                         name: target.to_string(),
@@ -266,6 +268,8 @@ mod tests {
                         type_args: Vec::new(),
                         optional_chaining: false,
                                             byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ],
             }),

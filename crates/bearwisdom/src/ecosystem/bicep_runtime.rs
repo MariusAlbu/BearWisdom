@@ -235,7 +235,11 @@ fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
             scope_path: Some(module.to_string()),
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     };
 
     for src in [sys_src.as_deref(), az_src.as_deref()].into_iter().flatten() {

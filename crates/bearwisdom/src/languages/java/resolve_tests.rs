@@ -25,7 +25,11 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
@@ -416,7 +420,9 @@ fn make_chain(segments: &[&str]) -> MemberChain {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            })
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+})
             .collect(),
     }
 }

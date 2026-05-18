@@ -307,7 +307,11 @@ fn push_class(
         scope_path,
         parent_index,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     Some(idx)
 }
 
@@ -350,7 +354,11 @@ fn push_function(
         scope_path,
         parent_index,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     Some(idx)
 }
 
@@ -394,7 +402,11 @@ fn push_method(
         scope_path,
         parent_index,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     Some(idx)
 }
 
@@ -434,7 +446,11 @@ fn push_field(
         scope_path,
         parent_index,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
 }
 
 fn push_variable_decl(
@@ -498,7 +514,11 @@ fn push_variable_decl(
                             scope_path: scope_path.clone(),
                             parent_index,
                                 byte_offset: 0,
-                            });
+                                                            declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+});
                         // Extract calls and nested declarations from arrow body.
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
@@ -534,7 +554,11 @@ fn push_variable_decl(
                             scope_path: scope_path.clone(),
                             parent_index,
                                 byte_offset: 0,
-                            });
+                                                            declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+});
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
                                 extract_calls(&body, src, idx, refs);
@@ -561,7 +585,11 @@ fn push_variable_decl(
                             scope_path: scope_path.clone(),
                             parent_index,
                                 byte_offset: 0,
-                            });
+                                                            declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+});
                         // Recurse into the class body for methods/fields.
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
@@ -587,7 +615,11 @@ fn push_variable_decl(
                             scope_path: scope_path.clone(),
                             parent_index,
                                 byte_offset: 0,
-                            });
+                                                            declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+});
                         if let Some(init_node) = &init {
                             match init_node.kind() {
                                 // `const x = new Foo()` → Calls edge (JS convention)
@@ -736,7 +768,11 @@ fn push_destructured_var(
         scope_path: scope_path.clone(),
         parent_index,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
 }
 
 /// Inner recursion for class bodies (method_definition, field_definition only).
@@ -907,7 +943,11 @@ fn extract_for_loop_var(
         scope_path,
         parent_index,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
 
     // Emit a TypeRef to the iterable so the index builder can infer element type.
     if let Some(right) = node.child_by_field_name("right") {
@@ -1011,7 +1051,11 @@ fn extract_catch_variable(
         scope_path,
         parent_index,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
 }
 
 // build_import_map moved to crate::ecosystem::ecmascript_imports — both TS

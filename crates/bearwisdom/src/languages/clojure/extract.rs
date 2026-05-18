@@ -753,7 +753,11 @@ fn extract_protocol_methods(
             scope_path: None,
             parent_index: parent_idx,
             byte_offset: 0,
-        };
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+};
         // Try to build a signature from the first vec_lit child (params).
         let mut inner = child.walk();
         for ic in child.children(&mut inner) {
@@ -910,7 +914,11 @@ fn push_sym(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     idx
 }
 

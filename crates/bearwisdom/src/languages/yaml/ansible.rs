@@ -146,7 +146,11 @@ pub fn extract_ansible(source: &str, file_path: &str, scope: &str) -> Extraction
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }];
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}];
 
     for (line_no, line) in source.lines().enumerate() {
         if line.starts_with('#') || line.is_empty() {
@@ -181,7 +185,11 @@ pub fn extract_ansible(source: &str, file_path: &str, scope: &str) -> Extraction
                     scope_path: Some(scope.to_string()),
                     parent_index: Some(0),
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         }
     }

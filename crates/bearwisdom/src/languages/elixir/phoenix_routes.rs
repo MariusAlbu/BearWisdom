@@ -291,7 +291,11 @@ fn make_helper_symbol(name: &str) -> ExtractedSymbol {
         scope_path: Some("Routes".to_string()),
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 /// Derive the singular resource name from a controller module name.

@@ -317,7 +317,11 @@ fn extract_for_range_vars(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index: Some(enclosing_idx),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
 
         // Extract refs from the right-hand side (the range expression).

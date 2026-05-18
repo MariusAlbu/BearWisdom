@@ -136,6 +136,10 @@ fn extract_with_item(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         if let Some(expr) = cm_expr {
@@ -237,6 +241,10 @@ fn extract_for_in_vars(
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             }
         }
@@ -260,6 +268,10 @@ fn extract_for_in_vars(
                             scope_path: scope_from_prefix(qualified_prefix),
                             parent_index,
                                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                     }
                 }
@@ -305,6 +317,10 @@ pub(super) fn extract_named_expression(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     extract_calls_from_body(&value_node, source, enclosing_symbol_index, refs, import_map);

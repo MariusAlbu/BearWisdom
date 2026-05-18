@@ -21,7 +21,11 @@ fn fixture(target: &str, args: Vec<CallArg>) -> (ExtractedRef, ExtractedSymbol, 
         start_line: 1, end_line: 1, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let fc = FileContext { file_path: "x.m".to_string(), language: "matlab".to_string(), imports: vec![], file_namespace: None };
     (r, sym, fc)
 }

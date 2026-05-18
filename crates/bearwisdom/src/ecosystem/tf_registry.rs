@@ -536,7 +536,11 @@ fn synthesize_bundled_providers() -> Vec<ParsedFile> {
                 scope_path: Some(provider.to_string()),
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
 
         out.push(build_parsed_file(virtual_path, symbols));

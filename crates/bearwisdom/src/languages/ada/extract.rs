@@ -685,7 +685,11 @@ fn push_sym(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     idx
 }
 

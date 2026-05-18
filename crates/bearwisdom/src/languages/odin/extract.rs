@@ -146,7 +146,11 @@ fn extract_import(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     let target = path
         .as_ref()
@@ -211,6 +215,10 @@ fn extract_procedure(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract calls from the procedure body
@@ -257,7 +265,11 @@ fn extract_typed_decl(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -295,7 +307,11 @@ fn extract_var_decl(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 
@@ -326,7 +342,11 @@ fn extract_const_type_decl(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 

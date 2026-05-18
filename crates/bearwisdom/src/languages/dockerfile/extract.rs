@@ -181,7 +181,11 @@ fn extract_from(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // Imports edge to the base image
     if let Some(img) = &image {
@@ -281,6 +285,10 @@ fn extract_arg(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -339,6 +347,10 @@ fn extract_env_pair(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -393,6 +405,10 @@ fn extract_label(
                     scope_path: None,
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                 emitted = true;
             }
@@ -425,6 +441,10 @@ fn extract_label(
                     scope_path: None,
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                 break; // one symbol per label_instruction in fallback mode
             }
@@ -543,6 +563,10 @@ fn extract_entry_function(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 

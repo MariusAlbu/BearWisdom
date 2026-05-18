@@ -104,7 +104,11 @@ pub fn extract(source: &str) -> ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
 
             // Retroactively fix scope_path on orphan methods so the inheritance
             // resolver can walk up from the correct class.
@@ -349,7 +353,11 @@ fn scan_methods_from_source(
             scope_path: Some(class_qname.to_string()),
             parent_index: Some(parent_idx),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
     methods
 }

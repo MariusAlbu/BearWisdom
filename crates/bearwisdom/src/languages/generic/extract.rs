@@ -416,7 +416,11 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 scope_path: sp,
                 parent_index: ctx.parent_symbol_index(),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
 
             // Push parent index for nested symbols, and recurse.
             let pushes_parent = matches!(

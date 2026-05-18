@@ -44,7 +44,11 @@ pub(super) fn extract_package_clause(
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             return;
         }
     }
@@ -184,6 +188,10 @@ pub(super) fn extract_function_declaration(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract TypeRef edges from parameter and return types.
@@ -286,6 +294,10 @@ pub(super) fn extract_method_declaration(
         scope_path: scope_from_prefix(&method_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract TypeRef edges from parameter and return types.
@@ -463,6 +475,10 @@ pub(super) fn extract_go_typed_params_as_symbols(
                 scope_path,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
             refs.push(ExtractedRef {

@@ -441,7 +441,11 @@ fn push_lambda_param(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------

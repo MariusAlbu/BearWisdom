@@ -47,6 +47,10 @@ pub(super) fn push_class(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -85,6 +89,10 @@ pub(super) fn push_interface(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -132,6 +140,10 @@ pub(super) fn push_function(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -180,6 +192,10 @@ pub(super) fn push_construct_signature(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -227,6 +243,10 @@ pub(super) fn push_call_signature(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -280,6 +300,10 @@ pub(super) fn push_method(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -320,6 +344,10 @@ pub(super) fn push_enum(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Enum members.
@@ -351,7 +379,11 @@ pub(super) fn push_enum(
                         scope_path: Some(qualified_name.clone()),
                         parent_index: Some(idx),
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                 }
             }
         }
@@ -395,6 +427,10 @@ pub(super) fn push_type_alias(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract TypeRef from type alias value: `type UserId = string`
@@ -441,6 +477,10 @@ pub(super) fn push_namespace(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -500,6 +540,10 @@ pub(super) fn push_index_signature(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract TypeRef from the value type annotation (the type after the closing `]:`).

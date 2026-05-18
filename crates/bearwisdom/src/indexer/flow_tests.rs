@@ -56,7 +56,11 @@ fn mk_sym(name: &str, kind: SymbolKind, start_line: u32) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
@@ -163,6 +167,8 @@ fn flow_type_args_populate_chain_segment() {
                     type_args: Vec::new(),
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "findOne".to_string(),
@@ -172,6 +178,8 @@ fn flow_type_args_populate_chain_segment() {
                     type_args: Vec::new(),
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),

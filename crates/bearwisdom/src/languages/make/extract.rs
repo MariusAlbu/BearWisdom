@@ -501,7 +501,11 @@ fn make_symbol(
         scope_path: None,
         parent_index,
     byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn node_text(node: Node, src: &str) -> String {

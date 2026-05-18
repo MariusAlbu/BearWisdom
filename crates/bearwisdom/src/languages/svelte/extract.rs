@@ -70,7 +70,11 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // Walk for component usages, event handlers, and block references.
     let root = tree.root_node();

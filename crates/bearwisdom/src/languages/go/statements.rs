@@ -104,6 +104,10 @@ pub(super) fn extract_short_var_decl(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         // If the corresponding RHS value is a call_expression, emit a
@@ -396,6 +400,10 @@ fn extract_const_var_spec(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         // When the declared type is an anonymous struct, extract its fields as

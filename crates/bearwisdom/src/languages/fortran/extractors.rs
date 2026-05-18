@@ -231,7 +231,11 @@ pub(super) fn extract_variable_declaration(
             scope_path: None,
             parent_index: parent_idx,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
         let _ = source_symbol_index; // used for scope association via parent_idx
     }
 }
@@ -346,7 +350,11 @@ pub(super) fn emit_reexport_synthetics(
             scope_path: None,
             parent_index: Some(module_sym_idx),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 
@@ -423,7 +431,11 @@ fn emit_procedure_statement_members(
                         scope_path: None,
                         parent_index: Some(type_sym_idx),
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                 }
             }
             "binding" => {
@@ -461,7 +473,11 @@ fn emit_procedure_statement_members(
                         scope_path: None,
                         parent_index: Some(type_sym_idx),
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                 }
             }
             _ => {}

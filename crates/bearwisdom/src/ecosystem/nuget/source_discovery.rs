@@ -152,7 +152,11 @@ pub(crate) fn parse_cs_source_file(
             scope_path: if sym.scope.is_empty() { None } else { Some(sym.scope) },
             parent_index: None,
             byte_offset: 0,
-        })
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+})
         .collect();
 
     Ok(ParsedFile {

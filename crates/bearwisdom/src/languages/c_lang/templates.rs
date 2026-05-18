@@ -120,6 +120,10 @@ pub(super) fn push_concept_def(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     Some(idx)
@@ -194,6 +198,10 @@ pub(super) fn push_alias_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // TypeRef for the aliased type.

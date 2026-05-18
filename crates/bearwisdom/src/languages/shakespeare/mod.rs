@@ -17,7 +17,11 @@ fn host_symbol(file_path: &str) -> ExtractionResult {
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    }];
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}];
     ExtractionResult { symbols, refs: Vec::new(), routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),

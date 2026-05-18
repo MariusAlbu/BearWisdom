@@ -341,6 +341,10 @@ fn extract_factory_constructor_at_visit(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     // Also emit TypeRef for type_identifier children (return type annotations, params).
     let idx = symbols.len() - 1;

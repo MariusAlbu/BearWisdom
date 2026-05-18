@@ -90,7 +90,8 @@ fn host(stem: &str) -> ExtractedSymbol {
         kind: SymbolKind::Class, visibility: Some(Visibility::Public),
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
-        byte_offset: 0 }
+        byte_offset: 0, declared_type: None, return_type: None,
+        param_types: Vec::new(), generic_params: Vec::new() }
 }
 fn field(stem: &str, name: &str, line: u32, sig: &str) -> ExtractedSymbol {
     ExtractedSymbol { name: name.into(), qualified_name: format!("{stem}.{name}"),
@@ -98,7 +99,8 @@ fn field(stem: &str, name: &str, line: u32, sig: &str) -> ExtractedSymbol {
         start_line: line, end_line: line, start_col: 0, end_col: 0,
         signature: Some(sig.into()), doc_comment: None,
         scope_path: Some(stem.into()), parent_index: Some(0),
-        byte_offset: 0 }
+        byte_offset: 0, declared_type: None, return_type: None,
+        param_types: Vec::new(), generic_params: Vec::new() }
 }
 fn imports_ref(name: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     let p = std::path::Path::new(name);

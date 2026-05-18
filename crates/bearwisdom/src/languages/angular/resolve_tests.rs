@@ -129,7 +129,11 @@ fn selector_map_hit_resolves_to_class() {
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     let extracted = ExtractedRef {
         source_symbol_index: 0,
@@ -183,7 +187,11 @@ fn selector_map_miss_falls_through() {
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     let extracted = ExtractedRef {
         source_symbol_index: 0,

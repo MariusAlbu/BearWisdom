@@ -82,7 +82,11 @@ pub(super) fn recover_mixin_symbols_from_text(source: &str, symbols: &mut Vec<Ex
                             scope_path: None,
                             parent_index: None,
                             byte_offset: 0,
-                        });
+                                                    declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+});
                     }
                 }
                 i = k;
@@ -150,7 +154,11 @@ pub(super) fn recover_class_symbols_from_text(source: &str, symbols: &mut Vec<Ex
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 }
@@ -191,7 +199,11 @@ pub(super) fn recover_sass_indented_symbols_from_text(source: &str, symbols: &mu
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 }

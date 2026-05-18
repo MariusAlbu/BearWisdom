@@ -491,7 +491,11 @@ fn make_variable(name: String, node: &Node, parent_index: usize) -> ExtractedSym
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 

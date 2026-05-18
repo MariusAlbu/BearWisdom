@@ -30,7 +30,11 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
@@ -2115,7 +2119,11 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         scope_path: Some("chai".to_string()),
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let chai_tobe_sym = ExtractedSymbol {
         name: "toBe".to_string(),
         qualified_name: "chai.Assertion.toBe".to_string(),
@@ -2130,7 +2138,11 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         scope_path: Some("chai.Assertion".to_string()),
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     // Return-type refs: chai.expect → chai.Assertion, chai.Assertion.toBe → chai.Assertion
     let expect_rt_ref = ExtractedRef {
         source_symbol_index: 1,
@@ -2199,6 +2211,8 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "toBe".to_string(),
@@ -2208,6 +2222,8 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -2299,7 +2315,11 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         scope_path: Some("chai".to_string()),
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let chai_matcher_sym = ExtractedSymbol {
         name: "toHaveBeenCalledOnce".to_string(),
         qualified_name: "chai.Assertion.toHaveBeenCalledOnce".to_string(),
@@ -2311,7 +2331,11 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         scope_path: Some("chai.Assertion".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     // __npm_globals__.expect → return_type = "chai.Assertion"
     let npm_globals_expect_sym = ExtractedSymbol {
         name: "expect".to_string(),
@@ -2324,7 +2348,11 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         scope_path: Some("__npm_globals__".to_string()),
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     // TypeRef: __npm_globals__.expect → chai.Assertion
     let globals_expect_ref = ExtractedRef {
         source_symbol_index: 2, // npm_globals_expect_sym is index 2
@@ -2374,6 +2402,8 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "toHaveBeenCalledOnce".to_string(),
@@ -2383,6 +2413,8 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -2481,7 +2513,11 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let map_get = ExtractedSymbol {
         name: "get".to_string(),
         qualified_name: "Map.get".to_string(),
@@ -2496,7 +2532,11 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         scope_path: Some("Map".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let synth_file = ParsedFile {
         path: "ext:ts:lib/__bw_synthetic__.d.ts".to_string(),
         language: "typescript".to_string(),
@@ -2552,7 +2592,11 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         scope_path: Some("UserManager".to_string()),
         parent_index: Some(2),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
         qualified_name: "UserManager.do".to_string(),
@@ -2567,7 +2611,11 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         scope_path: Some("UserManager".to_string()),
         parent_index: Some(2),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     // TypeRef from UserManager.users → "UserMap" — the engine reads this
     // into field_type["UserManager.users"] = "UserMap".
@@ -2602,6 +2650,8 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "users".to_string(),
@@ -2611,6 +2661,8 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "get".to_string(),
@@ -2620,6 +2672,8 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -2716,7 +2770,11 @@ fn alias_expansion_handles_array_type_form() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let array_map = ExtractedSymbol {
         name: "map".to_string(),
         qualified_name: "Array.map".to_string(),
@@ -2731,7 +2789,11 @@ fn alias_expansion_handles_array_type_form() {
         scope_path: Some("Array".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let synth_file = ParsedFile {
         path: "ext:ts:lib/__bw_synthetic_arr__.d.ts".to_string(),
         language: "typescript".to_string(),
@@ -2779,7 +2841,11 @@ fn alias_expansion_handles_array_type_form() {
         scope_path: Some("C".to_string()),
         parent_index: Some(1),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
         qualified_name: "C.do".to_string(),
@@ -2794,7 +2860,11 @@ fn alias_expansion_handles_array_type_form() {
         scope_path: Some("C".to_string()),
         parent_index: Some(1),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     let ns_typeref = ExtractedRef {
         source_symbol_index: 2, // ns_field
@@ -2826,6 +2896,8 @@ fn alias_expansion_handles_array_type_form() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "ns".to_string(),
@@ -2835,6 +2907,8 @@ fn alias_expansion_handles_array_type_form() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "map".to_string(),
@@ -2844,6 +2918,8 @@ fn alias_expansion_handles_array_type_form() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -2936,7 +3012,11 @@ fn alias_expansion_refuses_union_aliases() {
         scope_path: Some("C".to_string()),
         parent_index: Some(1),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
         qualified_name: "C.do".to_string(),
@@ -2951,7 +3031,11 @@ fn alias_expansion_refuses_union_aliases() {
         scope_path: Some("C".to_string()),
         parent_index: Some(1),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     let s_typeref = ExtractedRef {
         source_symbol_index: 2,
@@ -2983,6 +3067,8 @@ fn alias_expansion_refuses_union_aliases() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "s".to_string(),
@@ -2992,6 +3078,8 @@ fn alias_expansion_refuses_union_aliases() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "foo".to_string(),
@@ -3001,6 +3089,8 @@ fn alias_expansion_refuses_union_aliases() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -3079,7 +3169,11 @@ fn typeof_alias_dereferences_to_value_type() {
         scope_path: Some("User".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     // The value `api: User`. Variable kind so the engine reads the
     // first TypeRef into `field_type["api"] = "User"`.
     let api_value = ExtractedSymbol {
@@ -3096,7 +3190,11 @@ fn typeof_alias_dereferences_to_value_type() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let api_typeref = ExtractedRef {
         source_symbol_index: 2, // api_value
         target_name: "User".to_string(),
@@ -3132,7 +3230,11 @@ fn typeof_alias_dereferences_to_value_type() {
         scope_path: Some("C".to_string()),
         parent_index: Some(4),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
         qualified_name: "C.do".to_string(),
@@ -3147,7 +3249,11 @@ fn typeof_alias_dereferences_to_value_type() {
         scope_path: Some("C".to_string()),
         parent_index: Some(4),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     let a_typeref = ExtractedRef {
         source_symbol_index: 5, // a_field
@@ -3179,6 +3285,8 @@ fn typeof_alias_dereferences_to_value_type() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "a".to_string(),
@@ -3188,6 +3296,8 @@ fn typeof_alias_dereferences_to_value_type() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "greet".to_string(),
@@ -3197,6 +3307,8 @@ fn typeof_alias_dereferences_to_value_type() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -3288,7 +3400,11 @@ fn transparent_mapped_partial_resolves_through_source() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let user_greet = ExtractedSymbol {
         name: "greet".to_string(),
         qualified_name: "User.greet".to_string(),
@@ -3303,7 +3419,11 @@ fn transparent_mapped_partial_resolves_through_source() {
         scope_path: Some("User".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     // Partial<T> alias — generic param T captured via signature.
     let partial_alias = ExtractedSymbol {
         name: "Partial".to_string(),
@@ -3319,7 +3439,11 @@ fn transparent_mapped_partial_resolves_through_source() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let c_class = make_symbol("C", "C", SymbolKind::Class, Visibility::Public, None);
     // `p: Partial<User>` — engine sees TypeRef(Partial) followed by
     // TypeRef(User), reads field_type[C.p] = "Partial",
@@ -3338,7 +3462,11 @@ fn transparent_mapped_partial_resolves_through_source() {
         scope_path: Some("C".to_string()),
         parent_index: Some(3),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
         qualified_name: "C.do".to_string(),
@@ -3353,7 +3481,11 @@ fn transparent_mapped_partial_resolves_through_source() {
         scope_path: Some("C".to_string()),
         parent_index: Some(3),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     let p_typeref_partial = ExtractedRef {
         source_symbol_index: 4,
@@ -3397,6 +3529,8 @@ fn transparent_mapped_partial_resolves_through_source() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "p".to_string(),
@@ -3406,6 +3540,8 @@ fn transparent_mapped_partial_resolves_through_source() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "greet".to_string(),
@@ -3415,6 +3551,8 @@ fn transparent_mapped_partial_resolves_through_source() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -3506,7 +3644,11 @@ fn phase2_inheritance_resolves_inherited_field() {
         scope_path: Some("Repo".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let base = make_symbol("Base", "Base", SymbolKind::Class, Visibility::Public, None);
     let base_db = ExtractedSymbol {
         name: "db".to_string(),
@@ -3522,7 +3664,11 @@ fn phase2_inheritance_resolves_inherited_field() {
         scope_path: Some("Base".to_string()),
         parent_index: Some(2),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let child = make_symbol("Child", "Child", SymbolKind::Class, Visibility::Public, None);
     let do_method = ExtractedSymbol {
         name: "do".to_string(),
@@ -3538,7 +3684,11 @@ fn phase2_inheritance_resolves_inherited_field() {
         scope_path: Some("Child".to_string()),
         parent_index: Some(4),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     let base_db_typeref = ExtractedRef {
         source_symbol_index: 3,
@@ -3582,6 +3732,8 @@ fn phase2_inheritance_resolves_inherited_field() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "db".to_string(),
@@ -3591,6 +3743,8 @@ fn phase2_inheritance_resolves_inherited_field() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "find".to_string(),
@@ -3600,6 +3754,8 @@ fn phase2_inheritance_resolves_inherited_field() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -3672,7 +3828,11 @@ fn phase2_inheritance_resolves_through_two_hops() {
         scope_path: Some("Svc".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let grand = make_symbol("Grand", "Grand", SymbolKind::Class, Visibility::Public, None);
     let grand_svc = ExtractedSymbol {
         name: "svc".to_string(),
@@ -3688,7 +3848,11 @@ fn phase2_inheritance_resolves_through_two_hops() {
         scope_path: Some("Grand".to_string()),
         parent_index: Some(2),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let mid = make_symbol("Mid", "Mid", SymbolKind::Class, Visibility::Public, None);
     let leaf = make_symbol("Leaf", "Leaf", SymbolKind::Class, Visibility::Public, None);
     let do_method = ExtractedSymbol {
@@ -3705,7 +3869,11 @@ fn phase2_inheritance_resolves_through_two_hops() {
         scope_path: Some("Leaf".to_string()),
         parent_index: Some(5),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     let grand_svc_typeref = ExtractedRef {
         source_symbol_index: 3,
@@ -3761,6 +3929,8 @@ fn phase2_inheritance_resolves_through_two_hops() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "svc".to_string(),
@@ -3770,6 +3940,8 @@ fn phase2_inheritance_resolves_through_two_hops() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "run".to_string(),
@@ -3779,6 +3951,8 @@ fn phase2_inheritance_resolves_through_two_hops() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -3860,7 +4034,11 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         scope_path: Some("Builder".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let set_b = ExtractedSymbol {
         name: "setB".to_string(),
         qualified_name: "Builder.setB".to_string(),
@@ -3875,7 +4053,11 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         scope_path: Some("Builder".to_string()),
         parent_index: Some(0),
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let caller = ExtractedSymbol {
         name: "build".to_string(),
         qualified_name: "build".to_string(),
@@ -3890,7 +4072,11 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
 
     // Each method's signature carries the `: this` return — the type
     // checker's signature parser populates return_type from this.
@@ -3915,6 +4101,8 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "setA".to_string(),
@@ -3924,6 +4112,8 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                 ChainSegment {
                     name: "setB".to_string(),
@@ -3933,6 +4123,8 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                     type_args: vec![],
                     optional_chaining: false,
                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
             ],
         }),
@@ -4004,7 +4196,9 @@ fn make_chain_segs(segments: &[(&str, crate::types::SegmentKind)]) -> crate::typ
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            })
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+})
             .collect(),
     }
 }
@@ -4809,7 +5003,9 @@ fn make_chain_with_typed_root(
                 type_args: root_type_args.iter().map(|s| s.to_string()).collect(),
                 optional_chaining: false,
                 byte_offset: 0,
-            },
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+},
             ChainSegment {
                 name: leaf_name.to_string(),
                 node_kind: String::new(),
@@ -4818,7 +5014,9 @@ fn make_chain_with_typed_root(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            },
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+},
         ],
     }
 }
@@ -6900,7 +7098,11 @@ fn test_di_binding_inject_decorator_emits() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }];
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}];
     let ref_ctx = RefContext {
         extracted_ref: &r,
         source_symbol: &symbols[0],
@@ -6963,7 +7165,11 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }];
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}];
     let ref_ctx = RefContext {
         extracted_ref: &r,
         source_symbol: &symbols[0],
@@ -7017,7 +7223,11 @@ fn test_di_binding_inject_without_token_still_emits() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }];
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}];
     let ref_ctx = RefContext {
         extracted_ref: &r,
         source_symbol: &symbols[0],

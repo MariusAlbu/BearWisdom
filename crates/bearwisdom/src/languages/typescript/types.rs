@@ -663,6 +663,10 @@ pub(super) fn extract_typed_params_as_symbols(
             scope_path,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         // Emit TypeRef from the parameter symbol to its type.

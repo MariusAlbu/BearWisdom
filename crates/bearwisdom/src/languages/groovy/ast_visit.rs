@@ -92,6 +92,10 @@ fn extract_package(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -138,6 +142,10 @@ fn extract_class(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract superclass (extends) → Inherits edge
@@ -247,6 +255,10 @@ fn extract_interface(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract parent interfaces (extends_interfaces child → type_list)
@@ -296,6 +308,10 @@ fn extract_field(
                 scope_path: None,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     }
@@ -385,6 +401,10 @@ fn extract_function(
         scope_path: class_scope.map(|s| s.to_string()),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     let local_types = scan_local_types(node, src);
@@ -442,6 +462,10 @@ fn extract_method_declaration(
         scope_path: class_scope.map(|s| s.to_string()),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     let local_types = scan_local_types(node, src);
@@ -486,7 +510,11 @@ fn emit_local_variable_symbols(
                                 scope_path: None,
                                 parent_index: Some(parent_index),
                                 byte_offset: 0,
-                            });
+                                                            declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+});
                         }
                     }
                 }

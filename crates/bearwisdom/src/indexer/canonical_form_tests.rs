@@ -49,7 +49,11 @@ fn make_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
@@ -80,7 +84,9 @@ fn seg_at(name: &str, kind: SegmentKind, byte_offset: u32) -> ChainSegment {
         type_args: Vec::new(),
         optional_chaining: false,
         byte_offset,
-    }
+            declared_type_id: None,
+        type_arg_ids: Vec::new(),
+}
 }
 
 fn codes(violations: &[ContractViolation]) -> Vec<&'static str> {

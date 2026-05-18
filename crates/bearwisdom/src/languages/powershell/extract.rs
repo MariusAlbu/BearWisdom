@@ -208,6 +208,10 @@ fn extract_function_indexed(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     visit_for_calls(node, src, idx, refs);
@@ -248,6 +252,10 @@ fn extract_function(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract calls inside function body
@@ -287,6 +295,10 @@ fn extract_class(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Detect inheritance: `class Foo : Bar` — the grammar emits two `simple_name`
@@ -369,7 +381,11 @@ fn extract_method(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     visit_for_calls(node, src, idx, refs);
 }
@@ -405,7 +421,11 @@ fn extract_property(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +461,10 @@ fn extract_enum(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract individual enum members
@@ -464,7 +488,11 @@ fn extract_enum(
                         scope_path: None,
                         parent_index: Some(enum_idx),
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                 }
             }
         }
@@ -546,6 +574,10 @@ fn extract_script_parameters_recursive(
                         scope_path: None,
                         parent_index,
                                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                 }
             }
@@ -616,7 +648,11 @@ fn extract_top_level_assignment(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 

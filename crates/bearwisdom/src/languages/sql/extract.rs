@@ -125,7 +125,11 @@ fn extract_create_table(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // Extract column definitions as Field children
     extract_column_definitions(node, src, idx, symbols, refs);
@@ -169,7 +173,11 @@ fn extract_create_view(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +209,11 @@ fn extract_create_function(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +246,11 @@ fn extract_create_trigger(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +286,11 @@ fn extract_create_index(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // TypeRef to the table the index is on (object_reference child)
     if let Some(table_name) = first_object_reference_name(node, src) {
@@ -348,7 +368,11 @@ fn extract_cte(
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                     found_name = true;
                     break;
                 }
@@ -373,7 +397,11 @@ fn extract_cte(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 
@@ -423,7 +451,11 @@ fn collect_all_cte_nodes(
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
         // Recurse to find nested CTEs
         let mut cursor = node.walk();
@@ -499,7 +531,11 @@ fn collect_all_column_definitions(
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
         return; // Don't recurse inside column_definition
     }
@@ -696,7 +732,11 @@ fn extract_column(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // TypeRef for custom type
     if let Some(ct) = custom_type {
@@ -794,7 +834,11 @@ fn extract_ddl_fallback(
                     scope_path: None,
                     parent_index: None,
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         } else if upper.starts_with("CREATE INDEX") || upper.starts_with("CREATE UNIQUE INDEX") {
             if let Some(name) = parse_create_index_name(line) {
@@ -812,7 +856,11 @@ fn extract_ddl_fallback(
                     scope_path: None,
                     parent_index: None,
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         } else if upper.starts_with("CREATE VIEW") || upper.starts_with("CREATE OR REPLACE VIEW")
             || upper.starts_with("CREATE MATERIALIZED VIEW")
@@ -832,7 +880,11 @@ fn extract_ddl_fallback(
                     scope_path: None,
                     parent_index: None,
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         }
     }

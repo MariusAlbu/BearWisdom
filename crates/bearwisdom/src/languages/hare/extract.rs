@@ -242,7 +242,11 @@ fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u3
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn find_brace_end(lines: &[&str], start: usize) -> u32 {

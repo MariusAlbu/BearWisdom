@@ -313,7 +313,11 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     let class_index = 0usize;
 
     for method in iter_array(class, "methods") {
@@ -349,7 +353,11 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     for prop in iter_array(class, "properties") {
@@ -370,7 +378,11 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     for sig in iter_array(class, "signals") {
@@ -386,7 +398,11 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     for cst in iter_array(class, "constants") {
@@ -402,7 +418,11 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     for en in iter_array(class, "enums") {
@@ -418,7 +438,11 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
         for value in iter_array(en, "values") {
             let Some(v_name) = value.get("name").and_then(|v| v.as_str()) else { continue };
             symbols.push(ExtractedSymbol {
@@ -432,7 +456,11 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
                 scope_path: Some(format!("{name}.{e_name}")),
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 
@@ -456,7 +484,11 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     for fun in iter_array(json, "utility_functions") {
@@ -491,7 +523,11 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     for enu in iter_array(json, "global_enums") {
@@ -507,7 +543,11 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
         for value in iter_array(enu, "values") {
             let Some(v_name) = value.get("name").and_then(|v| v.as_str()) else { continue };
             symbols.push(ExtractedSymbol {
@@ -521,7 +561,11 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
                 scope_path: Some(name.to_string()),
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             // Godot convention: enum values ALSO act as global constants
             // (e.g. `SIDE_LEFT`). Emit a top-level variable so project code
             // using the bare name resolves.
@@ -536,7 +580,11 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 
@@ -553,7 +601,11 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     if symbols.is_empty() { return None; }

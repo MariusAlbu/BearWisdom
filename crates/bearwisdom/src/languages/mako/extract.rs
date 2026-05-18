@@ -13,7 +13,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    }];
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}];
     let host_index = 0usize;
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let line_starts: Vec<u32> = std::iter::once(0)
@@ -38,7 +42,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         scope_path: Some(stem.clone()),
                         parent_index: Some(host_index),
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                 }
             }
         } else if let Some(rest) = trimmed.strip_prefix("<%include") {

@@ -39,7 +39,11 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
     let host_index: usize = 0;
 
     let bytes = source.as_bytes();
@@ -67,7 +71,11 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
                 scope_path: Some(file_name.clone()),
                 parent_index: Some(host_index),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
         collect_link_refs(line, line_no, ls as u32, host_index, &mut refs);
         line_no += 1;
@@ -92,7 +100,11 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
             scope_path: Some(file_name.clone()),
             parent_index: Some(host_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 
     HostScan {

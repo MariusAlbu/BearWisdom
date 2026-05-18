@@ -116,7 +116,11 @@ fn walk_node(
                         scope_path: None,
                         parent_index: parent_idx,
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
                         target_name: name,
@@ -317,7 +321,11 @@ fn extract_value_def(
                     scope_path,
                     parent_index: parent_idx,
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
                 return Some(idx);
             }
         }
@@ -376,7 +384,11 @@ fn extract_type_def(
                 scope_path: scope_path.clone(),
                 parent_index: parent_idx,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
 
             // For variant types, emit each constructor as a child symbol so
             // that constructor applications resolve. Constructors live at module
@@ -438,7 +450,11 @@ fn extract_variant_constructors(
                 scope_path: module_scope.map(str::to_string),
                 parent_index: parent_idx,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 }
@@ -476,7 +492,11 @@ fn extract_module_def(
                         scope_path,
                         parent_index: parent_idx,
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                     return Some(idx);
                 }
             }
@@ -517,7 +537,11 @@ fn extract_exception_def(
                 scope_path,
                 parent_index: parent_idx,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             return Some(idx);
         }
     }
@@ -556,7 +580,11 @@ fn extract_module_type_def(
                 scope_path,
                 parent_index: parent_idx,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             return Some(idx);
         }
     }
@@ -598,7 +626,11 @@ fn extract_class_def(
                         scope_path,
                         parent_index: parent_idx,
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                     return Some(idx);
                 }
             }
@@ -637,7 +669,11 @@ fn extract_external(
                 scope_path,
                 parent_index: parent_idx,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             return;
         }
     }
@@ -674,7 +710,11 @@ fn extract_value_specification(
                 scope_path,
                 parent_index: parent_idx,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             return;
         }
     }

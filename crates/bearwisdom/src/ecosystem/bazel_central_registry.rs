@@ -722,7 +722,11 @@ fn make_symbol(short: &str, qname: &str, sig: &str, line: u32) -> ExtractedSymbo
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 /// Emit a synthetic `ParsedFile` for the Bazel `ctx` and `repository_ctx` APIs.
@@ -951,7 +955,11 @@ pub fn synth_builtin_rules() -> ParsedFile {
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        })
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+})
         .collect();
 
     let sym_count = symbols.len();

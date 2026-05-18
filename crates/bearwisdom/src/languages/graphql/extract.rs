@@ -140,7 +140,11 @@ fn extract_object_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // implements_interfaces → Implements edges
     extract_implements(node, src, idx, refs);
@@ -179,7 +183,11 @@ fn extract_interface_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     extract_implements(node, src, idx, refs);
     extract_fields(node, src, idx, symbols, refs);
@@ -216,7 +224,11 @@ fn extract_enum_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // enum_value_definition children
     let mut cursor = node.walk();
@@ -260,7 +272,11 @@ fn extract_enum_values(
                 scope_path: None,
                 parent_index: Some(parent_index),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 }
@@ -304,7 +320,11 @@ fn extract_union_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // TypeRef for each member type
     for member in &members {
@@ -386,7 +406,11 @@ fn extract_scalar_type(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +444,11 @@ fn extract_input_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // input_fields_definition → input_value_definition
     let mut cursor = node.walk();
@@ -479,7 +507,11 @@ fn extract_input_value(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     if let Some(t) = type_ref {
         refs.push(ExtractedRef {
@@ -521,7 +553,11 @@ fn extract_directive_def(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymb
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -549,7 +585,11 @@ fn extract_schema_def(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // root_operation_type_definition → named_type references
     let mut cursor = node.walk();
@@ -600,7 +640,11 @@ fn extract_operation_def(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymb
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -657,7 +701,11 @@ fn extract_fragment_def(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     if let Some(t) = on_type {
         refs.push(ExtractedRef {
@@ -758,7 +806,11 @@ fn extract_field_def(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     if let Some(t) = type_ref {
         refs.push(ExtractedRef {

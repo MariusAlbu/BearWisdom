@@ -38,6 +38,10 @@ pub(super) fn push_package(
         scope_path: None,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -87,6 +91,10 @@ pub(super) fn push_type_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -125,6 +133,10 @@ pub(super) fn push_enum_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -169,7 +181,11 @@ pub(super) fn extract_enum_body(
                         scope_path: if enum_qname.is_empty() { None } else { Some(enum_qname.clone()) },
                         parent_index: enum_parent_index,
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                 }
             }
             // Enum body can also contain class_body declarations.
@@ -220,6 +236,10 @@ pub(super) fn push_method_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -271,6 +291,10 @@ pub(super) fn push_annotation_element_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -320,6 +344,10 @@ pub(super) fn push_compact_constructor_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -371,6 +399,10 @@ pub(super) fn push_constructor_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -430,6 +462,10 @@ pub(super) fn push_field_decl(
                     scope_path: scope_path.clone(),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             }
         }
@@ -791,6 +827,10 @@ pub(super) fn extract_java_typed_params_as_symbols(
             scope_path,
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         refs.push(ExtractedRef {

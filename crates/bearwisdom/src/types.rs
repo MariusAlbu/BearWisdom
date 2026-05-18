@@ -25,25 +25,24 @@ use std::collections::HashMap;
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum SymbolKind {
-    // Shared
     Class,
     Struct,
     Interface,
+    Trait,
     Enum,
     EnumMember,
     Method,
     Constructor,
     Property,
     Field,
-    // C# specific
     Namespace,
+    Module,
     Event,
     Delegate,
-    // TypeScript specific
-    Function,     // top-level function (not a method)
-    TypeAlias,    // `type Foo = ...`
-    Variable,     // `const`, `let`, `var`
-    // Test methods (detected by attribute / naming)
+    Function,
+    TypeAlias,
+    Variable,
+    Parameter,
     Test,
 }
 
@@ -61,26 +60,68 @@ impl SymbolKind {
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum EdgeKind {
-    /// A method/function calls another method/function.
+    /// Function or method invocation.
     Calls,
-    /// A type inherits from another (class → class).
+    /// Class → parent class.
     Inherits,
-    /// A type implements an interface (class/struct → interface).
+    /// Class/struct → interface or trait.
     Implements,
-    /// A parameter, return type, or field references another type.
+    /// Parameter, return type, or field references a type.
     TypeRef,
-    /// An `object_creation_expression` (`new Foo()`).
+    /// `new Foo()` / `Foo()` instance construction.
     Instantiates,
-    /// A `using` directive (C#) or `import` statement (TS/JS) that brings
-    /// a namespace or module into scope.  `target_name` and `module` both
-    /// hold the full namespace/module path.
+    /// `using` / `import` / `require` brings a namespace or module into
+    /// scope. `target_name` and `module` carry the full path.
     Imports,
-    /// A fetch/axios call in TS matches a route defined in C#.
+    /// Variable or field read.
+    Reads,
+    /// Assignment to a variable or field.
+    Writes,
+    /// HTTP call → backend route. Kept for back-compat alongside
+    /// `FlowEdgeKind::HttpCall`; new emitters use FlowEdgeKind.
     HttpCall,
-    /// A DbSet<T> property is linked to its entity class.
+    /// ORM mapping. Kept for back-compat alongside `FlowEdgeKind::DbEntity`.
     DbEntity,
-    /// An edge discovered purely by an LSP server (no tree-sitter counterpart).
+    /// Edge discovered by an LSP server only. Kept for back-compat
+    /// alongside `FlowEdgeKind::LspResolved`.
     LspResolved,
+}
+
+/// Cross-tier flow edges. Distinct from `EdgeKind` resolution edges: these
+/// land in the `flow_edges` table; resolution edges land in `edges`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize,
+    strum::AsRefStr, strum::IntoStaticStr, strum::EnumString, strum::Display,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum FlowEdgeKind {
+    /// Frontend fetch → backend route.
+    HttpCall,
+    /// ORM mapping to table.
+    DbEntity,
+    /// Event producer.
+    EventEmit,
+    /// Event consumer.
+    EventHandle,
+    /// Queue producer.
+    QueueProduce,
+    /// Queue consumer.
+    QueueConsume,
+    /// gRPC / JSON-RPC caller.
+    RpcCall,
+    /// gRPC / JSON-RPC handler.
+    RpcHandle,
+    /// DI interface → implementation binding.
+    DiBind,
+    /// Edge produced by an LSP server.
+    LspResolved,
+}
+
+impl FlowEdgeKind {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
 }
 
 impl EdgeKind {
@@ -101,7 +142,7 @@ pub enum Visibility {
     Private,
     Protected,
     Internal,
-    // C# `protected internal` / `private protected` — simplified to Protected
+    PackagePrivate,
 }
 
 impl Visibility {
@@ -279,6 +320,17 @@ pub struct ExtractedSymbol {
     pub scope_path: Option<String>,
     /// Index of this symbol's parent in the same Vec<ExtractedSymbol>.
     pub parent_index: Option<usize>,
+    /// Annotated or inferred type for value-holding kinds (Variable, Field,
+    /// Property, Parameter). Interned into the workspace TypeArena.
+    pub declared_type: Option<crate::type_checker::core::types::TypeId>,
+    /// Return type for callable kinds (Function, Method, Constructor) and
+    /// the self-TypeId for type-defining kinds (Class, Struct, Interface,
+    /// Trait, Enum, TypeAlias).
+    pub return_type: Option<crate::type_checker::core::types::TypeId>,
+    /// Parameter types in declaration order. Empty for non-callable kinds.
+    pub param_types: Vec<crate::type_checker::core::types::TypeId>,
+    /// Generic parameter slots bound by this symbol.
+    pub generic_params: Vec<crate::type_checker::core::types::GenericParamId>,
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +375,12 @@ pub struct ChainSegment {
     pub optional_chaining: bool,
     /// Absolute byte position of this segment's identifier in the source file.
     pub byte_offset: u32,
+    /// Canonical TypeId form of `declared_type`. Populated post-extract by
+    /// interning the string into the workspace TypeArena. Consumers
+    /// progressively migrate from `declared_type: Option<String>` to this.
+    pub declared_type_id: Option<crate::type_checker::core::types::TypeId>,
+    /// Canonical TypeId forms of `type_args`. Populated post-extract.
+    pub type_arg_ids: Vec<crate::type_checker::core::types::TypeId>,
 }
 
 /// A structured member access chain built from tree-sitter AST nodes.

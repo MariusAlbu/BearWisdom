@@ -10,7 +10,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         start_line: 0, end_line: 0, start_col: 0, end_col: 0,
         signature: None, doc_comment: None, scope_path: None, parent_index: None,
         byte_offset: 0,
-    }];
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}];
     for (line_no, line) in source.lines().enumerate() {
         let trimmed = line.trim_start();
         for kw in &["location ", "server ", "upstream "] {
@@ -38,7 +42,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     scope_path: Some(stem.clone()),
                     parent_index: Some(0),
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         }
     }

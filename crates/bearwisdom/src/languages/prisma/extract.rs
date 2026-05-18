@@ -83,7 +83,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
 
             // Consume the block body
             i += 1;
@@ -136,7 +140,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: Some(parent_index),
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                 } else {
                     // Model/view/type field: `fieldName FieldType[?][] [@attributes]`
                     let line_byte_start = line_starts.get(i).copied().unwrap_or(0);
@@ -206,7 +214,11 @@ fn extract_field(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // Emit TypeRef for non-scalar types
     if !SCALARS.contains(&base_type) && !base_type.is_empty() && base_type.chars().next().map_or(false, |c| c.is_uppercase()) {

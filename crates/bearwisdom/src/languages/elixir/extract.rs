@@ -317,6 +317,10 @@ fn extract_module(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     let do_block_idx = find_do_block_index(node);
@@ -373,6 +377,10 @@ fn extract_function(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     let do_block_idx = find_do_block_index(node);
@@ -418,6 +426,10 @@ fn extract_struct(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -461,6 +473,10 @@ fn extract_exception(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -495,6 +511,10 @@ fn extract_protocol(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     let do_block_idx = find_do_block_index(node);
@@ -538,6 +558,10 @@ fn extract_implementation(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Emit TypeRef to the protocol being implemented
@@ -597,6 +621,10 @@ fn dispatch_attribute(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             // For @type and @spec, extract module references (alias nodes) as TypeRef edges.
             if attr_name == "type" || attr_name == "spec" || attr_name == "callback" {

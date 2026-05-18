@@ -14,7 +14,9 @@ fn make_chain(segments: &[&str]) -> MemberChain {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            })
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+})
             .collect(),
     }
 }

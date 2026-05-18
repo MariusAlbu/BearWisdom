@@ -22,7 +22,11 @@ fn make_method_symbol(name: &str, qname: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_class_symbol(name: &str) -> ExtractedSymbol {
@@ -40,7 +44,11 @@ fn make_class_symbol(name: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_calls_ref(target: &str) -> ExtractedRef {

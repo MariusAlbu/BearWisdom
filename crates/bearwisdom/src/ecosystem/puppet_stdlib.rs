@@ -396,7 +396,11 @@ fn make_parsed_file(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let mtime = std::fs::metadata(abs_path)
         .ok()
         .and_then(|m| m.modified().ok())

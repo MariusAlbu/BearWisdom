@@ -27,7 +27,11 @@ impl LanguagePlugin for JspPlugin {
             start_line: 0, end_line: 0, start_col: 0, end_col: 0,
             signature: None, doc_comment: None, scope_path: None, parent_index: None,
             byte_offset: 0,
-        }];
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+}];
         let mut refs: Vec<ExtractedRef> = Vec::new();
         let line_starts: Vec<u32> = std::iter::once(0)
             .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))

@@ -26,7 +26,11 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
@@ -554,6 +558,8 @@ fn test_static_eloquent_call_via_type_access() {
                             type_args: vec![],
                             optional_chaining: false,
                                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                         ChainSegment {
                             name: "whereIn".to_string(),
@@ -563,6 +569,8 @@ fn test_static_eloquent_call_via_type_access() {
                             type_args: vec![],
                             optional_chaining: false,
                                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                     ],
                 }),
@@ -658,6 +666,8 @@ fn test_inherited_method_via_chain_selfref() {
                             type_args: vec![],
                             optional_chaining: false,
                                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                         ChainSegment {
                             name: "account".to_string(),
@@ -667,6 +677,8 @@ fn test_inherited_method_via_chain_selfref() {
                             type_args: vec![],
                             optional_chaining: false,
                                                     byte_offset: 0,
+    declared_type_id: None,
+    type_arg_ids: Vec::new(),
 },
                     ],
                 }),
@@ -814,7 +826,9 @@ fn make_static_chain(segments: &[&str]) -> MemberChain {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            })
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+})
             .collect(),
     }
 }
@@ -833,7 +847,9 @@ fn make_instance_chain(segments: &[&str]) -> MemberChain {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            })
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+})
             .collect(),
     }
 }

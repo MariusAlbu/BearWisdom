@@ -55,6 +55,10 @@ pub(in super::super) fn push_method_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -115,6 +119,10 @@ pub(in super::super) fn push_constructor_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -173,6 +181,10 @@ pub(in super::super) fn push_property_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Emit a TypeRef edge for the property's declared type.
@@ -239,6 +251,10 @@ pub(in super::super) fn push_accessor_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     Some(idx)
 }
@@ -296,6 +312,10 @@ pub(in super::super) fn push_field_decl(
                     scope_path: scope_path.clone(),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                 // Emit a TypeRef for the field's declared type.
                 if let Some(tn) = type_node_opt {
@@ -352,6 +372,10 @@ pub(in super::super) fn push_event_field_decl(
                     scope_path: scope_path.clone(),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             }
         }
@@ -402,5 +426,9 @@ pub(in super::super) fn push_delegate_decl(
         scope_path,
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }

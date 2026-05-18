@@ -80,7 +80,11 @@ pub(super) fn extract_module(node: &Node, src: &str, symbols: &mut Vec<Extracted
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +112,11 @@ pub(super) fn extract_record(node: &Node, src: &str, symbols: &mut Vec<Extracted
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +295,11 @@ pub(super) fn extract_type_alias(node: &Node, src: &str, symbols: &mut Vec<Extra
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 
@@ -317,7 +329,11 @@ pub(super) fn extract_callback(node: &Node, src: &str, symbols: &mut Vec<Extract
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 
@@ -360,6 +376,10 @@ pub(super) fn extract_wild_attr(node: &Node, src: &str, symbols: &mut Vec<Extrac
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }

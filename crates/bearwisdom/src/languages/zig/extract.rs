@@ -112,7 +112,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             i = end_line as usize + 1;
             continue;
         }
@@ -136,7 +140,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
             // Scan body lines for call expressions
             extract_calls_from_body(&body_lines, fn_idx, start_line + 1, &mut refs, &line_starts);
             // Deep-scan the body for anonymous struct blocks (e.g. `return struct { ... }`,
@@ -169,7 +177,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     scope_path: None,
                     parent_index: None,
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
                 refs.push(ExtractedRef {
                     source_symbol_index: decl_idx,
                     target_name: path,
@@ -207,7 +219,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                     extract_struct_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs, &line_starts);
                     i = end_line as usize + 1;
                     continue;
@@ -232,7 +248,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                     extract_enum_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs, &line_starts);
                     i = end_line as usize + 1;
                     continue;
@@ -254,7 +274,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                    });
+                                            declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+});
                     // Scan the declaration line for @builtin( calls
                     // (e.g. `const X = @This()`, `const X = @cImport({...})`,
                     //        `const X = @Vector(2, f32)`)
@@ -327,7 +351,11 @@ fn extract_struct_body(
                 scope_path: None,
                 parent_index: Some(parent_idx),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
 
             // Scan body for calls
             if end_j > start_j {
@@ -356,7 +384,11 @@ fn extract_struct_body(
                 scope_path: None,
                 parent_index: Some(parent_idx),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
 
             // Emit TypeRef for non-primitive types
             if !is_primitive(&type_name) && type_name.chars().next().map_or(false, |c| c.is_alphanumeric() || c == '_') {
@@ -433,7 +465,11 @@ fn extract_enum_body(
                 scope_path: None,
                 parent_index: Some(parent_idx),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
 
             if end_j > j {
                 let fn_body = &body_lines[j + 1..end_j];
@@ -468,7 +504,11 @@ fn extract_enum_body(
             scope_path: None,
             parent_index: Some(parent_idx),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
         j += 1;
     }
 }

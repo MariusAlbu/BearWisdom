@@ -26,7 +26,11 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
@@ -223,7 +227,9 @@ fn make_chain(segments: &[(&str, SegmentKind)]) -> MemberChain {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            })
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+})
             .collect(),
     }
 }
@@ -582,8 +588,8 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
 
     let chain = MemberChain {
         segments: vec![
-            ChainSegment { name: "c".to_string(), node_kind: "identifier".to_string(), kind: SegmentKind::Identifier, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0 },
-            ChainSegment { name: "say_hello".to_string(), node_kind: "field_expression".to_string(), kind: SegmentKind::Property, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0 },
+            ChainSegment { name: "c".to_string(), node_kind: "identifier".to_string(), kind: SegmentKind::Identifier, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, type_arg_ids: Vec::new() },
+            ChainSegment { name: "say_hello".to_string(), node_kind: "field_expression".to_string(), kind: SegmentKind::Property, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, type_arg_ids: Vec::new() },
         ],
     };
     let extracted_ref = ExtractedRef {
@@ -608,7 +614,11 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
         scope_path: Some("main".to_string()),
         parent_index: None,
         byte_offset: 0,
-    };
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+};
     let ref_ctx = RefContext {
         extracted_ref: &extracted_ref,
         source_symbol: &source_symbol,

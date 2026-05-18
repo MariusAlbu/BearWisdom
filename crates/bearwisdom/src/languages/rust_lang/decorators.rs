@@ -341,7 +341,11 @@ pub(super) fn synthesize_derive_methods(
                 scope_path: Some(qualified_prefix.to_string()),
                 parent_index: Some(parent_sym_idx),
                 byte_offset: 0,
-            });
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+});
         }
     }
 }

@@ -105,6 +105,10 @@ fn extract_type_alias_decl(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 }
 
@@ -176,6 +180,10 @@ fn extract_type_spec(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             extract_struct_fields(&type_node, source, symbols, refs, Some(idx), &struct_prefix);
         }
@@ -198,6 +206,10 @@ fn extract_type_spec(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             extract_interface_methods_with_refs(&type_node, source, symbols, refs, Some(idx), &iface_prefix);
         }
@@ -220,6 +232,10 @@ fn extract_type_spec(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     }
@@ -386,6 +402,10 @@ fn extract_field_declaration(
                 scope_path: scope_from_prefix(struct_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     } else {
@@ -421,6 +441,10 @@ fn extract_field_declaration(
                 scope_path: scope_from_prefix(struct_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     }
@@ -596,6 +620,10 @@ fn extract_interface_methods(
             scope_path: scope_from_prefix(iface_prefix),
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
     }
 }
@@ -643,6 +671,10 @@ fn extract_interface_methods_with_refs(
             scope_path: scope_from_prefix(iface_prefix),
             parent_index,
                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
         // Emit TypeRef edges for parameter and return types of this method_elem.

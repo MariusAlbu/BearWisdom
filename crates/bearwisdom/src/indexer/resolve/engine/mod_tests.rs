@@ -214,7 +214,11 @@ fn test_symbol_index_by_name() {
                 scope_path: Some("NS".to_string()),
                 parent_index: None,
                 byte_offset: 0,
-            },
+                            declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+},
         ],
         refs: vec![],
         routes: vec![],
@@ -274,7 +278,11 @@ fn make_class_sym(name: &str, qname: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 fn make_pf(path: &str, syms: Vec<ExtractedSymbol>) -> ParsedFile {

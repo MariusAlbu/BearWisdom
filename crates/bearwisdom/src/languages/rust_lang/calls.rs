@@ -73,7 +73,11 @@ pub(super) fn extract_impl(
             scope_path: scope_from_prefix(outer_prefix),
             parent_index: None,
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
 
         // TypeRef to the implementing type — coverage signal for ref_node_kinds.
         if !is_rust_primitive(&type_name) {
@@ -207,7 +211,11 @@ pub(super) fn extract_impl(
                             scope_path: scope_from_prefix(&impl_prefix),
                             parent_index: None,
                             byte_offset: 0,
-                        });
+                                                    declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+});
                         // Emit TypeRef if the RHS type is a named type.
                         if let Some(ty_node) = child.child_by_field_name("type") {
                             let type_name = rust_type_node_name(&ty_node, source);
@@ -826,7 +834,11 @@ fn make_closure_variable(name: String, node: &Node, parent_index: usize) -> Extr
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
-    }
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+}
 }
 
 /// Build a structured member-access chain from a Rust call expression's function node.
@@ -855,7 +867,9 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -868,7 +882,9 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -884,7 +900,9 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -900,7 +918,9 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                     type_args: vec![],
                     optional_chaining: false,
                     byte_offset: 0,
-                });
+                                    declared_type_id: None,
+                    type_arg_ids: Vec::new(),
+});
             } else {
                 for (i, part) in parts.iter().enumerate() {
                     let trimmed = part.trim();
@@ -925,7 +945,9 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                         type_args: vec![],
                         optional_chaining: false,
                         byte_offset: 0,
-                    });
+                                            declared_type_id: None,
+                        type_arg_ids: Vec::new(),
+});
                 }
             }
             Some(())

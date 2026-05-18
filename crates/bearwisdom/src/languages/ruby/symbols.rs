@@ -61,6 +61,10 @@ pub(super) fn extract_class(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Inheritance: `class Foo < Bar`
@@ -134,6 +138,10 @@ pub(super) fn extract_module(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(body) = node.child_by_field_name("body") {
@@ -187,6 +195,10 @@ pub(super) fn extract_method(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract parameter names as Variable symbols scoped to this method.
@@ -235,6 +247,10 @@ pub(super) fn extract_singleton_method(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     // Extract parameter names as Variable symbols.
@@ -291,6 +307,10 @@ pub(super) fn extract_singleton_class(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(body) = node.child_by_field_name("body") {
@@ -536,6 +556,10 @@ fn extract_attr_macro(
                 scope_path: None,
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     }

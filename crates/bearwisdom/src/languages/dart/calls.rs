@@ -620,7 +620,9 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -633,7 +635,9 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -646,7 +650,9 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -676,7 +682,9 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 
@@ -701,7 +709,9 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-            });
+                            declared_type_id: None,
+                type_arg_ids: Vec::new(),
+});
             Some(())
         }
 

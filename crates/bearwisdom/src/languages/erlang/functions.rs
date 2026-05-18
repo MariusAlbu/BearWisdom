@@ -50,7 +50,11 @@ pub(super) fn extract_function(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // Extract calls inside function body
     collect_calls(node, src, idx, refs);

@@ -73,6 +73,10 @@ pub(super) fn extract_function_definition(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(params) = node.child_by_field_name("parameters") {
@@ -479,6 +483,10 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     scope_path,
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
                 refs.push(ExtractedRef {
@@ -519,6 +527,10 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     scope_path: Some(func_qualified_name.to_string()),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
             }
 
@@ -544,6 +556,10 @@ pub(super) fn extract_python_typed_params_as_symbols(
                                 scope_path: Some(func_qualified_name.to_string()),
                                 parent_index,
                                                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                         }
                         break;
@@ -572,6 +588,10 @@ pub(super) fn extract_python_typed_params_as_symbols(
                                 scope_path: Some(func_qualified_name.to_string()),
                                 parent_index,
                                                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
                         }
                         break;
@@ -633,6 +653,10 @@ pub(super) fn extract_class_definition(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
     if let Some(superclasses) = node.child_by_field_name("superclasses") {
@@ -808,6 +832,10 @@ pub(super) fn extract_lambda(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
                             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
         }
     }

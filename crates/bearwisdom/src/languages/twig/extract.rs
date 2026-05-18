@@ -35,7 +35,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-    });
+            declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+});
 
     // Scan for `{% tag ... %}` constructs.
     let bytes = source.as_bytes();
@@ -116,7 +120,11 @@ fn handle_tag(
                     scope_path: Some(template_name.to_string()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         }
         "macro" => {
@@ -135,7 +143,11 @@ fn handle_tag(
                     scope_path: Some(template_name.to_string()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                });
+                                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+});
             }
         }
         "extends" | "include" | "embed" => {

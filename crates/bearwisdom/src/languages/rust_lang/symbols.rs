@@ -41,6 +41,10 @@ pub(super) fn extract_function(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -78,6 +82,10 @@ pub(super) fn extract_method_from_fn(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -112,6 +120,10 @@ pub(super) fn extract_struct(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -142,6 +154,10 @@ pub(super) fn extract_enum(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -189,6 +205,10 @@ pub(super) fn extract_enum_variants(
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
                                     byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 });
 
                 // Extract attributes on the enum variant (e.g. #[default], #[serde(rename="...")]).
@@ -260,6 +280,10 @@ pub(super) fn extract_trait(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -290,6 +314,10 @@ pub(super) fn extract_type_alias(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -325,6 +353,10 @@ pub(super) fn extract_const(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -360,6 +392,10 @@ pub(super) fn extract_static(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -399,6 +435,10 @@ pub(super) fn extract_macro_rules(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -429,6 +469,10 @@ pub(super) fn extract_mod(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
             byte_offset: 0,
+    declared_type: None,
+    return_type: None,
+    param_types: Vec::new(),
+    generic_params: Vec::new(),
 })
 }
 
@@ -501,7 +545,11 @@ pub(super) fn extract_struct_fields(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index: Some(struct_sym_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
 
         // Emit TypeRef for non-primitive field types.
         if let Some(type_node) = child.child_by_field_name("type") {
@@ -600,7 +648,11 @@ pub(super) fn extract_callable_fn_params(
             scope_path: None,
             parent_index: Some(fn_sym_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
     }
 }
 
@@ -884,7 +936,11 @@ pub(super) fn extract_trait_associated_types(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index: Some(trait_sym_index),
             byte_offset: 0,
-        });
+                    declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+});
         // Emit TypeRef for bounds if present.
         if let Some(bounds) = child.child_by_field_name("bounds") {
             super::patterns::extract_trait_bounds(&bounds, source, sym_idx, refs);
