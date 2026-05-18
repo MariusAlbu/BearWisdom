@@ -21,14 +21,14 @@ fn symbol_fun_decl() {
     );
 }
 
-/// symbol_node_kind: `module_attribute`  →  Namespace
+/// symbol_node_kind: `module_attribute`  →  Module
 #[test]
 fn symbol_module_attribute() {
     let src = "-module(mymod).\nfoo() -> ok.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "mymod" && s.kind == SymbolKind::Namespace),
-        "expected Namespace mymod; got {:?}",
+        r.symbols.iter().any(|s| s.name == "mymod" && s.kind == SymbolKind::Module),
+        "expected Module mymod; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

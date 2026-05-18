@@ -338,11 +338,11 @@ fn catch_clause_untyped_emits_variable_only() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn namespace_emits_namespace_symbol() {
+fn namespace_emits_module_symbol() {
     let src = "namespace MyNS { export const x = 1; }";
     let s = sym(src);
     assert!(
-        s.iter().any(|s| s.name == "MyNS" && s.kind == SymbolKind::Namespace),
+        s.iter().any(|s| s.name == "MyNS" && s.kind == SymbolKind::Module),
         "symbols: {s:?}"
     );
 }
@@ -352,7 +352,7 @@ fn namespace_members_are_nested() {
     let src = "namespace MyNS { export function helper() {} }";
     let s = sym(src);
     // Both symbols must be present.
-    assert!(s.iter().any(|s| s.name == "MyNS" && s.kind == SymbolKind::Namespace), "no MyNS: {s:?}");
+    assert!(s.iter().any(|s| s.name == "MyNS" && s.kind == SymbolKind::Module), "no MyNS: {s:?}");
     let helper = s.iter().find(|s| s.name == "helper").unwrap();
     // The helper should be parented to the namespace (parent_index is Some).
     assert!(helper.parent_index.is_some(), "helper should have a parent_index");

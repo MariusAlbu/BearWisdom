@@ -106,15 +106,17 @@ pub(super) fn build_qname_index(
 
 /// Build a map from file_path → namespace for same-namespace resolution.
 ///
-/// For each file, finds the first `Namespace` symbol and records its
-/// qualified name as the file's namespace.
+/// For each file, finds the first `Namespace` or `Module` symbol and records
+/// its qualified name as the file's namespace.
 pub(super) fn build_file_namespace_map(parsed: &[ParsedFile]) -> FxHashMap<String, String> {
     let mut map = FxHashMap::default();
     for pf in parsed {
         if is_external_path(&pf.path) {
             continue;
         }
-        if let Some(ns_sym) = pf.symbols.iter().find(|s| s.kind == SymbolKind::Namespace) {
+        if let Some(ns_sym) = pf.symbols.iter().find(|s| {
+            s.kind == SymbolKind::Namespace || s.kind == SymbolKind::Module
+        }) {
             map.insert(pf.path.clone(), ns_sym.qualified_name.clone());
         }
     }
@@ -139,9 +141,9 @@ pub(super) fn build_module_to_files(parsed: &[ParsedFile]) -> FxHashMap<String, 
         if is_external_path(&pf.path) {
             continue;
         }
-        // 1. Namespace symbols → module name (exact, authoritative)
+        // 1. Namespace / Module symbols → module name (exact, authoritative)
         for sym in &pf.symbols {
-            if sym.kind == SymbolKind::Namespace {
+            if sym.kind == SymbolKind::Namespace || sym.kind == SymbolKind::Module {
                 let entry = map.entry(sym.name.clone()).or_default();
                 if !entry.contains(&pf.path) {
                     entry.push(pf.path.clone());

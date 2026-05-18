@@ -64,12 +64,12 @@ fn coverage_enum_variant_emits_enum_member_symbols() {
 // ---- trait_item ------------------------------------------------------------
 
 #[test]
-fn coverage_trait_item_emits_interface_symbol() {
+fn coverage_trait_item_emits_trait_symbol() {
     let src = "trait Drawable { fn draw(&self); }";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Drawable");
-    assert!(sym.is_some(), "expected Interface symbol 'Drawable'");
-    assert_eq!(sym.unwrap().kind, SymbolKind::Interface);
+    assert!(sym.is_some(), "expected Trait symbol 'Drawable'");
+    assert_eq!(sym.unwrap().kind, SymbolKind::Trait);
 }
 
 // ---- impl_item -------------------------------------------------------------
@@ -225,12 +225,12 @@ fn coverage_associated_type_in_trait_emits_type_alias() {
 // ---- mod_item --------------------------------------------------------------
 
 #[test]
-fn coverage_mod_item_emits_namespace_symbol() {
+fn coverage_mod_item_emits_module_symbol() {
     let src = "mod utils { pub fn helper() {} }";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "utils");
-    assert!(sym.is_some(), "expected Namespace symbol 'utils'");
-    assert_eq!(sym.unwrap().kind, SymbolKind::Namespace);
+    assert!(sym.is_some(), "expected Module symbol 'utils'");
+    assert_eq!(sym.unwrap().kind, SymbolKind::Module);
 }
 
 // ---- field_declaration -----------------------------------------------------

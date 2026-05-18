@@ -4,16 +4,16 @@
 // What we extract
 // ---------------
 // From method parameters:
-//   keyword_parameter  (name:)        → Variable symbol
-//   optional_parameter (name = val)   → Variable symbol
-//   block_parameter    (&block)        → Variable symbol
-//   splat_parameter    (*args)         → Variable symbol
-//   hash_splat_parameter (**opts)      → Variable symbol
-//   identifier (plain positional)     → Variable symbol
+//   keyword_parameter  (name:)        → Parameter symbol
+//   optional_parameter (name = val)   → Parameter symbol
+//   block_parameter    (&block)        → Parameter symbol
+//   splat_parameter    (*args)         → Parameter symbol
+//   hash_splat_parameter (**opts)      → Parameter symbol
+//   identifier (plain positional)     → Parameter symbol
 //
 // From rescue clauses:
 //   exception type constants           → TypeRef edges
-//   rescue variable (`=> e`)           → Variable symbol
+//   rescue variable (`=> e`)           → Parameter symbol
 // =============================================================================
 
 use super::helpers::{node_text, scope_from_prefix};
@@ -217,7 +217,7 @@ fn make_param_variable(
     ExtractedSymbol {
         name: name.clone(),
         qualified_name: name,
-        kind: SymbolKind::Variable,
+        kind: SymbolKind::Parameter,
         visibility: None,
         start_line: node.start_position().row as u32,
         end_line: node.end_position().row as u32,

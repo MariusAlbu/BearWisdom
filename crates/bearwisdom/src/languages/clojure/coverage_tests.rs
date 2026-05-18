@@ -15,13 +15,13 @@ use crate::types::{EdgeKind, SymbolKind};
 // symbol_node_kinds — list_lit (declaration forms)
 // ---------------------------------------------------------------------------
 
-/// list_lit matched as `ns` → Namespace symbol
+/// list_lit matched as `ns` → Module symbol
 #[test]
 fn symbol_list_lit_ns() {
     let r = extract("(ns myapp.core (:require [clojure.string :as str]))");
     assert!(
-        r.symbols.iter().any(|s| s.name == "myapp.core" && s.kind == SymbolKind::Namespace),
-        "expected Namespace myapp.core; got {:?}",
+        r.symbols.iter().any(|s| s.name == "myapp.core" && s.kind == SymbolKind::Module),
+        "expected Module myapp.core; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

@@ -442,7 +442,7 @@ fn process_list(
                 let idx = push_sym(
                     node,
                     ns_name,
-                    SymbolKind::Namespace,
+                    SymbolKind::Module,
                     Visibility::Public,
                     symbols,
                     parent_idx,

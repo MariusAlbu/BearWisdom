@@ -64,23 +64,23 @@ impl Bar {
     }
 
     #[test]
-    fn trait_maps_to_interface_kind() {
+    fn trait_maps_to_trait_kind() {
         let source = "pub trait MyTrait { fn do_it(&self); }";
         let r = extract::extract(source);
         let trait_sym = r.symbols.iter().find(|s| s.name == "MyTrait");
         assert!(trait_sym.is_some(), "Expected 'MyTrait'");
-        assert_eq!(trait_sym.unwrap().kind, SymbolKind::Interface);
+        assert_eq!(trait_sym.unwrap().kind, SymbolKind::Trait);
     }
 
     #[test]
-    fn mod_maps_to_namespace_kind() {
+    fn mod_maps_to_module_kind() {
         let source = r#"mod inner {
     pub fn foo() {}
 }"#;
         let r = extract::extract(source);
         let mod_sym = r.symbols.iter().find(|s| s.name == "inner");
         assert!(mod_sym.is_some(), "Expected 'inner' mod");
-        assert_eq!(mod_sym.unwrap().kind, SymbolKind::Namespace);
+        assert_eq!(mod_sym.unwrap().kind, SymbolKind::Module);
         let fn_sym = r.symbols.iter().find(|s| s.name == "foo");
         assert_eq!(fn_sym.unwrap().qualified_name, "inner.foo");
     }

@@ -422,7 +422,7 @@ class Service {
     }
 
     #[test]
-    fn lambda_parameter_emitted_as_variable_symbol() {
+    fn lambda_parameter_emitted_as_parameter_symbol() {
         let src = r#"
 class Service {
     void run() {
@@ -432,8 +432,8 @@ class Service {
 "#;
         let s = sym(src);
         assert!(
-            s.iter().any(|s| s.name == "u" && s.kind == SymbolKind::Variable),
-            "expected Variable symbol 'u', symbols: {:?}",
+            s.iter().any(|s| s.name == "u" && s.kind == SymbolKind::Parameter),
+            "expected Parameter symbol 'u', symbols: {:?}",
             s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
         );
     }

@@ -69,7 +69,7 @@ pub(super) fn extract_module(node: &Node, src: &str, symbols: &mut Vec<Extracted
     symbols.push(ExtractedSymbol {
         name: name.clone(),
         qualified_name: name.clone(),
-        kind: SymbolKind::Namespace,
+        kind: SymbolKind::Module,
         visibility: None,
         start_line: line,
         end_line: line,

@@ -269,7 +269,7 @@ pub(super) fn extract_trait(
     Some(ExtractedSymbol {
         name,
         qualified_name,
-        kind: SymbolKind::Interface,
+        kind: SymbolKind::Trait,
         visibility,
         start_line: node.start_position().row as u32,
         end_line: node.end_position().row as u32,
@@ -458,7 +458,7 @@ pub(super) fn extract_mod(
     Some(ExtractedSymbol {
         name,
         qualified_name,
-        kind: SymbolKind::Namespace,
+        kind: SymbolKind::Module,
         visibility,
         start_line: node.start_position().row as u32,
         end_line: node.end_position().row as u32,
@@ -637,7 +637,7 @@ pub(super) fn extract_callable_fn_params(
         symbols.push(ExtractedSymbol {
             name,
             qualified_name,
-            kind: SymbolKind::Variable,
+            kind: SymbolKind::Parameter,
             visibility: None,
             start_line: pat.start_position().row as u32,
             end_line: pat.end_position().row as u32,

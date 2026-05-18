@@ -153,7 +153,7 @@ end
     }
 
     #[test]
-    fn block_parameters_emitted_as_variable_symbols() {
+    fn block_parameters_emitted_as_parameter_symbols() {
         let source = r#"
 class Svc
   def run
@@ -162,15 +162,15 @@ class Svc
 end
 "#;
         let r = extract::extract(source);
-        let vars: Vec<&str> = r.symbols.iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
+        let params: Vec<&str> = r.symbols.iter()
+            .filter(|s| s.kind == SymbolKind::Parameter)
             .map(|s| s.name.as_str())
             .collect();
-        assert!(vars.contains(&"item"), "Missing block param 'item': {vars:?}");
+        assert!(params.contains(&"item"), "Missing block param 'item': {params:?}");
     }
 
     #[test]
-    fn method_keyword_params_emitted_as_variables() {
+    fn method_keyword_params_emitted_as_parameters() {
         let source = r#"
 class UserService
   def create(name:, email: nil, &block)
@@ -179,32 +179,32 @@ class UserService
 end
 "#;
         let r = extract::extract(source);
-        let vars: Vec<&str> = r
+        let params: Vec<&str> = r
             .symbols
             .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
+            .filter(|s| s.kind == SymbolKind::Parameter)
             .map(|s| s.name.as_str())
             .collect();
-        assert!(vars.contains(&"name"),  "Missing keyword param 'name': {vars:?}");
-        assert!(vars.contains(&"email"), "Missing optional param 'email': {vars:?}");
-        assert!(vars.contains(&"block"), "Missing block param 'block': {vars:?}");
+        assert!(params.contains(&"name"),  "Missing keyword param 'name': {params:?}");
+        assert!(params.contains(&"email"), "Missing optional param 'email': {params:?}");
+        assert!(params.contains(&"block"), "Missing block param 'block': {params:?}");
     }
 
     #[test]
-    fn method_splat_params_emitted_as_variables() {
+    fn method_splat_params_emitted_as_parameters() {
         let source = r#"
 def log(*args, **opts)
 end
 "#;
         let r = extract::extract(source);
-        let vars: Vec<&str> = r
+        let params: Vec<&str> = r
             .symbols
             .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
+            .filter(|s| s.kind == SymbolKind::Parameter)
             .map(|s| s.name.as_str())
             .collect();
-        assert!(vars.contains(&"args"), "Missing splat param 'args': {vars:?}");
-        assert!(vars.contains(&"opts"), "Missing hash splat 'opts': {vars:?}");
+        assert!(params.contains(&"args"), "Missing splat param 'args': {params:?}");
+        assert!(params.contains(&"opts"), "Missing hash splat 'opts': {params:?}");
     }
 
     #[test]
@@ -238,7 +238,7 @@ end
     }
 
     #[test]
-    fn rescue_variable_emitted_as_variable_symbol() {
+    fn rescue_variable_emitted_as_parameter_symbol() {
         let source = r#"
 def run
   do_work
@@ -247,13 +247,13 @@ rescue => e
 end
 "#;
         let r = extract::extract(source);
-        let vars: Vec<&str> = r
+        let params: Vec<&str> = r
             .symbols
             .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
+            .filter(|s| s.kind == SymbolKind::Parameter)
             .map(|s| s.name.as_str())
             .collect();
-        assert!(vars.contains(&"e"), "Expected rescue variable 'e': {vars:?}");
+        assert!(params.contains(&"e"), "Expected rescue variable 'e': {params:?}");
     }
 
     // -----------------------------------------------------------------------

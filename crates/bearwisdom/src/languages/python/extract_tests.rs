@@ -340,22 +340,22 @@ def handle(command):
     // -----------------------------------------------------------------------
 
     #[test]
-    fn lambda_params_emit_variable_symbols() {
+    fn lambda_params_emit_parameter_symbols() {
         let source = r#"
 def make_handler():
     handler = lambda x, y: x + y
     return handler
 "#;
         let r = extract::extract(source);
-        let var_names: Vec<&str> = r
+        let param_names: Vec<&str> = r
             .symbols
             .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
+            .filter(|s| s.kind == SymbolKind::Parameter)
             .map(|s| s.name.as_str())
             .collect();
         assert!(
-            var_names.contains(&"x") || var_names.contains(&"y"),
-            "expected lambda param symbols, got: {var_names:?}"
+            param_names.contains(&"x") || param_names.contains(&"y"),
+            "expected lambda param symbols, got: {param_names:?}"
         );
     }
 
@@ -719,37 +719,37 @@ def run():
     // -----------------------------------------------------------------------
 
     #[test]
-    fn default_parameter_emits_variable_symbol() {
+    fn default_parameter_emits_parameter_symbol() {
         let source = r#"
 def foo(x=5, y="hello"):
     pass
 "#;
         let r = extract::extract(source);
-        let vars: Vec<&str> = r
+        let params: Vec<&str> = r
             .symbols
             .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
+            .filter(|s| s.kind == SymbolKind::Parameter)
             .map(|s| s.name.as_str())
             .collect();
-        assert!(vars.contains(&"x") || vars.contains(&"y"),
-            "expected default param Variable symbols, got: {vars:?}");
+        assert!(params.contains(&"x") || params.contains(&"y"),
+            "expected default param Parameter symbols, got: {params:?}");
     }
 
     #[test]
-    fn splat_params_emit_variable_symbols() {
+    fn splat_params_emit_parameter_symbols() {
         let source = r#"
 def log(*args, **kwargs):
     pass
 "#;
         let r = extract::extract(source);
-        let vars: Vec<&str> = r
+        let params: Vec<&str> = r
             .symbols
             .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
+            .filter(|s| s.kind == SymbolKind::Parameter)
             .map(|s| s.name.as_str())
             .collect();
-        assert!(vars.contains(&"args"), "expected *args Variable, got: {vars:?}");
-        assert!(vars.contains(&"kwargs"), "expected **kwargs Variable, got: {vars:?}");
+        assert!(params.contains(&"args"), "expected *args Parameter, got: {params:?}");
+        assert!(params.contains(&"kwargs"), "expected **kwargs Parameter, got: {params:?}");
     }
 
     // -----------------------------------------------------------------------

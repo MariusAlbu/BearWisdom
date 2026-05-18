@@ -439,7 +439,7 @@ pub(super) fn push_type_alias(
     }
 }
 
-/// Emit a Namespace symbol for `namespace NS { ... }` / `module NS { ... }`.
+/// Emit a Module symbol for `namespace NS { ... }` / `module NS { ... }`.
 ///
 /// Tree-sitter represents these as `internal_module` with fields:
 /// - `name`: identifier (the namespace name)
@@ -466,7 +466,7 @@ pub(super) fn push_namespace(
     symbols.push(ExtractedSymbol {
         name: name.clone(),
         qualified_name,
-        kind: SymbolKind::Namespace,
+        kind: SymbolKind::Module,
         visibility: detect_visibility(node, src),
         start_line: node.start_position().row as u32,
         end_line: node.end_position().row as u32,

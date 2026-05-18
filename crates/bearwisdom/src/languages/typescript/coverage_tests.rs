@@ -180,8 +180,8 @@ fn coverage_variable_declaration() {
 fn coverage_internal_module() {
     let r = extract::extract("namespace MyNS { export const x = 1; }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace && s.name == "MyNS"),
-        "internal_module should produce Namespace symbol; got: {:?}",
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Module && s.name == "MyNS"),
+        "internal_module should produce Module symbol; got: {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

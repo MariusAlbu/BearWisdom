@@ -297,6 +297,7 @@ impl SymbolIndex {
                     sym.kind,
                     SymbolKind::Class
                         | SymbolKind::Interface
+                        | SymbolKind::Trait
                         | SymbolKind::Struct
                         | SymbolKind::TypeAlias
                         | SymbolKind::Function
@@ -440,7 +441,7 @@ impl SymbolIndex {
                 let Some(child_sym) = pf.symbols.get(r.source_symbol_index) else {
                     continue;
                 };
-                if !matches!(child_sym.kind, SymbolKind::Class | SymbolKind::Interface) {
+                if !matches!(child_sym.kind, SymbolKind::Class | SymbolKind::Interface | SymbolKind::Trait) {
                     continue;
                 }
                 let child_qname = &child_sym.qualified_name;

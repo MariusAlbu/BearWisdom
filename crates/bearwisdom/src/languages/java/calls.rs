@@ -707,7 +707,7 @@ fn extract_lambda_params(
                 // Single untyped parameter: `x -> ...`
                 let name = node_text(child, src);
                 if !name.is_empty() {
-                    symbols.push(make_variable_symbol(name, &child, parent_index));
+                    symbols.push(make_param_symbol(name, &child, parent_index));
                 }
                 // Only the first identifier before `->` is the parameter.
                 break;
@@ -719,7 +719,7 @@ fn extract_lambda_params(
                     if param.kind() == "identifier" {
                         let name = node_text(param, src);
                         if !name.is_empty() {
-                            symbols.push(make_variable_symbol(name, &param, parent_index));
+                            symbols.push(make_param_symbol(name, &param, parent_index));
                         }
                     }
                 }
@@ -732,7 +732,7 @@ fn extract_lambda_params(
                         if let Some(name_node) = param.child_by_field_name("name") {
                             let name = node_text(name_node, src);
                             if !name.is_empty() {
-                                symbols.push(make_variable_symbol(name, &name_node, parent_index));
+                                symbols.push(make_param_symbol(name, &name_node, parent_index));
                             }
                         }
                     }
@@ -745,10 +745,18 @@ fn extract_lambda_params(
 }
 
 fn make_variable_symbol(name: String, node: &Node, parent_index: usize) -> ExtractedSymbol {
+    make_extracted_symbol(name, node, parent_index, SymbolKind::Variable)
+}
+
+fn make_param_symbol(name: String, node: &Node, parent_index: usize) -> ExtractedSymbol {
+    make_extracted_symbol(name, node, parent_index, SymbolKind::Parameter)
+}
+
+fn make_extracted_symbol(name: String, node: &Node, parent_index: usize, kind: SymbolKind) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.clone(),
         qualified_name: name,
-        kind: SymbolKind::Variable,
+        kind,
         visibility: None,
         start_line: node.start_position().row as u32,
         end_line: node.end_position().row as u32,

@@ -306,7 +306,7 @@ fn extract_module(
     symbols.push(ExtractedSymbol {
         name: module_name.clone(),
         qualified_name,
-        kind: SymbolKind::Class,
+        kind: SymbolKind::Module,
         visibility: Some(Visibility::Public),
         start_line: node.start_position().row as u32,
         end_line: node.end_position().row as u32,

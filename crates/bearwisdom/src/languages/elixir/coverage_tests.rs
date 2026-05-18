@@ -13,8 +13,8 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_defmodule() {
     let r = extract("defmodule Foo do\nend");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
-        "expected Class Foo; got {:?}",
+        r.symbols.iter().any(|s| s.name == "Foo" && s.kind == SymbolKind::Module),
+        "expected Module Foo; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
@@ -301,13 +301,13 @@ fn symbol_at_callback_attribute() {
     );
 }
 
-/// Nested defmodule — inner module produces its own Class symbol.
+/// Nested defmodule — inner module produces its own Module symbol.
 #[test]
 fn symbol_nested_defmodule() {
     let r = extract("defmodule Outer do\n  defmodule Inner do\n  end\nend");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Inner" && s.kind == SymbolKind::Class),
-        "expected Class Inner from nested defmodule; got {:?}",
+        r.symbols.iter().any(|s| s.name == "Inner" && s.kind == SymbolKind::Module),
+        "expected Module Inner from nested defmodule; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

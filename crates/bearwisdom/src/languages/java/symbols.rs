@@ -816,7 +816,7 @@ pub(super) fn extract_java_typed_params_as_symbols(
         symbols.push(ExtractedSymbol {
             name: name.clone(),
             qualified_name,
-            kind: SymbolKind::Property,
+            kind: SymbolKind::Parameter,
             visibility: None,
             start_line: child.start_position().row as u32,
             end_line: child.end_position().row as u32,

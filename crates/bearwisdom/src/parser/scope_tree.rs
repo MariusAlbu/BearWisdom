@@ -176,7 +176,7 @@ pub fn prefix_top_level_qnames(
         if symbols[i].scope_path.is_some() {
             continue;
         }
-        if symbols[i].kind == SymbolKind::Namespace {
+        if matches!(symbols[i].kind, SymbolKind::Namespace | SymbolKind::Module) {
             if symbols[i].qualified_name.contains('.') {
                 continue;
             }
@@ -188,7 +188,12 @@ pub fn prefix_top_level_qnames(
         }
 
         let prefix: Option<String> = match symbols[i].parent_index {
-            Some(p_idx) if symbols[p_idx].kind == SymbolKind::Namespace => {
+            Some(p_idx)
+                if matches!(
+                    symbols[p_idx].kind,
+                    SymbolKind::Namespace | SymbolKind::Module
+                ) =>
+            {
                 Some(symbols[p_idx].qualified_name.clone())
             }
             _ => hoisted_pkg.map(|s| s.to_string()),

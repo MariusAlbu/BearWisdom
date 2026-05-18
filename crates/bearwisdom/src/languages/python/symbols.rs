@@ -472,7 +472,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
                 symbols.push(ExtractedSymbol {
                     name: name.clone(),
                     qualified_name,
-                    kind: SymbolKind::Property,
+                    kind: SymbolKind::Parameter,
                     visibility: None,
                     start_line: child.start_position().row as u32,
                     end_line: child.end_position().row as u32,
@@ -503,7 +503,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
 });
             }
 
-            // Untyped default: `def foo(x=5)` — emit as Variable (no TypeRef).
+            // Untyped default: `def foo(x=5)`.
             "default_parameter" => {
                 let name_node = match child.child_by_field_name("name") {
                     Some(n) => n,
@@ -516,7 +516,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
                 symbols.push(ExtractedSymbol {
                     name: name.clone(),
                     qualified_name: qualify(&name, func_qualified_name),
-                    kind: SymbolKind::Variable,
+                    kind: SymbolKind::Parameter,
                     visibility: None,
                     start_line: child.start_position().row as u32,
                     end_line: child.end_position().row as u32,
@@ -545,7 +545,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
                             symbols.push(ExtractedSymbol {
                                 name: name.clone(),
                                 qualified_name: qualify(&name, func_qualified_name),
-                                kind: SymbolKind::Variable,
+                                kind: SymbolKind::Parameter,
                                 visibility: None,
                                 start_line: c.start_position().row as u32,
                                 end_line: c.end_position().row as u32,
@@ -577,7 +577,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
                             symbols.push(ExtractedSymbol {
                                 name: name.clone(),
                                 qualified_name: qualify(&name, func_qualified_name),
-                                kind: SymbolKind::Variable,
+                                kind: SymbolKind::Parameter,
                                 visibility: None,
                                 start_line: c.start_position().row as u32,
                                 end_line: c.end_position().row as u32,
@@ -821,7 +821,7 @@ pub(super) fn extract_lambda(
             symbols.push(ExtractedSymbol {
                 name: name.clone(),
                 qualified_name: qualify(&name, qualified_prefix),
-                kind: SymbolKind::Variable,
+                kind: SymbolKind::Parameter,
                 visibility: detect_python_visibility(&name),
                 start_line: param.start_position().row as u32,
                 end_line: param.end_position().row as u32,

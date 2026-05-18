@@ -47,7 +47,8 @@ impl LanguageResolver for ElixirResolver {
 
         // Extract the top-level module name as the file namespace.
         let file_namespace = file.symbols.iter().find_map(|sym| {
-            if sym.kind == crate::types::SymbolKind::Namespace
+            if sym.kind == crate::types::SymbolKind::Module
+                || sym.kind == crate::types::SymbolKind::Namespace
                 || sym.kind == crate::types::SymbolKind::Class
             {
                 Some(sym.qualified_name.clone())

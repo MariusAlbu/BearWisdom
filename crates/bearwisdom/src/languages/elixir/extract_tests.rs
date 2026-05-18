@@ -16,7 +16,7 @@ end
 "#;
         let r = extract::extract(src);
         let module = r.symbols.iter().find(|s| s.name == "MyApp.Greeter" || s.name == "Greeter").expect("module");
-        assert_eq!(module.kind, SymbolKind::Class);
+        assert_eq!(module.kind, SymbolKind::Module);
 
         let hello = r.symbols.iter().find(|s| s.name == "hello").expect("hello");
         assert_eq!(hello.kind, SymbolKind::Method);

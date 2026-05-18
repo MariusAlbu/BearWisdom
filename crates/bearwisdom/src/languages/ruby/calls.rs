@@ -323,7 +323,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
     }
 }
 
-/// Emit a `Variable` symbol for each identifier in a `block_parameters` node.
+/// Emit a `Parameter` symbol for each identifier in a `block_parameters` node.
 fn extract_block_params(
     params_node: &Node,
     src: &[u8],
@@ -340,7 +340,7 @@ fn extract_block_params(
             symbols.push(ExtractedSymbol {
                 name: name.clone(),
                 qualified_name: name,
-                kind: SymbolKind::Variable,
+                kind: SymbolKind::Parameter,
                 visibility: None,
                 start_line: child.start_position().row as u32,
                 end_line: child.end_position().row as u32,
