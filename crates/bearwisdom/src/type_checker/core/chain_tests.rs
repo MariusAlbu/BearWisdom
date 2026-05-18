@@ -465,7 +465,7 @@ fn generic_apply_substitutes_yield_type() {
             _seg: &ChainSegment,
             _ref_ctx: &RefContext,
             _file_ctx: &FileContext,
-            _arena: &mut TypeArena,
+            _arena: &TypeArena,
             _lookup: &dyn SymbolLookup,
         ) -> Option<TypeId> {
             Some(self.ty)

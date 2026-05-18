@@ -927,7 +927,7 @@ fn check_sym_005_arena(
     }
     let actual = arena.get(rt);
     match actual {
-        Type::Class(q) if q == &sym.qualified_name => {}
+        Type::Class(ref q) if q == &sym.qualified_name => {}
         Type::Class(q) => {
             out.push(ContractViolation {
                 code: "SYM-005",

@@ -7,7 +7,7 @@ use crate::type_checker::core::types::{
     GenericParamData, LitValue, PrimKind, Type, TypeArena,
 };
 
-fn make_param(arena: &mut TypeArena, name: &str) -> GenericParamId {
+fn make_param(arena: &TypeArena, name: &str) -> GenericParamId {
     arena.intern_generic(GenericParamData {
         name: name.to_string(),
         owner_symbol_index: 0,
@@ -76,8 +76,8 @@ fn substitute_inside_apply_args() {
     let out = substitute(apply_t, &env, &mut arena);
     match arena.get(out) {
         Type::Apply { base, args } => {
-            assert_eq!(*base, list);
-            assert_eq!(args, &vec![user_ty]);
+            assert_eq!(base, list);
+            assert_eq!(args, vec![user_ty]);
         }
         other => panic!("expected Apply, got {other:?}"),
     }
@@ -116,8 +116,8 @@ fn substitute_inside_nested_apply() {
                     base: inner_base,
                     args: inner_args,
                 } => {
-                    assert_eq!(*inner_base, list);
-                    assert_eq!(inner_args, &vec![user_ty]);
+                    assert_eq!(inner_base, list);
+                    assert_eq!(inner_args, vec![user_ty]);
                 }
                 other => panic!("expected nested Apply, got {other:?}"),
             }
@@ -144,8 +144,8 @@ fn substitute_inside_function_signature() {
     let out = substitute(fn_ty, &env, &mut arena);
     match arena.get(out) {
         Type::Function { params, return_ } => {
-            assert_eq!(params, &vec![user_ty]);
-            assert_eq!(*return_, user_ty);
+            assert_eq!(params, vec![user_ty]);
+            assert_eq!(return_, user_ty);
         }
         other => panic!("expected Function, got {other:?}"),
     }
@@ -163,7 +163,7 @@ fn substitute_inside_optional_wrapper() {
     env.bind(t_param, user_ty);
 
     let out = substitute(opt_t, &env, &mut arena);
-    assert_eq!(arena.get(out), &Type::Optional(user_ty));
+    assert_eq!(arena.get(out), Type::Optional(user_ty));
 }
 
 #[test]
@@ -179,9 +179,9 @@ fn substitute_inside_async_and_iterator_wrappers() {
     env.bind(t_param, user_ty);
 
     let async_out = substitute(async_t, &env, &mut arena);
-    assert_eq!(arena.get(async_out), &Type::AsyncWrapper(user_ty));
+    assert_eq!(arena.get(async_out), Type::AsyncWrapper(user_ty));
     let iter_out = substitute(iter_t, &env, &mut arena);
-    assert_eq!(arena.get(iter_out), &Type::Iterator(user_ty));
+    assert_eq!(arena.get(iter_out), Type::Iterator(user_ty));
 }
 
 #[test]
@@ -200,13 +200,13 @@ fn substitute_inside_tuple_union_intersection() {
     env.bind(t_param, user_ty);
 
     let tup_out = substitute(tup, &env, &mut arena);
-    assert_eq!(arena.get(tup_out), &Type::Tuple(vec![user_ty, string_ty]));
+    assert_eq!(arena.get(tup_out), Type::Tuple(vec![user_ty, string_ty]));
     let uni_out = substitute(uni, &env, &mut arena);
-    assert_eq!(arena.get(uni_out), &Type::Union(vec![user_ty, string_ty]));
+    assert_eq!(arena.get(uni_out), Type::Union(vec![user_ty, string_ty]));
     let inter_out = substitute(inter, &env, &mut arena);
     assert_eq!(
         arena.get(inter_out),
-        &Type::Intersection(vec![user_ty, string_ty])
+        Type::Intersection(vec![user_ty, string_ty])
     );
 }
 

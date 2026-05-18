@@ -106,7 +106,7 @@ export type Id = string | number;
             .return_type
             .expect("type-defining sym yields itself as return_type");
         match arena.get(return_id) {
-            Type::Class(q) => assert_eq!(q, &sym.qualified_name),
+            Type::Class(q) => assert_eq!(q, sym.qualified_name),
             other => panic!("expected Class type, got {other:?}"),
         }
     }

@@ -288,18 +288,18 @@ fn build_explicit_handles_multi_inherit_and_implements() {
     let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &lookup);
 
     let admin = arena.class("Admin");
-    let parents: Vec<&str> = graph
+    let parents: Vec<String> = graph
         .parents_of(admin)
         .iter()
         .map(|t| match arena.get(*t) {
-            crate::type_checker::core::types::Type::Class(q) => q.as_str(),
+            crate::type_checker::core::types::Type::Class(q) => q,
             _ => panic!(),
         })
         .collect();
     assert_eq!(parents.len(), 3);
-    assert!(parents.contains(&"User"));
-    assert!(parents.contains(&"Role"));
-    assert!(parents.contains(&"Auditable"));
+    assert!(parents.iter().any(|p| p == "User"));
+    assert!(parents.iter().any(|p| p == "Role"));
+    assert!(parents.iter().any(|p| p == "Auditable"));
 }
 
 #[test]

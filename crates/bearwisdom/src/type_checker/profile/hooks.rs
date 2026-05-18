@@ -84,7 +84,7 @@ pub trait LanguageEngineHooks: Send + Sync {
         &self,
         _class_qname: &str,
         _decorators: &[String],
-        _arena: &mut TypeArena,
+        _arena: &TypeArena,
     ) -> Vec<SynthesizedMember> {
         Vec::new()
     }
@@ -92,7 +92,7 @@ pub trait LanguageEngineHooks: Send + Sync {
     /// Enrich an externally-sourced type with detail not present in its
     /// declaration (Rust associated-type bindings, TypeScript declaration
     /// merging). Default: no-op.
-    fn enrich_external_type(&self, _ty: TypeId, _arena: &mut TypeArena) {}
+    fn enrich_external_type(&self, _ty: TypeId, _arena: &TypeArena) {}
 
     /// Pick a dispatch target for non-receiver dispatch axes. Returns the
     /// DB symbol id of the chosen target, or `None` when the hook can't

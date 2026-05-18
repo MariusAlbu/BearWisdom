@@ -68,7 +68,7 @@ impl GenericEnv {
 /// when a sub-type changed. Unbound `Generic { param }` slots survive
 /// unchanged — the caller decides whether that's a miss or a legitimate
 /// pass-through (e.g. nested generic method on an outer-generic class).
-pub fn substitute(ty: TypeId, env: &GenericEnv, arena: &mut TypeArena) -> TypeId {
+pub fn substitute(ty: TypeId, env: &GenericEnv, arena: &TypeArena) -> TypeId {
     if env.is_empty() {
         return ty;
     }
@@ -129,7 +129,7 @@ fn substitute_seq(
     original: TypeId,
     elems: &[TypeId],
     env: &GenericEnv,
-    arena: &mut TypeArena,
+    arena: &TypeArena,
     ctor: fn(Vec<TypeId>) -> Type,
 ) -> TypeId {
     let mut new_elems = Vec::with_capacity(elems.len());
@@ -151,7 +151,7 @@ fn substitute_wrap(
     original: TypeId,
     inner: TypeId,
     env: &GenericEnv,
-    arena: &mut TypeArena,
+    arena: &TypeArena,
     ctor: fn(TypeId) -> Type,
 ) -> TypeId {
     let new_inner = substitute(inner, env, arena);

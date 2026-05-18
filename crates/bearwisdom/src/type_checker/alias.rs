@@ -301,7 +301,7 @@ pub type AliasIndex = FxHashMap<TypeId, AliasTarget>;
 /// holds.
 pub fn build_alias_index(
     pairs: &[(String, AliasTarget)],
-    arena: &mut TypeArena,
+    arena: &TypeArena,
 ) -> AliasIndex {
     let mut idx = AliasIndex::with_capacity_and_hasher(pairs.len(), Default::default());
     for (name, target) in pairs {
@@ -332,7 +332,7 @@ pub fn build_alias_index(
 /// None as "miss against the alias name" rather than guessing.
 pub fn expand_alias_typed(
     alias_ty: TypeId,
-    arena: &mut TypeArena,
+    arena: &TypeArena,
     aliases: &AliasIndex,
     lookup: &dyn SymbolLookup,
 ) -> Option<TypeId> {

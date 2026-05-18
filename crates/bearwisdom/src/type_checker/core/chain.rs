@@ -67,7 +67,7 @@ pub trait RootResolver {
         seg: &ChainSegment,
         ref_ctx: &RefContext,
         file_ctx: &FileContext,
-        arena: &mut TypeArena,
+        arena: &TypeArena,
         lookup: &dyn SymbolLookup,
     ) -> Option<TypeId>;
 }
@@ -86,7 +86,7 @@ impl RootResolver for DefaultRootResolver {
         seg: &ChainSegment,
         ref_ctx: &RefContext,
         _file_ctx: &FileContext,
-        arena: &mut TypeArena,
+        arena: &TypeArena,
         lookup: &dyn SymbolLookup,
     ) -> Option<TypeId> {
         match seg.kind {

@@ -88,7 +88,7 @@ impl SupertypeGraph {
     ///   the two passes coexist without duplication. TypeScript.
     pub fn build(
         parsed: &[ParsedFile],
-        arena: &mut TypeArena,
+        arena: &TypeArena,
         profile: &LanguageProfile,
         members: &MembersIndex,
         lookup: &dyn SymbolLookup,
@@ -135,7 +135,7 @@ impl<'a> Iterator for SupertypeWalk<'a> {
 fn build_explicit(
     graph: &mut SupertypeGraph,
     parsed: &[ParsedFile],
-    arena: &mut TypeArena,
+    arena: &TypeArena,
     lookup: &dyn SymbolLookup,
 ) {
     for pf in parsed {

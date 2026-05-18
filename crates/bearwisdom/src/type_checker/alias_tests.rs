@@ -644,7 +644,7 @@ fn typed_application_no_args_returns_root_class() {
     let aliases = build_alias_index(&pairs, &mut arena);
     let id_ty = arena.class("Id");
     let out = expand_alias_typed(id_ty, &mut arena, &aliases, &lookup).expect("expanded");
-    assert_eq!(arena.get(out), &Type::Class("string".into()));
+    assert_eq!(arena.get(out), Type::Class("string".into()));
 }
 
 #[test]
@@ -668,7 +668,7 @@ fn typed_application_with_args_builds_apply() {
     let user_ty = arena.class("User");
     assert_eq!(
         arena.get(out),
-        &Type::Apply {
+        Type::Apply {
             base: map_ty,
             args: vec![string_ty, user_ty],
         }
@@ -688,7 +688,7 @@ fn typed_union_builds_union_type() {
     let out = expand_alias_typed(status, &mut arena, &aliases, &lookup).expect("expanded");
     let ok_ty = arena.class("Ok");
     let err_ty = arena.class("Err");
-    assert_eq!(arena.get(out), &Type::Union(vec![ok_ty, err_ty]));
+    assert_eq!(arena.get(out), Type::Union(vec![ok_ty, err_ty]));
 }
 
 #[test]
@@ -704,7 +704,7 @@ fn typed_intersection_builds_intersection_type() {
     let out = expand_alias_typed(mix, &mut arena, &aliases, &lookup).expect("expanded");
     let a = arena.class("A");
     let b = arena.class("B");
-    assert_eq!(arena.get(out), &Type::Intersection(vec![a, b]));
+    assert_eq!(arena.get(out), Type::Intersection(vec![a, b]));
 }
 
 #[test]
@@ -719,7 +719,7 @@ fn typed_typeof_uses_field_type_lookup() {
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
     let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
-    assert_eq!(arena.get(out), &Type::Class("User".into()));
+    assert_eq!(arena.get(out), Type::Class("User".into()));
 }
 
 #[test]
@@ -733,7 +733,7 @@ fn typed_typeof_falls_back_to_return_type() {
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
     let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
-    assert_eq!(arena.get(out), &Type::Class("Result".into()));
+    assert_eq!(arena.get(out), Type::Class("Result".into()));
 }
 
 #[test]
@@ -764,7 +764,7 @@ fn typed_indexed_access_uses_dotted_field_lookup() {
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
     let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
-    assert_eq!(arena.get(out), &Type::Class("string".into()));
+    assert_eq!(arena.get(out), Type::Class("string".into()));
 }
 
 #[test]
@@ -782,7 +782,7 @@ fn typed_transparent_mapped_returns_source() {
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
     let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
-    assert_eq!(arena.get(out), &Type::Class("User".into()));
+    assert_eq!(arena.get(out), Type::Class("User".into()));
 }
 
 #[test]
@@ -818,7 +818,7 @@ fn typed_conditional_picks_true_branch_on_assignable() {
     let aliases = build_alias_index(&pairs, &mut arena);
     let c = arena.class("C");
     let out = expand_alias_typed(c, &mut arena, &aliases, &lookup).expect("expanded");
-    assert_eq!(arena.get(out), &Type::Class("Yes".into()));
+    assert_eq!(arena.get(out), Type::Class("Yes".into()));
 }
 
 #[test]

@@ -357,7 +357,7 @@ export function makeFoo(): Foo { return new Foo(); }
     let foo = arena.class("Foo");
     assert_eq!(out, foo);
     // And dereferencing the TypeId yields the canonical Class shape.
-    assert_eq!(arena.get(out), &Type::Class("Foo".into()));
+    assert_eq!(arena.get(out), Type::Class("Foo".into()));
 }
 
 #[test]

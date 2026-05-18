@@ -56,7 +56,7 @@ pub enum Pattern {
 pub fn bind(
     pattern: &Pattern,
     value_ty: TypeId,
-    arena: &mut TypeArena,
+    arena: &TypeArena,
     members: &MembersIndex,
     supertypes: &SupertypeGraph,
     symbol_types: &SymbolTypeMap,
@@ -79,7 +79,7 @@ pub fn bind(
 fn bind_into(
     pattern: &Pattern,
     value_ty: TypeId,
-    arena: &mut TypeArena,
+    arena: &TypeArena,
     members: &MembersIndex,
     supertypes: &SupertypeGraph,
     symbol_types: &SymbolTypeMap,
@@ -153,7 +153,7 @@ fn bind_into(
 fn lookup_member_type(
     prop: &str,
     value_ty: TypeId,
-    arena: &mut TypeArena,
+    arena: &TypeArena,
     members: &MembersIndex,
     supertypes: &SupertypeGraph,
     symbol_types: &SymbolTypeMap,

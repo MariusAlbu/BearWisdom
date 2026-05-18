@@ -103,7 +103,7 @@ fn infer_literal_when_profile_enables_narrowing() {
         vec![CallArg::StringLit("hello".into())],
     );
     let out = infer_expression_type(&r, None, &mut arena, &profile).expect("literal inferred");
-    assert_eq!(arena.get(out), &Type::Literal(LitValue::Str("hello".into())));
+    assert_eq!(arena.get(out), Type::Literal(LitValue::Str("hello".into())));
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn infer_parses_numeric_literal_when_narrowing_enabled() {
         vec![CallArg::Literal("42".into())],
     );
     let out = infer_expression_type(&r, None, &mut arena, &profile).expect("numeric inferred");
-    assert_eq!(arena.get(out), &Type::Literal(LitValue::Int(42)));
+    assert_eq!(arena.get(out), Type::Literal(LitValue::Int(42)));
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn infer_parses_bool_literal_when_narrowing_enabled() {
         vec![CallArg::Literal("true".into())],
     );
     let out = infer_expression_type(&r, None, &mut arena, &profile).expect("bool inferred");
-    assert_eq!(arena.get(out), &Type::Literal(LitValue::Bool(true)));
+    assert_eq!(arena.get(out), Type::Literal(LitValue::Bool(true)));
 }
 
 #[test]

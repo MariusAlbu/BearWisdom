@@ -134,7 +134,7 @@ fn object_destructure_unknown_prop_falls_back_to_unknown_typeid() {
     );
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].0, "m");
-    assert_eq!(arena.get(out[0].1), &Type::Unknown);
+    assert_eq!(arena.get(out[0].1), Type::Unknown);
 }
 
 #[test]

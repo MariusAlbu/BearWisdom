@@ -231,17 +231,17 @@ impl<'a> Engine<'a> {
 /// `TypeId` to `Option<String>` (the underlying qname) at the boundary.
 fn adapt_resolution(cr: ChainResolution, arena: &TypeArena) -> Resolution {
     let yield_name = match arena.get(cr.resolved_yield_type) {
-        Type::Class(q) => Some(q.clone()),
-        Type::Apply { base, .. } => match arena.get(*base) {
-            Type::Class(q) => Some(q.clone()),
+        Type::Class(q) => Some(q),
+        Type::Apply { base, .. } => match arena.get(base) {
+            Type::Class(q) => Some(q),
             _ => None,
         },
-        Type::Optional(inner) => match arena.get(*inner) {
-            Type::Class(q) => Some(q.clone()),
+        Type::Optional(inner) => match arena.get(inner) {
+            Type::Class(q) => Some(q),
             _ => None,
         },
-        Type::AsyncWrapper(inner) => match arena.get(*inner) {
-            Type::Class(q) => Some(q.clone()),
+        Type::AsyncWrapper(inner) => match arena.get(inner) {
+            Type::Class(q) => Some(q),
             _ => None,
         },
         _ => None,

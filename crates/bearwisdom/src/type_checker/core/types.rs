@@ -5,12 +5,18 @@
 // (NonZeroU32) and dereference through TypeArena::get. Identity equality on
 // types is integer equality on TypeIds.
 //
+// Phase 5 makes the arena interior-mutable: `intern` / `class` / `primitive`
+// take `&self` so a single shared `Engine` can drive resolution across rayon
+// workers. `get` returns owned `Type` (cheap clone — every prior call site
+// already cloned the borrowed result).
+//
 // Spec: research/architecture/01-canonical-symbol-ref-contract.html
 //       research/architecture/02-engine-internal-architecture.html § Layer 1
 // =============================================================================
 
 use rustc_hash::FxHashMap;
 use std::num::NonZeroU32;
+use std::sync::RwLock;
 
 /// Interned-type identifier. Nonzero so `Option<TypeId>` is one word.
 /// Stable within a workspace build; not durable across indexing runs.
@@ -116,89 +122,136 @@ pub enum Type {
     Unknown,
 }
 
-/// Per-workspace interning storage for `Type` values. Built once per indexing
-/// run; populated by extractors then frozen as the engine consumes it.
-#[derive(Debug, Default)]
-pub struct TypeArena {
+#[derive(Default)]
+struct TypeArenaInner {
     types: Vec<Type>,
     intern: FxHashMap<Type, TypeId>,
     qname_to_class: FxHashMap<String, TypeId>,
     generic_params: Vec<GenericParamData>,
 }
 
+/// Per-workspace interning storage for `Type` values. Interior-mutable so a
+/// single `&TypeArena` can be shared across rayon workers — every mutating
+/// method (`intern`, `class`, `primitive`, `intern_generic`) takes `&self`
+/// and acquires a write lock briefly; reads acquire a read lock and clone.
+///
+/// Cloning the result of `get` is cheap for the dominant case (Class /
+/// Primitive / Literal / Unknown are single-word) and matches what every
+/// pre-Phase-5 caller did already (`arena.get(ty).clone()`).
+pub struct TypeArena {
+    inner: RwLock<TypeArenaInner>,
+}
+
+impl Default for TypeArena {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for TypeArena {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = self.inner.read().unwrap();
+        f.debug_struct("TypeArena")
+            .field("types_len", &inner.types.len())
+            .field("generic_params_len", &inner.generic_params.len())
+            .finish()
+    }
+}
+
 impl TypeArena {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            inner: RwLock::new(TypeArenaInner::default()),
+        }
     }
 
     /// Intern `ty`, returning an existing TypeId on duplicate insert.
-    pub fn intern(&mut self, ty: Type) -> TypeId {
-        if let Some(&id) = self.intern.get(&ty) {
+    /// Reads first for the common dedup case; upgrades to write only when
+    /// a new entry is needed. Safe to call concurrently.
+    pub fn intern(&self, ty: Type) -> TypeId {
+        if let Some(&id) = self.inner.read().unwrap().intern.get(&ty) {
             return id;
         }
-        let idx = self.types.len();
+        let mut inner = self.inner.write().unwrap();
+        // Re-check after acquiring write lock — another thread may have
+        // interned the same Type while we were upgrading.
+        if let Some(&id) = inner.intern.get(&ty) {
+            return id;
+        }
+        let idx = inner.types.len();
         let id = TypeId(NonZeroU32::new((idx + 1) as u32).expect("arena index overflow"));
-        self.types.push(ty.clone());
-        self.intern.insert(ty, id);
+        inner.types.push(ty.clone());
+        inner.intern.insert(ty, id);
         id
     }
 
     /// Look up an existing TypeId for a `Type` without inserting.
     pub fn lookup(&self, ty: &Type) -> Option<TypeId> {
-        self.intern.get(ty).copied()
+        self.inner.read().unwrap().intern.get(ty).copied()
     }
 
     /// Intern a Class type by qualified name. Subsequent calls return the
     /// same TypeId.
-    pub fn class(&mut self, qname: &str) -> TypeId {
-        if let Some(&id) = self.qname_to_class.get(qname) {
+    pub fn class(&self, qname: &str) -> TypeId {
+        if let Some(&id) = self.inner.read().unwrap().qname_to_class.get(qname) {
             return id;
         }
         let id = self.intern(Type::Class(qname.to_string()));
-        self.qname_to_class.insert(qname.to_string(), id);
+        // Reacquire write to track in qname_to_class. Idempotent insert is
+        // safe under concurrent callers.
+        self.inner
+            .write()
+            .unwrap()
+            .qname_to_class
+            .insert(qname.to_string(), id);
         id
     }
 
     /// Look up the Class TypeId for `qname` without interning.
     pub fn class_lookup(&self, qname: &str) -> Option<TypeId> {
-        self.qname_to_class.get(qname).copied()
+        self.inner.read().unwrap().qname_to_class.get(qname).copied()
     }
 
     /// Intern a primitive type.
-    pub fn primitive(&mut self, p: PrimKind) -> TypeId {
+    pub fn primitive(&self, p: PrimKind) -> TypeId {
         self.intern(Type::Primitive(p))
     }
 
-    /// Resolve a TypeId to the underlying `Type`. Panics on out-of-range
-    /// ids — TypeIds are only constructed through `intern`, so this should
-    /// never fire in well-formed code.
-    pub fn get(&self, id: TypeId) -> &Type {
-        &self.types[id.index()]
+    /// Resolve a TypeId to the underlying `Type`. Returns an owned clone so
+    /// callers don't hold the read lock across operations. Cloning is
+    /// cheap for the common variants and matches what every prior call
+    /// site already did (`arena.get(ty).clone()`).
+    ///
+    /// Panics on out-of-range ids — TypeIds are only constructed through
+    /// `intern`, so this should never fire in well-formed code.
+    pub fn get(&self, id: TypeId) -> Type {
+        self.inner.read().unwrap().types[id.index()].clone()
     }
 
     /// Number of distinct types currently interned.
     pub fn len(&self) -> usize {
-        self.types.len()
+        self.inner.read().unwrap().types.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.types.is_empty()
+        self.inner.read().unwrap().types.is_empty()
     }
 
     /// Allocate a generic parameter slot.
-    pub fn intern_generic(&mut self, data: GenericParamData) -> GenericParamId {
-        let idx = self.generic_params.len();
+    pub fn intern_generic(&self, data: GenericParamData) -> GenericParamId {
+        let mut inner = self.inner.write().unwrap();
+        let idx = inner.generic_params.len();
         let id = GenericParamId(NonZeroU32::new((idx + 1) as u32).expect("arena index overflow"));
-        self.generic_params.push(data);
+        inner.generic_params.push(data);
         id
     }
 
-    pub fn generic_param(&self, id: GenericParamId) -> &GenericParamData {
-        &self.generic_params[id.index()]
+    pub fn generic_param(&self, id: GenericParamId) -> GenericParamData {
+        self.inner.read().unwrap().generic_params[id.index()].clone()
     }
 
     pub fn generic_param_count(&self) -> usize {
-        self.generic_params.len()
+        self.inner.read().unwrap().generic_params.len()
     }
 }
 

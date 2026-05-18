@@ -32,7 +32,7 @@ use crate::types::{EdgeKind, ExtractedRef};
 pub fn infer_expression_type(
     expr_ref: &ExtractedRef,
     resolution: Option<&Resolution>,
-    arena: &mut TypeArena,
+    arena: &TypeArena,
     profile: &LanguageProfile,
 ) -> Option<TypeId> {
     // Legacy Resolution still carries the yield type as a string qname; the
@@ -59,7 +59,7 @@ pub fn infer_expression_type(
 /// stay branchless on the receive side.
 pub fn unwrap_await(ty: TypeId, arena: &TypeArena) -> TypeId {
     match arena.get(ty) {
-        Type::AsyncWrapper(inner) => *inner,
+        Type::AsyncWrapper(inner) => inner,
         _ => ty,
     }
 }
@@ -83,7 +83,7 @@ pub fn unwrap_iterator(ty: TypeId, arena: &TypeArena, profile: &LanguageProfile)
         return ty;
     }
     match arena.get(ty) {
-        Type::Iterator(inner) => *inner,
+        Type::Iterator(inner) => inner,
         Type::Apply { args, .. } if !args.is_empty() => args[0],
         _ => ty,
     }
@@ -99,7 +99,7 @@ pub fn unwrap_iterator(ty: TypeId, arena: &TypeArena, profile: &LanguageProfile)
 ///   - `StringLit(s)` → `Literal(Str(s))`.
 ///   - `Literal(src)` parsing as `true` / `false` → `Literal(Bool(_))`.
 ///   - `Literal(src)` parsing as integer → `Literal(Int(_))`.
-fn infer_from_call_args(expr_ref: &ExtractedRef, arena: &mut TypeArena) -> Option<TypeId> {
+fn infer_from_call_args(expr_ref: &ExtractedRef, arena: &TypeArena) -> Option<TypeId> {
     use crate::type_checker::core::types::LitValue;
     use crate::types::CallArg;
 

@@ -56,7 +56,7 @@ impl MembersIndex {
     pub fn build_from_parsed_files(
         parsed: &[ParsedFile],
         sym_id_map: &SymbolIdMap,
-        arena: &mut TypeArena,
+        arena: &TypeArena,
     ) -> Self {
         let mut index = MembersIndex::new();
         for pf in parsed {

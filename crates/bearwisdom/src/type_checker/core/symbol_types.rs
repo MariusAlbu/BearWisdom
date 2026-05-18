@@ -158,7 +158,7 @@ impl SymbolTypeMap {
     pub fn build_from_parsed_files(
         parsed: &[ParsedFile],
         sym_id_map: &SymbolIdMap,
-        arena: &mut TypeArena,
+        arena: &TypeArena,
         _profile: &LanguageProfile,
     ) -> Self {
         let mut map = SymbolTypeMap::new();
