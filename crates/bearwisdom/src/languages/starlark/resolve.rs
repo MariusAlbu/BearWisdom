@@ -23,9 +23,28 @@ use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::{EdgeKind, ExtractedRef, ParsedFile};
 
 pub struct StarlarkResolver;
+
+/// Reconstruct the full dotted call path from a ref.
+///
+/// When a ref carries a MemberChain, `target_name` is the last segment name
+/// only (REF-004). The full dotted path needed for qualified-name lookups,
+/// framework-chain predicate checks, and import-alias splitting is rebuilt
+/// from the chain segments. Falls back to `target_name` when no chain is
+/// present.
+fn dotted_name(r: &ExtractedRef) -> String {
+    if let Some(ch) = r.chain.as_ref() {
+        ch.segments
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+            .join(".")
+    } else {
+        r.target_name.clone()
+    }
+}
 
 impl LanguageResolver for StarlarkResolver {
     fn language_ids(&self) -> &[&str] {
@@ -80,11 +99,16 @@ impl LanguageResolver for StarlarkResolver {
         // starlark/keywords.rs — the upstream classification flow handles
         // them so we don't need a fast-exit here.
 
+        // Reconstruct the full dotted path for predicates and lookups that
+        // need to inspect the chain root or use the qualified name. For refs
+        // with a MemberChain, `target_name` is the leaf only (REF-004).
+        let full_name = dotted_name(&ref_ctx.extracted_ref);
+
         // Dotted call whose last segment is a Python/Starlark built-in
         // type method (str/list/dict/depset). `output.append`, `filename
         // .endswith`, `kwargs.pop` always bind to runtime types — return
         // None so infer_external_namespace classifies them as external.
-        if target.contains('.') && predicates::is_builtin_method_tail(target) {
+        if full_name.contains('.') && predicates::is_builtin_method_tail(&full_name) {
             return None;
         }
 
@@ -92,10 +116,12 @@ impl LanguageResolver for StarlarkResolver {
         // a direct qualified-name lookup against the synthetic ctx API symbols
         // before routing to external classification. This produces real edges
         // (strategy "starlark_ctx_chain") instead of opaque external refs.
-        if predicates::is_bazel_framework_chain(target) || ref_ctx.extracted_ref.chain.is_some() {
+        if predicates::is_bazel_framework_chain(&full_name)
+            || ref_ctx.extracted_ref.chain.is_some()
+        {
             if let Some(res) = chain::resolve(
                 ref_ctx.extracted_ref.chain.as_ref(),
-                target,
+                &full_name,
                 edge_kind,
                 Some(file_ctx),
                 ref_ctx,
@@ -112,8 +138,8 @@ impl LanguageResolver for StarlarkResolver {
         // have synthetic symbols emitted under their exact qualified-name in
         // ext:bazel-builtins:ctx.bzl. Try a direct by_qualified_name hit so
         // these resolve to real edges instead of staying unresolved.
-        if target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(target) {
+        if full_name.contains('.') {
+            if let Some(sym) = lookup.by_qualified_name(&full_name) {
                 if sym.file_path.starts_with("ext:bazel-builtins:")
                     && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
@@ -130,7 +156,7 @@ impl LanguageResolver for StarlarkResolver {
 
         // Bazel framework parameter chains not resolved by the chain walker:
         // classify as external rather than leaving as unresolved.
-        if predicates::is_bazel_framework_chain(target) {
+        if predicates::is_bazel_framework_chain(&full_name) {
             return None;
         }
 
@@ -152,13 +178,14 @@ impl LanguageResolver for StarlarkResolver {
         //
         // For `load("//lib:unittest.bzl", "unittest")`:
         //   - Direct: target="unittest" → look up in loaded file
-        //   - Qualified: target="unittest.begin" → split on ".", match first
-        //     segment against imported_name, resolve "begin" in the loaded file
-        let (import_alias, member_name) = if target.contains('.') {
-            let dot = target.find('.').unwrap();
-            (&target[..dot], Some(&target[dot + 1..]))
+        //   - Qualified: target="unittest.begin" → the chain carries [unittest, begin];
+        //     full_name = "unittest.begin"; split on "." to match import alias "unittest"
+        //     and resolve "begin" in the loaded file.
+        let (import_alias, member_name) = if full_name.contains('.') {
+            let dot = full_name.find('.').unwrap();
+            (&full_name[..dot], Some(&full_name[dot + 1..]))
         } else {
-            (target.as_str(), None)
+            (full_name.as_str(), None)
         };
 
         for import in &file_ctx.imports {
@@ -227,12 +254,14 @@ impl LanguageResolver for StarlarkResolver {
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
+        // Reconstruct the full dotted path for predicate checks that inspect
+        // the chain root (native.*, ctx.*, repository_ctx.*, etc.).
+        let full_name = dotted_name(&ref_ctx.extracted_ref);
 
         // `native.*` attribute calls are always Bazel built-ins, regardless of
         // whether the specific method appears in the static enumeration.
         // Covers: native.cc_binary, native.cc_test, native.py_library, etc.
-        if target == "native" || target.starts_with("native.") {
+        if full_name == "native" || full_name.starts_with("native.") {
             return Some("bazel_native".to_string());
         }
 
@@ -240,13 +269,13 @@ impl LanguageResolver for StarlarkResolver {
         // `directory.*` — these are opaque objects passed by the Bazel runtime.
         // Any dotted ref starting with one of these roots is external at any depth
         // (covers ctx.label.name, env.expect.that_str, directory.glob, etc.).
-        if predicates::is_bazel_framework_chain(target) {
+        if predicates::is_bazel_framework_chain(&full_name) {
             return Some("bazel".to_string());
         }
 
         // Dotted method call whose tail is a Python/Starlark builtin —
         // classify as runtime since it binds to an str/list/dict/etc. type.
-        if target.contains('.') && predicates::is_builtin_method_tail(target) {
+        if full_name.contains('.') && predicates::is_builtin_method_tail(&full_name) {
             return Some("starlark-runtime".to_string());
         }
 
@@ -263,7 +292,7 @@ impl LanguageResolver for StarlarkResolver {
         // Import walk: if the target (or its first dotted segment) was loaded
         // from an external @-repository, classify as external.
         // e.g., `asserts.equals` where `asserts` was loaded from `@bazel_skylib//...`
-        let simple = target.split('.').next().unwrap_or(target);
+        let simple = full_name.split('.').next().unwrap_or(&full_name);
         for import in &file_ctx.imports {
             if import.imported_name != simple {
                 continue;

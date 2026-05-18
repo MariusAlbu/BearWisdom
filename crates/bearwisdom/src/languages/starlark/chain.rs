@@ -1,23 +1,21 @@
 // =============================================================================
 // starlark/chain.rs — Starlark / Bazel chain-aware resolution
 //
-// Strategy: the Starlark extractor emits dotted refs like `ctx.actions.run`
-// as a flat `target_name` string (no MemberChain segments from tree-sitter).
-// The synthetic `ext:bazel-builtins:ctx.bzl` file has symbols with those
-// EXACT qualified names (e.g. `qualified_name = "ctx.actions.run_shell"`).
+// Strategy: the Starlark extractor emits dotted attribute calls as a
+// MemberChain with target_name set to the last segment only (REF-004). The
+// resolve.rs caller reconstructs the full dotted path from the chain and
+// passes it as the `target` argument here. The synthetic
+// `ext:bazel-builtins:ctx.bzl` file has symbols with those EXACT qualified
+// names (e.g. `qualified_name = "ctx.actions.run_shell"`).
 //
-// So for Starlark the "chain walk" is a direct qualified-name lookup:
-//   1. Split `target_name` on `.` to get segments [ctx, actions, run_shell].
-//   2. Verify the root segment is a known Bazel framework root.
-//   3. Reassemble the full qualified name and look it up.
-//   4. If found, return a real Resolution (not external classification).
+// Chain walk: two paths.
+// 1. If the ref carries a MemberChain (≥2 segments), invoke the unified
+//    `resolve_via_chain`.
+// 2. If `target` is a dotted framework-chain string, try a direct
+//    qualified-name lookup (`resolve_ctx_chain_direct`).
 //
-// For refs where the chain walker misses (uncommon 3-level+ variants not in
-// the static CTX_MEMBERS table), the predicate-based fallback in resolve.rs
-// still classifies them as external — no regression.
-//
-// We also wire the unified `resolve_via_chain` for refs that DO carry a
-// MemberChain (emitted by the updated extractor for attribute-access calls).
+// When both paths miss, the caller falls back to predicate-based external
+// classification.
 // =============================================================================
 
 use crate::type_checker::chain::{
@@ -101,11 +99,13 @@ pub(super) fn resolve_ctx_chain_direct(
 
 /// Attempt chain-walker resolution for a Starlark ref.
 ///
+/// `target` is the full dotted path reconstructed by the caller from the
+/// chain segments (e.g. `"ctx.actions.run_shell"`).
+///
 /// Two paths:
-/// 1. If the ref carries an explicit `MemberChain` (≥2 segments from the
-///    updated extractor), invoke the unified `resolve_via_chain`.
-/// 2. If the `target_name` is a dotted framework-chain string, try the
-///    direct qualified-name lookup.
+/// 1. If the ref carries an explicit `MemberChain` (≥2 segments), invoke
+///    the unified `resolve_via_chain`.
+/// 2. Try a direct qualified-name lookup for dotted framework-chain refs.
 ///
 /// Returns `None` when both paths miss, letting the caller fall through to
 /// the predicate-based external classification (kept as fallback).
@@ -128,6 +128,6 @@ pub(super) fn resolve(
         }
     }
 
-    // Path 2: flat dotted target_name → direct qualified lookup.
+    // Path 2: full dotted path reconstructed by caller → direct qualified lookup.
     resolve_ctx_chain_direct(target, edge_kind, lookup)
 }

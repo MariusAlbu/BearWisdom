@@ -12,6 +12,10 @@
 // REFERENCES:
 //   Imports  — `call` where callee is `load` identifier
 //   Calls    — `call` nodes (function invocations)
+//
+// REF-004 contract: when a Calls ref carries a MemberChain, target_name equals
+// the chain's last segment name. The full dotted path is reconstructable from
+// the chain segments via chain.segments.iter().map(|s| &s.name).join(".").
 // =============================================================================
 
 use crate::types::{
@@ -259,15 +263,22 @@ fn extract_call(
             }
 
             // Build a MemberChain for dotted attribute access (`ctx.actions.run`).
-            // target_name is kept as the full dotted string (e.g. "ctx.actions.run_shell")
-            // so that the predicate-based external fallback still fires when the chain
-            // resolver misses. The chain carries structured segments for the chain walker.
+            // When a chain is built, target_name is the last segment name only
+            // (REF-004: chain last segment must equal target_name). The full
+            // dotted path is reconstructable from the chain segments.
             let chain = if fn_node.kind() == "attribute" {
                 build_attribute_chain(fn_node, src)
             } else {
                 None
             };
-            let target_name = name;
+            let target_name = if let Some(ref mc) = chain {
+                mc.segments
+                    .last()
+                    .map(|s| s.name.clone())
+                    .unwrap_or(name)
+            } else {
+                name
+            };
 
             refs.push(ExtractedRef {
                 source_symbol_index: sym_idx,
