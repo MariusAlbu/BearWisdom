@@ -242,6 +242,18 @@ pub fn extract(source: &str) -> ExtractionResult {
         }
     }
 
+    // Align scope_path with the canonical contract (SYM-002): when a symbol
+    // has parent_index = Some(p), scope_path equals symbols[p].qualified_name.
+    // The scope-tree-derived scope_path drifts on file-scoped namespaces and
+    // a handful of other shapes; re-deriving from parent_index is the
+    // contract's invariant.
+    for i in 0..symbols.len() {
+        if let Some(p) = symbols[i].parent_index {
+            let parent_qname = symbols[p].qualified_name.clone();
+            symbols[i].scope_path = Some(parent_qname);
+        }
+    }
+
     ExtractionResult { symbols, refs, routes, db_sets, has_errors,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
