@@ -413,19 +413,36 @@ fn resolve_iteration_body(
                     buf.flow_emissions.push((pf.path.clone(), r.line, emission));
                 }
 
-                if let Some(resolution) = resolver.resolve(file_ctx, &ref_ctx, index) {
-                    // R5: if this ref is the RHS of `<lhs> = <expr>`, record
-                    // the target's yield type (return type for a method call,
-                    // declared type for a field) against the named LHS. The
-                    // chain walker already populates `resolution.resolved_yield_type`
-                    // for chain refs; fall back to looking up the target's
-                    // return/field type directly so single-segment call refs
-                    // like `let x = foo()` also drive forward inference.
+                // Phase 5 spirit: for chain-bearing refs in languages with a
+                // registered engine profile, the engine takes the chain-
+                // resolution slot. Legacy resolver still runs as fallback
+                // when engine declines (None), so any chain shape the
+                // engine doesn't yet handle continues to resolve through
+                // the legacy walker. Refs without chains stay on the
+                // legacy path — Phase 5 migrates chains first; bare-name
+                // resolution waits for per-language hooks (Phase 6+).
+                let try_engine_first = r.chain.is_some()
+                    && type_engine.profile_for(&pf.language).is_some();
+                let resolution = if try_engine_first {
+                    type_engine
+                        .resolve(&ref_ctx, file_ctx, index)
+                        .map(|r| (r, true))
+                        .or_else(|| resolver.resolve(file_ctx, &ref_ctx, index).map(|r| (r, false)))
+                } else {
+                    resolver.resolve(file_ctx, &ref_ctx, index).map(|r| (r, false))
+                };
+
+                if let Some((resolution, came_from_engine)) = resolution {
+                    // R5 forward-inference cache write. Engine yields are
+                    // recorded only when the engine path provided them;
+                    // legacy resolutions still drive the cache as before.
+                    // We don't gate this on came_from_engine because both
+                    // paths populate `resolved_yield_type` correctly when
+                    // they can — letting both feed the cache keeps yield
+                    // inference uniform across resolution sources.
                     if let Some(lhs_idx) = pf.flow.flow_binding_lhs.get(&ref_idx).copied() {
                         let yield_type = resolution.resolved_yield_type.clone().or_else(|| {
                             let target_id = resolution.target_symbol_id;
-                            // Recover the target's qualified name from the index
-                            // and look up its return/field type.
                             index
                                 .by_name(&r.target_name)
                                 .iter()
@@ -457,40 +474,13 @@ fn resolve_iteration_body(
                         resolution.confidence,
                         resolution.strategy,
                     ));
-                    // When both detect_flow_emission and resolution.flow_emit are
-                    // set, prefer the resolution-attached one (it may carry richer
-                    // data from the chain walker). The detect_flow_emission path
-                    // already pushed its entry above; avoid double-emitting.
                     if let Some(emission) = resolution.flow_emit {
                         buf.flow_emissions.push((pf.path.clone(), r.line, emission));
                     }
                     local_stats.resolved += 1;
                     local_stats.engine_resolved += 1;
                     resolved_by_engine = true;
-                } else if let Some(resolution) = type_engine.resolve(&ref_ctx, file_ctx, index) {
-                    // Phase 5: type-checker engine fallback for refs the
-                    // per-language resolver couldn't deterministically
-                    // resolve. Purely additive — never overrides a legacy
-                    // hit. We deliberately do NOT call record_local_type
-                    // here: poisoning the LocalTypeCache with engine-
-                    // derived yields lets the legacy walker pick them up
-                    // for downstream refs, which on partially-typed code
-                    // produced regressions (16697 → 16599 edges on
-                    // ts-rallly during initial Phase 5 wiring). Engine
-                    // refs land as their own edges; flow inference stays
-                    // owned by the legacy path until Phase 6+ migrations
-                    // can validate engine yields against the cache.
-                    buf.edges.push((
-                        source_id,
-                        resolution.target_symbol_id,
-                        r.kind.as_str(),
-                        r.line,
-                        resolution.confidence,
-                        resolution.strategy,
-                    ));
-                    local_stats.resolved += 1;
-                    local_stats.engine_resolved += 1;
-                    resolved_by_engine = true;
+                    let _ = came_from_engine;
                 }
             }
 
