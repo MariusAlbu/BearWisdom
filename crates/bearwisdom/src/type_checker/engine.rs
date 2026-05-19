@@ -22,6 +22,7 @@ use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::{SymbolIdMap, SymbolTypeMap};
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::ParsedFile;
 
@@ -36,6 +37,7 @@ pub struct Engine<'a> {
     symbol_types: SymbolTypeMap,
     aliases: AliasIndex,
     profiles: FxHashMap<&'static str, &'a LanguageProfile>,
+    hooks: FxHashMap<&'static str, &'static dyn LanguageEngineHooks>,
 }
 
 impl<'a> Engine<'a> {
@@ -56,25 +58,46 @@ impl<'a> Engine<'a> {
         lookup: &dyn SymbolLookup,
     ) -> Engine<'static> {
         let mut profiles: FxHashMap<&'static str, &'static LanguageProfile> = FxHashMap::default();
+        let mut hooks: FxHashMap<&'static str, &'static dyn LanguageEngineHooks> =
+            FxHashMap::default();
         for plugin in crate::languages::default_registry().all() {
-            let Some(profile) = plugin.profile() else {
-                continue;
-            };
-            // Register the profile under every language id the plugin
-            // claims so .tsx files get the TS profile, jsx gets the same
-            // profile, Vue script blocks identified as "typescript" land
-            // on the TS path, etc.
-            for &lang in plugin.language_ids() {
-                profiles.insert(lang, profile);
+            if let Some(profile) = plugin.profile() {
+                // Register the profile under every language id the plugin
+                // claims so .tsx files get the TS profile, jsx gets the
+                // same profile, Vue script blocks identified as
+                // "typescript" land on the TS path, etc.
+                for &lang in plugin.language_ids() {
+                    profiles.insert(lang, profile);
+                }
+            }
+            if let Some(plugin_hooks) = plugin.language_hooks() {
+                for &lang in plugin.language_ids() {
+                    hooks.insert(lang, plugin_hooks);
+                }
             }
         }
-        Engine::build(parsed, sym_id_map, profiles, lookup)
+        Engine::build_with_hooks(parsed, sym_id_map, profiles, hooks, lookup)
     }
 
     pub fn build(
         parsed: &[ParsedFile],
         sym_id_map: &SymbolIdMap,
         profiles: FxHashMap<&'static str, &'a LanguageProfile>,
+        lookup: &dyn SymbolLookup,
+    ) -> Self {
+        Self::build_with_hooks(parsed, sym_id_map, profiles, FxHashMap::default(), lookup)
+    }
+
+    /// Build with explicit per-language hooks. Same as `build` but takes a
+    /// hooks map keyed by language id. The engine consults
+    /// `synthesize_members` on every registered hook after MembersIndex's
+    /// direct + extension members are computed, attaching any returned
+    /// SynthesizedMember entries onto their owner TypeId.
+    pub fn build_with_hooks(
+        parsed: &[ParsedFile],
+        sym_id_map: &SymbolIdMap,
+        profiles: FxHashMap<&'static str, &'a LanguageProfile>,
+        hooks: FxHashMap<&'static str, &'static dyn LanguageEngineHooks>,
         lookup: &dyn SymbolLookup,
     ) -> Self {
         let arena = TypeArena::new();
@@ -132,7 +155,18 @@ impl<'a> Engine<'a> {
             symbol_types,
             aliases,
             profiles,
+            hooks,
         }
+    }
+
+    /// Look up the engine hooks registered for `language`. Returns `None`
+    /// when no hooks plugin opted in; engine then uses the no-op default
+    /// for that language.
+    pub fn hooks_for(
+        &self,
+        language: &str,
+    ) -> Option<&'static dyn LanguageEngineHooks> {
+        self.hooks.get(language).copied()
     }
 
     /// Resolve a single ref. Routes through the unified chain walker when

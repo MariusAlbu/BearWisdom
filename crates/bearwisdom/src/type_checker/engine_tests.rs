@@ -265,6 +265,26 @@ fn engine_resolve_returns_none_for_unregistered_language() {
 }
 
 #[test]
+fn engine_build_from_registry_collects_typescript_hooks() {
+    // Smoke test: build_from_registry walks default_registry().all() and
+    // collects every plugin's `language_hooks()`. TypeScriptPlugin returns
+    // Some(&TYPESCRIPT_HOOKS); a registered "typescript" language id must
+    // therefore resolve through hooks_for. Reachable via tsx too since the
+    // TS plugin claims both language ids.
+    let pf = ts_parsed_file("src/u.ts", "export class User {}");
+    let sym_ids = deterministic_ids(&pf);
+    let lookup = EmptyLookup::from(&pf, &sym_ids);
+
+    let engine = Engine::build_from_registry(std::slice::from_ref(&pf), &sym_ids, &lookup);
+    assert!(
+        engine.hooks_for("typescript").is_some(),
+        "TypeScriptPlugin::language_hooks() should be collected into the engine"
+    );
+    assert!(engine.hooks_for("tsx").is_some());
+    assert!(engine.hooks_for("nonexistent_language").is_none());
+}
+
+#[test]
 fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
     // The TS extractor emits a Class for `export class User {}`; engine.build
     // populates SymbolTypeMap's self-yield reverse index; engine.resolve on a

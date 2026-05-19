@@ -90,6 +90,16 @@ fn expand_current_type(
 /// TypeScript type checker. Unit struct — owns no state; constructed on
 /// demand by `TypeScriptPlugin::type_checker()` and held in the engine's
 /// checker registry.
+///
+/// **Phase 5 archive status:** the engine pivot's
+/// `type_checker::core::chain::ChainWalker` is now the primary chain
+/// resolver for TS / TSX / JS / JSX. This impl's `resolve_chain` runs only
+/// when the engine declines, providing fallback coverage for chain shapes
+/// the engine's profile-driven walker doesn't yet handle (TS-specific
+/// alias expansion via `TypeScriptChecker::classify_alias_target`,
+/// declaration merging across files). Doc 4 § Phase 9 schedules removal
+/// once Phase 6+ language migrations have proven engine parity on the
+/// full TS / Python / Java / C# / Go matrix.
 pub struct TypeScriptChecker;
 
 impl TypeChecker for TypeScriptChecker {

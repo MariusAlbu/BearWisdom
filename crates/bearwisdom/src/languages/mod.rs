@@ -192,6 +192,21 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         None
     }
 
+    /// Return the language-specific engine hooks for this plugin, if any.
+    ///
+    /// Hooks let a language override engine behaviour at well-defined seams
+    /// without extending the core profile (`synthesize_members` for
+    /// decorator-driven additions like Angular `@Component`,
+    /// `enrich_external_type` for declaration merging, etc.). Plugins
+    /// without bespoke behaviour return `None` and the engine binds a
+    /// no-op default.
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        None
+    }
+
     // `connectors()` trait method removed (Phase H) — no `impl Connector for X`
     // blocks remain. Per-language flow detection now lives either in resolver
     // FlowEmission emissions or in free `discover_*` functions called from

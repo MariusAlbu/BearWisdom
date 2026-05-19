@@ -68,6 +68,16 @@ pub(crate) use super::flow_detectors::{
 pub use predicates::is_bare_specifier;
 
 /// TypeScript and JavaScript language resolver.
+///
+/// **Phase 5 archive status:** since the engine pivot (commit `8b1b89f9`),
+/// chain-bearing refs in TypeScript / TSX / JavaScript / JSX route through
+/// `crate::type_checker::Engine::resolve` first; this resolver is consulted
+/// only as a fallback when the engine declines, and for bare-name refs that
+/// the engine doesn't yet handle. Per doc 4 § Phase 9 the file itself is
+/// slated for deletion; until then the entry points remain for fallback
+/// coverage of TS patterns the engine's chain walker doesn't yet model
+/// (declaration merging, ambient global synthesis, decorator-driven member
+/// synthesis pending TypeScriptHooks::synthesize_members impls).
 pub struct TypeScriptResolver;
 
 impl LanguageResolver for TypeScriptResolver {
