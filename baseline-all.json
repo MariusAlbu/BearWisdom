@@ -1589,7 +1589,7 @@
         "http_call": 20
       },
       "flow_edges": 63,
-      "internal_edges": 1099,
+      "internal_edges": 1102,
       "internal_unresolved": 4,
       "languages": {
         "csharp": 90,
@@ -1607,7 +1607,7 @@
       "perf": {
         "end_ws_mb": 145,
         "files_per_sec": 14,
-        "index_duration_ms": 10131
+        "index_duration_ms": 10013
       },
       "project": "dotnet-EquinoxProject",
       "resolution_rate": 99.64,
@@ -3014,7 +3014,7 @@
       "files": 154,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 6894,
+      "internal_edges": 6904,
       "internal_unresolved": 44,
       "languages": {
         "go": 110,
@@ -3023,9 +3023,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/go-bubbletea",
       "perf": {
-        "end_ws_mb": 335,
-        "files_per_sec": 33,
-        "index_duration_ms": 4662
+        "end_ws_mb": 105,
+        "files_per_sec": 32,
+        "index_duration_ms": 4746
       },
       "project": "go-bubbletea",
       "resolution_rate": 99.37,
@@ -4052,9 +4052,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/java-spring-petclinic",
       "perf": {
-        "end_ws_mb": 107,
+        "end_ws_mb": 232,
         "files_per_sec": 3,
-        "index_duration_ms": 30320
+        "index_duration_ms": 29871
       },
       "project": "java-spring-petclinic",
       "resolution_rate": 92.19,
@@ -7209,9 +7209,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-black",
       "perf": {
-        "end_ws_mb": 179,
+        "end_ws_mb": 181,
         "files_per_sec": 7,
-        "index_duration_ms": 57063
+        "index_duration_ms": 56651
       },
       "project": "python-black",
       "resolution_rate": 91.86,
@@ -9565,7 +9565,7 @@
         "mailer": 85
       },
       "flow_edges": 630,
-      "internal_edges": 16634,
+      "internal_edges": 16605,
       "internal_unresolved": 250,
       "languages": {
         "css": 4,
@@ -9584,9 +9584,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 190,
+        "end_ws_mb": 189,
         "files_per_sec": 45,
-        "index_duration_ms": 27793
+        "index_duration_ms": 27743
       },
       "project": "ts-rallly",
       "resolution_rate": 98.52,
@@ -10171,9 +10171,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 175,
+        "end_ws_mb": 174,
         "files_per_sec": 32,
-        "index_duration_ms": 54787
+        "index_duration_ms": 54975
       },
       "project": "vue-vben-admin",
       "resolution_rate": 99.26,
