@@ -1605,9 +1605,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
       "perf": {
-        "end_ws_mb": 145,
+        "end_ws_mb": 144,
         "files_per_sec": 14,
-        "index_duration_ms": 10013
+        "index_duration_ms": 10081
       },
       "project": "dotnet-EquinoxProject",
       "resolution_rate": 99.64,
@@ -3014,7 +3014,7 @@
       "files": 154,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 6904,
+      "internal_edges": 7039,
       "internal_unresolved": 44,
       "languages": {
         "go": 110,
@@ -3023,12 +3023,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/go-bubbletea",
       "perf": {
-        "end_ws_mb": 105,
-        "files_per_sec": 32,
-        "index_duration_ms": 4746
+        "end_ws_mb": 355,
+        "files_per_sec": 33,
+        "index_duration_ms": 4646
       },
       "project": "go-bubbletea",
-      "resolution_rate": 99.37,
+      "resolution_rate": 99.38,
       "routes": 0,
       "symbols": 3285,
       "unresolved_by_lang_kind": {
@@ -4052,9 +4052,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/java-spring-petclinic",
       "perf": {
-        "end_ws_mb": 232,
+        "end_ws_mb": 107,
         "files_per_sec": 3,
-        "index_duration_ms": 29871
+        "index_duration_ms": 29935
       },
       "project": "java-spring-petclinic",
       "resolution_rate": 92.19,
@@ -7211,7 +7211,7 @@
       "perf": {
         "end_ws_mb": 181,
         "files_per_sec": 7,
-        "index_duration_ms": 56651
+        "index_duration_ms": 56565
       },
       "project": "python-black",
       "resolution_rate": 91.86,
@@ -9565,7 +9565,7 @@
         "mailer": 85
       },
       "flow_edges": 630,
-      "internal_edges": 16605,
+      "internal_edges": 16715,
       "internal_unresolved": 250,
       "languages": {
         "css": 4,
@@ -9584,12 +9584,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 189,
-        "files_per_sec": 45,
-        "index_duration_ms": 27743
+        "end_ws_mb": 191,
+        "files_per_sec": 46,
+        "index_duration_ms": 27557
       },
       "project": "ts-rallly",
-      "resolution_rate": 98.52,
+      "resolution_rate": 98.53,
       "routes": 18,
       "symbols": 8777,
       "unresolved_by_lang_kind": {
@@ -10152,7 +10152,7 @@
         "http_call": 5
       },
       "flow_edges": 17,
-      "internal_edges": 24302,
+      "internal_edges": 24524,
       "internal_unresolved": 181,
       "languages": {
         "css": 13,
@@ -10171,12 +10171,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 174,
+        "end_ws_mb": 176,
         "files_per_sec": 32,
-        "index_duration_ms": 54975
+        "index_duration_ms": 54575
       },
       "project": "vue-vben-admin",
-      "resolution_rate": 99.26,
+      "resolution_rate": 99.27,
       "routes": 0,
       "symbols": 17306,
       "unresolved_by_lang_kind": {
