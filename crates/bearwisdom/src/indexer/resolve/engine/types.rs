@@ -130,8 +130,14 @@ pub struct SymbolInfo {
 // TypeInfo — unified per-symbol type metadata
 // ---------------------------------------------------------------------------
 
+use crate::type_checker::core::types::TypeId;
+
 /// All type metadata for a single symbol, stored in a single map keyed by
 /// the symbol's qualified name (or simple name for generic_params).
+///
+/// String fields are the legacy contract; TypeId fields are the canonical
+/// form populated by interning the strings into the workspace arena.
+/// Consumers progressively migrate from string lookups to TypeId lookups.
 #[derive(Debug, Default, Clone)]
 pub struct TypeInfo {
     /// Field/property type (e.g., "UserRepository").
@@ -142,4 +148,12 @@ pub struct TypeInfo {
     pub return_type: Option<String>,
     /// Generic parameter names for type declarations (e.g., ["T"] for `interface Repository<T>`).
     pub generic_params: Vec<String>,
+    /// Canonical TypeId form of `field_type`. Interned into the workspace
+    /// arena at index-build time.
+    pub field_type_id: Option<TypeId>,
+    /// Canonical TypeId form of `return_type`. Interned into the workspace
+    /// arena at index-build time.
+    pub return_type_id: Option<TypeId>,
+    /// Canonical TypeId forms of `type_args`, in declaration order.
+    pub type_arg_ids: Vec<TypeId>,
 }

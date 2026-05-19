@@ -17,6 +17,7 @@ use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 
+use crate::type_checker::core::types::TypeArena;
 use crate::types::AliasTarget;
 
 use super::{ChainMiss, SymbolInfo, TypeInfo};
@@ -174,6 +175,12 @@ pub struct SymbolIndex {
     /// chain misses are a small fraction of resolves, and locking is fast
     /// compared to the SQL writes the workers are also doing.
     chain_misses: std::sync::Mutex<Vec<ChainMiss>>,
+    /// Workspace-wide TypeArena. Holds the canonical `Type` interpretation
+    /// of every type expression referenced from any indexed symbol. Used
+    /// by chain walkers and language resolvers to switch from string-keyed
+    /// type lookups to TypeId-keyed ones. Interior mutability via the
+    /// arena's internal RwLock — safe to share via `&self`.
+    pub(super) type_arena: TypeArena,
 }
 
 // Per-worker forward-inference cache for local variables (R5). Each rayon

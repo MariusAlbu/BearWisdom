@@ -7,6 +7,7 @@
 // they care about.
 // =============================================================================
 
+use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
 use super::{ChainMiss, SymbolInfo};
@@ -107,6 +108,36 @@ pub trait SymbolLookup {
     /// Get the generic type parameter names for a type declaration.
     /// e.g., "Repository" → Some(["T"]) for `interface Repository<T>`
     fn generic_params(&self, type_name: &str) -> Option<&[String]>;
+
+    /// Canonical TypeId form of `field_type_name`. Returns `Some(id)` when
+    /// the property's field type has been interned into the workspace arena.
+    /// Default returns `None` so synthetic test lookups don't have to opt in.
+    fn field_type_id(&self, _property_qname: &str) -> Option<TypeId> {
+        None
+    }
+
+    /// Canonical TypeId form of `return_type_name`. Returns `Some(id)` when
+    /// the method's return type has been interned into the workspace arena.
+    /// Default returns `None` so synthetic test lookups don't have to opt in.
+    fn return_type_id(&self, _method_qname: &str) -> Option<TypeId> {
+        None
+    }
+
+    /// Canonical TypeId forms of `field_type_args`. Returns `Some(ids)` when
+    /// the property's generic args have been interned into the workspace
+    /// arena. Default returns `None` so synthetic test lookups don't have
+    /// to opt in.
+    fn field_type_arg_ids(&self, _property_qname: &str) -> Option<&[TypeId]> {
+        None
+    }
+
+    /// Borrow the workspace TypeArena that owns every TypeId returned by
+    /// `field_type_id` / `return_type_id` / `field_type_arg_ids`. Returns
+    /// `None` for synthetic test lookups that haven't opted into the
+    /// TypeId surface.
+    fn type_arena(&self) -> Option<&TypeArena> {
+        None
+    }
 
     /// Look up the structural shape of a type alias.
     ///

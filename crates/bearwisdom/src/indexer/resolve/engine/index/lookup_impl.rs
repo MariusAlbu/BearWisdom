@@ -7,6 +7,7 @@
 // construction or mutation logic; that's in `build.rs` / `augment.rs`.
 // =============================================================================
 
+use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
 use super::{strip_generic_args, SymbolIndex};
@@ -163,6 +164,32 @@ impl SymbolLookup for SymbolIndex {
                 Some(ti.generic_params.as_slice())
             }
         })
+    }
+
+    fn field_type_id(&self, property_qname: &str) -> Option<TypeId> {
+        self.type_info
+            .get(property_qname)
+            .and_then(|ti| ti.field_type_id)
+    }
+
+    fn return_type_id(&self, method_qname: &str) -> Option<TypeId> {
+        self.type_info
+            .get(method_qname)
+            .and_then(|ti| ti.return_type_id)
+    }
+
+    fn field_type_arg_ids(&self, property_qname: &str) -> Option<&[TypeId]> {
+        self.type_info.get(property_qname).and_then(|ti| {
+            if ti.type_arg_ids.is_empty() {
+                None
+            } else {
+                Some(ti.type_arg_ids.as_slice())
+            }
+        })
+    }
+
+    fn type_arena(&self) -> Option<&TypeArena> {
+        Some(&self.type_arena)
     }
 
     fn alias_target(&self, name: &str) -> Option<&AliasTarget> {

@@ -304,6 +304,36 @@ impl SymbolIndex {
                 }
             }
         }
+
+        // Pass 7: intern newly-populated string-typed type_info entries into
+        // the workspace TypeArena. Idempotent: only fills slots whose TypeId
+        // companion is still empty. Mirrors the post-merge intern pass in
+        // `build_with_context`.
+        let arena = &self.type_arena;
+        for ti in self.type_info.values_mut() {
+            if ti.field_type_id.is_none() {
+                if let Some(ft) = ti.field_type.as_deref() {
+                    if !ft.is_empty() {
+                        ti.field_type_id = Some(arena.class(ft));
+                    }
+                }
+            }
+            if ti.return_type_id.is_none() {
+                if let Some(rt) = ti.return_type.as_deref() {
+                    if !rt.is_empty() {
+                        ti.return_type_id = Some(arena.class(rt));
+                    }
+                }
+            }
+            if ti.type_arg_ids.is_empty() && !ti.type_args.is_empty() {
+                ti.type_arg_ids = ti
+                    .type_args
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| arena.class(s))
+                    .collect();
+            }
+        }
     }
 
     /// Drain the chain-walker miss accumulator.

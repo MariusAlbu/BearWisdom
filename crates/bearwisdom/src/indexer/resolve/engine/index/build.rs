@@ -19,6 +19,7 @@ use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
 
 use crate::indexer::module_resolution::ModuleResolver as _;
+use crate::type_checker::core::types::TypeArena;
 use crate::types::{
     AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility,
 };
@@ -157,16 +158,16 @@ impl SymbolIndex {
 
             for (sym_idx, sym) in pf.symbols.iter().enumerate() {
                 let type_refs = &type_refs_by_sym[sym_idx];
-                if type_refs.is_empty() {
-                    continue;
-                }
 
                 match sym.kind {
                     // Properties/fields: first TypeRef is the field type.
                     // Subsequent TypeRefs from the same symbol may be generic type args.
                     SymbolKind::Property | SymbolKind::Field => {
+                        let Some(&first) = type_refs.first() else {
+                            continue;
+                        };
                         let resolved = resolve_type_name_in_scope(
-                            type_refs[0],
+                            first,
                             sym.scope_path.as_deref(),
                             &by_qname,
                         );
@@ -196,8 +197,11 @@ impl SymbolIndex {
                     // Only non-chain TypeRefs land here; chain-bearing ones
                     // are handled by the chain-inference pass below.
                     SymbolKind::Variable | SymbolKind::Parameter => {
+                        let Some(&first) = type_refs.first() else {
+                            continue;
+                        };
                         let resolved = resolve_type_name_in_scope(
-                            type_refs[0],
+                            first,
                             sym.scope_path.as_deref(),
                             &by_qname,
                         );
@@ -216,14 +220,17 @@ impl SymbolIndex {
                     //   → field_type("SocketChannelPtr") = "SocketChannel"
                     // Used by the C/C++ chain walker's dereference_typedef step.
                     SymbolKind::TypeAlias => {
+                        let Some(&first) = type_refs.first() else {
+                            continue;
+                        };
                         field_type
-                            .insert(sym.qualified_name.clone(), type_refs[0].to_string());
+                            .insert(sym.qualified_name.clone(), first.to_string());
                         // Also index by simple name for cross-TU lookups where
                         // the typedef may be referenced without its full scope prefix.
                         if sym.name != sym.qualified_name {
                             field_type
                                 .entry(sym.name.clone())
-                                .or_insert_with(|| type_refs[0].to_string());
+                                .or_insert_with(|| first.to_string());
                         }
                     }
                     // Methods/functions: last TypeRef is likely the return type.
@@ -784,6 +791,33 @@ impl SymbolIndex {
             }
         }
 
+        // Create the workspace TypeArena and intern every string-typed entry
+        // into a canonical TypeId. Each string becomes a `Type::Class` entry.
+        // Structural decomposition (Apply/Tuple/Union) is a later wave's job;
+        // here we only lift the string contract into a TypeId-typed companion
+        // so consumers can switch lookup paths without losing data.
+        let type_arena = TypeArena::new();
+        for ti in type_info.values_mut() {
+            if let Some(ft) = ti.field_type.as_deref() {
+                if !ft.is_empty() {
+                    ti.field_type_id = Some(type_arena.class(ft));
+                }
+            }
+            if let Some(rt) = ti.return_type.as_deref() {
+                if !rt.is_empty() {
+                    ti.return_type_id = Some(type_arena.class(rt));
+                }
+            }
+            if ti.type_arg_ids.is_empty() && !ti.type_args.is_empty() {
+                ti.type_arg_ids = ti
+                    .type_args
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| type_arena.class(s))
+                    .collect();
+            }
+        }
+
         Self {
             by_name,
             by_qname,
@@ -810,6 +844,7 @@ impl SymbolIndex {
             empty: Vec::new(),
             empty_reexports: Vec::new(),
             chain_misses: std::sync::Mutex::new(Vec::new()),
+            type_arena,
         }
     }
 }

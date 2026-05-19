@@ -9,6 +9,7 @@ use crate::indexer::resolve::engine::chain_walker::{
     parse_return_type_from_signature, resolve_type_name_in_scope, tuple_element,
 };
 use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
+use crate::type_checker::core::types::Type;
 use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -261,6 +262,261 @@ fn test_symbol_index_by_name() {
     // missing
     assert!(index.by_name("Bar").is_empty());
     assert!(index.by_qualified_name("NS.Bar").is_none());
+}
+
+#[test]
+fn class_symbol_return_type_id_interned_into_arena() {
+    // A Class symbol's return_type is its own qualified name. The post-merge
+    // intern pass turns that string into a TypeId; the arena resolves it
+    // back to a Type::Class.
+    let pf = ParsedFile {
+        path: "src/foo.cs".to_string(),
+        language: "csharp".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "Foo".to_string(),
+            qualified_name: "NS.Foo".to_string(),
+            kind: SymbolKind::Class,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 10,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: Some("NS".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("src/foo.cs".to_string(), "NS.Foo".to_string()), 1);
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    // String surface still works.
+    assert_eq!(index.return_type_name("NS.Foo"), Some("NS.Foo"));
+
+    // TypeId surface: same data, interned.
+    let rt_id = index.return_type_id("NS.Foo").expect("class has return_type_id");
+    let arena = index.type_arena().expect("SymbolIndex exposes an arena");
+    match arena.get(rt_id) {
+        Type::Class(q) => assert_eq!(q, "NS.Foo"),
+        other => panic!("expected Type::Class, got {other:?}"),
+    }
+}
+
+#[test]
+fn signature_derived_return_type_id_interned() {
+    // A Method symbol with a .NET-style signature (`(args): ReturnType`) and
+    // no TypeRef refs gets its return type parsed via
+    // parse_return_type_from_signature, then interned into the arena. Before
+    // the build_with_context loop fix, an early-continue on empty type_refs
+    // skipped this fallback entirely — only `augment_from_parsed` ran it.
+    let pf = ParsedFile {
+        path: "ext:lib/foo.dll".to_string(),
+        language: "csharp".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "GetUser".to_string(),
+            qualified_name: "Svc.GetUser".to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("GetUser(int): User".to_string()),
+            doc_comment: None,
+            scope_path: Some("Svc".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("ext:lib/foo.dll".to_string(), "Svc.GetUser".to_string()), 1);
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    assert_eq!(index.return_type_name("Svc.GetUser"), Some("User"));
+    let rt_id = index.return_type_id("Svc.GetUser").expect("method has return_type_id");
+    let arena = index.type_arena().expect("SymbolIndex exposes an arena");
+    match arena.get(rt_id) {
+        Type::Class(q) => assert_eq!(q, "User"),
+        other => panic!("expected Type::Class('User'), got {other:?}"),
+    }
+}
+
+#[test]
+fn method_return_type_id_interned_via_typeref() {
+    // A Method symbol with a `TypeRef` ref to "User" gets `return_type`
+    // populated from that ref. The post-merge intern pass turns the string
+    // into a TypeId; the arena resolves back to a Type::Class.
+    let pf = ParsedFile {
+        path: "src/svc.cs".to_string(),
+        language: "csharp".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "GetUser".to_string(),
+            qualified_name: "Svc.GetUser".to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: Some("Svc".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![crate::types::ExtractedRef {
+            kind: crate::types::EdgeKind::TypeRef,
+            source_symbol_index: 0,
+            target_name: "User".to_string(),
+            line: 1,
+            col: 0,
+            byte_offset: 0,
+            module: None,
+            namespace_segments: Vec::new(),
+            chain: None,
+            call_args: Vec::new(),
+        }],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("src/svc.cs".to_string(), "Svc.GetUser".to_string()), 1);
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    // TypeRef-derived path lands in both the string and TypeId surfaces.
+    assert_eq!(index.return_type_name("Svc.GetUser"), Some("User"));
+    let rt_id = index.return_type_id("Svc.GetUser").expect("method has return_type_id");
+    let arena = index.type_arena().expect("SymbolIndex exposes an arena");
+    match arena.get(rt_id) {
+        Type::Class(q) => assert_eq!(q, "User"),
+        other => panic!("expected Type::Class('User'), got {other:?}"),
+    }
+}
+
+#[test]
+fn default_symbol_lookup_returns_no_typeid_surface() {
+    // Synthetic SymbolLookup impls that don't override the TypeId methods
+    // must return None across the surface — confirms the default impls
+    // are the opt-out path.
+    struct EmptyLookup;
+    impl SymbolLookup for EmptyLookup {
+        fn by_name(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+            None
+        }
+        fn members_of(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+            Vec::new()
+        }
+        fn has_in_namespace(&self, _: &str) -> bool {
+            false
+        }
+        fn in_file(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn field_type_name(&self, _: &str) -> Option<&str> {
+            None
+        }
+        fn return_type_name(&self, _: &str) -> Option<&str> {
+            None
+        }
+        fn field_type_args(&self, _: &str) -> Option<&[String]> {
+            None
+        }
+        fn generic_params(&self, _: &str) -> Option<&[String]> {
+            None
+        }
+        fn reexports_from(&self, _: &str) -> &[(String, String)] {
+            &[]
+        }
+        fn is_external_name(&self, _: &str, _: &str) -> bool {
+            false
+        }
+    }
+
+    let lookup = EmptyLookup;
+    assert!(lookup.field_type_id("anything").is_none());
+    assert!(lookup.return_type_id("anything").is_none());
+    assert!(lookup.field_type_arg_ids("anything").is_none());
+    assert!(lookup.type_arena().is_none());
 }
 
 fn make_class_sym(name: &str, qname: &str) -> ExtractedSymbol {
