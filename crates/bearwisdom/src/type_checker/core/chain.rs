@@ -85,7 +85,7 @@ impl RootResolver for DefaultRootResolver {
         &self,
         seg: &ChainSegment,
         ref_ctx: &RefContext,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         arena: &TypeArena,
         lookup: &dyn SymbolLookup,
     ) -> Option<TypeId> {
@@ -125,7 +125,53 @@ impl RootResolver for DefaultRootResolver {
                         return Some(arena.class(type_name));
                     }
                 }
-                // 4. Fall back to interning the bare identifier as a class
+                // 4. Bare-specifier import binding. `import { vi } from 'vitest'`
+                //    brings `vi` into scope as a value whose type lives at
+                //    `vitest.vi`'s field_type / return_type. Iterate the file's
+                //    imports for entries matching seg.name (by imported_name or
+                //    alias), skip relative / absolute specifiers (those are
+                //    project-internal and the scope-chain walk handles them),
+                //    and probe `{module}.{name}` for a declared type. Covers
+                //    `import dayjs from 'dayjs'; dayjs(...).toDate()` and the
+                //    named-import pattern across TS / Python / Java.
+                for import in &file_ctx.imports {
+                    let matches_import = import.imported_name == seg.name
+                        || import.alias.as_deref() == Some(seg.name.as_str());
+                    if !matches_import {
+                        continue;
+                    }
+                    let Some(module) = import.module_path.as_deref() else {
+                        continue;
+                    };
+                    if module.starts_with('.') || module.starts_with('/') {
+                        continue;
+                    }
+                    let candidate = format!("{module}.{}", seg.name);
+                    if let Some(rt) = lookup.return_type_name(&candidate) {
+                        return Some(arena.class(rt));
+                    }
+                    if let Some(ft) = lookup.field_type_name(&candidate) {
+                        return Some(arena.class(ft));
+                    }
+                }
+                // 5. npm globals fallback. When a project enables vitest /
+                //    jest `globals: true`, identifiers like `vi`, `expect`,
+                //    `describe`, `test` enter the file's scope without an
+                //    explicit import. The npm ecosystem walker writes their
+                //    type info under the synthetic `__npm_globals__.{name}`
+                //    qname; this probe surfaces it. The qname constant lives
+                //    in the npm ecosystem module — keeping the prefix as a
+                //    crate-private literal here avoids leaking the
+                //    convention into the SymbolLookup trait.
+                let globals_candidate =
+                    format!("{}.{}", crate::ecosystem::npm::NPM_GLOBALS_MODULE, seg.name);
+                if let Some(rt) = lookup.return_type_name(&globals_candidate) {
+                    return Some(arena.class(rt));
+                }
+                if let Some(ft) = lookup.field_type_name(&globals_candidate) {
+                    return Some(arena.class(ft));
+                }
+                // 6. Fall back to interning the bare identifier as a class
                 //    qname. Per-language scope tracking (Rust use, C#
                 //    using, TS imports) plugs its own RootResolver to
                 //    rewrite module-relative names before this fallback.
