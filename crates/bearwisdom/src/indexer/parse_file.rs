@@ -20,6 +20,20 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
     parse_file_with_demand(walked, registry, None)
 }
 
+/// Parse with access to a workspace `TypeArena`. Plugins that populate
+/// `ExtractedSymbol`'s TypeId fields intern into this arena, so the same
+/// canonical TypeIds flow into `SymbolIndex::build_with_context_and_arena`
+/// later. Callers that don't share an arena across files should keep using
+/// `parse_file` / `parse_file_with_demand` — those route through the
+/// non-arena trait method and produce `None` TypeIds.
+pub(crate) fn parse_file_with_arena(
+    walked: &WalkedFile,
+    registry: &LanguageRegistry,
+    arena: &crate::type_checker::core::types::TypeArena,
+) -> Result<ParsedFile> {
+    parse_file_with_arena_and_demand(walked, registry, None, arena)
+}
+
 /// R6 entry point for demand-driven parsing. When `demand` is `Some`, the
 /// language plugin's `extract_with_demand` is called instead of `extract`,
 /// and top-level declarations whose name is not in the set may be dropped.
@@ -28,6 +42,28 @@ pub(crate) fn parse_file_with_demand(
     walked: &WalkedFile,
     registry: &LanguageRegistry,
     demand: Option<&std::collections::HashSet<String>>,
+) -> Result<ParsedFile> {
+    parse_file_internal(walked, registry, demand, None)
+}
+
+/// Parse with both demand filtering and access to a workspace `TypeArena`.
+/// Plugins that opt into TypeId population read this arena to intern type
+/// expressions during extraction. Production indexer entries use this so
+/// the same arena flows into `SymbolIndex::build_with_context_and_arena`.
+pub(crate) fn parse_file_with_arena_and_demand(
+    walked: &WalkedFile,
+    registry: &LanguageRegistry,
+    demand: Option<&std::collections::HashSet<String>>,
+    arena: &crate::type_checker::core::types::TypeArena,
+) -> Result<ParsedFile> {
+    parse_file_internal(walked, registry, demand, Some(arena))
+}
+
+fn parse_file_internal(
+    walked: &WalkedFile,
+    registry: &LanguageRegistry,
+    demand: Option<&std::collections::HashSet<String>>,
+    arena: Option<&crate::type_checker::core::types::TypeArena>,
 ) -> Result<ParsedFile> {
     let bytes = std::fs::read(&walked.absolute_path)
         .with_context(|| format!("Cannot read {}", walked.relative_path))?;
@@ -115,14 +151,26 @@ pub(crate) fn parse_file_with_demand(
     // degrades to the regular `extract` via the trait's default impl.
     // The absolute path is passed as file_path so plugins that need filesystem
     // access (e.g. Fortran's fypp preprocessor) can locate sibling files.
+    // The arena-aware trait method is preferred when the caller supplies one
+    // so plugins can populate ExtractedSymbol TypeIds against the shared
+    // workspace arena.
     let plugin = registry.get(walked.language);
     let abs_path_str = walked.absolute_path.to_string_lossy();
-    let mut r = plugin.extract_with_demand(
-        &content,
-        &abs_path_str,
-        walked.language,
-        demand,
-    );
+    let mut r = match arena {
+        Some(a) => plugin.extract_with_arena_and_demand(
+            &content,
+            &abs_path_str,
+            walked.language,
+            demand,
+            a,
+        ),
+        None => plugin.extract_with_demand(
+            &content,
+            &abs_path_str,
+            walked.language,
+            demand,
+        ),
+    };
 
     // Run locals.scm query to filter out locally-resolved references.
     // This removes local variables, parameters, and other intra-scope names

@@ -26,7 +26,7 @@ use tracing::{debug, info};
 
 use crate::db::Database;
 use crate::ecosystem::SymbolLocationIndex;
-use crate::indexer::full::parse_file_with_demand;
+use crate::indexer::full::{parse_file_with_arena_and_demand, parse_file_with_demand};
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::ChainMiss;
 use crate::indexer::write;
@@ -71,6 +71,30 @@ pub fn expand_chain_reachability(
     )
 }
 
+/// Same as `expand_chain_reachability_with_index` but threads a workspace
+/// `TypeArena` to newly-parsed external files so any TypeId-populating
+/// extractor produces canonical IDs in the same arena used by the rest of
+/// the index.
+pub fn expand_chain_reachability_with_index_and_arena(
+    db: &mut Database,
+    parsed: &mut Vec<ParsedFile>,
+    symbol_id_map: &mut HashMap<(String, String), i64>,
+    chain_misses: &[ChainMiss],
+    registry: &LanguageRegistry,
+    symbol_index: Option<&SymbolLocationIndex>,
+    type_arena: &crate::type_checker::core::types::TypeArena,
+) -> Result<ExpansionStats> {
+    expand_chain_reachability_inner(
+        db,
+        parsed,
+        symbol_id_map,
+        chain_misses,
+        registry,
+        symbol_index,
+        Some(type_arena),
+    )
+}
+
 /// Symbol-index-driven chain-miss expansion. For each miss the index can
 /// answer, pulls the exact file that defines the missing symbol, parses it
 /// with the full extractor, and writes it to the DB with `origin='external'`.
@@ -84,6 +108,26 @@ pub fn expand_chain_reachability_with_index(
     chain_misses: &[ChainMiss],
     registry: &LanguageRegistry,
     symbol_index: Option<&SymbolLocationIndex>,
+) -> Result<ExpansionStats> {
+    expand_chain_reachability_inner(
+        db,
+        parsed,
+        symbol_id_map,
+        chain_misses,
+        registry,
+        symbol_index,
+        None,
+    )
+}
+
+fn expand_chain_reachability_inner(
+    db: &mut Database,
+    parsed: &mut Vec<ParsedFile>,
+    symbol_id_map: &mut HashMap<(String, String), i64>,
+    chain_misses: &[ChainMiss],
+    registry: &LanguageRegistry,
+    symbol_index: Option<&SymbolLocationIndex>,
+    type_arena: Option<&crate::type_checker::core::types::TypeArena>,
 ) -> Result<ExpansionStats> {
     let mut stats = ExpansionStats {
         misses: chain_misses.len(),
@@ -168,7 +212,11 @@ pub fn expand_chain_reachability_with_index(
         .par_iter()
         .filter_map(|w| {
             let demand = per_file_demand.get(&w.absolute_path);
-            match parse_file_with_demand(w, registry, demand) {
+            let result = match type_arena {
+                Some(a) => parse_file_with_arena_and_demand(w, registry, demand, a),
+                None => parse_file_with_demand(w, registry, demand),
+            };
+            match result {
                 Ok(mut pf) => {
                     crate::ecosystem::npm::ts_post_process_external(&mut pf);
                     Some(pf)

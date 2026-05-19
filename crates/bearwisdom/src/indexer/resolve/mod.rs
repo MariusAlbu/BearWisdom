@@ -163,8 +163,38 @@ pub fn resolve_iteration_with_cached_index(
     cached_index: &mut Option<engine::SymbolIndex>,
     new_files_slice: &[ParsedFile],
 ) -> Result<ResolutionStats> {
+    resolve_iteration_with_cached_index_and_arena(
+        db,
+        parsed,
+        symbol_id_map,
+        project_ctx,
+        cached_index,
+        new_files_slice,
+        std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()),
+    )
+}
+
+/// Same as `resolve_iteration_with_cached_index` but threads a workspace
+/// `TypeArena` through to `SymbolIndex::build_with_context_and_arena`. The
+/// arena must be the same one the parse phase used so extractor-populated
+/// TypeIds on `ExtractedSymbol` point into the same canonical table the
+/// engine consults.
+pub fn resolve_iteration_with_cached_index_and_arena(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    cached_index: &mut Option<engine::SymbolIndex>,
+    new_files_slice: &[ParsedFile],
+    type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
+) -> Result<ResolutionStats> {
     if cached_index.is_none() {
-        let mut index = engine::SymbolIndex::build_with_context(parsed, symbol_id_map, project_ctx);
+        let mut index = engine::SymbolIndex::build_with_context_and_arena(
+            parsed,
+            symbol_id_map,
+            project_ctx,
+            type_arena,
+        );
         let external_paths = loop_body::read_external_file_paths(db.conn());
         if !external_paths.is_empty() {
             index.set_external_paths(external_paths);

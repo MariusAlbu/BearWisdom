@@ -285,6 +285,15 @@ pub fn full_index(
     const PARSE_CHANNEL_CAP: usize = 32;
     let (parse_tx, parse_rx) = std::sync::mpsc::sync_channel::<ParsedFile>(PARSE_CHANNEL_CAP);
 
+    // Workspace TypeArena: created once per index run, shared by every
+    // extractor that opts into TypeId population AND by the SymbolIndex
+    // build step. Cloning the Arc is cheap — the underlying RwLock-backed
+    // arena lives at the indexer scope so TypeIds flow consistently from
+    // parse through resolve.
+    let workspace_arena = std::sync::Arc::new(
+        crate::type_checker::core::types::TypeArena::new(),
+    );
+
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files.len());
     let mut vendored_c_parsed: Vec<ParsedFile> = Vec::new();
     let mut file_id_map: write::FileIdMap = std::collections::HashMap::new();
@@ -302,12 +311,18 @@ pub fn full_index(
         let files_for_workers = &files;
         let registry_for_workers = registry;
         let pool_for_workers = &parse_pool;
+        let arena_for_workers = std::sync::Arc::clone(&workspace_arena);
         scope.spawn(move || {
             pool_for_workers.install(|| {
                 files_for_workers.par_iter().for_each_with(
                     parse_tx_for_workers,
                     |tx, w| {
-                        match parse_file(w, registry_for_workers) {
+                        match parse_file_with_arena_and_demand(
+                            w,
+                            registry_for_workers,
+                            None,
+                            arena_for_workers.as_ref(),
+                        ) {
                             Ok(pf) => {
                                 let _ = tx.send(pf);
                             }
@@ -700,7 +715,7 @@ pub fn full_index(
     // aspnetcore-sized projects across the 8-iteration cap.
     let mut cached_index: Option<resolve::engine::SymbolIndex> = None;
     let parsed_len_at_iter_start = parsed.len();
-    let mut rstats = resolve::resolve_iteration_with_cached_index(
+    let mut rstats = resolve::resolve_iteration_with_cached_index_and_arena(
         db,
         &parsed,
         &symbol_id_map,
@@ -709,6 +724,7 @@ pub fn full_index(
         // Iteration 0: cached_index is None so the function builds full;
         // empty new_files_slice is moot (the build path doesn't read it).
         &[],
+        std::sync::Arc::clone(&workspace_arena),
     )
     .context("Failed to resolve references")?;
     let _ = parsed_len_at_iter_start;
@@ -721,13 +737,14 @@ pub fn full_index(
     let mut iteration = 1;
     while iteration < MAX_EXPANSION_ITERATIONS && !rstats.converged() {
         let parsed_len_before = parsed.len();
-        let estats = expand::expand_chain_reachability_with_index(
+        let estats = expand::expand_chain_reachability_with_index_and_arena(
             db,
             &mut parsed,
             &mut symbol_id_map,
             &rstats.chain_misses,
             registry,
             if symbol_index.is_empty() { None } else { Some(&symbol_index) },
+            workspace_arena.as_ref(),
         )
         .context("Failed to expand chain reachability")?;
         if estats.new_files == 0 {
@@ -743,13 +760,14 @@ pub fn full_index(
         // Augment the cached SymbolIndex with just the new files added
         // by expand instead of rebuilding from scratch.
         let new_slice = &parsed[parsed_len_before..];
-        let rstats2 = resolve::resolve_iteration_with_cached_index(
+        let rstats2 = resolve::resolve_iteration_with_cached_index_and_arena(
             db,
             &parsed,
             &symbol_id_map,
             Some(&project_ctx),
             &mut cached_index,
             new_slice,
+            std::sync::Arc::clone(&workspace_arena),
         )
         .context("Failed to re-resolve after chain reachability expansion")?;
         info!(
@@ -921,7 +939,8 @@ pub(crate) use super::stage_discover::{
 // `is_c_vendored_file`) so other indexer submodules and tests keep the
 // `crate::indexer::full::*` import path they had before the carve.
 pub(crate) use super::parse_file::{
-    is_c_vendored_file, parse_file, parse_file_with_demand,
+    is_c_vendored_file, parse_file, parse_file_with_arena_and_demand,
+    parse_file_with_demand,
 };
 // `panic_message` is consumed by `full_index`'s catch_unwind guards;
 // `is_generated_platform_header` is re-exported so `full_tests.rs` can

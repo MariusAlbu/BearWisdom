@@ -36,6 +36,9 @@ use crate::indexer::resolve::engine::{ChainMiss, ImportEntry, SymbolInfo, TypeIn
 
 impl SymbolIndex {
     /// Build the index from parsed files and the symbol-to-ID mapping.
+    /// Creates a fresh workspace TypeArena. Use
+    /// `build_with_context_and_arena` from the indexer entry point to
+    /// share an arena with extractors and other passes.
     pub fn build(
         parsed: &[ParsedFile],
         symbol_id_map: &HashMap<(String, String), i64>,
@@ -44,11 +47,30 @@ impl SymbolIndex {
     }
 
     /// Build the index, optionally with project context for ecosystem-aware
-    /// module resolution (e.g. the Go module path from go.mod).
+    /// module resolution. Creates a fresh workspace TypeArena.
     pub fn build_with_context(
         parsed: &[ParsedFile],
         symbol_id_map: &HashMap<(String, String), i64>,
         project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
+    ) -> Self {
+        Self::build_with_context_and_arena(
+            parsed,
+            symbol_id_map,
+            project_ctx,
+            Arc::new(TypeArena::new()),
+        )
+    }
+
+    /// Build the index using a pre-existing workspace TypeArena. The arena
+    /// must be the same one threaded through `parse_file` so extractor-set
+    /// TypeIds on `ExtractedSymbol` (declared_type, return_type,
+    /// param_types) point into the same canonical table the engine and
+    /// language resolvers consult.
+    pub fn build_with_context_and_arena(
+        parsed: &[ParsedFile],
+        symbol_id_map: &HashMap<(String, String), i64>,
+        project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
+        type_arena: Arc<TypeArena>,
     ) -> Self {
         let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_qname: BTreeMap<String, SymbolInfo> = BTreeMap::new();
@@ -791,13 +813,12 @@ impl SymbolIndex {
             }
         }
 
-        // Create the workspace TypeArena and intern every string-typed entry
-        // into a canonical TypeId. `intern_type_str` decomposes generic
+        // Intern every string-typed type_info entry into the shared
+        // workspace TypeArena. `intern_type_str` decomposes generic
         // applications into structural `Apply { base, args }`, so a
         // `Repository<User>` field type produces an Apply TypeId whose base
         // and args are independently resolvable — letting the engine bind
         // generic substitutions across method chains.
-        let type_arena = TypeArena::new();
         for ti in type_info.values_mut() {
             if let Some(ft) = ti.field_type.as_deref() {
                 if !ft.is_empty() {

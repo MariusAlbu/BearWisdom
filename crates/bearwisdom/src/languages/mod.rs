@@ -109,6 +109,23 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         self.extract(source, file_path, lang_id)
     }
 
+    /// Extract with access to the workspace `TypeArena`. Plugins that
+    /// populate `ExtractedSymbol::declared_type` / `return_type` /
+    /// `param_types` as TypeIds override this method and intern type
+    /// expressions directly into the shared arena. The default falls back
+    /// to `extract_with_demand` and produces `None` TypeIds — wave 1's
+    /// string-to-TypeId intern pass on `SymbolIndex` builds them later.
+    fn extract_with_arena_and_demand(
+        &self,
+        source: &str,
+        file_path: &str,
+        lang_id: &str,
+        demand: Option<&std::collections::HashSet<String>>,
+        _arena: &crate::type_checker::core::types::TypeArena,
+    ) -> ExtractionResult {
+        self.extract_with_demand(source, file_path, lang_id, demand)
+    }
+
     /// Return sub-language text regions contained in this file (e.g. the
     /// `<script lang="ts">` block inside a Vue SFC, the frontmatter inside an
     /// Astro file, the `@code { }` block inside a Razor view). The indexer

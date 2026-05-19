@@ -16,6 +16,7 @@
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 
 use crate::type_checker::core::types::TypeArena;
 use crate::types::AliasTarget;
@@ -179,8 +180,10 @@ pub struct SymbolIndex {
     /// of every type expression referenced from any indexed symbol. Used
     /// by chain walkers and language resolvers to switch from string-keyed
     /// type lookups to TypeId-keyed ones. Interior mutability via the
-    /// arena's internal RwLock — safe to share via `&self`.
-    pub(super) type_arena: TypeArena,
+    /// arena's internal RwLock — safe to share via `&self`. Shared via
+    /// `Arc` so the same arena flows from the indexer entry point through
+    /// extractors and into `SymbolIndex` without per-stage rebuilds.
+    pub(super) type_arena: Arc<TypeArena>,
 }
 
 // Per-worker forward-inference cache for local variables (R5). Each rayon
