@@ -28,6 +28,11 @@ use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 
 /// C# language resolver.
+///
+/// When the C# profile has `engine_primary` set, chain-bearing refs route
+/// through `type_checker::Engine::resolve` before reaching this resolver.
+/// This impl handles bare-name refs (using directives, same-namespace,
+/// qualified names) and any chain refs the engine declines.
 pub struct CSharpResolver;
 
 impl LanguageResolver for CSharpResolver {

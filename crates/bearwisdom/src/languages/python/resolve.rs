@@ -47,6 +47,11 @@ use crate::types::{EdgeKind, ParsedFile};
 use tracing::debug;
 
 /// Python language resolver.
+///
+/// When the Python profile has `engine_primary` set, chain-bearing refs
+/// route through `type_checker::Engine::resolve` before reaching this
+/// resolver. This impl handles bare-name refs (imports, scope chain,
+/// synthetic globals) and any chain refs the engine declines.
 pub struct PythonResolver;
 
 impl LanguageResolver for PythonResolver {

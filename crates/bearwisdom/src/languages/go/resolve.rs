@@ -53,6 +53,11 @@ use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 
 /// Go language resolver.
+///
+/// When the Go profile has `engine_primary` set, chain-bearing refs route
+/// through `type_checker::Engine::resolve` before reaching this resolver.
+/// This impl handles bare-name refs (imports, same-package, scope chain)
+/// and any chain refs the engine declines.
 pub struct GoResolver;
 
 impl LanguageResolver for GoResolver {

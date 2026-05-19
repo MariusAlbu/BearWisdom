@@ -15,6 +15,12 @@ use crate::type_checker::TypeChecker;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
 
+/// Python type checker.
+///
+/// The engine's unified `ChainWalker` is consulted before this impl's
+/// `resolve_chain` whenever the profile has `engine_primary` set. The
+/// per-language `resolve_chain` runs as a fallback for chain shapes the
+/// unified walker doesn't yet handle.
 pub struct PythonChecker;
 
 impl TypeChecker for PythonChecker {

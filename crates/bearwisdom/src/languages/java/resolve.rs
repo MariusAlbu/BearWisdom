@@ -44,6 +44,11 @@ use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 
 /// Java language resolver.
+///
+/// When the Java profile has `engine_primary` set, chain-bearing refs
+/// route through `type_checker::Engine::resolve` before reaching this
+/// resolver. This impl handles bare-name refs (imports, same-package,
+/// synthetic globals) and any chain refs the engine declines.
 pub struct JavaResolver;
 
 impl LanguageResolver for JavaResolver {

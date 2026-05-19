@@ -15,6 +15,12 @@ use crate::type_checker::chain::simple_yield_type;
 use crate::type_checker::TypeChecker;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
+/// Java type checker.
+///
+/// The engine's unified `ChainWalker` is consulted before this impl's
+/// `resolve_chain` whenever the profile has `engine_primary` set. The
+/// per-language `resolve_chain` runs as a fallback for chain shapes the
+/// unified walker doesn't yet handle.
 pub struct JavaChecker;
 
 impl TypeChecker for JavaChecker {
