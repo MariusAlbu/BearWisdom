@@ -62,6 +62,30 @@ impl Ecosystem for JdkSrcEcosystem {
     ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
         super::maven::build_maven_symbol_index(dep_roots)
     }
+
+    /// Pre-pull every `java.base/java/lang/*.java` file at Stage 2.
+    /// `java.lang` is the only Java package implicitly imported by every
+    /// compilation unit — `String`, `Integer`, `Object`, `Exception`,
+    /// `Throwable`, `Iterable`, `Boolean`, `Number`, `Class`,
+    /// `RuntimeException`, etc. are referenced by bare name across every
+    /// Java project. Pure demand-driven walking never pulls them because
+    /// project refs carry no `java.lang.` FQN to trigger the resolve.
+    /// On java-spring-petclinic this absence accounted for 95 of the 127
+    /// missing internal_edges (all bare `String` type_refs).
+    ///
+    /// java.lang fits well inside the demand-pre-pull contract: it's a
+    /// bounded set (~145 files), every Java project needs the same set,
+    /// and the walk runs once per indexing pass rather than per ref.
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+    ) -> Vec<WalkedFile> {
+        let mut out = Vec::new();
+        for dep in dep_roots {
+            collect_java_lang_files(dep, &mut out);
+        }
+        out
+    }
 }
 
 impl ExternalSourceLocator for JdkSrcEcosystem {
@@ -131,6 +155,44 @@ fn probe_src_zip() -> Option<PathBuf> {
     let legacy = home.join("src.zip");
     if legacy.is_file() { return Some(legacy); }
     None
+}
+
+/// Collect every `.java` file under `dep.root/java.base/java/lang/`. The
+/// JDK src.zip extracts into a `<module>/<package>/<file>.java` layout;
+/// java.lang lives under `java.base/java/lang/`. Anything outside that
+/// directory stays demand-driven via the regular walker.
+fn collect_java_lang_files(
+    dep: &crate::ecosystem::externals::ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+) {
+    let java_lang = dep.root.join("java.base").join("java").join("lang");
+    let Ok(entries) = std::fs::read_dir(&java_lang) else { return };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else { continue };
+        if !file_type.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !name.ends_with(".java") {
+            continue;
+        }
+        // Skip module-info / package-info — these contain compile-time
+        // metadata, not symbols the resolver needs.
+        if name == "module-info.java" || name == "package-info.java" {
+            continue;
+        }
+        let rel_sub = match path.strip_prefix(&dep.root) {
+            Ok(p) => p.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+        let virtual_path = format!("ext:java:{}/{}", dep.module_path, rel_sub);
+        out.push(WalkedFile {
+            relative_path: virtual_path,
+            absolute_path: path,
+            language: "java",
+        });
+    }
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
