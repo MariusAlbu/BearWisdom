@@ -16,10 +16,15 @@ mod type_refs;
 mod types;
 pub mod extract;
 
+pub mod hooks;
 mod predicates;
+pub mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod resolve;
+
+pub use hooks::GO_HOOKS;
+pub use profile::GO_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -106,6 +111,19 @@ impl LanguagePlugin for GoPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::GoChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&GO_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&GO_HOOKS)
     }
 
     // TODO(routes-dispatch): wire `connectors::discover_go_routes` into the

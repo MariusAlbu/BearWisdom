@@ -11,9 +11,14 @@ pub(crate) mod keywords;
 mod symbols;
 pub mod extract;
 
+pub mod hooks;
 mod predicates;
+pub mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
+
+pub use hooks::JAVA_HOOKS;
+pub use profile::JAVA_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -112,6 +117,19 @@ impl LanguagePlugin for JavaPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::JavaChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&JAVA_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&JAVA_HOOKS)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

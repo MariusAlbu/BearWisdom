@@ -14,9 +14,14 @@ mod symbols;
 mod types;
 pub mod extract;
 
+pub mod hooks;
 mod predicates;
+pub mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
+
+pub use hooks::CSHARP_HOOKS;
+pub use profile::CSHARP_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -121,6 +126,19 @@ impl LanguagePlugin for CSharpPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::CSharpChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&CSHARP_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&CSHARP_HOOKS)
     }
 
     fn post_index(

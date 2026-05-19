@@ -13,11 +13,16 @@ mod statements;
 mod types;
 pub mod extract;
 
+pub mod hooks;
 mod predicates;
+pub mod profile;
 pub(crate) mod type_checker;
 mod externals;
 pub mod resolve;
 mod flow_detectors;
+
+pub use hooks::PYTHON_HOOKS;
+pub use profile::PYTHON_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -112,6 +117,19 @@ impl LanguagePlugin for PythonPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::PythonChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&PYTHON_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&PYTHON_HOOKS)
     }
 
     // TODO(routes-dispatch): wire `connectors::discover_django_routes` and
