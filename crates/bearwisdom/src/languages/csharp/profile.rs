@@ -85,6 +85,9 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("GetEnumerator"),
     primitive_mapping: CS_PRIMITIVES,
     kind_compatible_table: CS_KIND_TABLE,
+    // Validated under engine-primary at Phase 6 wave-A gate: dotnet-
+    // EquinoxProject rate parity 99.64% = 99.64%, no regression.
+    engine_primary: true,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AttrBracket),

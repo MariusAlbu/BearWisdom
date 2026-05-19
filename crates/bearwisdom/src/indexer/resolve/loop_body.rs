@@ -414,15 +414,21 @@ fn resolve_iteration_body(
                 }
 
                 // Phase 5 spirit: for chain-bearing refs in languages with a
-                // registered engine profile, the engine takes the chain-
-                // resolution slot. Legacy resolver still runs as fallback
-                // when engine declines (None), so any chain shape the
-                // engine doesn't yet handle continues to resolve through
-                // the legacy walker. Refs without chains stay on the
-                // legacy path — Phase 5 migrates chains first; bare-name
-                // resolution waits for per-language hooks (Phase 6+).
+                // registered engine profile AND opted in via
+                // `LanguageProfile::engine_primary`, the engine takes the
+                // chain-resolution slot. Legacy resolver still runs as
+                // fallback when engine declines (None). Phase 6 introduced
+                // per-language opt-in because wave-A recapture flagged
+                // -0.52pp / -2.68pp regressions on Python / Java when
+                // engine was unconditionally primary — those languages
+                // need their synthesis hooks before engine can match
+                // legacy coverage. Refs without chains stay on the legacy
+                // path; bare-name resolution waits for per-language hooks.
                 let try_engine_first = r.chain.is_some()
-                    && type_engine.profile_for(&pf.language).is_some();
+                    && type_engine
+                        .profile_for(&pf.language)
+                        .map(|p| p.engine_primary)
+                        .unwrap_or(false);
                 let resolution = if try_engine_first {
                     type_engine
                         .resolve(&ref_ctx, file_ctx, index)

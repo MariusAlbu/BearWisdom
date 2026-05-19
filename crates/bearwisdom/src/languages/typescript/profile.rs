@@ -119,6 +119,10 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: TS_PRIMITIVES,
     kind_compatible_table: TS_KIND_TABLE,
+    // Validated under engine-primary mode at Phase 5 § stage 4 — rate
+    // parity ±0.0pp across ts-rallly, vue-vben-admin, ts-immich;
+    // ±0.05pp on ts-nextjs. Engine takes the chain slot for TS.
+    engine_primary: true,
     // TS supports `new Foo()` (NewExpression) and `Foo()` (CallExpression)
     // both as construction; the extractor emits both as Construction
     // segments. Engine accepts both.

@@ -87,6 +87,13 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("__iter__"),
     primitive_mapping: PY_PRIMITIVES,
     kind_compatible_table: PY_KIND_TABLE,
+    // Phase 6 wave-A gate flagged a -0.52pp regression on python-black
+    // when engine took chains primary. Python's MRO walk + dataclass /
+    // attrs synthesis aren't yet in the engine; the legacy resolver
+    // handles them. Profile is registered for engine.build (members
+    // index, supertype graph) but engine.resolve stays fallback-only
+    // until the synthesis hooks land.
+    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),
