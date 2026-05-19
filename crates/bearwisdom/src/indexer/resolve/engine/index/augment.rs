@@ -136,7 +136,7 @@ impl SymbolIndex {
             for (sym_idx, sym) in pf.symbols.iter().enumerate() {
                 let type_refs = &type_refs_by_sym[sym_idx];
                 match sym.kind {
-                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable => {
+                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable | SymbolKind::Parameter => {
                         if let Some(first) = type_refs.first() {
                             let resolved = resolve_type_name_in_scope(
                                 first,

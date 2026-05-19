@@ -180,13 +180,22 @@ impl SymbolIndex {
                             );
                         }
                     }
-                    // Local variables: first TypeRef is the inferred/annotated type.
-                    // Emitted by extractors when the RHS is a constructor, struct
-                    // literal, or factory call (e.g. `let pool = DbPool::new(config)`,
-                    // `const svc = new UserService()`, `repo = UserRepository(db)`).
-                    // Only non-chain TypeRefs land here; chain-bearing ones are handled
-                    // by the chain-inference pass below.
-                    SymbolKind::Variable => {
+                    // Local variables and parameters: first TypeRef is the
+                    // inferred / annotated type. Emitted by extractors when
+                    // the RHS is a constructor, struct literal, or factory
+                    // call (e.g. `let pool = DbPool::new(config)`,
+                    // `const svc = new UserService()`, `repo = UserRepository(db)`),
+                    // or when a parameter's annotation is captured in source
+                    // (`def f(x: int)`, `void m(User u)`). Parameter joined
+                    // Variable after the d08e0872 kind migration; before
+                    // that, Python / Java lambda / Rust fn params all came
+                    // through as Variable and reached this branch. Without
+                    // Parameter here, chain refs whose root is a typed
+                    // parameter stop resolving (-2.68pp on
+                    // java-spring-petclinic, -0.52pp on python-black).
+                    // Only non-chain TypeRefs land here; chain-bearing ones
+                    // are handled by the chain-inference pass below.
+                    SymbolKind::Variable | SymbolKind::Parameter => {
                         let resolved = resolve_type_name_in_scope(
                             type_refs[0],
                             sym.scope_path.as_deref(),
@@ -393,7 +402,11 @@ impl SymbolIndex {
             }
 
             for (sym_idx, sym) in pf.symbols.iter().enumerate() {
-                if sym.kind != SymbolKind::Variable {
+                // Parameter joined Variable in d08e0872 for Python params,
+                // Java lambda params, Rust fn params. Both need chain-
+                // inference fallback so receivers like `(user: User) =>
+                // user.name` resolve through the param's inferred type.
+                if !matches!(sym.kind, SymbolKind::Variable | SymbolKind::Parameter) {
                     continue;
                 }
                 // Skip if already has an explicit type.
