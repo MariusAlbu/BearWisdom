@@ -1374,6 +1374,93 @@ fn identifier_root_resolves_via_scope_chain_field_type() {
 }
 
 #[test]
+fn intermediate_yield_falls_back_to_lookup_field_type() {
+    // 3-segment chain `repo.findOne.name` where `repo` resolves to Repo,
+    // Repo.findOne has no SymbolTypeMap entry but SymbolLookup carries
+    // field_type_name("Repo.findOne") = "User". Engine fallback should
+    // intern "User" as a class and continue to the .name lookup.
+    let mut arena = TypeArena::new();
+    let repo_ty = arena.class("Repo");
+    let user_ty = arena.class("User");
+    let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(repo_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(repo_ty, 1);
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(user_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(user_ty, 2);
+    // Sym 3 (Repo.findOne field) intentionally has no SymbolTypeData —
+    // simulating an extractor that doesn't populate declared_type yet.
+    symbol_types.insert(
+        4,
+        SymbolTypeData {
+            declared_type: Some(str_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        repo_ty,
+        sym_info(3, "findOne", "Repo.findOne", "field", Some("Repo")),
+    );
+    members.add_direct(
+        user_ty,
+        sym_info(4, "name", "User.name", "field", Some("User")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("Repo", "Repo")
+        .with_field_type("Repo.findOne", "User");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("Repo", SegmentKind::TypeAccess),
+            seg("findOne", SegmentKind::Property),
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let mut r = dummy_extracted_ref("name");
+    r.kind = EdgeKind::Reads;
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("3-segment chain resolves via lookup fallback");
+    assert_eq!(result.target_symbol_id, 4);
+}
+
+#[test]
 fn last_segment_resolves_when_yield_type_missing() {
     // Receiver type Customer has a method ToViewModel whose return_type
     // is not registered in SymbolTypeMap. The walker should still resolve

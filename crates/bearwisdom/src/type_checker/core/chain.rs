@@ -226,14 +226,17 @@ impl<'a> ChainWalker<'a> {
                 EdgeKind::TypeRef
             };
 
-            let member = self.members.lookup(
+            let member = match self.members.lookup(
                 current_ty,
                 &seg.name,
                 kind_filter,
                 self.supertypes,
                 self.arena,
                 self.profile,
-            )?;
+            ) {
+                Some(m) => m,
+                None => self.qualified_member_lookup(current_ty, &seg.name)?,
+            };
 
             match self.yield_type_of(&member, seg, &env) {
                 Some(next_ty) => {
@@ -269,26 +272,96 @@ impl<'a> ChainWalker<'a> {
     /// fields/properties/variables yield their declared type. Type-defining
     /// kinds yield self (callable class -> instance) when the segment is a
     /// Construction; otherwise they pass through as the type itself.
+    ///
+    /// Primary path: SymbolTypeMap, keyed by sym_id with rich TypeId data
+    /// and generic substitution via `substitute`. Fallback: SymbolLookup's
+    /// qname-keyed `field_type_name` / `return_type_name`, which are
+    /// populated from signature parsing and TypeRef edges by build.rs.
+    /// The fallback covers extractors that don't yet emit
+    /// `ExtractedSymbol.return_type` / `declared_type` TypeIds (C# methods,
+    /// Java fields, etc.) and bridges the engine to the rich string-keyed
+    /// type info the legacy chain walkers consume. Generic decomposition
+    /// is dropped at this hop — the bare class TypeId is returned, which
+    /// is enough for the next segment's MembersIndex lookup but loses any
+    /// type-args binding the SymbolTypeMap path would have substituted.
     fn yield_type_of(
         &self,
         sym: &SymbolInfo,
         seg: &ChainSegment,
         env: &GenericEnv,
     ) -> Option<TypeId> {
-        let data = self.symbol_types.get(sym.id)?;
-        let raw = match sym.kind.as_str() {
-            "method" | "function" | "constructor" => data.return_type,
+        let data_raw = self.symbol_types.get(sym.id).and_then(|data| {
+            match sym.kind.as_str() {
+                "method" | "function" | "constructor" => data.return_type,
+                "field" | "property" | "variable" | "parameter" | "enum_member" => {
+                    data.declared_type
+                }
+                "class" | "struct" | "interface" | "trait" | "enum" | "type_alias"
+                    if seg.kind == SegmentKind::Construction =>
+                {
+                    data.return_type
+                }
+                _ => data.declared_type.or(data.return_type),
+            }
+        });
+        if let Some(raw) = data_raw {
+            return Some(substitute(raw, env, self.arena));
+        }
+
+        let raw_str = match sym.kind.as_str() {
+            "method" | "function" | "constructor" => {
+                self.lookup.return_type_name(&sym.qualified_name)
+            }
             "field" | "property" | "variable" | "parameter" | "enum_member" => {
-                data.declared_type
+                self.lookup.field_type_name(&sym.qualified_name)
             }
             "class" | "struct" | "interface" | "trait" | "enum" | "type_alias"
                 if seg.kind == SegmentKind::Construction =>
             {
-                data.return_type
+                self.lookup.return_type_name(&sym.qualified_name)
             }
-            _ => data.declared_type.or(data.return_type),
+            _ => self
+                .lookup
+                .return_type_name(&sym.qualified_name)
+                .or_else(|| self.lookup.field_type_name(&sym.qualified_name)),
         }?;
-        Some(substitute(raw, env, self.arena))
+        let base = match raw_str.find('<') {
+            Some(i) => &raw_str[..i],
+            None => raw_str,
+        };
+        let trimmed = base.trim_end_matches('.');
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(self.arena.class(trimmed))
+        }
+    }
+
+    /// Qualified-name fallback for member lookup when MembersIndex misses.
+    /// Constructs `{current_ty_qname}.{seg_name}` and consults
+    /// `SymbolLookup::by_qualified_name`. Covers chains targeting external
+    /// symbols (externals are excluded from MembersIndex at build time to
+    /// keep the engine arena bounded, but their qnames live in the global
+    /// symbol index) and intra-project members reachable by qname but not
+    /// reachable from `current_ty`'s direct/extension maps (cross-language
+    /// shims, embedded-region symbols, etc.). Returns the same
+    /// `SymbolInfo` shape MembersIndex returns so the walker downstream
+    /// can't tell which path produced the member.
+    fn qualified_member_lookup(
+        &self,
+        current_ty: TypeId,
+        seg_name: &str,
+    ) -> Option<SymbolInfo> {
+        let qname = match self.arena.get(current_ty) {
+            Type::Class(q) => q,
+            Type::Apply { base, .. } => match self.arena.get(base) {
+                Type::Class(q) => q,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let candidate = format!("{qname}.{seg_name}");
+        self.lookup.by_qualified_name(&candidate).cloned()
     }
 
     /// Walk `current_ty` through alias expansion until a non-alias head is
