@@ -89,10 +89,12 @@ impl<'a> Engine<'a> {
     }
 
     /// Build with explicit per-language hooks. Same as `build` but takes a
-    /// hooks map keyed by language id. The engine consults
-    /// `synthesize_members` on every registered hook after MembersIndex's
-    /// direct + extension members are computed, attaching any returned
-    /// SynthesizedMember entries onto their owner TypeId.
+    /// hooks map keyed by language id. Hooks are stored on the engine and
+    /// exposed via `hooks_for`; the build path itself does not invoke
+    /// `synthesize_members`. Decorator-driven and source-generator-driven
+    /// members are surfaced by the per-language extractor (real symbols,
+    /// FK-safe ids), not by post-build synthesis. The hook trait remains
+    /// the seam for type-inference-only signals that don't need DB ids.
     pub fn build_with_hooks(
         parsed: &[ParsedFile],
         sym_id_map: &SymbolIdMap,

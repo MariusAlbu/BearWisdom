@@ -342,6 +342,7 @@ pub(super) fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     import_map,
+                    &[],
                 );
             }
 
@@ -612,6 +613,7 @@ pub(super) fn extract_class_definition(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     import_map: &HashMap<String, String>,
+    decorators: &[String],
 ) {
     let name_node = match node.child_by_field_name("name") {
         Some(n) => n,
@@ -666,6 +668,118 @@ pub(super) fn extract_class_definition(
     if let Some(body_node) = body {
         super::extract::extract_from_node(body_node, source, symbols, refs, Some(idx), &new_prefix, true, import_map);
     }
+
+    if decorators.iter().any(is_dataclass_decorator) {
+        synthesize_dataclass_init(node, source, symbols, idx, &new_prefix);
+    }
+}
+
+/// Returns true when the decorator name is a recognised `@dataclass`
+/// invocation. Recognises bare `dataclass`, qualified `dataclasses.dataclass`,
+/// and re-exports that end in `.dataclass`.
+fn is_dataclass_decorator(name: &String) -> bool {
+    name == "dataclass" || name.ends_with(".dataclass")
+}
+
+/// Push a synthetic `__init__` Method symbol for a `@dataclass`-decorated
+/// class. Param list mirrors the class body's annotated assignments in source
+/// order. `ClassVar[...]` and dunder names are skipped (PEP 557). When the
+/// source already declares `__init__` explicitly, no synthesis runs — the
+/// real method wins.
+fn synthesize_dataclass_init(
+    class_node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    class_idx: usize,
+    class_qname: &str,
+) {
+    let body = match class_node.child_by_field_name("body") {
+        Some(b) => b,
+        None => return,
+    };
+
+    let explicit_init = symbols[class_idx + 1..].iter().any(|s| {
+        s.name == "__init__"
+            && s.scope_path.as_deref() == Some(class_qname)
+    });
+    if explicit_init {
+        return;
+    }
+
+    let mut fields: Vec<(String, Option<String>)> = Vec::new();
+    let mut body_cursor = body.walk();
+    for stmt in body.children(&mut body_cursor) {
+        if stmt.kind() != "expression_statement" {
+            continue;
+        }
+        let mut stmt_cursor = stmt.walk();
+        for inner in stmt.children(&mut stmt_cursor) {
+            if inner.kind() != "assignment" {
+                continue;
+            }
+            let Some(left) = inner.child_by_field_name("left") else {
+                continue;
+            };
+            if left.kind() != "identifier" {
+                continue;
+            }
+            let name = node_text(&left, source);
+            if name.starts_with("__") {
+                continue;
+            }
+            let annotation = inner
+                .child_by_field_name("type")
+                .map(|t| node_text(&t, source).trim().to_string());
+            if annotation.is_none() {
+                continue;
+            }
+            if let Some(ann) = &annotation {
+                if ann.starts_with("ClassVar") {
+                    continue;
+                }
+            }
+            fields.push((name, annotation));
+        }
+    }
+
+    if fields.is_empty() {
+        return;
+    }
+
+    let mut sig = String::from("__init__(self");
+    for (name, ann) in &fields {
+        sig.push_str(", ");
+        sig.push_str(name);
+        if let Some(t) = ann {
+            sig.push_str(": ");
+            sig.push_str(t);
+        }
+    }
+    sig.push(')');
+
+    let qualified_name = format!("{class_qname}.__init__");
+    let start_line = symbols[class_idx].start_line;
+    let byte_offset = symbols[class_idx].byte_offset;
+
+    symbols.push(ExtractedSymbol {
+        name: "__init__".to_string(),
+        qualified_name,
+        kind: SymbolKind::Method,
+        visibility: super::helpers::detect_python_visibility("__init__"),
+        start_line,
+        end_line: start_line,
+        start_col: 0,
+        end_col: 0,
+        byte_offset,
+        signature: Some(sig),
+        doc_comment: None,
+        scope_path: Some(class_qname.to_string()),
+        parent_index: Some(class_idx),
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 fn extract_superclass_refs(
@@ -756,6 +870,7 @@ pub(super) fn extract_decorated_definition(
                     parent_index,
                     qualified_prefix,
                     import_map,
+                    &decorators,
                 );
                 super::decorators::extract_decorators(node, source, symbol_index, refs);
             }

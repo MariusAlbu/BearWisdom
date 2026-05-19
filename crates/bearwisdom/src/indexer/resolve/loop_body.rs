@@ -484,9 +484,10 @@ fn resolve_iteration_body(
                         buf.flow_emissions.push((pf.path.clone(), r.line, emission));
                     }
                     local_stats.resolved += 1;
-                    local_stats.engine_resolved += 1;
+                    if came_from_engine {
+                        local_stats.engine_resolved += 1;
+                    }
                     resolved_by_engine = true;
-                    let _ = came_from_engine;
                 }
             }
 

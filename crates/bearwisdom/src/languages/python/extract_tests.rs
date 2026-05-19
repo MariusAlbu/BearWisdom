@@ -1122,3 +1122,97 @@ def foo():
             );
         }
     }
+
+    #[test]
+    fn dataclass_synthesizes_init_with_fields_as_params() {
+        let src = r#"from dataclasses import dataclass
+
+@dataclass
+class Point:
+    x: int
+    y: int
+"#;
+        let r = extract::extract(src);
+        let init = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "__init__" && s.scope_path.as_deref() == Some("Point"))
+            .expect("expected synthesized __init__ on Point");
+        assert_eq!(init.kind, SymbolKind::Method);
+        assert_eq!(init.qualified_name, "Point.__init__");
+        let sig = init.signature.as_deref().expect("init signature");
+        assert!(sig.contains("self"), "self missing from {sig}");
+        assert!(sig.contains("x: int"), "x missing from {sig}");
+        assert!(sig.contains("y: int"), "y missing from {sig}");
+    }
+
+    #[test]
+    fn dataclass_qualified_decorator_also_synthesizes_init() {
+        let src = r#"import dataclasses
+
+@dataclasses.dataclass
+class Box:
+    width: float
+    height: float
+"#;
+        let r = extract::extract(src);
+        let init = r
+            .symbols
+            .iter()
+            .find(|s| s.qualified_name == "Box.__init__");
+        assert!(init.is_some(), "expected synthesized __init__ on Box");
+    }
+
+    #[test]
+    fn dataclass_skips_classvar_fields() {
+        let src = r#"from dataclasses import dataclass
+from typing import ClassVar
+
+@dataclass
+class Counter:
+    count: int
+    instances: ClassVar[int] = 0
+"#;
+        let r = extract::extract(src);
+        let init = r
+            .symbols
+            .iter()
+            .find(|s| s.qualified_name == "Counter.__init__")
+            .expect("__init__ on Counter");
+        let sig = init.signature.as_deref().unwrap();
+        assert!(sig.contains("count"), "count missing from {sig}");
+        assert!(!sig.contains("instances"), "ClassVar field leaked into {sig}");
+    }
+
+    #[test]
+    fn dataclass_with_explicit_init_does_not_synthesize() {
+        let src = r#"from dataclasses import dataclass
+
+@dataclass
+class Manual:
+    x: int
+    def __init__(self):
+        self.x = 0
+"#;
+        let r = extract::extract(src);
+        let init_count = r
+            .symbols
+            .iter()
+            .filter(|s| s.qualified_name == "Manual.__init__")
+            .count();
+        assert_eq!(init_count, 1, "expected the explicit __init__ to win, found {init_count}");
+    }
+
+    #[test]
+    fn plain_class_does_not_synthesize_init() {
+        let src = r#"class Plain:
+    x: int
+    y: int
+"#;
+        let r = extract::extract(src);
+        let init = r
+            .symbols
+            .iter()
+            .find(|s| s.qualified_name == "Plain.__init__");
+        assert!(init.is_none(), "non-dataclass should not synthesize __init__");
+    }

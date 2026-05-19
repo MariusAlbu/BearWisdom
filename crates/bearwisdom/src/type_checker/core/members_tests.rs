@@ -404,3 +404,54 @@ fn direct_keys_iterates_registered_types() {
     assert_eq!(keys, expected);
     assert!(!keys.contains(&c));
 }
+
+#[test]
+fn csharp_extension_target_recognises_simple_signature() {
+    assert_eq!(
+        super::csharp_extension_target("string MyExt(this string s, int x)"),
+        Some("string")
+    );
+}
+
+#[test]
+fn csharp_extension_target_handles_generic_receiver() {
+    assert_eq!(
+        super::csharp_extension_target(
+            "T MyExtAsync<T>(this IServiceCollection<T> services, Action a)"
+        ),
+        Some("IServiceCollection")
+    );
+}
+
+#[test]
+fn csharp_extension_target_returns_none_for_regular_method() {
+    assert_eq!(
+        super::csharp_extension_target("int Add(int a, int b)"),
+        None
+    );
+}
+
+#[test]
+fn csharp_extension_target_returns_none_for_empty_params() {
+    assert_eq!(
+        super::csharp_extension_target("void DoWork()"),
+        None
+    );
+}
+
+#[test]
+fn csharp_extension_target_handles_extra_whitespace() {
+    assert_eq!(
+        super::csharp_extension_target("Result<T> Try<T>( this  IObservable<T> source )"),
+        Some("IObservable")
+    );
+}
+
+#[test]
+fn csharp_extension_target_only_first_param_counts() {
+    // `this` on a non-first parameter is invalid C# but should not match.
+    assert_eq!(
+        super::csharp_extension_target("void Bind(IDictionary d, this string key)"),
+        None
+    );
+}

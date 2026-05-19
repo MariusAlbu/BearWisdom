@@ -91,6 +91,17 @@ impl MembersIndex {
                     package_id: pf.package_id,
                     signature: sym.signature.clone(),
                 };
+                let ext_target = if pf.language == "csharp" {
+                    sym.signature
+                        .as_deref()
+                        .and_then(csharp_extension_target)
+                } else {
+                    None
+                };
+                if let Some(ext_type) = ext_target {
+                    let ext_ty = arena.class(ext_type);
+                    index.extensions.entry(ext_ty).or_default().push(info.clone());
+                }
                 index.direct.entry(parent_ty).or_default().push(info);
             }
         }
@@ -262,6 +273,25 @@ fn kind_matches(profile: &LanguageProfile, edge: EdgeKind, sym_kind: &str) -> bo
         return true;
     };
     KindCompatibility::check(profile.kind_compatible_table, edge, parsed)
+}
+
+/// Returns the extended type when a C# method signature describes an extension
+/// method: `<ret> Name(this <Type> self, ...)`. The first parameter must use
+/// the `this` modifier; the type identifier is taken up to the next
+/// whitespace, generic bracket, or comma. Returns `None` for non-extension
+/// signatures. Caller is responsible for restricting to C# files.
+fn csharp_extension_target(signature: &str) -> Option<&str> {
+    let open = signature.find('(')?;
+    let body = signature[open + 1..].trim_start();
+    let rest = body.strip_prefix("this ")?.trim_start();
+    let end = rest
+        .find(|c: char| c.is_whitespace() || c == '<' || c == ',' || c == ')')?;
+    let target = &rest[..end];
+    if target.is_empty() {
+        None
+    } else {
+        Some(target)
+    }
 }
 
 #[cfg(test)]

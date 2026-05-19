@@ -123,6 +123,7 @@ pub(super) fn extract_from_node(
                     parent_index,
                     qualified_prefix,
                     import_map,
+                    &[],
                 );
             }
 
