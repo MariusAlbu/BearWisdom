@@ -109,21 +109,23 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         self.extract(source, file_path, lang_id)
     }
 
-    /// Extract with access to the workspace `TypeArena`. Plugins that
-    /// populate `ExtractedSymbol::declared_type` / `return_type` /
-    /// `param_types` as TypeIds override this method and intern type
-    /// expressions directly into the shared arena. The default falls back
-    /// to `extract_with_demand` and produces `None` TypeIds — wave 1's
-    /// string-to-TypeId intern pass on `SymbolIndex` builds them later.
+    /// Extract with access to the workspace `TypeArena`. Default impl
+    /// runs `extract_with_demand` then populates
+    /// `ExtractedSymbol::return_type` for type-defining and callable
+    /// kinds via `common::populate_return_type_ids`. Plugins with richer
+    /// AST-driven type extraction override to intern more complex shapes
+    /// (parametrized fields, structural function types, …).
     fn extract_with_arena_and_demand(
         &self,
         source: &str,
         file_path: &str,
         lang_id: &str,
         demand: Option<&std::collections::HashSet<String>>,
-        _arena: &crate::type_checker::core::types::TypeArena,
+        arena: &crate::type_checker::core::types::TypeArena,
     ) -> ExtractionResult {
-        self.extract_with_demand(source, file_path, lang_id, demand)
+        let mut result = self.extract_with_demand(source, file_path, lang_id, demand);
+        crate::languages::common::populate_return_type_ids(&mut result, arena);
+        result
     }
 
     /// Return sub-language text regions contained in this file (e.g. the

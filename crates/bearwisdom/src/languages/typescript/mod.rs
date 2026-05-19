@@ -124,19 +124,6 @@ impl LanguagePlugin for TypeScriptPlugin {
         extract::extract_with_demand(source, is_tsx, demand)
     }
 
-    fn extract_with_arena_and_demand(
-        &self,
-        source: &str,
-        file_path: &str,
-        lang_id: &str,
-        demand: Option<&std::collections::HashSet<String>>,
-        arena: &crate::type_checker::core::types::TypeArena,
-    ) -> ExtractionResult {
-        let mut result = self.extract_with_demand(source, file_path, lang_id, demand);
-        crate::languages::common::populate_return_type_ids(&mut result, arena);
-        result
-    }
-
     fn embedded_regions(
         &self,
         source: &str,
