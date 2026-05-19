@@ -65,14 +65,11 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: JAVA_PRIMITIVES,
     kind_compatible_table: JAVA_KIND_TABLE,
-    // Phase 6 wave-A gate flagged a -2.68pp regression on java-spring-
-    // petclinic when engine took chains primary. Java overload
-    // resolution under type erasure + Spring's autowired bean
-    // resolution + Lombok-synthesised members are all legacy-walker
-    // territory the engine doesn't yet model. Profile registered for
-    // engine.build state; engine.resolve fallback-only until those
-    // hooks land.
-    engine_primary: false,
+    // Engine-primary validated post java.lang pre-pull (commit 0548421a).
+    // java-spring-petclinic gate: 92.19% > 83.26% baseline (+8.93pp).
+    // The earlier -2.68pp regression was a JDK demand-walker gap (bare
+    // `String` refs never triggering a pull), not the engine.
+    engine_primary: true,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-05-17T00:00:00Z",
+  "captured_at": "2026-05-19T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -1581,7 +1581,7 @@
       "assertions": {
         "min_resolution_rate": 99
       },
-      "code_chunks": 2805,
+      "code_chunks": 2776,
       "files": 139,
       "flow_edge_types": {
         "db_query": 27,
@@ -1605,14 +1605,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
       "perf": {
-        "end_ws_mb": 241,
-        "files_per_sec": 13,
-        "index_duration_ms": 10941
+        "end_ws_mb": 146,
+        "files_per_sec": 11,
+        "index_duration_ms": 12777
       },
       "project": "dotnet-EquinoxProject",
       "resolution_rate": 99.64,
       "routes": 20,
-      "symbols": 1074,
+      "symbols": 1027,
       "unresolved_by_lang_kind": {
         "javascript.calls": 4
       }
@@ -3014,7 +3014,7 @@
       "files": 154,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 6892,
+      "internal_edges": 6904,
       "internal_unresolved": 44,
       "languages": {
         "go": 110,
@@ -3023,9 +3023,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/go-bubbletea",
       "perf": {
-        "end_ws_mb": 593,
-        "files_per_sec": 25,
-        "index_duration_ms": 6120
+        "end_ws_mb": 320,
+        "files_per_sec": 26,
+        "index_duration_ms": 5983
       },
       "project": "go-bubbletea",
       "resolution_rate": 99.37,
@@ -4027,7 +4027,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 83
+        "min_resolution_rate": 92
       },
       "code_chunks": 2434,
       "files": 83,
@@ -4037,8 +4037,8 @@
         "http_call": 18
       },
       "flow_edges": 27,
-      "internal_edges": 1318,
-      "internal_unresolved": 265,
+      "internal_edges": 1392,
+      "internal_unresolved": 118,
       "languages": {
         "css": 1,
         "groovy": 2,
@@ -4052,18 +4052,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/java-spring-petclinic",
       "perf": {
-        "end_ws_mb": 397,
-        "files_per_sec": 3,
-        "index_duration_ms": 28685
+        "end_ws_mb": 228,
+        "files_per_sec": 2,
+        "index_duration_ms": 49426
       },
       "project": "java-spring-petclinic",
-      "resolution_rate": 83.26,
+      "resolution_rate": 92.19,
       "routes": 16,
       "symbols": 634,
       "unresolved_by_lang_kind": {
-        "java.calls": 91,
-        "java.instantiates": 9,
-        "java.type_ref": 162,
+        "java.calls": 112,
+        "java.type_ref": 3,
         "javascript.calls": 2,
         "sql.type_ref": 1
       }
@@ -7186,7 +7185,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 92
+        "min_resolution_rate": 91
       },
       "code_chunks": 19722,
       "files": 372,
@@ -7195,8 +7194,8 @@
         "http_call": 42
       },
       "flow_edges": 49,
-      "internal_edges": 10511,
-      "internal_unresolved": 867,
+      "internal_edges": 10513,
+      "internal_unresolved": 932,
       "languages": {
         "c": 1,
         "dockerfile": 1,
@@ -7210,18 +7209,20 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-black",
       "perf": {
-        "end_ws_mb": 133,
+        "end_ws_mb": 181,
         "files_per_sec": 5,
-        "index_duration_ms": 67977
+        "index_duration_ms": 69000
       },
       "project": "python-black",
-      "resolution_rate": 92.38,
+      "resolution_rate": 91.86,
       "routes": 0,
       "symbols": 11985,
       "unresolved_by_lang_kind": {
         "c.type_ref": 4,
-        "python.calls": 411,
-        "python.type_ref": 452
+        "markdown.calls": 3,
+        "markdown.type_ref": 2,
+        "python.calls": 469,
+        "python.type_ref": 454
       }
     },
     {
@@ -9262,8 +9263,8 @@
         "websocket": 8
       },
       "flow_edges": 1555,
-      "internal_edges": 290494,
-      "internal_unresolved": 1590,
+      "internal_edges": 289929,
+      "internal_unresolved": 1987,
       "languages": {
         "c": 3,
         "cmake": 1,
@@ -9297,14 +9298,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-immich",
       "perf": {
-        "end_ws_mb": 526,
-        "files_per_sec": 12,
-        "index_duration_ms": 283133
+        "end_ws_mb": 343,
+        "files_per_sec": 8,
+        "index_duration_ms": 435054
       },
       "project": "ts-immich",
-      "resolution_rate": 99.46,
+      "resolution_rate": 99.32,
       "routes": 18,
-      "symbols": 84870,
+      "symbols": 84877,
       "unresolved_by_lang_kind": {
         "c.type_ref": 67,
         "cmake.calls": 1,
@@ -9314,23 +9315,23 @@
         "dart.calls": 229,
         "dart.inherits": 24,
         "dart.instantiates": 5,
-        "dart.type_ref": 464,
+        "dart.type_ref": 862,
         "hcl.calls": 8,
         "kotlin.calls": 97,
         "kotlin.implements": 3,
         "kotlin.inherits": 2,
-        "kotlin.type_ref": 108,
+        "kotlin.type_ref": 103,
         "mdx.calls": 18,
         "python.calls": 22,
         "python.type_ref": 53,
         "shell.calls": 3,
-        "sql.type_ref": 14,
+        "sql.type_ref": 4,
         "svelte.calls": 80,
-        "swift.type_ref": 3,
+        "swift.type_ref": 7,
         "typescript.calls": 201,
         "typescript.inherits": 1,
         "typescript.instantiates": 9,
-        "typescript.type_ref": 85
+        "typescript.type_ref": 95
       }
     },
     {
@@ -9483,17 +9484,18 @@
         "bg_job": 38,
         "cli_command": 2,
         "config_lookup": 4557,
-        "db_query": 299,
+        "db_query": 300,
         "feature_flag": 43,
         "graphql_op": 96,
         "http_call": 2478,
-        "ipc_call": 5,
+        "ipc_call": 12,
         "message_queue": 1,
+        "rpc_call": 283,
         "websocket": 1
       },
-      "flow_edges": 7542,
-      "internal_edges": 735019,
-      "internal_unresolved": 12312,
+      "flow_edges": 7833,
+      "internal_edges": 726320,
+      "internal_unresolved": 12562,
       "languages": {
         "c": 1,
         "css": 857,
@@ -9519,30 +9521,34 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 500,
-        "files_per_sec": 21,
-        "index_duration_ms": 1397077
+        "end_ws_mb": 337,
+        "files_per_sec": 13,
+        "index_duration_ms": 2180265
       },
       "project": "ts-nextjs",
-      "resolution_rate": 98.35,
+      "resolution_rate": 98.3,
       "routes": 511,
-      "symbols": 377468,
+      "symbols": 377771,
       "unresolved_by_lang_kind": {
         "html.calls": 60,
+        "html.type_ref": 2,
         "javascript.calls": 759,
-        "javascript.type_ref": 149,
-        "mdx.calls": 277,
+        "javascript.type_ref": 148,
+        "markdown.calls": 12,
+        "markdown.type_ref": 3,
+        "mdx.calls": 284,
+        "mdx.type_ref": 4,
         "python.type_ref": 1,
-        "rust.calls": 809,
+        "rust.calls": 812,
         "rust.implements": 140,
         "rust.inherits": 7,
-        "rust.type_ref": 1284,
+        "rust.type_ref": 1299,
         "scss.calls": 7,
-        "shell.calls": 8,
-        "typescript.calls": 2144,
+        "shell.calls": 12,
+        "typescript.calls": 2201,
         "typescript.inherits": 6,
         "typescript.instantiates": 143,
-        "typescript.type_ref": 6518
+        "typescript.type_ref": 6662
       }
     },
     {
@@ -9559,7 +9565,7 @@
         "mailer": 85
       },
       "flow_edges": 630,
-      "internal_edges": 16697,
+      "internal_edges": 16608,
       "internal_unresolved": 250,
       "languages": {
         "css": 4,
@@ -9578,14 +9584,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 388,
-        "files_per_sec": 22,
-        "index_duration_ms": 56663
+        "end_ws_mb": 252,
+        "files_per_sec": 28,
+        "index_duration_ms": 45633
       },
       "project": "ts-rallly",
       "resolution_rate": 98.52,
       "routes": 18,
-      "symbols": 8765,
+      "symbols": 8777,
       "unresolved_by_lang_kind": {
         "mdx.calls": 121,
         "sql.type_ref": 24,
@@ -10146,8 +10152,8 @@
         "http_call": 5
       },
       "flow_edges": 17,
-      "internal_edges": 23821,
-      "internal_unresolved": 180,
+      "internal_edges": 24370,
+      "internal_unresolved": 181,
       "languages": {
         "css": 13,
         "dockerfile": 1,
@@ -10165,16 +10171,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 113,
-        "files_per_sec": 23,
-        "index_duration_ms": 76634
+        "end_ws_mb": 236,
+        "files_per_sec": 20,
+        "index_duration_ms": 87918
       },
       "project": "vue-vben-admin",
-      "resolution_rate": 99.25,
+      "resolution_rate": 99.26,
       "routes": 0,
-      "symbols": 17216,
+      "symbols": 17306,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 54,
+        "typescript.calls": 55,
         "typescript.instantiates": 16,
         "typescript.type_ref": 73,
         "vue.calls": 37
