@@ -98,6 +98,7 @@ struct EmptyLookup {
     empty_reexports: Vec<(String, String)>,
     types: rustc_hash::FxHashMap<String, Vec<SymbolInfo>>,
     locals: rustc_hash::FxHashMap<String, String>,
+    field_types: rustc_hash::FxHashMap<String, String>,
 }
 
 impl EmptyLookup {
@@ -107,6 +108,7 @@ impl EmptyLookup {
             empty_reexports: Vec::new(),
             types: Default::default(),
             locals: Default::default(),
+            field_types: Default::default(),
         }
     }
     fn with_type(mut self, name: &str, qname: &str) -> Self {
@@ -116,6 +118,11 @@ impl EmptyLookup {
     }
     fn with_local(mut self, name: &str, qname: &str) -> Self {
         self.locals.insert(name.to_string(), qname.to_string());
+        self
+    }
+    fn with_field_type(mut self, qname: &str, type_name: &str) -> Self {
+        self.field_types
+            .insert(qname.to_string(), type_name.to_string());
         self
     }
 }
@@ -145,8 +152,8 @@ impl SymbolLookup for EmptyLookup {
     fn in_file(&self, _: &str) -> &[SymbolInfo] {
         &self.empty
     }
-    fn field_type_name(&self, _: &str) -> Option<&str> {
-        None
+    fn field_type_name(&self, qname: &str) -> Option<&str> {
+        self.field_types.get(qname).map(|s| s.as_str())
     }
     fn return_type_name(&self, _: &str) -> Option<&str> {
         None
@@ -1294,4 +1301,142 @@ export class Repo {
         .expect("Repo.get().name must resolve end-to-end");
     assert_eq!(result.target_symbol_id, name_id);
     assert_eq!(result.resolved_yield_type, str_ty);
+}
+
+#[test]
+fn identifier_root_resolves_via_scope_chain_field_type() {
+    // Variable `customer` is declared inside method `Equinox.Foo.Bar`.
+    // `field_type_name("Equinox.Foo.Bar.customer") = "Customer"`. Chain
+    // `customer.name` should resolve through Customer's field map.
+    let mut arena = TypeArena::new();
+    let customer_ty = arena.class("Customer");
+    let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        10,
+        SymbolTypeData {
+            return_type: Some(customer_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(customer_ty, 10);
+    symbol_types.insert(
+        11,
+        SymbolTypeData {
+            declared_type: Some(str_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        customer_ty,
+        sym_info(11, "name", "Customer.name", "field", Some("Customer")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup =
+        EmptyLookup::new().with_field_type("Equinox.Foo.Bar.customer", "Customer");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("customer", SegmentKind::Identifier),
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("Bar", Some("Equinox.Foo"));
+    let mut r = dummy_extracted_ref("name");
+    r.kind = EdgeKind::Reads;
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: vec!["Equinox.Foo.Bar".to_string(), "Equinox.Foo".to_string()],
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("customer.name resolves via scope-chain field type");
+    assert_eq!(result.target_symbol_id, 11);
+    assert_eq!(result.resolved_yield_type, str_ty);
+}
+
+#[test]
+fn last_segment_resolves_when_yield_type_missing() {
+    // Receiver type Customer has a method ToViewModel whose return_type
+    // is not registered in SymbolTypeMap. The walker should still resolve
+    // the chain because the last segment's sym_id is the resolution
+    // target — no downstream segment depends on the yield type.
+    let mut arena = TypeArena::new();
+    let customer_ty = arena.class("Customer");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        20,
+        SymbolTypeData {
+            return_type: Some(customer_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(customer_ty, 20);
+    // Method 21 (ToViewModel) intentionally has no SymbolTypeData
+    // entry — emulates C# extractor output where return_type isn't set.
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        customer_ty,
+        sym_info(
+            21,
+            "ToViewModel",
+            "Customer.ToViewModel",
+            "method",
+            Some("Customer"),
+        ),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_type("Customer", "Customer");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("Customer", SegmentKind::TypeAccess),
+            seg("ToViewModel", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("ToViewModel");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("Customer.ToViewModel resolves even without method return type");
+    assert_eq!(result.target_symbol_id, 21);
 }

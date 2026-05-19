@@ -111,7 +111,21 @@ impl RootResolver for DefaultRootResolver {
                 if matches.len() == 1 {
                     return Some(arena.class(&matches[0].qualified_name));
                 }
-                // 3. Fall back to interning the bare identifier as a class
+                // 3. Variable / parameter / field declared in an enclosing
+                //    scope. For each scope walking outward, try the qualified
+                //    name `{scope}.{name}` and consult the declared-type
+                //    map. The map is keyed by qname and built from extractor
+                //    output (signature parsing + TypeRef return-type pass)
+                //    so this hop covers method parameters, instance fields,
+                //    and type-annotated locals that didn't reach the
+                //    LocalTypeCache yet.
+                for scope in &ref_ctx.scope_chain {
+                    let qname = format!("{scope}.{}", seg.name);
+                    if let Some(type_name) = lookup.field_type_name(&qname) {
+                        return Some(arena.class(type_name));
+                    }
+                }
+                // 4. Fall back to interning the bare identifier as a class
                 //    qname. Per-language scope tracking (Rust use, C#
                 //    using, TS imports) plugs its own RootResolver to
                 //    rewrite module-relative names before this fallback.
@@ -221,9 +235,24 @@ impl<'a> ChainWalker<'a> {
                 self.profile,
             )?;
 
-            let next_ty = self.yield_type_of(&member, seg, &env)?;
-            current_ty = next_ty;
-            self.bind_apply_args(current_ty, &mut env);
+            match self.yield_type_of(&member, seg, &env) {
+                Some(next_ty) => {
+                    current_ty = next_ty;
+                    self.bind_apply_args(current_ty, &mut env);
+                }
+                None if i == last_idx => {
+                    // Last segment is the resolution target itself — its
+                    // sym_id is already captured in `member`. A missing
+                    // yield type is irrelevant to the edge this resolution
+                    // produces. Set current_ty to Unknown so the legacy
+                    // `resolved_yield_type` slot converts to None at the
+                    // adapter boundary; forward-flow inference must not
+                    // propagate the receiver type as if it were the
+                    // member's return type.
+                    current_ty = self.arena.intern(crate::type_checker::core::types::Type::Unknown);
+                }
+                None => return None,
+            }
             last_member = Some(member);
         }
 
