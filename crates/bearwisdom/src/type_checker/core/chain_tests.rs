@@ -99,7 +99,9 @@ struct EmptyLookup {
     types: rustc_hash::FxHashMap<String, Vec<SymbolInfo>>,
     locals: rustc_hash::FxHashMap<String, String>,
     field_types: rustc_hash::FxHashMap<String, String>,
+    return_types: rustc_hash::FxHashMap<String, String>,
     by_qname: rustc_hash::FxHashMap<String, SymbolInfo>,
+    parents: rustc_hash::FxHashMap<String, String>,
 }
 
 impl EmptyLookup {
@@ -110,7 +112,9 @@ impl EmptyLookup {
             types: Default::default(),
             locals: Default::default(),
             field_types: Default::default(),
+            return_types: Default::default(),
             by_qname: Default::default(),
+            parents: Default::default(),
         }
     }
     fn with_type(mut self, name: &str, qname: &str) -> Self {
@@ -138,6 +142,15 @@ impl EmptyLookup {
     }
     fn with_qname_symbol(mut self, qname: &str, info: SymbolInfo) -> Self {
         self.by_qname.insert(qname.to_string(), info);
+        self
+    }
+    fn with_return_type(mut self, qname: &str, type_name: &str) -> Self {
+        self.return_types
+            .insert(qname.to_string(), type_name.to_string());
+        self
+    }
+    fn with_parent(mut self, child: &str, parent: &str) -> Self {
+        self.parents.insert(child.to_string(), parent.to_string());
         self
     }
 }
@@ -170,8 +183,11 @@ impl SymbolLookup for EmptyLookup {
     fn field_type_name(&self, qname: &str) -> Option<&str> {
         self.field_types.get(qname).map(|s| s.as_str())
     }
-    fn return_type_name(&self, _: &str) -> Option<&str> {
-        None
+    fn return_type_name(&self, qname: &str) -> Option<&str> {
+        self.return_types.get(qname).map(|s| s.as_str())
+    }
+    fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
+        self.parents.get(class_qname).map(|s| s.as_str())
     }
     fn field_type_args(&self, _: &str) -> Option<&[String]> {
         None
@@ -1462,6 +1478,147 @@ fn wildcard_import_fallback_prepends_namespace_to_member_qname() {
         .walk(&chain, &ref_ctx, &fc)
         .expect("JsonConvert.SerializeObject resolves via using-directive fallback");
     assert_eq!(result.target_symbol_id, 201);
+}
+
+#[test]
+fn inheritance_walk_finds_member_on_parent_via_qname() {
+    // Chain `userRepo.findOne` where UserRepo extends BaseRepo and findOne
+    // is declared on BaseRepo. MembersIndex has no entries for either,
+    // by_qualified_name("UserRepo.findOne") misses, but
+    // parent_class_qname("UserRepo") -> "BaseRepo" and
+    // by_qualified_name("BaseRepo.findOne") hits.
+    let mut arena = TypeArena::new();
+    let user_repo_ty = arena.class("UserRepo");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        300,
+        SymbolTypeData {
+            return_type: Some(user_repo_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(user_repo_ty, 300);
+
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+
+    let find_one_sym =
+        sym_info(301, "findOne", "BaseRepo.findOne", "method", Some("BaseRepo"));
+    let lookup = EmptyLookup::new()
+        .with_type("UserRepo", "UserRepo")
+        .with_parent("UserRepo", "BaseRepo")
+        .with_qname_symbol("BaseRepo.findOne", find_one_sym.clone());
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("UserRepo", SegmentKind::TypeAccess),
+            seg("findOne", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("findOne");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("UserRepo.findOne resolves via parent BaseRepo");
+    assert_eq!(result.target_symbol_id, 301);
+}
+
+#[test]
+fn fluent_this_return_preserves_receiver_type_for_next_segment() {
+    // Chain `builder.setTitle().setVersion()` where setTitle and setVersion
+    // both have `: this` as their return type, so each call keeps the
+    // chain receiver as Builder. The engine must not yield arena.class("this")
+    // — it must thread the original receiver type forward.
+    let mut arena = TypeArena::new();
+    let builder_ty = arena.class("Builder");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        400,
+        SymbolTypeData {
+            return_type: Some(builder_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(builder_ty, 400);
+    // setTitle / setVersion have NO SymbolTypeData entry — yield_type_of
+    // falls through to lookup.return_type_name, which returns "this".
+
+    let mut members = MembersIndex::new();
+    let set_title_sym = sym_info(
+        401,
+        "setTitle",
+        "Builder.setTitle",
+        "method",
+        Some("Builder"),
+    );
+    let set_version_sym = sym_info(
+        402,
+        "setVersion",
+        "Builder.setVersion",
+        "method",
+        Some("Builder"),
+    );
+    members.add_direct(builder_ty, set_title_sym.clone());
+    members.add_direct(builder_ty, set_version_sym.clone());
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+
+    let lookup = EmptyLookup::new()
+        .with_type("Builder", "Builder")
+        .with_return_type("Builder.setTitle", "this")
+        .with_return_type("Builder.setVersion", "this");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("Builder", SegmentKind::TypeAccess),
+            seg("setTitle", SegmentKind::Property),
+            seg("setVersion", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("setVersion");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("fluent chain resolves second method on preserved receiver");
+    assert_eq!(result.target_symbol_id, 402);
 }
 
 #[test]

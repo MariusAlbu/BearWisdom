@@ -238,7 +238,7 @@ impl<'a> ChainWalker<'a> {
                 None => self.qualified_member_lookup(current_ty, &seg.name, file_ctx)?,
             };
 
-            match self.yield_type_of(&member, seg, &env) {
+            match self.yield_type_of(&member, seg, &env, current_ty) {
                 Some(next_ty) => {
                     current_ty = next_ty;
                     self.bind_apply_args(current_ty, &mut env);
@@ -289,6 +289,7 @@ impl<'a> ChainWalker<'a> {
         sym: &SymbolInfo,
         seg: &ChainSegment,
         env: &GenericEnv,
+        current_ty: TypeId,
     ) -> Option<TypeId> {
         let data_raw = self.symbol_types.get(sym.id).and_then(|data| {
             match sym.kind.as_str() {
@@ -325,6 +326,21 @@ impl<'a> ChainWalker<'a> {
                 .return_type_name(&sym.qualified_name)
                 .or_else(|| self.lookup.field_type_name(&sym.qualified_name)),
         }?;
+        // Fluent `: this` return: TypeScript / Kotlin / C++ method signatures
+        // ending `(...): this` pin the chain's receiver type forward so
+        // builder patterns (`new DocumentBuilder().setTitle().setVersion()`)
+        // resolve every step against the same receiver. Apply only when the
+        // resolved member is a callable; field/property `this` aliases are
+        // not a real TS pattern.
+        let raw_trim = raw_str.trim();
+        let is_this_return = raw_trim == "this"
+            && matches!(
+                sym.kind.as_str(),
+                "method" | "function" | "constructor"
+            );
+        if is_this_return {
+            return Some(current_ty);
+        }
         let base = match raw_str.find('<') {
             Some(i) => &raw_str[..i],
             None => raw_str,
@@ -403,6 +419,31 @@ impl<'a> ChainWalker<'a> {
             if let Some(hit) = self.lookup.by_qualified_name(&ns_candidate) {
                 return Some(hit.clone());
             }
+        }
+        // Inheritance walk via parent_class_qname. When the member isn't a
+        // direct child of current_ty's qname, climb the extends chain and
+        // retry the lookup at each ancestor. Covers `class UserRepo extends
+        // BaseRepo { ... }` where the chain hits an inherited member.
+        // MembersIndex.lookup already walks supertypes for Class TypeIds in
+        // its direct/extension maps, but the qname-keyed fallback path
+        // doesn't see that traversal — externals filtered from the
+        // engine member set still need their inherited members found via
+        // string-keyed by_qualified_name. Capped at 10 ancestors to guard
+        // malformed cycles.
+        let mut ancestor: String = qname.clone();
+        for _ in 0..10 {
+            let parent = match self.lookup.parent_class_qname(&ancestor) {
+                Some(p) => p.to_string(),
+                None => break,
+            };
+            let inh_candidate = format!("{parent}.{seg_name}");
+            if let Some(hit) = self.lookup.by_qualified_name(&inh_candidate) {
+                return Some(hit.clone());
+            }
+            if parent == ancestor {
+                break;
+            }
+            ancestor = parent;
         }
         None
     }
