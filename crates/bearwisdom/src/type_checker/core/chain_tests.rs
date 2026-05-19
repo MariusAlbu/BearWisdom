@@ -99,6 +99,7 @@ struct EmptyLookup {
     types: rustc_hash::FxHashMap<String, Vec<SymbolInfo>>,
     locals: rustc_hash::FxHashMap<String, String>,
     field_types: rustc_hash::FxHashMap<String, String>,
+    by_qname: rustc_hash::FxHashMap<String, SymbolInfo>,
 }
 
 impl EmptyLookup {
@@ -109,6 +110,7 @@ impl EmptyLookup {
             types: Default::default(),
             locals: Default::default(),
             field_types: Default::default(),
+            by_qname: Default::default(),
         }
     }
     fn with_type(mut self, name: &str, qname: &str) -> Self {
@@ -125,14 +127,27 @@ impl EmptyLookup {
             .insert(qname.to_string(), type_name.to_string());
         self
     }
+    fn with_external_type(mut self, short_name: &str, ext_qname: &str) -> Self {
+        let mut info = sym_info(99, short_name, ext_qname, "class", None);
+        info.file_path = Arc::from("ext:test");
+        self.types
+            .entry(short_name.to_string())
+            .or_default()
+            .push(info);
+        self
+    }
+    fn with_qname_symbol(mut self, qname: &str, info: SymbolInfo) -> Self {
+        self.by_qname.insert(qname.to_string(), info);
+        self
+    }
 }
 
 impl SymbolLookup for EmptyLookup {
     fn by_name(&self, _: &str) -> &[SymbolInfo] {
         &self.empty
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
-        None
+    fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
+        self.by_qname.get(qname)
     }
     fn members_of(&self, _: &str) -> &[SymbolInfo] {
         &self.empty
@@ -1371,6 +1386,148 @@ fn identifier_root_resolves_via_scope_chain_field_type() {
         .expect("customer.name resolves via scope-chain field type");
     assert_eq!(result.target_symbol_id, 11);
     assert_eq!(result.resolved_yield_type, str_ty);
+}
+
+#[test]
+fn wildcard_import_fallback_prepends_namespace_to_member_qname() {
+    // Chain `JsonConvert.SerializeObject(x)` where JsonConvert resolves
+    // to a short qname and SerializeObject lives at
+    // "Newtonsoft.Json.JsonConvert.SerializeObject". The C# file has
+    // `using Newtonsoft.Json;` (wildcard import) so the engine should
+    // try `Newtonsoft.Json.JsonConvert.SerializeObject` after the
+    // direct probe misses.
+    let mut arena = TypeArena::new();
+    let jc_ty = arena.class("JsonConvert");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        200,
+        SymbolTypeData {
+            return_type: Some(jc_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(jc_ty, 200);
+
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+
+    let serialize_sym = sym_info(
+        201,
+        "SerializeObject",
+        "Newtonsoft.Json.JsonConvert.SerializeObject",
+        "method",
+        Some("Newtonsoft.Json.JsonConvert"),
+    );
+    let lookup = EmptyLookup::new()
+        .with_type("JsonConvert", "JsonConvert")
+        .with_qname_symbol(
+            "Newtonsoft.Json.JsonConvert.SerializeObject",
+            serialize_sym.clone(),
+        );
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("JsonConvert", SegmentKind::TypeAccess),
+            seg("SerializeObject", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("SerializeObject");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let mut fc = file_ctx();
+    fc.imports.push(crate::indexer::resolve::engine::ImportEntry {
+        imported_name: "Newtonsoft.Json".to_string(),
+        module_path: Some("Newtonsoft.Json".to_string()),
+        alias: None,
+        is_wildcard: true,
+    });
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("JsonConvert.SerializeObject resolves via using-directive fallback");
+    assert_eq!(result.target_symbol_id, 201);
+}
+
+#[test]
+fn external_type_qname_promotion_finds_member_via_full_qname() {
+    // current_ty resolved to the short name "Assertion" (e.g. from a
+    // signature's bare return type), and the external chai package
+    // owns "chai.Assertion". MembersIndex.lookup misses (externals are
+    // filtered from the engine member set), the direct
+    // by_qualified_name("Assertion.to") also misses, but the external
+    // twin "chai.Assertion.to" should be found.
+    let mut arena = TypeArena::new();
+    let assertion_ty = arena.class("Assertion");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        100,
+        SymbolTypeData {
+            return_type: Some(assertion_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(assertion_ty, 100);
+
+    // No MembersIndex entry for "Assertion" -> walker must fall back
+    // through qualified_member_lookup, which exercises the external
+    // promotion when the direct qname misses.
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+
+    let to_member = sym_info(101, "to", "chai.Assertion.to", "property", Some("chai.Assertion"));
+    let lookup = EmptyLookup::new()
+        .with_type("Assertion", "Assertion")
+        .with_external_type("Assertion", "chai.Assertion")
+        .with_qname_symbol("chai.Assertion.to", to_member.clone());
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("Assertion", SegmentKind::TypeAccess),
+            seg("to", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let mut r = dummy_extracted_ref("to");
+    r.kind = EdgeKind::Reads;
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("Assertion.to resolves via chai.Assertion external qname promotion");
+    assert_eq!(result.target_symbol_id, 101);
 }
 
 #[test]

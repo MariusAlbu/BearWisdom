@@ -235,7 +235,7 @@ impl<'a> ChainWalker<'a> {
                 self.profile,
             ) {
                 Some(m) => m,
-                None => self.qualified_member_lookup(current_ty, &seg.name)?,
+                None => self.qualified_member_lookup(current_ty, &seg.name, file_ctx)?,
             };
 
             match self.yield_type_of(&member, seg, &env) {
@@ -351,6 +351,7 @@ impl<'a> ChainWalker<'a> {
         &self,
         current_ty: TypeId,
         seg_name: &str,
+        file_ctx: &FileContext,
     ) -> Option<SymbolInfo> {
         let qname = match self.arena.get(current_ty) {
             Type::Class(q) => q,
@@ -361,7 +362,49 @@ impl<'a> ChainWalker<'a> {
             _ => return None,
         };
         let candidate = format!("{qname}.{seg_name}");
-        self.lookup.by_qualified_name(&candidate).cloned()
+        if let Some(hit) = self.lookup.by_qualified_name(&candidate) {
+            return Some(hit.clone());
+        }
+        // External-type qname promotion. When current_ty's qname is a short
+        // name shadowed by an external library type ("Assertion" lives as
+        // "chai.Assertion", "Subject" as "rxjs.Subject", "JsonConvert" as
+        // "Newtonsoft.Json.JsonConvert"), the direct qname probe misses
+        // because the member is keyed under the external's package-prefixed
+        // qname. Find every external type sharing this short name and
+        // retry the member lookup against each external qname.
+        let short_name = qname.rsplit('.').next().unwrap_or(qname.as_str());
+        for candidate_type in self.lookup.types_by_name(short_name) {
+            if !candidate_type.file_path.starts_with("ext:")
+                || candidate_type.qualified_name == *qname
+            {
+                continue;
+            }
+            let ext_candidate =
+                format!("{}.{seg_name}", candidate_type.qualified_name);
+            if let Some(hit) = self.lookup.by_qualified_name(&ext_candidate) {
+                return Some(hit.clone());
+            }
+        }
+        // Namespace-qualifier fallback. C# `using Foo.Bar;` brings every
+        // top-level type from `Foo.Bar.*` into scope by short name. When a
+        // chain receiver like `JsonConvert` resolves to a short qname, the
+        // member `JsonConvert.SerializeObject` lives under a namespaced
+        // qname `Newtonsoft.Json.JsonConvert.SerializeObject`. Try each
+        // wildcard import as a prefix on the current qname so the engine
+        // matches the legacy walker's using-directive resolution path.
+        for import in &file_ctx.imports {
+            if !import.is_wildcard {
+                continue;
+            }
+            let Some(module) = import.module_path.as_deref() else {
+                continue;
+            };
+            let ns_candidate = format!("{module}.{qname}.{seg_name}");
+            if let Some(hit) = self.lookup.by_qualified_name(&ns_candidate) {
+                return Some(hit.clone());
+            }
+        }
+        None
     }
 
     /// Walk `current_ty` through alias expansion until a non-alias head is
