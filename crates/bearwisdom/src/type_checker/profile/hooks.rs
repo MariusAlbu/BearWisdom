@@ -3,10 +3,9 @@
 //
 // Escape hatch for per-language behaviour that can't be expressed as
 // LanguageProfile data: reshaping refs whose syntactic form doesn't match
-// the canonical contract (ObjC bracket calls), synthesising members the
-// runtime adds at decorator time (Python @dataclass, TS @Component, Java
-// @Entity), enriching external types with information not present in their
-// source, special dispatch (Haskell typeclass, R S4), custom flow emission.
+// the canonical contract (ObjC bracket calls), enriching external types
+// with information not present in their source, special dispatch (Haskell
+// typeclass, R S4), custom flow emission.
 //
 // All methods have no-op defaults. The default impl `NoOpHooks` is what the
 // engine binds when a language plugin does not ship its own hooks.
@@ -41,16 +40,6 @@ pub struct RefContext<'a> {
     pub owner_qname: Option<&'a str>,
 }
 
-/// Minimal description of a synthesized member. The engine inserts it as if
-/// the source had declared it directly.
-#[derive(Debug, Clone)]
-pub struct SynthesizedMember {
-    pub name: String,
-    pub kind: crate::types::SymbolKind,
-    pub return_type: Option<TypeId>,
-    pub param_types: Vec<TypeId>,
-}
-
 /// Stand-in target for `resolve_dispatch_special`. The hook returns the DB
 /// symbol id of the implementation to bind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,18 +65,6 @@ pub trait LanguageEngineHooks: Send + Sync {
     /// canonical contract. ObjC's `[obj msg:arg]` flattens to chain form
     /// via this hook.
     fn preprocess_ref(&self, _ref_: &mut ExtractedRef) {}
-
-    /// Synthesize members a class gains at runtime (Python `@dataclass`,
-    /// TypeScript `@Component`, Java `@Entity`). Default: nothing
-    /// synthesised.
-    fn synthesize_members(
-        &self,
-        _class_qname: &str,
-        _decorators: &[String],
-        _arena: &TypeArena,
-    ) -> Vec<SynthesizedMember> {
-        Vec::new()
-    }
 
     /// Enrich an externally-sourced type with detail not present in its
     /// declaration (Rust associated-type bindings, TypeScript declaration

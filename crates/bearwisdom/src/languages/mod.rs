@@ -214,11 +214,11 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Return the language-specific engine hooks for this plugin, if any.
     ///
     /// Hooks let a language override engine behaviour at well-defined seams
-    /// without extending the core profile (`synthesize_members` for
-    /// decorator-driven additions like Angular `@Component`,
-    /// `enrich_external_type` for declaration merging, etc.). Plugins
-    /// without bespoke behaviour return `None` and the engine binds a
-    /// no-op default.
+    /// without extending the core profile (`enrich_external_type` for
+    /// declaration merging, `resolve_dispatch_special` for typeclass-style
+    /// dispatch, `detect_flow_emission_special` for HTTP-client patterns the
+    /// resolver-side detector can't express). Plugins without bespoke
+    /// behaviour return `None` and the engine binds a no-op default.
     fn language_hooks(
         &self,
     ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>

@@ -27,19 +27,6 @@ fn noop_hooks_preprocess_ref_leaves_ref_unchanged() {
 }
 
 #[test]
-fn noop_hooks_synthesize_members_returns_empty() {
-    let hooks = NoOpHooks;
-    let mut arena = TypeArena::new();
-    let members = hooks.synthesize_members(
-        "Foo",
-        &["dataclass".to_string()],
-        &mut arena,
-    );
-    assert!(members.is_empty());
-    assert!(arena.is_empty());
-}
-
-#[test]
 fn noop_hooks_dispatch_returns_none() {
     let hooks = NoOpHooks;
     let r = make_ref();
