@@ -465,6 +465,85 @@ fn method_return_type_id_interned_via_typeref() {
 }
 
 #[test]
+fn generic_return_type_decomposes_into_apply() {
+    // A method returning `Repository<User>` lands in TypeInfo.return_type as
+    // the string "Repository<User>". The post-merge intern pass decomposes
+    // it structurally into `Apply(Class("Repository"), [Class("User")])`,
+    // letting downstream consumers separately resolve the base and the
+    // type args.
+    let pf = ParsedFile {
+        path: "src/svc.cs".to_string(),
+        language: "csharp".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "GetUserRepo".to_string(),
+            qualified_name: "Svc.GetUserRepo".to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: Some("Svc".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![crate::types::ExtractedRef {
+            kind: crate::types::EdgeKind::TypeRef,
+            source_symbol_index: 0,
+            target_name: "Repository<User>".to_string(),
+            line: 1,
+            col: 0,
+            byte_offset: 0,
+            module: None,
+            namespace_segments: Vec::new(),
+            chain: None,
+            call_args: Vec::new(),
+        }],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("src/svc.cs".to_string(), "Svc.GetUserRepo".to_string()), 1);
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    let rt_id = index
+        .return_type_id("Svc.GetUserRepo")
+        .expect("method has return_type_id");
+    let arena = index.type_arena().expect("SymbolIndex exposes an arena");
+    match arena.get(rt_id) {
+        Type::Apply { base, args } => {
+            assert_eq!(args.len(), 1);
+            assert_eq!(arena.get(base), Type::Class("Repository".to_string()));
+            assert_eq!(arena.get(args[0]), Type::Class("User".to_string()));
+        }
+        other => panic!("expected Apply, got {other:?}"),
+    }
+}
+
+#[test]
 fn default_symbol_lookup_returns_no_typeid_surface() {
     // Synthetic SymbolLookup impls that don't override the TypeId methods
     // must return None across the surface — confirms the default impls

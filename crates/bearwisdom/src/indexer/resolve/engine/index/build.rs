@@ -792,20 +792,21 @@ impl SymbolIndex {
         }
 
         // Create the workspace TypeArena and intern every string-typed entry
-        // into a canonical TypeId. Each string becomes a `Type::Class` entry.
-        // Structural decomposition (Apply/Tuple/Union) is a later wave's job;
-        // here we only lift the string contract into a TypeId-typed companion
-        // so consumers can switch lookup paths without losing data.
+        // into a canonical TypeId. `intern_type_str` decomposes generic
+        // applications into structural `Apply { base, args }`, so a
+        // `Repository<User>` field type produces an Apply TypeId whose base
+        // and args are independently resolvable — letting the engine bind
+        // generic substitutions across method chains.
         let type_arena = TypeArena::new();
         for ti in type_info.values_mut() {
             if let Some(ft) = ti.field_type.as_deref() {
                 if !ft.is_empty() {
-                    ti.field_type_id = Some(type_arena.class(ft));
+                    ti.field_type_id = Some(type_arena.intern_type_str(ft));
                 }
             }
             if let Some(rt) = ti.return_type.as_deref() {
                 if !rt.is_empty() {
-                    ti.return_type_id = Some(type_arena.class(rt));
+                    ti.return_type_id = Some(type_arena.intern_type_str(rt));
                 }
             }
             if ti.type_arg_ids.is_empty() && !ti.type_args.is_empty() {
@@ -813,7 +814,7 @@ impl SymbolIndex {
                     .type_args
                     .iter()
                     .filter(|s| !s.is_empty())
-                    .map(|s| type_arena.class(s))
+                    .map(|s| type_arena.intern_type_str(s))
                     .collect();
             }
         }

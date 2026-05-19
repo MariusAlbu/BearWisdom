@@ -308,20 +308,21 @@ impl SymbolIndex {
         // Pass 7: intern newly-populated string-typed type_info entries into
         // the workspace TypeArena. Idempotent: only fills slots whose TypeId
         // companion is still empty. Mirrors the post-merge intern pass in
-        // `build_with_context`.
+        // `build_with_context`, including structural decomposition for
+        // generic applications via `intern_type_str`.
         let arena = &self.type_arena;
         for ti in self.type_info.values_mut() {
             if ti.field_type_id.is_none() {
                 if let Some(ft) = ti.field_type.as_deref() {
                     if !ft.is_empty() {
-                        ti.field_type_id = Some(arena.class(ft));
+                        ti.field_type_id = Some(arena.intern_type_str(ft));
                     }
                 }
             }
             if ti.return_type_id.is_none() {
                 if let Some(rt) = ti.return_type.as_deref() {
                     if !rt.is_empty() {
-                        ti.return_type_id = Some(arena.class(rt));
+                        ti.return_type_id = Some(arena.intern_type_str(rt));
                     }
                 }
             }
@@ -330,7 +331,7 @@ impl SymbolIndex {
                     .type_args
                     .iter()
                     .filter(|s| !s.is_empty())
-                    .map(|s| arena.class(s))
+                    .map(|s| arena.intern_type_str(s))
                     .collect();
             }
         }

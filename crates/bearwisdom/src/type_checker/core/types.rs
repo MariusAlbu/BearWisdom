@@ -207,6 +207,69 @@ impl TypeArena {
         id
     }
 
+    /// Intern a type written as a string, decomposing generic applications
+    /// into structural `Apply { base, args }`. Recognized shapes:
+    ///   - `Foo`            → `Class("Foo")`
+    ///   - `Foo<Bar>`       → `Apply(Class("Foo"), [Class("Bar")])`
+    ///   - `Map<K, V>`      → `Apply(Class("Map"), [Class("K"), Class("V")])`
+    ///   - `Foo<Bar<Baz>>`  → nested `Apply` recursively
+    ///   - `Map[K, V]`      → `Apply(Class("Map"), [...])` (Scala bracket style)
+    /// Anything the parser can't classify (function types, unions,
+    /// intersections, tuples) falls back to `Class(input)` so consumers
+    /// always get a TypeId.
+    pub fn intern_type_str(&self, s: &str) -> TypeId {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return self.class(s);
+        }
+        // Locate the first generic-open at depth 0. Accept both `<` and
+        // `[` so Scala / OCaml-style param brackets resolve too.
+        let (open_idx, open_char, close_char) = {
+            let mut found = None;
+            for (i, ch) in trimmed.char_indices() {
+                if ch == '<' {
+                    found = Some((i, '<', '>'));
+                    break;
+                }
+                if ch == '[' {
+                    found = Some((i, '[', ']'));
+                    break;
+                }
+            }
+            match found {
+                Some(x) => x,
+                None => return self.class(trimmed),
+            }
+        };
+        // Find matching close at depth 0 starting from `open_idx`.
+        let rest = &trimmed[open_idx..];
+        let Some(close_rel) = find_matching_close(rest, open_char, close_char) else {
+            return self.class(trimmed);
+        };
+        let head = trimmed[..open_idx].trim();
+        if head.is_empty() {
+            return self.class(trimmed);
+        }
+        // Reject anything after the closing bracket (chained generics like
+        // `Foo<Bar>.Baz` aren't first-class here — fallback to Class).
+        let tail = trimmed[open_idx + close_rel + 1..].trim();
+        if !tail.is_empty() {
+            return self.class(trimmed);
+        }
+        let inner = &trimmed[open_idx + 1..open_idx + close_rel];
+        let arg_strs = split_depth_zero_commas(inner);
+        if arg_strs.is_empty() {
+            // Empty `Foo<>` — treat as plain class.
+            return self.class(head);
+        }
+        let args: Vec<TypeId> = arg_strs
+            .iter()
+            .map(|a| self.intern_type_str(a))
+            .collect();
+        let base = self.class(head);
+        self.intern(Type::Apply { base, args })
+    }
+
     /// Look up the Class TypeId for `qname` without interning.
     pub fn class_lookup(&self, qname: &str) -> Option<TypeId> {
         self.inner.read().unwrap().qname_to_class.get(qname).copied()
@@ -253,6 +316,54 @@ impl TypeArena {
     pub fn generic_param_count(&self) -> usize {
         self.inner.read().unwrap().generic_params.len()
     }
+}
+
+/// Locate the position of the bracket that closes `open` in `s`. `s` must
+/// start with `open`. Returns the byte index of the matching `close` (still
+/// relative to `s`) or `None` if the brackets don't balance.
+fn find_matching_close(s: &str, open: char, close: char) -> Option<usize> {
+    let mut depth: i32 = 0;
+    for (i, ch) in s.char_indices() {
+        if ch == open {
+            depth += 1;
+        } else if ch == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
+/// Split `s` on commas that sit at bracket depth 0, returning the trimmed
+/// pieces with empty entries dropped. Recognizes `<>`, `[]`, `()`, and `{}`
+/// for nesting so generic type arguments split cleanly.
+fn split_depth_zero_commas(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start: usize = 0;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                let piece = s[start..i].trim();
+                if !piece.is_empty() {
+                    out.push(piece.to_string());
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < s.len() {
+        let piece = s[start..].trim();
+        if !piece.is_empty() {
+            out.push(piece.to_string());
+        }
+    }
+    out
 }
 
 #[cfg(test)]

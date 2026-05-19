@@ -112,3 +112,122 @@ fn lookup_returns_none_for_uninterned_type() {
     let arena = TypeArena::new();
     assert!(arena.lookup(&Type::Primitive(PrimKind::Int)).is_none());
 }
+
+#[test]
+fn intern_type_str_handles_simple_class() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("User");
+    match arena.get(id) {
+        Type::Class(q) => assert_eq!(q, "User"),
+        other => panic!("expected Class, got {other:?}"),
+    }
+}
+
+#[test]
+fn intern_type_str_trims_whitespace() {
+    let arena = TypeArena::new();
+    let trimmed = arena.intern_type_str("  Foo  ");
+    let direct = arena.class("Foo");
+    assert_eq!(trimmed, direct);
+}
+
+#[test]
+fn intern_type_str_decomposes_generic_application() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Repository<User>");
+    match arena.get(id) {
+        Type::Apply { base, args } => {
+            assert_eq!(args.len(), 1);
+            match arena.get(base) {
+                Type::Class(q) => assert_eq!(q, "Repository"),
+                other => panic!("expected Class base, got {other:?}"),
+            }
+            match arena.get(args[0]) {
+                Type::Class(q) => assert_eq!(q, "User"),
+                other => panic!("expected Class arg, got {other:?}"),
+            }
+        }
+        other => panic!("expected Apply, got {other:?}"),
+    }
+}
+
+#[test]
+fn intern_type_str_decomposes_multi_arg_generic() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Map<K, V>");
+    let Type::Apply { base, args } = arena.get(id) else {
+        panic!("expected Apply");
+    };
+    assert_eq!(arena.get(base), Type::Class("Map".to_string()));
+    assert_eq!(args.len(), 2);
+    assert_eq!(arena.get(args[0]), Type::Class("K".to_string()));
+    assert_eq!(arena.get(args[1]), Type::Class("V".to_string()));
+}
+
+#[test]
+fn intern_type_str_handles_nested_generics() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Promise<Result<Ok, Err>>");
+    let Type::Apply { base, args } = arena.get(id) else {
+        panic!("expected outer Apply");
+    };
+    assert_eq!(arena.get(base), Type::Class("Promise".to_string()));
+    assert_eq!(args.len(), 1);
+    let Type::Apply { base: inner_base, args: inner_args } = arena.get(args[0]) else {
+        panic!("expected inner Apply");
+    };
+    assert_eq!(arena.get(inner_base), Type::Class("Result".to_string()));
+    assert_eq!(inner_args.len(), 2);
+    assert_eq!(arena.get(inner_args[0]), Type::Class("Ok".to_string()));
+    assert_eq!(arena.get(inner_args[1]), Type::Class("Err".to_string()));
+}
+
+#[test]
+fn intern_type_str_dedups_identical_apply() {
+    let arena = TypeArena::new();
+    let a = arena.intern_type_str("Repository<User>");
+    let b = arena.intern_type_str("Repository<User>");
+    assert_eq!(a, b);
+}
+
+#[test]
+fn intern_type_str_accepts_scala_bracket_style() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Map[K, V]");
+    let Type::Apply { base, args } = arena.get(id) else {
+        panic!("expected Apply for Scala-style brackets");
+    };
+    assert_eq!(arena.get(base), Type::Class("Map".to_string()));
+    assert_eq!(args.len(), 2);
+}
+
+#[test]
+fn intern_type_str_falls_back_to_class_for_unbalanced() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Foo<Bar");
+    // Unbalanced — entire string becomes a Class.
+    assert_eq!(arena.get(id), Type::Class("Foo<Bar".to_string()));
+}
+
+#[test]
+fn intern_type_str_falls_back_for_anonymous_generic() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("<Bar>");
+    // Empty head — fallback to Class on the raw input.
+    assert_eq!(arena.get(id), Type::Class("<Bar>".to_string()));
+}
+
+#[test]
+fn intern_type_str_falls_back_on_post_bracket_text() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Foo<Bar>.Baz");
+    // Anything after the closing bracket isn't first-class — fallback.
+    assert_eq!(arena.get(id), Type::Class("Foo<Bar>.Baz".to_string()));
+}
+
+#[test]
+fn intern_type_str_empty_string_falls_back_to_class() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("");
+    assert_eq!(arena.get(id), Type::Class("".to_string()));
+}
