@@ -294,10 +294,24 @@ fn parse_file_internal(
         plugin_flow_emissions,
     };
 
-    let _canonical_arena = super::canonical_form::populate_positions(&mut parsed);
+    // populate_positions runs against the workspace arena when the caller
+    // supplied one — so any TypeIds it produces (ChainSegment.declared_type_id,
+    // type_defining return_type) are canonical across the whole index run.
+    // When no arena was supplied (parse_file / parse_file_with_demand paths),
+    // we build a throwaway per-file arena; populate_positions still does its
+    // structural work but its TypeIds are dropped with the arena.
+    let local_canonical_arena;
+    let canonical_arena_ref = match arena {
+        Some(a) => a,
+        None => {
+            local_canonical_arena = crate::type_checker::core::types::TypeArena::new();
+            &local_canonical_arena
+        }
+    };
+    super::canonical_form::populate_positions(&mut parsed, canonical_arena_ref);
 
     #[cfg(feature = "canonical-form-checked")]
-    crate::indexer::canonical_form::assert_canonical(&parsed, &_canonical_arena);
+    crate::indexer::canonical_form::assert_canonical(&parsed, canonical_arena_ref);
 
     Ok(parsed)
 }

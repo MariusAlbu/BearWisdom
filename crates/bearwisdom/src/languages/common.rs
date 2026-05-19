@@ -7,10 +7,64 @@
 // uncluttered.
 // =============================================================================
 
+use crate::type_checker::core::types::TypeArena;
 use crate::types::{
-    ChainSegment, EmbeddedOrigin, EmbeddedRegion, MemberChain, SegmentKind,
+    ChainSegment, EmbeddedOrigin, EmbeddedRegion, ExtractionResult, MemberChain,
+    SegmentKind, SymbolKind,
 };
 use tree_sitter::{Node, Parser};
+
+// ---------------------------------------------------------------------------
+// Shared TypeId population — used by `extract_with_arena_and_demand` overrides
+// ---------------------------------------------------------------------------
+
+/// Populate `ExtractedSymbol.return_type` against the workspace `TypeArena`
+/// for the canonical "type-defining + callable" pattern shared by every
+/// typed language plugin. Plugins override
+/// `LanguagePlugin::extract_with_arena_and_demand`, call their existing
+/// extract logic, then invoke this helper.
+///
+///   - Type-defining kinds (Class / Interface / Struct / Trait / Enum /
+///     TypeAlias) get `return_type = arena.class(qualified_name)` —
+///     the canonical "callable type yields itself" rule.
+///   - Callable kinds (Method / Function / Constructor) get the return
+///     type parsed from their signature via
+///     `parse_return_type_from_signature`, interned through
+///     `arena.intern_type_str` so generic applications decompose into
+///     structural `Apply { base, args }`.
+///
+/// Idempotent: skips symbols whose `return_type` is already populated.
+pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena) {
+    for sym in &mut result.symbols {
+        if sym.return_type.is_some() {
+            continue;
+        }
+        match sym.kind {
+            SymbolKind::Class
+            | SymbolKind::Interface
+            | SymbolKind::Struct
+            | SymbolKind::Trait
+            | SymbolKind::Enum
+            | SymbolKind::TypeAlias => {
+                sym.return_type = Some(arena.class(&sym.qualified_name));
+            }
+            SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
+                if let Some(sig) = sym.signature.as_deref() {
+                    if let Some(rt) =
+                        crate::indexer::resolve::engine::chain_walker::parse_return_type_from_signature(
+                            sig,
+                        )
+                    {
+                        if !rt.is_empty() {
+                            sym.return_type = Some(arena.intern_type_str(&rt));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Shared chain builder — language-agnostic, works for any grammar that uses

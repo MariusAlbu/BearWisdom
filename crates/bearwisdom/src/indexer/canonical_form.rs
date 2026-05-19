@@ -140,20 +140,21 @@ fn collect_type_ids(file: &ParsedFile) -> Vec<TypeId> {
     out
 }
 
-/// Derive position fields + intern type strings into a per-file TypeArena.
-/// Symbols get `byte_offset` from (start_line, start_col), refs get `col`
-/// from (byte_offset, line), and chain segments get `byte_offset` by
-/// scanning the source for each segment's name.
+/// Derive position fields + intern type strings into the supplied
+/// `TypeArena`. Symbols get `byte_offset` from (start_line, start_col),
+/// refs get `col` from (byte_offset, line), and chain segments get
+/// `byte_offset` by scanning the source for each segment's name.
 ///
 /// Type-defining symbols (Class / Struct / Interface / Trait / Enum /
-/// TypeAlias) get `return_type = Some(arena.class(qualified_name))` —
-/// the canonical "callable class yields itself" rule. ChainSegment string
-/// fields (declared_type, type_args) are interned into the arena and
-/// populated as TypeId carriers (declared_type_id, type_arg_ids).
+/// TypeAlias) get `return_type = Some(arena.class(qualified_name))` when
+/// the extractor didn't already populate it. ChainSegment string fields
+/// (declared_type, type_args) are interned into the arena and populated
+/// as TypeId carriers (declared_type_id, type_arg_ids).
 ///
-/// Only slots currently set to the sentinel 0 / None / empty are filled.
-pub fn populate_positions(file: &mut ParsedFile) -> TypeArena {
-    let mut arena = TypeArena::new();
+/// Production callers pass the workspace arena so TypeIds remain valid
+/// across the whole index run. Test helpers can pass a fresh per-file
+/// arena via the `validate_extraction` wrapper.
+pub fn populate_positions(file: &mut ParsedFile, arena: &TypeArena) {
     let line_starts_owned: Option<Vec<u32>> =
         file.content.as_deref().map(build_line_starts);
     let line_starts = line_starts_owned.as_deref();
@@ -202,8 +203,6 @@ pub fn populate_positions(file: &mut ParsedFile) -> TypeArena {
             }
         }
     }
-
-    arena
 }
 
 fn is_type_defining_kind(kind: SymbolKind) -> bool {
@@ -340,7 +339,8 @@ pub fn validate_extraction(
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
     };
-    let arena = populate_positions(&mut parsed);
+    let arena = TypeArena::new();
+    populate_positions(&mut parsed, &arena);
     validate_with_arena(&parsed, &arena)
 }
 

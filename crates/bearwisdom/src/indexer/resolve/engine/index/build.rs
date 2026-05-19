@@ -813,21 +813,51 @@ impl SymbolIndex {
             }
         }
 
-        // Intern every string-typed type_info entry into the shared
-        // workspace TypeArena. `intern_type_str` decomposes generic
-        // applications into structural `Apply { base, args }`, so a
-        // `Repository<User>` field type produces an Apply TypeId whose base
-        // and args are independently resolvable — letting the engine bind
-        // generic substitutions across method chains.
-        for ti in type_info.values_mut() {
-            if let Some(ft) = ti.field_type.as_deref() {
-                if !ft.is_empty() {
-                    ti.field_type_id = Some(type_arena.intern_type_str(ft));
+        // Seed TypeId-typed type_info slots from extractor-populated
+        // `ExtractedSymbol` fields first. Plugins that override
+        // `extract_with_arena_and_demand` (TypeScript onward) intern type
+        // expressions directly into the workspace arena and stash the
+        // resulting TypeId on `ExtractedSymbol.return_type` /
+        // `declared_type`. Reading those here lets the engine pick up
+        // structural Apply TypeIds straight from the AST instead of
+        // re-parsing signature strings.
+        for pf in parsed {
+            for sym in &pf.symbols {
+                if let Some(rt_id) = sym.return_type {
+                    type_info
+                        .entry(sym.qualified_name.clone())
+                        .or_default()
+                        .return_type_id = Some(rt_id);
+                }
+                if let Some(dt_id) = sym.declared_type {
+                    type_info
+                        .entry(sym.qualified_name.clone())
+                        .or_default()
+                        .field_type_id = Some(dt_id);
                 }
             }
-            if let Some(rt) = ti.return_type.as_deref() {
-                if !rt.is_empty() {
-                    ti.return_type_id = Some(type_arena.intern_type_str(rt));
+        }
+
+        // Intern every string-typed type_info entry into the shared
+        // workspace TypeArena for slots the extractor didn't already fill.
+        // `intern_type_str` decomposes generic applications into structural
+        // `Apply { base, args }`, so a `Repository<User>` field type
+        // produces an Apply TypeId whose base and args are independently
+        // resolvable — letting the engine bind generic substitutions
+        // across method chains.
+        for ti in type_info.values_mut() {
+            if ti.field_type_id.is_none() {
+                if let Some(ft) = ti.field_type.as_deref() {
+                    if !ft.is_empty() {
+                        ti.field_type_id = Some(type_arena.intern_type_str(ft));
+                    }
+                }
+            }
+            if ti.return_type_id.is_none() {
+                if let Some(rt) = ti.return_type.as_deref() {
+                    if !rt.is_empty() {
+                        ti.return_type_id = Some(type_arena.intern_type_str(rt));
+                    }
                 }
             }
             if ti.type_arg_ids.is_empty() && !ti.type_args.is_empty() {
