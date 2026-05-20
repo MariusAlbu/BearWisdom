@@ -117,27 +117,6 @@ impl LanguageResolver for OdinResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Language-specific: Odin core:/vendor:/base: package paths are external.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            if target.starts_with("core:") || target.starts_with("vendor:") || target.starts_with("base:") {
-                return Some(target.clone());
-            }
-        }
-
-        // Odin built-ins / stdlib procedures classify via the engine's
-        // keywords() set populated from odin/keywords.rs.
-        let _ = (file_ctx, ref_ctx, project_ctx);
-        None
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,

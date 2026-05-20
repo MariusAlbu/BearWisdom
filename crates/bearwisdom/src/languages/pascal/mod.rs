@@ -10,10 +10,12 @@ mod normalise;
 mod error_recovery;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::PASCAL_HOOKS;
 pub use profile::PASCAL_PROFILE;
 
 pub use resolve::PascalResolver;
@@ -90,5 +92,12 @@ impl LanguagePlugin for PascalPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PASCAL_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::PASCAL_HOOKS)
     }
 }

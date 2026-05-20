@@ -109,22 +109,6 @@ impl LanguageResolver for PascalResolver {
         engine::resolve_common("pascal", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // Pascal identifiers are case-insensitive; fold both sides so that
-        // `SIZEOF`, `fillchar`, etc. classify identically to `SizeOf`.
-        let target_lower = ref_ctx.extracted_ref.target_name.to_lowercase();
-        let keywords = super::keywords::KEYWORDS;
-        if keywords.iter().any(|k| k.to_lowercase() == target_lower) {
-            return Some("primitive".to_string());
-        }
-        None
-    }
-
     fn infer_external_namespace_with_lookup(
         &self,
         file_ctx: &FileContext,

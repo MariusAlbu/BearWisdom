@@ -19,10 +19,12 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::NIM_HOOKS;
 pub use profile::NIM_PROFILE;
 
 pub use resolve::NimResolver;
@@ -101,5 +103,12 @@ impl LanguagePlugin for NimPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::NIM_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::NIM_HOOKS)
     }
 }

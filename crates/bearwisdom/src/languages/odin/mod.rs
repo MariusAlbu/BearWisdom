@@ -16,10 +16,12 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
 
+pub use hooks::ODIN_HOOKS;
 pub use profile::ODIN_PROFILE;
 
 #[cfg(test)]
@@ -90,5 +92,12 @@ impl LanguagePlugin for OdinPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ODIN_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::ODIN_HOOKS)
     }
 }
