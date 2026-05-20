@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_lua_db_emission, detect_lua_lapis_route, detect_lua_resty_http};
 use crate::types::*;
 
 #[test]
