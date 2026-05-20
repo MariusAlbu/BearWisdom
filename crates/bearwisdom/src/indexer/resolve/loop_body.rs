@@ -305,40 +305,29 @@ fn resolve_iteration_body(
             })
             .collect();
 
-        // Try language-specific resolver for this file.
-        let host_resolver = engine.resolver_for(&pf.language);
+        // Build the per-file resolution context purely via the engine hook.
         let host_plugin = crate::languages::default_registry().get_dedicated(&pf.language);
-        let host_file_ctx = host_resolver.map(|r| {
-            let mut ctx = type_engine
-                .build_file_context(&pf.language, pf, project_ctx)
-                .unwrap_or_else(|| r.build_file_context(pf, project_ctx));
-            // Merge companion imports (e.g. Angular template inherits the
-            // paired `.component.ts` imports, since the template itself has
-            // no import statements but every symbol it names is imported by
-            // the component class). Companion pairing lives on
-            // `LanguagePlugin::companion_file_for_imports` — independent of
-            // resolver wiring so any plugin can declare a paired file.
-            if let Some(companion_path) =
-                host_plugin.and_then(|p| p.companion_file_for_imports(&pf.path))
-            {
-                if let Some(comp_pf) = parsed_by_path.get(companion_path.as_str()) {
-                    if let Some(comp_resolver) = engine.resolver_for(&comp_pf.language) {
-                        let comp_ctx = type_engine
+        let host_file_ctx = type_engine
+            .build_file_context(&pf.language, pf, project_ctx)
+            .map(|mut ctx| {
+                // Companion imports: Angular template inherits the paired
+                // `.component.ts` imports. Lives on
+                // `LanguagePlugin::companion_file_for_imports`.
+                if let Some(companion_path) =
+                    host_plugin.and_then(|p| p.companion_file_for_imports(&pf.path))
+                {
+                    if let Some(comp_pf) = parsed_by_path.get(companion_path.as_str()) {
+                        if let Some(comp_ctx) = type_engine
                             .build_file_context(&comp_pf.language, comp_pf, project_ctx)
-                            .unwrap_or_else(|| comp_resolver.build_file_context(comp_pf, project_ctx));
-                        ctx.imports.extend(comp_ctx.imports);
+                        {
+                            ctx.imports.extend(comp_ctx.imports);
+                        }
+                    } else if let Some(db_imports) = companion_db_imports.get(&companion_path) {
+                        ctx.imports.extend(db_imports.iter().cloned());
                     }
-                } else if let Some(db_imports) = companion_db_imports.get(&companion_path) {
-                    // Companion file isn't in this run's parse slice
-                    // (incremental re-index, companion unchanged). The
-                    // imports were prefetched into `companion_db_imports`
-                    // before the parallel section so the per-file body
-                    // doesn't need `conn`.
-                    ctx.imports.extend(db_imports.iter().cloned());
                 }
-            }
-            ctx
-        });
+                ctx
+            });
 
         let empty_vec = vec![];
         let file_imports = import_map.get(&pf.path).unwrap_or(&empty_vec);
@@ -393,18 +382,11 @@ fn resolve_iteration_body(
             // Embedded TS refs get effective_lang = "typescript" → we use the
             // TypeScript resolver and build a fresh file_ctx from the same
             // ParsedFile (which contains all embedded symbols/imports merged in).
-            let (resolver, file_ctx): (Option<&dyn engine::LanguageResolver>, _) =
-                if is_cross_lang_embedded {
-                    let emb_resolver = engine.resolver_for(effective_lang);
-                    let emb_ctx = emb_resolver.map(|res| {
-                        type_engine
-                            .build_file_context(effective_lang, pf, project_ctx)
-                            .unwrap_or_else(|| res.build_file_context(pf, project_ctx))
-                    });
-                    (emb_resolver, emb_ctx)
-                } else {
-                    (host_resolver, host_file_ctx.clone())
-                };
+            let file_ctx: Option<engine::FileContext> = if is_cross_lang_embedded {
+                type_engine.build_file_context(effective_lang, pf, project_ctx)
+            } else {
+                host_file_ctx.clone()
+            };
 
             let source_id = match file_symbol_ids.get(r.source_symbol_index).and_then(|id| *id) {
                 Some(id) => id,
@@ -434,7 +416,7 @@ fn resolve_iteration_body(
 
             // Tier 1: Try language-specific resolver (for the effective language).
             let mut resolved_by_engine = false;
-            if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
+            if let Some(file_ctx) = &file_ctx {
                 let source_sym = &pf.symbols[r.source_symbol_index];
                 let ref_ctx = RefContext {
                     extracted_ref: r,
@@ -577,7 +559,7 @@ fn resolve_iteration_body(
 
             // Tier 1.5: external classification — `LanguageEngineHooks::classify_external`
             // is the only entry point. The legacy resolver method has been retired.
-            let inferred_ns = if let (Some(_resolver), Some(file_ctx)) = (resolver, &file_ctx) {
+            let inferred_ns = if let Some(file_ctx) = &file_ctx {
                 let ref_ctx = RefContext {
                     extracted_ref: r,
                     source_symbol: source_sym,
