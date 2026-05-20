@@ -10,7 +10,6 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub(crate) mod resolve;
 
 pub use hooks::VBA_HOOKS;
 pub use profile::VBA_PROFILE;

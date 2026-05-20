@@ -1,8 +1,11 @@
-use super::resolve;
+// Nix language hooks. Absorbed from the deleted `nix/resolve.rs`.
+
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup, Resolution};
+use crate::indexer::resolve::engine::{
+    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::EdgeKind;
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct NixHooks;
 
@@ -15,9 +18,6 @@ impl LanguageEngineHooks for NixHooks {
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
-
-        // Channel refs like <nixpkgs> are external; relative path imports
-        // are local and must NOT be marked external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let path = ref_ctx
                 .extracted_ref
@@ -29,8 +29,6 @@ impl LanguageEngineHooks for NixHooks {
             }
             return None;
         }
-
-        // Dotted platform attribute paths are always external.
         if target.starts_with("builtins.")
             || target.starts_with("lib.")
             || target.starts_with("pkgs.")
@@ -43,19 +41,70 @@ impl LanguageEngineHooks for NixHooks {
 
     fn build_file_context(
         &self,
-        file: &crate::types::ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<crate::indexer::resolve::engine::FileContext> {
-        Some(resolve::build_file_context_inner(file, project_ctx))
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        let mut imports = Vec::new();
+        for r in &file.refs {
+            if r.kind != EdgeKind::Imports {
+                continue;
+            }
+            let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
+            imports.push(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: Some(module_path),
+                alias: None,
+                is_wildcard: false,
+            });
+        }
+        Some(FileContext {
+            file_path: file.path.clone(),
+            language: "nix".to_string(),
+            imports,
+            file_namespace: None,
+        })
     }
 
     fn resolve_ref(
         &self,
-        file_ctx: &crate::indexer::resolve::engine::FileContext,
-        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
-        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        super::resolve::NixResolver.resolve(file_ctx, ref_ctx, lookup)
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if edge_kind == EdgeKind::Imports {
+            return None;
+        }
+        if target.starts_with("builtins.")
+            || target.starts_with("lib.")
+            || target.starts_with("pkgs.")
+            || target.starts_with("config.")
+        {
+            return None;
+        }
+        if target.contains('.') {
+            if let Some(sym) = lookup.by_qualified_name(target.as_str()) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "nix_qualified_name",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
+            }
+            let last_seg = target.rsplit('.').next().unwrap_or(target.as_str());
+            if let Some(sym) = lookup.by_name(last_seg).first() {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.75,
+                    strategy: "nix_attr_path_last_seg",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
+            }
+        }
+        engine::resolve_common("nix", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 }
 
