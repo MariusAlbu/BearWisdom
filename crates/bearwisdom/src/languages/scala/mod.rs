@@ -11,10 +11,10 @@ pub mod extract;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 pub(crate) mod type_checker;
 
 pub use hooks::SCALA_HOOKS;
+pub use hooks::ScalaResolver;
 pub use profile::SCALA_PROFILE;
 
 #[cfg(test)]
@@ -29,11 +29,13 @@ mod coverage_tests;
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
 
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::ScalaResolver;
 
 pub struct ScalaPlugin;
 

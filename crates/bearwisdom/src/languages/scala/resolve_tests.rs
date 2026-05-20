@@ -1,4 +1,8 @@
-use super::*;
+use super::hooks::{
+    detect_scala_db_query_emission, detect_scala_doobie_emission, detect_scala_grpc_emission,
+    detect_scala_http_chain_emission, detect_scala_http_path_call, detect_scala_quill_emission,
+    detect_scala_zio_sql_emission,
+};
 use crate::types::*;
 
 fn make_chain(segments: &[&str]) -> MemberChain {
