@@ -335,6 +335,24 @@ impl SymbolIndex {
                     .collect();
             }
         }
+
+        // Final sweep: derive strings from canonical TypeIds so the legacy
+        // string accessors always reflect the TypeId-typed source of truth.
+        for ti in self.type_info.values_mut() {
+            if let Some(id) = ti.field_type_id {
+                ti.field_type = Some(arena.format_type(id));
+            }
+            if let Some(id) = ti.return_type_id {
+                ti.return_type = Some(arena.format_type(id));
+            }
+            if !ti.type_arg_ids.is_empty() {
+                ti.type_args = ti
+                    .type_arg_ids
+                    .iter()
+                    .map(|id| arena.format_type(*id))
+                    .collect();
+            }
+        }
     }
 
     /// Drain the chain-walker miss accumulator.

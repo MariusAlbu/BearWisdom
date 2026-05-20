@@ -291,6 +291,100 @@ impl TypeArena {
         self.inner.read().unwrap().types[id.index()].clone()
     }
 
+    /// Inverse of `intern_type_str`: render a TypeId as its source-form
+    /// string. `Class("Foo")` → `"Foo"`; `Apply(Class("Repository"),
+    /// [Class("User")])` → `"Repository<User>"`. Used by consumers that
+    /// still operate on string-shaped type info while the storage layer
+    /// has migrated to TypeIds.
+    pub fn format_type(&self, id: TypeId) -> String {
+        let mut out = String::new();
+        self.format_type_into(id, &mut out);
+        out
+    }
+
+    fn format_type_into(&self, id: TypeId, out: &mut String) {
+        use std::fmt::Write as _;
+        let ty = self.get(id);
+        match ty {
+            Type::Class(q) => out.push_str(&q),
+            Type::Primitive(p) => {
+                let _ = write!(out, "{p:?}");
+            }
+            Type::Apply { base, args } => {
+                self.format_type_into(base, out);
+                if !args.is_empty() {
+                    out.push('<');
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            out.push_str(", ");
+                        }
+                        self.format_type_into(*arg, out);
+                    }
+                    out.push('>');
+                }
+            }
+            Type::Tuple(items) => {
+                out.push('[');
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    self.format_type_into(*item, out);
+                }
+                out.push(']');
+            }
+            Type::Union(branches) => {
+                for (i, b) in branches.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(" | ");
+                    }
+                    self.format_type_into(*b, out);
+                }
+            }
+            Type::Intersection(branches) => {
+                for (i, b) in branches.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(" & ");
+                    }
+                    self.format_type_into(*b, out);
+                }
+            }
+            Type::Function { params, return_ } => {
+                out.push('(');
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    self.format_type_into(*p, out);
+                }
+                out.push_str(") => ");
+                self.format_type_into(return_, out);
+            }
+            Type::Generic { param } => {
+                let data = self.generic_param(param);
+                out.push_str(&data.name);
+            }
+            Type::Optional(inner) => {
+                self.format_type_into(inner, out);
+                out.push('?');
+            }
+            Type::AsyncWrapper(inner) => {
+                out.push_str("Promise<");
+                self.format_type_into(inner, out);
+                out.push('>');
+            }
+            Type::Iterator(inner) => {
+                out.push_str("Iterator<");
+                self.format_type_into(inner, out);
+                out.push('>');
+            }
+            Type::Literal(v) => {
+                let _ = write!(out, "{v:?}");
+            }
+            Type::Unknown => out.push_str("unknown"),
+        }
+    }
+
     /// Number of distinct types currently interned.
     pub fn len(&self) -> usize {
         self.inner.read().unwrap().types.len()

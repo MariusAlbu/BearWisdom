@@ -165,6 +165,11 @@ pub fn populate_positions(file: &mut ParsedFile, arena: &TypeArena) {
                 sym.byte_offset = b;
             }
         }
+        // SYM-005 contract: type-defining symbols must carry a return_type
+        // pointing at `Type::Class(qualified_name)` in the supplied arena.
+        // build.rs intentionally re-derives the TypeId from the symbol
+        // qname rather than trusting this field, so the value is safe to
+        // populate even when the arena is per-file and gets dropped.
         if sym.return_type.is_none() && is_type_defining_kind(sym.kind) {
             let id = arena.class(&sym.qualified_name);
             sym.return_type = Some(id);

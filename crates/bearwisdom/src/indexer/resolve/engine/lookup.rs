@@ -94,15 +94,15 @@ pub trait SymbolLookup {
     }
 
     /// Get the annotated type name for a property/field symbol.
-    /// e.g., "AlbumService.db" → Some("DatabaseRepository")
+    /// e.g., "AlbumService.db" → Some("DatabaseRepository").
     fn field_type_name(&self, property_qname: &str) -> Option<&str>;
 
     /// Get the annotated return type for a method/function symbol.
-    /// e.g., "UserRepo.findOne" → Some("User")
+    /// e.g., "UserRepo.findOne" → Some("User").
     fn return_type_name(&self, method_qname: &str) -> Option<&str>;
 
     /// Get the generic type arguments for a field's type annotation.
-    /// e.g., "UserService.repo" → Some(["User"]) for `repo: Repository<User>`
+    /// e.g., "UserService.repo" → Some(["User"]) for `repo: Repository<User>`.
     fn field_type_args(&self, property_qname: &str) -> Option<&[String]>;
 
     /// Get the generic type parameter names for a type declaration.

@@ -135,25 +135,27 @@ use crate::type_checker::core::types::TypeId;
 /// All type metadata for a single symbol, stored in a single map keyed by
 /// the symbol's qualified name (or simple name for generic_params).
 ///
-/// String fields are the legacy contract; TypeId fields are the canonical
-/// form populated by interning the strings into the workspace arena.
-/// Consumers progressively migrate from string lookups to TypeId lookups.
+/// TypeIds are the canonical source of truth: the build pipeline populates
+/// `field_type_id` / `return_type_id` / `type_arg_ids` first from extractor
+/// signals (TypeRef refs, signature parsing, AST-driven extractors), and
+/// the string fields below are formatted from those TypeIds for the
+/// legacy string-typed `SymbolLookup` accessors. Removing the parallel
+/// string-population path closes the gap that used to let strings and
+/// TypeIds drift out of sync.
 #[derive(Debug, Default, Clone)]
 pub struct TypeInfo {
-    /// Field/property type (e.g., "UserRepository").
+    /// Field/property type rendered from `field_type_id`.
     pub field_type: Option<String>,
-    /// Generic type arguments (e.g., ["User"] for `Repository<User>`).
+    /// Generic type arguments rendered from `type_arg_ids`.
     pub type_args: Vec<String>,
-    /// Method return type (e.g., "User").
+    /// Method return type rendered from `return_type_id`.
     pub return_type: Option<String>,
     /// Generic parameter names for type declarations (e.g., ["T"] for `interface Repository<T>`).
     pub generic_params: Vec<String>,
-    /// Canonical TypeId form of `field_type`. Interned into the workspace
-    /// arena at index-build time.
+    /// Canonical TypeId form of `field_type`.
     pub field_type_id: Option<TypeId>,
-    /// Canonical TypeId form of `return_type`. Interned into the workspace
-    /// arena at index-build time.
+    /// Canonical TypeId form of `return_type`.
     pub return_type_id: Option<TypeId>,
-    /// Canonical TypeId forms of `type_args`, in declaration order.
+    /// Canonical TypeIds of `type_args`, in declaration order.
     pub type_arg_ids: Vec<TypeId>,
 }

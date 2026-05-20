@@ -231,3 +231,41 @@ fn intern_type_str_empty_string_falls_back_to_class() {
     let id = arena.intern_type_str("");
     assert_eq!(arena.get(id), Type::Class("".to_string()));
 }
+
+#[test]
+fn format_type_renders_class() {
+    let arena = TypeArena::new();
+    let id = arena.class("User");
+    assert_eq!(arena.format_type(id), "User");
+}
+
+#[test]
+fn format_type_renders_apply_with_one_arg() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Repository<User>");
+    assert_eq!(arena.format_type(id), "Repository<User>");
+}
+
+#[test]
+fn format_type_renders_apply_with_multiple_args() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Map<K, V>");
+    assert_eq!(arena.format_type(id), "Map<K, V>");
+}
+
+#[test]
+fn format_type_round_trips_nested_generic() {
+    let arena = TypeArena::new();
+    let id = arena.intern_type_str("Promise<Result<Ok, Err>>");
+    assert_eq!(arena.format_type(id), "Promise<Result<Ok, Err>>");
+}
+
+#[test]
+fn format_type_round_trips_through_arena() {
+    let arena = TypeArena::new();
+    let original = "Outer<Middle<Inner>>";
+    let id = arena.intern_type_str(original);
+    let formatted = arena.format_type(id);
+    let id2 = arena.intern_type_str(&formatted);
+    assert_eq!(id, id2);
+}

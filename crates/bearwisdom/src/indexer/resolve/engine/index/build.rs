@@ -813,30 +813,14 @@ impl SymbolIndex {
             }
         }
 
-        // Seed TypeId-typed type_info slots from extractor-populated
-        // `ExtractedSymbol` fields first. Plugins that override
-        // `extract_with_arena_and_demand` (TypeScript onward) intern type
-        // expressions directly into the workspace arena and stash the
-        // resulting TypeId on `ExtractedSymbol.return_type` /
-        // `declared_type`. Reading those here lets the engine pick up
-        // structural Apply TypeIds straight from the AST instead of
-        // re-parsing signature strings.
-        for pf in parsed {
-            for sym in &pf.symbols {
-                if let Some(rt_id) = sym.return_type {
-                    type_info
-                        .entry(sym.qualified_name.clone())
-                        .or_default()
-                        .return_type_id = Some(rt_id);
-                }
-                if let Some(dt_id) = sym.declared_type {
-                    type_info
-                        .entry(sym.qualified_name.clone())
-                        .or_default()
-                        .field_type_id = Some(dt_id);
-                }
-            }
-        }
+        // ExtractedSymbol.return_type / declared_type were previously
+        // read here as workspace TypeIds. They aren't reliably from the
+        // workspace arena (some parse_file paths run populate_positions
+        // with a throwaway arena, leaving stale TypeIds), so we re-derive
+        // every TypeId-typed slot from the canonical string maps below.
+        // When extractors need to drive structural shapes (Apply) into
+        // TypeInfo, they'll feed signature strings that the intern pass
+        // already decomposes via `intern_type_str`.
 
         // Intern every string-typed type_info entry into the shared
         // workspace TypeArena for slots the extractor didn't already fill.
@@ -866,6 +850,28 @@ impl SymbolIndex {
                     .iter()
                     .filter(|s| !s.is_empty())
                     .map(|s| type_arena.intern_type_str(s))
+                    .collect();
+            }
+        }
+
+        // Final sweep: re-derive the string fields from the canonical
+        // TypeIds. After this point any caller that hits the string-typed
+        // accessors gets exactly what the TypeId formats back to —
+        // extractor-set TypeIds (which can carry structural Apply) propagate
+        // to the string surface so the two views never drift. The string
+        // fallback is now a derived projection, not an independent source.
+        for ti in type_info.values_mut() {
+            if let Some(id) = ti.field_type_id {
+                ti.field_type = Some(type_arena.format_type(id));
+            }
+            if let Some(id) = ti.return_type_id {
+                ti.return_type = Some(type_arena.format_type(id));
+            }
+            if !ti.type_arg_ids.is_empty() {
+                ti.type_args = ti
+                    .type_arg_ids
+                    .iter()
+                    .map(|id| type_arena.format_type(*id))
                     .collect();
             }
         }
