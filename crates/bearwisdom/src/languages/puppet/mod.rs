@@ -4,9 +4,12 @@ pub mod keywords;
 pub mod definitions;
 pub mod extract;
 pub mod refs;
+pub(crate) mod profile;
 pub mod resolve;
 mod predicates;
 pub(crate) mod type_checker;
+
+pub use profile::PUPPET_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -104,5 +107,11 @@ impl LanguagePlugin for PuppetPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::PuppetChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::PUPPET_PROFILE)
     }
 }

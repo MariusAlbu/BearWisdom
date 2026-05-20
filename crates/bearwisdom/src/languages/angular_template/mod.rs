@@ -21,6 +21,9 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod profile;
+
+pub use profile::ANGULAR_TEMPLATE_PROFILE;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -80,5 +83,11 @@ impl LanguagePlugin for AngularTemplatePlugin {
         Some(std::sync::Arc::new(
             crate::languages::angular::resolve::AngularResolver,
         ))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::ANGULAR_TEMPLATE_PROFILE)
     }
 }

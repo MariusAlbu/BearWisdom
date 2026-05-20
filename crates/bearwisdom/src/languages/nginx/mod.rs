@@ -10,6 +10,9 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod profile;
+
+pub use profile::NGINX_PROFILE;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -31,4 +34,9 @@ impl LanguagePlugin for NginxPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::NGINX_PROFILE)
+    }
 }

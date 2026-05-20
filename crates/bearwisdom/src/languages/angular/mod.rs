@@ -15,7 +15,10 @@
 //! angular.json or @angular/* deps in package.json).
 
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::ANGULAR_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -81,5 +84,11 @@ impl LanguagePlugin for AngularPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::AngularResolver))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::ANGULAR_PROFILE)
     }
 }
