@@ -97,57 +97,6 @@ impl LanguageResolver for FSharpResolver {
         engine::resolve_common("fsharp", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import refs (`open System.Linq`) — classify via NuGet manifest.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let external = match project_ctx {
-                Some(ctx) => is_manifest_external_namespace(ctx, target),
-                None => predicates::is_external_namespace_fallback(target),
-            };
-            if external {
-                let root = target.split('.').next().unwrap_or(target);
-                return Some(root.to_string());
-            }
-            return None;
-        }
-
-        // Module-qualified ref: if the ref has module="X" and X is an
-        // external namespace (from NuGet packages or SDK), classify it.
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            let external = match project_ctx {
-                Some(ctx) => is_manifest_external_namespace(ctx, module),
-                None => predicates::is_external_namespace_fallback(module),
-            };
-            if external {
-                let root = module.split('.').next().unwrap_or(module);
-                return Some(root.to_string());
-            }
-        }
-
-        // Check file's open declarations: if the target was brought in via
-        // `open ExternalNamespace`, classify it.
-        for import in &file_ctx.imports {
-            let Some(module_path) = &import.module_path else { continue };
-            let external = match project_ctx {
-                Some(ctx) => is_manifest_external_namespace(ctx, module_path),
-                None => predicates::is_external_namespace_fallback(module_path),
-            };
-            if external {
-                let root = module_path.split('.').next().unwrap_or(module_path);
-                return Some(root.to_string());
-            }
-        }
-
-        None
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,
@@ -315,7 +264,7 @@ mod tests;
 /// but has no declared dependencies (e.g. Paket projects where `.fsproj` files
 /// use `Paket.Restore.targets` instead of `PackageReference`), falls back to the
 /// well-known F# ecosystem root list.
-fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> bool {
+pub(super) fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> bool {
     let root = ns.split('.').next().unwrap_or(ns);
     if matches!(root, "System" | "Microsoft") {
         return true;

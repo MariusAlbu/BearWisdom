@@ -11,12 +11,14 @@
 //! - `import_attribute` / `pp_include` → Imports
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
 
+pub use hooks::ERLANG_HOOKS;
 pub use profile::ERLANG_PROFILE;
 mod attributes;
 mod cowboy;
@@ -90,5 +92,12 @@ impl LanguagePlugin for ErlangPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ERLANG_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::ERLANG_HOOKS)
     }
 }

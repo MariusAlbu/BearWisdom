@@ -190,36 +190,6 @@ impl LanguageResolver for ErlangResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        use crate::types::EdgeKind;
-        if ref_ctx.extracted_ref.kind != EdgeKind::Calls {
-            return None;
-        }
-        let target = &ref_ctx.extracted_ref.target_name;
-        // Calls refs carry "name/arity" — strip the arity suffix and check the
-        // bare name against the ERTS BIF list and language primitive keywords.
-        // The OTP walker indexes erlang.erl declarations, but C-implemented BIFs
-        // have no `.erl` source body; they appear as stubs or are absent
-        // entirely. Stripping arity lets the existing keyword tables cover all
-        // auto-imported names regardless of arity.
-        let bare = target.split('/').next().unwrap_or(target.as_str());
-        if bare.is_empty() {
-            return None;
-        }
-        let plugin_keywords = crate::indexer::keywords::keywords_for_language("erlang");
-        if plugin_keywords.contains(&bare) {
-            return Some("primitive".to_string());
-        }
-        if super::keywords::KEYWORDS.contains(&bare) {
-            return Some("builtin".to_string());
-        }
-        None
-    }
 }
 
 impl ErlangResolver {

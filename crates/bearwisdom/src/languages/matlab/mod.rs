@@ -13,10 +13,12 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::MATLAB_HOOKS;
 pub use profile::MATLAB_PROFILE;
 
 #[cfg(test)]
@@ -76,5 +78,12 @@ impl LanguagePlugin for MatlabPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::MATLAB_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::MATLAB_HOOKS)
     }
 }

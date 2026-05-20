@@ -74,39 +74,6 @@ impl LanguageResolver for MatlabResolver {
     }
 
 
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
-            return Some(ns);
-        }
-
-        // MATLAB toolbox calls are bare names with no import declaration.
-        // When the matlab_runtime walker has indexed the installed toolbox,
-        // the target name appears in the external symbol table under an
-        // `ext:matlab:...` path. Confirm the name is known external before
-        // classifying — avoids false attribution for names the walker didn't
-        // find (no toolbox installed, or name is truly unresolved).
-        let target = &ref_ctx.extracted_ref.target_name;
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return None;
-        }
-        let bare = target.split('.').next().unwrap_or(target);
-        let hits = lookup.by_name(bare);
-        if hits
-            .iter()
-            .any(|sym| sym.file_path.starts_with("ext:matlab:"))
-        {
-            return Some("matlab-runtime".to_string());
-        }
-
-        None
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,

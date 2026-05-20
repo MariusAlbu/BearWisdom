@@ -489,7 +489,15 @@ fn infer_external_namespace_from_hash_r_import() {
         file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        use std::collections::HashMap;
+        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::fsharp::hooks::FsharpHooks.classify_external(
+            &ref_ctx, &file_ctx, None, &empty_lookup,
+        )
+    };
+    let _ = resolver;
     assert!(
         ns.is_some(),
         "expected Some namespace for 'div' with Fornax.Core import; got None"

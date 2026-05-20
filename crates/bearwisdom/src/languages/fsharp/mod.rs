@@ -14,10 +14,12 @@
 
 pub(crate) mod keywords;
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::FSHARP_HOOKS;
 pub use profile::FSHARP_PROFILE;
 pub mod extract;
 mod applications;
@@ -84,5 +86,12 @@ impl LanguagePlugin for FSharpPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::FSHARP_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::FSHARP_HOOKS)
     }
 }
