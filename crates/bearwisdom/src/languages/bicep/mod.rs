@@ -6,7 +6,6 @@ pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod embedded;
 pub mod extract;
-pub mod resolve;
 
 pub use hooks::BICEP_HOOKS;
 pub use profile::BICEP_PROFILE;

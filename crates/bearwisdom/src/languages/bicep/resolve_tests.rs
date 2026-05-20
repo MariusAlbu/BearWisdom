@@ -1,6 +1,6 @@
 // Tests for bicep/resolve.rs — decorator-builtin filtering and module path resolution.
 
-use super::resolve::BicepResolver;
+
 use crate::indexer::resolve::engine::{
     FileContext, RefContext, SymbolIndex,
 };
@@ -96,8 +96,10 @@ fn child_resource_shorthand_classifies_as_azure() {
         let file = make_file("n.bicep", vec![sym.clone()], vec![tr.clone()]);
         let parsed = vec![file];
         let index = SymbolIndex::build(&parsed, &HashMap::new());
-        let resolver = BicepResolver;
-        let file_ctx = resolver.build_file_context(&parsed[0], None);
+        let file_ctx = {
+            use crate::type_checker::profile::hooks::LanguageEngineHooks;
+            super::hooks::BicepHooks.build_file_context(&parsed[0], None).unwrap()
+        };
         let ref_ctx = RefContext {
             extracted_ref: &tr,
             source_symbol: &sym,
@@ -123,8 +125,10 @@ fn user_symbol_not_child_shorthand() {
     let file = make_file("n.bicep", vec![sym.clone()], vec![tr.clone()]);
     let parsed = vec![file];
     let index = SymbolIndex::build(&parsed, &HashMap::new());
-    let resolver = BicepResolver;
-    let file_ctx = resolver.build_file_context(&parsed[0], None);
+    let file_ctx = {
+            use crate::type_checker::profile::hooks::LanguageEngineHooks;
+            super::hooks::BicepHooks.build_file_context(&parsed[0], None).unwrap()
+        };
     let ref_ctx = RefContext {
         extracted_ref: &tr,
         source_symbol: &sym,
