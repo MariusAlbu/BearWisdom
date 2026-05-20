@@ -543,10 +543,19 @@ pub fn infer_external_from_chain(
         }
         SegmentKind::Identifier => {
             let name = &segments[0].name;
-            // Field on enclosing class?
+            // Field on enclosing class? Consult the TypeId surface first
+            // and format back to the legacy string view — the walker still
+            // operates on `current_type: String`, but the data comes from
+            // the canonical TypeArena.
             let mut found = None;
             for scope in scope_chain {
                 let field_qname = format!("{scope}.{name}");
+                if let Some(id) = lookup.field_type_id(&field_qname) {
+                    if let Some(arena) = lookup.type_arena() {
+                        found = Some(arena.format_type(id));
+                        break;
+                    }
+                }
                 if let Some(type_name) = lookup.field_type_name(&field_qname) {
                     found = Some(type_name.to_string());
                     break;
@@ -630,8 +639,24 @@ pub fn infer_external_from_chain(
             return Some(current_type);
         }
 
-        // Try to follow to the next type.
+        // Try to follow to the next type. Prefer the canonical TypeId
+        // path so any structural information (Apply decomposition) is
+        // surfaced through arena.format_type; fall back to the legacy
+        // string accessor when no arena is bound.
         let member_qname = format!("{current_type}.{}", seg.name);
+        let arena = lookup.type_arena();
+        if let Some(id) = lookup.field_type_id(&member_qname) {
+            if let Some(a) = arena {
+                current_type = a.format_type(id);
+                continue;
+            }
+        }
+        if let Some(id) = lookup.return_type_id(&member_qname) {
+            if let Some(a) = arena {
+                current_type = a.format_type(id);
+                continue;
+            }
+        }
         if let Some(next) = lookup.field_type_name(&member_qname) {
             current_type = next.to_string();
             continue;
