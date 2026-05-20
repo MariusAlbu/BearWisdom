@@ -60,7 +60,7 @@ fn test_zig_http_fetch_emits_producer() {
         file_package_id: None,
     };
     let fc = make_file_ctx();
-    let emissions = super::detect_flow_inner(&fc, &rc);
+    let emissions = super::hooks::detect_flow_inner(&fc, &rc);
     assert!(matches!(emissions.first(), Some(FlowEmission::NamedChannel { role: ChannelRole::Producer, .. })));
 }
 
@@ -75,7 +75,7 @@ fn test_zig_http_send_with_path_emits() {
         file_package_id: None,
     };
     let fc = make_file_ctx();
-    assert!(!super::detect_flow_inner(&fc, &rc).is_empty());
+    assert!(!super::hooks::detect_flow_inner(&fc, &rc).is_empty());
 }
 
 #[test]
@@ -89,5 +89,5 @@ fn test_zig_no_emit_for_non_url_arg() {
         file_package_id: None,
     };
     let fc = make_file_ctx();
-    assert!(super::detect_flow_inner(&fc, &rc).is_empty());
+    assert!(super::hooks::detect_flow_inner(&fc, &rc).is_empty());
 }

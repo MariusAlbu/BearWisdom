@@ -24,12 +24,13 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub(crate) mod resolve;
 
 pub use hooks::ZIG_HOOKS;
 pub use profile::ZIG_PROFILE;
 
-pub use resolve::ZigResolver;
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
