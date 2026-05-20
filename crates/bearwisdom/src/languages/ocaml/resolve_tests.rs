@@ -1,4 +1,5 @@
-use super::hooks::{detect_ocaml_caqti_emission, detect_ocaml_caqti_with_imports, detect_ocaml_cohttp_producer, detect_ocaml_dream_route};
+use super::hooks::{detect_ocaml_caqti_emission, detect_ocaml_caqti_with_imports, detect_ocaml_cohttp_producer, detect_ocaml_dream_route, OcamlHooks};
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
 
 #[test]
@@ -125,7 +126,7 @@ fn build_file_context_includes_implicit_stdlib_open() {
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
     };
-    let ctx = OcamlResolver.build_file_context(&file, None);
+    let ctx = OcamlHooks.build_file_context(&file, None).unwrap();
     let stdlib_imports: Vec<_> = ctx
         .imports
         .iter()
