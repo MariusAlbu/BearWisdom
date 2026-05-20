@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_haskell_http_producer, detect_haskell_persistent_emission, detect_haskell_scotty_route};
 use crate::types::*;
 
 #[test]

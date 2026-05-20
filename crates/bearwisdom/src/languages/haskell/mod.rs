@@ -8,9 +8,12 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::HASKELL_HOOKS;
 pub use profile::HASKELL_PROFILE;
