@@ -16,7 +16,10 @@
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::HARE_HOOKS;
 pub use profile::HARE_PROFILE;
