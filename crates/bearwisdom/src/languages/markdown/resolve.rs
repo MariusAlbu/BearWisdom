@@ -129,21 +129,6 @@ impl LanguageResolver for MarkdownResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // Markdown links that don't match an indexed file genuinely point
-        // outside the project — anchor-only links and external URLs are
-        // already filtered at extract time, so anything reaching this
-        // resolver and failing path lookup is a real doc-drift signal.
-        // Return None and let the ref land in unresolved_refs honestly
-        // rather than synthesising an `ext:<path>` namespace that hides
-        // broken doc links from the user.
-        None
-    }
 }
 
 /// Generate the ordered list of file-path candidates a Markdown link
