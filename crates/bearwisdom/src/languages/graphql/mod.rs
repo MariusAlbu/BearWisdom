@@ -5,7 +5,6 @@ pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 
 pub use hooks::GRAPHQL_HOOKS;
 pub use profile::GRAPHQL_PROFILE;

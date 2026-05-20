@@ -20,7 +20,6 @@
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 
 pub use hooks::PRISMA_HOOKS;
 pub use profile::PRISMA_PROFILE;

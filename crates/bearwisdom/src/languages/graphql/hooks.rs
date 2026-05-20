@@ -1,10 +1,33 @@
-use super::resolve;
-use super::resolve::is_graphql_builtin;
+// GraphQL language hooks. Absorbed from the deleted `graphql/resolve.rs`.
+
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{self as engine, FileContext, RefContext, SymbolLookup, Resolution};
+use crate::indexer::resolve::engine::{
+    self as engine, FileContext, RefContext, Resolution, SymbolLookup,
+};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct GraphQlHooks;
+
+/// GraphQL built-in scalar types and introspection system types.
+pub(crate) fn is_graphql_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        "String"
+            | "Int"
+            | "Float"
+            | "Boolean"
+            | "ID"
+            | "__Schema"
+            | "__Type"
+            | "__Field"
+            | "__InputValue"
+            | "__EnumValue"
+            | "__Directive"
+            | "__DirectiveLocation"
+            | "__TypeKind"
+    )
+}
 
 impl LanguageEngineHooks for GraphQlHooks {
     fn classify_external(
@@ -20,19 +43,35 @@ impl LanguageEngineHooks for GraphQlHooks {
 
     fn build_file_context(
         &self,
-        file: &crate::types::ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<crate::indexer::resolve::engine::FileContext> {
-        Some(resolve::build_file_context_inner(file, project_ctx))
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        Some(FileContext {
+            file_path: file.path.clone(),
+            language: "graphql".to_string(),
+            imports: Vec::new(),
+            file_namespace: None,
+        })
     }
 
     fn resolve_ref(
         &self,
-        file_ctx: &crate::indexer::resolve::engine::FileContext,
-        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
-        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        super::resolve::GraphQlResolver.resolve(file_ctx, ref_ctx, lookup)
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        if ref_ctx.extracted_ref.kind != EdgeKind::TypeRef {
+            return None;
+        }
+        if is_graphql_builtin(&ref_ctx.extracted_ref.target_name) {
+            return None;
+        }
+        engine::resolve_common("graphql", file_ctx, ref_ctx, lookup, |_, sym_kind| {
+            matches!(
+                sym_kind,
+                "class" | "interface" | "enum" | "struct" | "type_alias"
+            )
+        })
     }
 }
 
