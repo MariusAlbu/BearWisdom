@@ -15,6 +15,9 @@
 
 pub(crate) mod keywords;
 pub mod extract;
+pub(crate) mod profile;
+
+pub use profile::VBNET_PROFILE;
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
@@ -81,5 +84,11 @@ impl LanguagePlugin for VbNetPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(crate::languages::csharp::resolve::CSharpResolver))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::VBNET_PROFILE)
     }
 }
