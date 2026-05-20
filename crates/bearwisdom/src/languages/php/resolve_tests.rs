@@ -374,7 +374,13 @@ fn test_infer_framework_external() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::php::hooks::PhpHooks.classify_external(
+            &ref_ctx, &file_ctx, None, &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "Illuminate import should be inferred as external");
 }
 

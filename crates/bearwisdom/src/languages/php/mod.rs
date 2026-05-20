@@ -10,11 +10,13 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod resolve;
 
+pub use hooks::PHP_HOOKS;
 pub use profile::PHP_PROFILE;
 
 #[cfg(test)]
@@ -122,6 +124,13 @@ impl LanguagePlugin for PhpPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PHP_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::PHP_HOOKS)
     }
 
     // TODO(routes-dispatch): wire `connectors::discover_laravel_routes` into

@@ -218,25 +218,6 @@ impl LanguageResolver for SwiftResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        infer_external_inner(file_ctx, ref_ctx, project_ctx, None)
-    }
-
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,
@@ -443,7 +424,7 @@ fn module_is_external(
     false
 }
 
-fn infer_external_inner(
+pub(super) fn infer_external_inner(
     file_ctx: &FileContext,
     ref_ctx: &RefContext,
     project_ctx: Option<&ProjectContext>,

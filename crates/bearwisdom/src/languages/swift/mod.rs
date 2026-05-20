@@ -9,10 +9,12 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 pub(crate) mod type_checker;
 
+pub use hooks::SWIFT_HOOKS;
 pub use profile::SWIFT_PROFILE;
 
 #[cfg(test)]
@@ -112,6 +114,13 @@ impl LanguagePlugin for SwiftPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::SWIFT_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::SWIFT_HOOKS)
     }
 
     // resolve_connection_points removed — SwiftRestConnector's only role was
