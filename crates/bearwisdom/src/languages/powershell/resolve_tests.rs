@@ -247,7 +247,6 @@ fn make_source_sym() -> ExtractedSymbol {
 
 #[test]
 fn test_infer_external_ns_dotnet_property() {
-    let resolver = PowerShellResolver;
     let file_ctx = make_file_ctx_with_binding("border");
     let r = make_member_ref("Style", "border", EdgeKind::TypeRef);
     let sym = make_source_sym();
@@ -267,7 +266,6 @@ fn test_infer_external_ns_dotnet_property() {
 
 #[test]
 fn test_infer_external_ns_dotnet_method() {
-    let resolver = PowerShellResolver;
     let file_ctx = make_file_ctx_with_binding("border");
     let r = make_member_ref("Add_MouseLeftButtonUp", "border", EdgeKind::Calls);
     let sym = make_source_sym();
@@ -287,7 +285,6 @@ fn test_infer_external_ns_dotnet_method() {
 
 #[test]
 fn test_infer_external_ns_unbound_var() {
-    let resolver = PowerShellResolver;
     let file_ctx = make_file_ctx_with_binding("border");
     // `sync` is NOT bound to a .NET type.
     let r = make_member_ref("Form", "sync", EdgeKind::TypeRef);
@@ -308,7 +305,6 @@ fn test_infer_external_ns_unbound_var() {
 
 #[test]
 fn test_infer_external_ns_cmdlet_no_module() {
-    let resolver = PowerShellResolver;
     let file_ctx = FileContext {
         file_path: "test.ps1".to_string(),
         language: "powershell".to_string(),
@@ -350,7 +346,6 @@ fn test_infer_external_ns_cmdlet_no_module() {
 /// Binding for registry var `sync` → is_dotnet_bound_var("sync") should be true.
 #[test]
 fn test_part1_sync_registry_var_classifies_as_dotnet() {
-    let resolver = PowerShellResolver;
     let file_ctx = make_file_ctx_with_binding("sync");
     // Ref: `$sync["WPFKey"].Dispatcher` → module="sync", target="Dispatcher"
     let r = make_member_ref("Dispatcher", "sync", EdgeKind::TypeRef);
@@ -371,7 +366,6 @@ fn test_part1_sync_registry_var_classifies_as_dotnet() {
 
 #[test]
 fn test_part1_sync_invoke_classifies_as_dotnet() {
-    let resolver = PowerShellResolver;
     let file_ctx = make_file_ctx_with_binding("sync");
     let r = make_member_ref("Invoke", "sync", EdgeKind::Calls);
     let sym = make_source_sym();
@@ -391,7 +385,6 @@ fn test_part1_sync_invoke_classifies_as_dotnet() {
 
 #[test]
 fn test_part1_sync_text_visibility_findname() {
-    let resolver = PowerShellResolver;
     let file_ctx = make_file_ctx_with_binding("sync");
     let sym = make_source_sym();
     for name in &["Text", "Visibility", "FindName", "IsChecked", "Count"] {
@@ -421,7 +414,6 @@ fn test_part1_sync_text_visibility_findname() {
 
 #[test]
 fn test_part2_pipeline_var_visibility_classifies_as_dotnet() {
-    let resolver = PowerShellResolver;
     let file_ctx = make_file_ctx_with_binding("_");
     let r = make_member_ref("Visibility", "_", EdgeKind::TypeRef);
     let sym = make_source_sym();
@@ -441,7 +433,6 @@ fn test_part2_pipeline_var_visibility_classifies_as_dotnet() {
 
 #[test]
 fn test_part2_pipeline_var_text_classifies_as_dotnet() {
-    let resolver = PowerShellResolver;
     let file_ctx = make_file_ctx_with_binding("_");
     let r = make_member_ref("Text", "_", EdgeKind::TypeRef);
     let sym = make_source_sym();
@@ -488,7 +479,6 @@ fn test_part3_try_parse_cmdlet_result_chain_parenthesized() {
 #[test]
 fn test_part3_infer_external_ns_cmdlet_result() {
     use crate::ecosystem::powershell_cmdlet_types::cmdlet_result_module_tag;
-    let resolver = PowerShellResolver;
     let tag = cmdlet_result_module_tag("Get-Date");
     let file_ctx = make_file_ctx_with_binding(&tag);
     let r = make_member_ref("ToString", &tag, EdgeKind::Calls);
