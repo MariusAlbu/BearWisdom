@@ -171,10 +171,7 @@ fn shell_source_resolves_relative_path() {
     id_map.insert(("main.sh".to_string(), "main".to_string()), 20);
 
     let index = SymbolIndex::build(&parsed, &id_map);
-    let resolver = BashResolver;
-
-    // Build FileContext for main.sh using the resolver.
-    let file_ctx = resolver.build_file_context(&parsed[1], None);
+    let file_ctx = BashHooks.build_file_context(&parsed[1], None).unwrap();
 
     let calls_ref = make_calls_ref("run_backup");
     let source_sym = make_fn_sym("main");
