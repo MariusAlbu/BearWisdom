@@ -845,7 +845,13 @@ fn test_infer_external_namespace_exported_symbol() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::go::hooks::GoHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "Exported symbol with external import should be inferred");
     assert_eq!(ns.unwrap(), "go.uber.org/zap");
 }
@@ -883,7 +889,13 @@ fn test_infer_external_namespace_unexported_returns_none() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::go::hooks::GoHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(
         ns.is_none(),
         "Unexported symbols cannot come from external packages"
@@ -925,7 +937,13 @@ fn test_infer_external_namespace_internal_import_not_returned() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::go::hooks::GoHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(
         ns.is_none(),
         "Internal import should not be returned as external namespace"
@@ -955,7 +973,13 @@ fn test_infer_no_imports_returns_none() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::go::hooks::GoHooks.classify_external(
+            &ref_ctx, &file_ctx, None, &empty_lookup,
+        )
+    };
     assert!(ns.is_none(), "No imports → no external namespace inference");
 }
 
@@ -988,7 +1012,13 @@ fn test_infer_external_namespace_import_ref_skipped() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::go::hooks::GoHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     // Import refs to external packages should now be classified as external.
     assert_eq!(
         ns.as_deref(),

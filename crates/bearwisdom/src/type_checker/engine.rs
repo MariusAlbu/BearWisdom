@@ -270,10 +270,11 @@ impl<'a> Engine<'a> {
         &self,
         ref_ctx: &RefContext,
         file_ctx: &FileContext,
+        project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         let hooks = self.hooks.get(file_ctx.language.as_str()).copied()?;
-        hooks.classify_external(ref_ctx, file_ctx, lookup)
+        hooks.classify_external(ref_ctx, file_ctx, project_ctx, lookup)
     }
 
     pub fn arena(&self) -> &TypeArena {

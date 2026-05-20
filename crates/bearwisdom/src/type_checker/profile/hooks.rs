@@ -11,6 +11,7 @@
 // engine binds when a language plugin does not ship its own hooks.
 // =============================================================================
 
+use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     FileContext, RefContext as ResolveRefContext, Resolution, SymbolLookup,
 };
@@ -145,6 +146,7 @@ pub trait LanguageEngineHooks: Send + Sync {
         &self,
         _ref_ctx: &ResolveRefContext<'_>,
         _file_ctx: &FileContext,
+        _project_ctx: Option<&ProjectContext>,
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         None

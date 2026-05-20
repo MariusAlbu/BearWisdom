@@ -583,7 +583,7 @@ fn resolve_iteration_body(
                     file_package_id: pf.package_id,
                 };
                 type_engine
-                    .classify_external(&ref_ctx, file_ctx, index)
+                    .classify_external(&ref_ctx, file_ctx, project_ctx, index)
                     .or_else(|| {
                         resolver.infer_external_namespace_with_lookup(
                             file_ctx, &ref_ctx, project_ctx, index,

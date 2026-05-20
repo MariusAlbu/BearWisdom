@@ -376,69 +376,6 @@ impl LanguageResolver for GoResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import refs (e.g., `import "fmt"`, `import "mymodule/pkg"`).
-        // These are namespace declarations, not symbol references — they don't
-        // map to a single target symbol. Classify them all with their module path
-        // so they move out of unresolved_refs (we know what they are).
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            return Some(import_path.to_string());
-        }
-
-        // Go built-in functions and types — always external (runtime/stdlib).
-        if predicates::is_go_builtin(target) {
-            return Some("builtin".to_string());
-        }
-
-        // Go composite literal types: []string, map[string]int, []*Foo, etc.
-        if predicates::is_go_composite_type(target) {
-            return Some("builtin".to_string());
-        }
-
-        // For non-import refs, "external namespace" means the import path of
-        // the package this ref likely comes from. Only exported (capitalized)
-        // names can come from external packages.
-        let is_exported = target.chars().next().is_some_and(|c| c.is_uppercase());
-        if !is_exported {
-            return None;
-        }
-
-        let mut best: Option<&str> = None;
-
-        for import in &file_ctx.imports {
-            let Some(full_path) = &import.module_path else {
-                continue;
-            };
-
-            // Manifest-driven: check go.mod external dependencies first.
-            // go.mod external deps are full module paths (e.g., "github.com/gin-gonic/gin").
-            // is_external_go_import already uses go_module_path from the manifest,
-            // so this explicit check adds direct manifest validation as the first pass.
-            let external = if let Some(ctx) = project_ctx {
-                is_manifest_go_external(ctx, full_path)
-            } else {
-                predicates::is_external_go_import_fallback(full_path)
-            };
-
-            if external {
-                // Prefer longer (more specific) paths.
-                if best.is_none() || full_path.len() > best.unwrap().len() {
-                    best = Some(full_path.as_str());
-                }
-            }
-        }
-
-        best.map(|s| s.to_string())
-    }
-
     fn is_visible(
         &self,
         file_ctx: &FileContext,
