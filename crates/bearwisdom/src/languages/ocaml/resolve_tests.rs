@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_ocaml_caqti_emission, detect_ocaml_caqti_with_imports, detect_ocaml_cohttp_producer, detect_ocaml_dream_route};
 use crate::types::*;
 
 #[test]
