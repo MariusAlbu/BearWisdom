@@ -33,8 +33,7 @@ use super::adapters::{
     plugin_flow_emissions_to_emissions,
 };
 use super::engine::{
-    self, build_scope_chain, ChainMiss, ImportEntry, RefContext, ResolutionEngine, SymbolIndex,
-    SymbolLookup,
+    self, build_scope_chain, ChainMiss, ImportEntry, RefContext, SymbolIndex, SymbolLookup,
 };
 use super::flow_emit;
 use super::flow_pair::flush_flow_emissions;
@@ -118,7 +117,6 @@ fn resolve_iteration_body(
     index: &mut SymbolIndex,
     augmented_id_map: Option<HashMap<(String, String), i64>>,
 ) -> Result<ResolutionStats> {
-    let engine = ResolutionEngine::new();
     // The closure passed to par_iter requires `&SymbolIndex` (for the
     // SymbolLookup trait), not `&mut SymbolIndex`. Reborrow as
     // immutable for the duration of the loop.

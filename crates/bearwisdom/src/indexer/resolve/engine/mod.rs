@@ -12,7 +12,6 @@
 //   * types         — public data contracts (ChainMiss, FileContext,
 //                     RefContext, Resolution, SymbolInfo, TypeInfo)
 //   * lookup        — SymbolLookup trait
-//   * registry      — LanguageResolver trait + ResolutionEngine dispatch
 //   * index         — SymbolIndex struct + build/augment/classify/lookup_impl
 //   * chain_walker  — type-inference chain walker and its string helpers
 //   * common        — tier-2 resolver helpers (resolve_common, infer_external_common)
@@ -24,7 +23,6 @@ pub mod chain_walker;
 pub mod common;
 pub mod index;
 pub mod lookup;
-pub mod registry;
 pub mod types;
 pub mod util;
 
@@ -32,7 +30,6 @@ pub use chain_walker::infer_external_from_chain;
 pub use common::{infer_external_common, resolve_common};
 pub use index::{LocalTypeCache, SymbolIndex};
 pub use lookup::SymbolLookup;
-pub use registry::ResolutionEngine;
 pub use types::{
     intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution,
     SymbolInfo, TypeInfo,
