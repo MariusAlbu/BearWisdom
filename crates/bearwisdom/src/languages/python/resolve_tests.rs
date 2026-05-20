@@ -6,7 +6,7 @@
 // production values to a casual reader.
 // =============================================================================
 
-use super::resolve::PythonResolver;
+use super::hooks::PythonResolver;
 use crate::indexer::resolve::engine::{
     build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolLookup,
 };

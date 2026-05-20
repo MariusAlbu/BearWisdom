@@ -18,10 +18,10 @@ mod predicates;
 pub mod profile;
 pub(crate) mod type_checker;
 mod externals;
-pub mod resolve;
 mod flow_detectors;
 
 pub use hooks::PYTHON_HOOKS;
+pub use hooks::PythonResolver;
 pub use profile::PYTHON_PROFILE;
 
 #[cfg(test)]
@@ -48,8 +48,6 @@ use crate::ecosystem::manifest::ManifestKind;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::PythonResolver;
 
 pub struct PythonPlugin;
 
