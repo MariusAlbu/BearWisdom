@@ -126,6 +126,29 @@ pub trait LanguageEngineHooks: Send + Sync {
     ) -> Option<Resolution> {
         None
     }
+
+    /// Classify an unresolved ref as belonging to an external namespace
+    /// (third-party package, language runtime, framework). Returns the
+    /// external namespace string the engine writes to `externals` (e.g.
+    /// `"ext:react"`, `"@types/node"`, `"Microsoft.EntityFrameworkCore"`).
+    ///
+    /// Engine consults this hook in the Tier 1.5 block of the resolver
+    /// loop (after engine + legacy resolution failed, before the
+    /// chain-walker + name-classifier + import-table generic checks).
+    /// Default returns `None` — the engine's generic external paths
+    /// (chain inference, primitive/builtin classification, import-table
+    /// inference) still run. Per-language hooks override to express
+    /// ecosystem-specific rules: TS workspace-package membership,
+    /// Python site-packages, Java pom.xml/Gradle, C# NuGet/.csproj,
+    /// Go go.mod, etc.
+    fn classify_external(
+        &self,
+        _ref_ctx: &ResolveRefContext<'_>,
+        _file_ctx: &FileContext,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        None
+    }
 }
 
 /// Concrete no-op implementation. Bound by the engine when a language

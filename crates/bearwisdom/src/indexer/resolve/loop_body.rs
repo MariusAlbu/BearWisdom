@@ -565,11 +565,11 @@ fn resolve_iteration_body(
             // ---------------------------------------------------------------
             // Tier 1.5: External classification — BEFORE heuristic.
             //
-            // Language resolvers and chain inference can identify refs that
-            // belong to external packages (stdlib, third-party crates).
-            // Check this FIRST so the heuristic doesn't create false
-            // low-confidence edges for things like `map`, `iter`, `get`
-            // that match internal method names by coincidence.
+            // Engine hook fires first for languages that have authored a
+            // `LanguageEngineHooks::classify_external` impl; legacy
+            // `infer_external_namespace_with_lookup` runs as fallback for
+            // languages that haven't migrated yet. Both feed the same
+            // `externals` write path downstream.
             //
             // `resolver` and `file_ctx` here are already the effective-language
             // versions (embedded resolver for cross-lang refs, host resolver
@@ -582,9 +582,13 @@ fn resolve_iteration_body(
                     scope_chain: scope_chain.clone(),
                     file_package_id: pf.package_id,
                 };
-                resolver.infer_external_namespace_with_lookup(
-                    file_ctx, &ref_ctx, project_ctx, index,
-                )
+                type_engine
+                    .classify_external(&ref_ctx, file_ctx, index)
+                    .or_else(|| {
+                        resolver.infer_external_namespace_with_lookup(
+                            file_ctx, &ref_ctx, project_ctx, index,
+                        )
+                    })
             } else {
                 None
             };

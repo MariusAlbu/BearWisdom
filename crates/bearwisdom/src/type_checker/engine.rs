@@ -262,6 +262,20 @@ impl<'a> Engine<'a> {
         infer_expression_type(expr_ref, existing, &self.arena, profile)
     }
 
+    /// Classify a ref as external via the language hook. Engine consults
+    /// the hook registered for `file_ctx.language`; returns `None` when
+    /// no language hook produced a classification (engine's generic
+    /// external paths still run as a fallback).
+    pub fn classify_external(
+        &self,
+        ref_ctx: &RefContext,
+        file_ctx: &FileContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        let hooks = self.hooks.get(file_ctx.language.as_str()).copied()?;
+        hooks.classify_external(ref_ctx, file_ctx, lookup)
+    }
+
     pub fn arena(&self) -> &TypeArena {
         &self.arena
     }
