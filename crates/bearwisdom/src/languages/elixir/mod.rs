@@ -13,9 +13,9 @@ pub(crate) mod hooks;
 pub(crate) mod predicates;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub mod resolve;
 
 pub use hooks::ELIXIR_HOOKS;
+pub use hooks::ElixirResolver;
 pub use profile::ELIXIR_PROFILE;
 
 #[cfg(test)]
@@ -26,11 +26,13 @@ mod extract_tests;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::ElixirResolver;
 
 pub struct ElixirPlugin;
 

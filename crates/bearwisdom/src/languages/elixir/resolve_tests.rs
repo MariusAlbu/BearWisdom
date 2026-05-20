@@ -1,4 +1,8 @@
-use super::*;
+use super::hooks::{
+    detect_elixir_ecto_emission, detect_elixir_grpc_emission, detect_elixir_http_emission,
+    detect_elixir_mailer_emission, detect_elixir_oban_emission,
+    detect_elixir_phoenix_channel_use,
+};
 use crate::types::*;
 
 #[test]
