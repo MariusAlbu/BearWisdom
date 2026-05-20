@@ -30,8 +30,6 @@ mod resolve_tests;
 pub use hooks::NIM_HOOKS;
 pub use profile::NIM_PROFILE;
 
-pub use resolve::NimResolver;
-
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
