@@ -97,10 +97,6 @@ impl LanguagePlugin for ScalaPlugin {
         keywords::KEYWORDS
     }
 
-    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(resolve::ScalaResolver))
-    }
-
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::ScalaChecker))
     }

@@ -77,14 +77,6 @@ impl LanguagePlugin for AngularTemplatePlugin {
         crate::languages::typescript::keywords::KEYWORDS
     }
 
-    fn resolver(
-        &self,
-    ) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(
-            crate::languages::angular::resolve::AngularResolver,
-        ))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

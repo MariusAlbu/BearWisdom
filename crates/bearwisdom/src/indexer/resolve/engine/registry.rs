@@ -75,29 +75,12 @@ pub trait LanguageResolver: Send + Sync {
 // ResolutionEngine
 // ---------------------------------------------------------------------------
 
-/// The engine that dispatches resolution to language-specific resolvers.
-pub struct ResolutionEngine {
-    resolvers: FxHashMap<String, Arc<dyn LanguageResolver>>,
-}
+/// Vestigial dispatcher kept for ABI compatibility; resolution flows entirely
+/// through `LanguageEngineHooks`. The struct holds no state.
+pub struct ResolutionEngine;
 
 impl ResolutionEngine {
-    /// Create a new engine with the default set of language resolvers.
     pub fn new() -> Self {
-        let mut engine = Self {
-            resolvers: FxHashMap::default(),
-        };
-        for resolver in crate::languages::default_resolvers() {
-            for &lang_id in resolver.language_ids() {
-                engine
-                    .resolvers
-                    .insert(lang_id.to_string(), Arc::clone(&resolver));
-            }
-        }
-        engine
-    }
-
-    /// Get the resolver for a language, if one is registered.
-    pub fn resolver_for(&self, language: &str) -> Option<&dyn LanguageResolver> {
-        self.resolvers.get(language).map(|r| r.as_ref())
+        Self
     }
 }

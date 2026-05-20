@@ -87,10 +87,6 @@ impl LanguagePlugin for HarePlugin {
         ]
     }
 
-    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(resolve::HareResolver))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

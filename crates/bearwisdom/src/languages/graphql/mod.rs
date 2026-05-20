@@ -77,10 +77,6 @@ impl LanguagePlugin for GraphQlPlugin {
         ]
     }
 
-    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(resolve::GraphQlResolver))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

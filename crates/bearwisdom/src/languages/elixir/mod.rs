@@ -81,10 +81,6 @@ impl LanguagePlugin for ElixirPlugin {
         keywords::KEYWORDS
     }
 
-    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(resolve::ElixirResolver))
-    }
-
     // TODO(routes-dispatch): wire `connectors::discover_phoenix_routes` into the
     // indexer route-population stage. The function now writes the `routes` table
     // directly (returning the insert count) and the routes-table → FlowEmission

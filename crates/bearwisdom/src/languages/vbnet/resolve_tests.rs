@@ -75,14 +75,9 @@ fn test_vbnet_efcore_savechanges_emits_dbquery() {
     ));
 }
 
-#[test]
-fn test_vbnet_resolver_is_csharp_resolver() {
-    use super::VbNetPlugin;
-    use crate::languages::LanguagePlugin;
-    let plugin = VbNetPlugin;
-    let resolver = plugin.resolver().expect("VB.NET should have a resolver");
-    assert!(resolver.language_ids().contains(&"csharp"));
-}
+// `test_vbnet_resolver_is_csharp_resolver` removed — `LanguagePlugin::resolver`
+// no longer exists; VB.NET routes through the C# language hooks via the
+// language_ids contract on `LanguagePlugin`.
 
 #[test]
 fn test_vbnet_dapper_execute_emits_other_op() {

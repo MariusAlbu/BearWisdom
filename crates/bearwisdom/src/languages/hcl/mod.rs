@@ -74,10 +74,6 @@ impl LanguagePlugin for HclPlugin {
 
     fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
-    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(resolve::HclResolver))
-    }
-
     fn post_index(
         &self,
         db: &crate::db::Database,

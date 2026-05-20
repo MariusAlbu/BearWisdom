@@ -56,9 +56,6 @@ impl LanguagePlugin for JinjaPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
-    fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
-        Some(Arc::new(resolve::JinjaResolver))
-    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

@@ -133,10 +133,6 @@ impl LanguagePlugin for CLangPlugin {
         &["int", "char", "void", "float", "double", "short", "long", "unsigned", "signed", "size_t", "bool", "auto"]
     }
 
-    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(resolve::CLangResolver))
-    }
-
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::CChecker))
     }

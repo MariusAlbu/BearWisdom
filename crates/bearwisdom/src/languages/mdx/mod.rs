@@ -77,16 +77,6 @@ impl LanguagePlugin for MdxPlugin {
         &[]
     }
 
-    fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
-        // MDX needs both halves of resolution: Markdown-style relative
-        // link Imports (path probing) AND TS-import-aware JSX Calls
-        // (cross-reference component refs against the file's spliced TS
-        // import bindings). MdxResolver dispatches by ref kind — the
-        // same pattern Vue/Svelte use to bridge template tags onto the
-        // `<script>` block's TypeScript imports.
-        Some(Arc::new(MdxResolver))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

@@ -36,9 +36,6 @@ impl LanguagePlugin for HandlebarsPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
-    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(resolve::HandlebarsResolver))
-    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

@@ -89,10 +89,6 @@ impl LanguagePlugin for MarkdownPlugin {
         &[]
     }
 
-    fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
-        Some(Arc::new(resolve::MarkdownResolver))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

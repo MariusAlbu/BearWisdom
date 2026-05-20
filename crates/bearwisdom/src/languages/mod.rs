@@ -198,12 +198,6 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// an apply.
     fn nested_ref_skip_pairs(&self) -> &[(&'static str, &'static str)] { &[] }
 
-    /// Return the language resolver for this plugin, if one exists.
-    ///
-    /// This ties plugin and resolver together — no separate registration list.
-    /// The engine collects resolvers by calling this on every registered plugin.
-    fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> { None }
-
     /// Return the language type checker for this plugin, if one exists.
     ///
     /// One impl per typed language (TypeScript, C#, Rust, etc.). Untyped /
@@ -542,16 +536,6 @@ pub fn default_registry() -> &'static LanguageRegistry {
     &DEFAULT_REGISTRY
 }
 
-/// Collect language-specific resolvers from all registered plugins.
-///
-/// Derived from `LanguagePlugin::resolver()` — no separate list to maintain.
-pub fn default_resolvers() -> Vec<Arc<dyn LanguageResolver>> {
-    default_registry()
-        .all()
-        .iter()
-        .filter_map(|plugin| plugin.resolver())
-        .collect()
-}
 
 // collect_plugin_connectors / drive_connector / drive_connector_incremental
 // removed — all `impl Connector for X` blocks across language plugins were

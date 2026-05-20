@@ -83,10 +83,6 @@ impl LanguagePlugin for AdaPlugin {
         resolve::spec_for_body(file_path)
     }
 
-    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(resolve::AdaResolver))
-    }
-
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::AdaChecker))
     }
