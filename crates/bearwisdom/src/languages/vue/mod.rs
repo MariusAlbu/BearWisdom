@@ -14,10 +14,13 @@
 //! the indexer processes the embedded text as a separate extraction target.
 
 pub(crate) mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod extract;
 pub mod global_registry;
+
+pub use profile::VUE_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -221,6 +224,12 @@ impl LanguagePlugin for VuePlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::VueChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::VUE_PROFILE)
     }
 
     fn populate_project_state(

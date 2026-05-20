@@ -17,9 +17,12 @@
 //! the indexer processes the embedded text as a separate extraction target.
 
 pub(crate) mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod extract;
+
+pub use profile::SVELTE_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -154,5 +157,11 @@ impl LanguagePlugin for SveltePlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::SvelteChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::SVELTE_PROFILE)
     }
 }

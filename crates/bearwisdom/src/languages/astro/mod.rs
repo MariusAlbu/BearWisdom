@@ -16,6 +16,9 @@
 //! the indexer processes the embedded text as a separate extraction target.
 
 pub mod extract;
+pub(crate) mod profile;
+
+pub use profile::ASTRO_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -86,4 +89,9 @@ impl LanguagePlugin for AstroPlugin {
         Some(std::sync::Arc::new(crate::languages::typescript::resolve::TypeScriptResolver))
     }
 
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::ASTRO_PROFILE)
+    }
 }
