@@ -11,7 +11,6 @@ pub mod extract;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::SWIFT_HOOKS;
 pub use profile::SWIFT_PROFILE;

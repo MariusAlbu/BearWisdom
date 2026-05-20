@@ -10,7 +10,6 @@ pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod chain;
 mod predicates;
-pub(crate) mod type_checker;
 
 pub use hooks::STARLARK_HOOKS;
 pub use profile::STARLARK_PROFILE;
