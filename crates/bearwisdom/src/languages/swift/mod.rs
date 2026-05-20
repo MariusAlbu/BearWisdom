@@ -9,8 +9,11 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod profile;
 pub mod resolve;
 pub(crate) mod type_checker;
+
+pub use profile::SWIFT_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -103,6 +106,12 @@ impl LanguagePlugin for SwiftPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::SwiftChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::SWIFT_PROFILE)
     }
 
     // resolve_connection_points removed — SwiftRestConnector's only role was
