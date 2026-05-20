@@ -164,6 +164,19 @@ pub trait LanguageEngineHooks: Send + Sync {
     ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
         Vec::new()
     }
+
+    /// Construct the per-file resolution context. Languages override this to
+    /// thread import statements, file namespace, package id, embedded
+    /// regions, etc. — the things resolution depends on but that aren't
+    /// derivable from the ref alone. Returns `None` to let the engine fall
+    /// through to the legacy `LanguageResolver::build_file_context` path.
+    fn build_file_context(
+        &self,
+        _file: &crate::types::ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        None
+    }
 }
 
 /// Concrete no-op implementation. Bound by the engine when a language

@@ -309,7 +309,9 @@ fn resolve_iteration_body(
         let host_resolver = engine.resolver_for(&pf.language);
         let host_plugin = crate::languages::default_registry().get_dedicated(&pf.language);
         let host_file_ctx = host_resolver.map(|r| {
-            let mut ctx = r.build_file_context(pf, project_ctx);
+            let mut ctx = type_engine
+                .build_file_context(&pf.language, pf, project_ctx)
+                .unwrap_or_else(|| r.build_file_context(pf, project_ctx));
             // Merge companion imports (e.g. Angular template inherits the
             // paired `.component.ts` imports, since the template itself has
             // no import statements but every symbol it names is imported by
@@ -321,7 +323,9 @@ fn resolve_iteration_body(
             {
                 if let Some(comp_pf) = parsed_by_path.get(companion_path.as_str()) {
                     if let Some(comp_resolver) = engine.resolver_for(&comp_pf.language) {
-                        let comp_ctx = comp_resolver.build_file_context(comp_pf, project_ctx);
+                        let comp_ctx = type_engine
+                            .build_file_context(&comp_pf.language, comp_pf, project_ctx)
+                            .unwrap_or_else(|| comp_resolver.build_file_context(comp_pf, project_ctx));
                         ctx.imports.extend(comp_ctx.imports);
                     }
                 } else if let Some(db_imports) = companion_db_imports.get(&companion_path) {
@@ -392,7 +396,11 @@ fn resolve_iteration_body(
             let (resolver, file_ctx): (Option<&dyn engine::LanguageResolver>, _) =
                 if is_cross_lang_embedded {
                     let emb_resolver = engine.resolver_for(effective_lang);
-                    let emb_ctx = emb_resolver.map(|res| res.build_file_context(pf, project_ctx));
+                    let emb_ctx = emb_resolver.map(|res| {
+                        type_engine
+                            .build_file_context(effective_lang, pf, project_ctx)
+                            .unwrap_or_else(|| res.build_file_context(pf, project_ctx))
+                    });
                     (emb_resolver, emb_ctx)
                 } else {
                     (host_resolver, host_file_ctx.clone())

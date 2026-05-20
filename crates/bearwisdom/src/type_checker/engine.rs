@@ -293,6 +293,19 @@ impl<'a> Engine<'a> {
         hooks.detect_flow_emissions(file_ctx, ref_ctx, lookup)
     }
 
+    /// Build the per-file resolution context via the per-language hook.
+    /// Returns `None` when no hook is registered or the hook itself declines;
+    /// callers fall through to the legacy `LanguageResolver::build_file_context`.
+    pub fn build_file_context(
+        &self,
+        language: &str,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
+    ) -> Option<FileContext> {
+        let hooks = self.hooks.get(language).copied()?;
+        hooks.build_file_context(file, project_ctx)
+    }
+
     pub fn arena(&self) -> &TypeArena {
         &self.arena
     }
