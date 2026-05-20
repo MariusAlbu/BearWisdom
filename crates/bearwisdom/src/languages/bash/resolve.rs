@@ -204,14 +204,6 @@ impl LanguageResolver for BashResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_bash_builtin)
-    }
 }
 
 // ---------------------------------------------------------------------------

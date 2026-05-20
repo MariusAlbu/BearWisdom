@@ -2,9 +2,11 @@
 
 pub(crate) mod keywords;
 pub mod extract;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::SQL_HOOKS;
 pub use profile::SQL_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -81,5 +83,12 @@ impl LanguagePlugin for SqlPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::SQL_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::SQL_HOOKS)
     }
 }

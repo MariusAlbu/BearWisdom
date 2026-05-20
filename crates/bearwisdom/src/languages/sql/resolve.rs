@@ -80,14 +80,6 @@ impl LanguageResolver for SqlResolver {
         engine::resolve_common("sql", file_ctx, ref_ctx, lookup, sql_kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_sql_builtin_type)
-    }
 }
 
 /// Edge-kind / symbol-kind compatibility for SQL.
@@ -103,7 +95,7 @@ fn sql_kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 /// SQL/database-engine built-in type and pseudo-function names.
 /// These appear as TypeRef targets (column types) and should not be resolved
 /// against the project symbol table.
-fn is_sql_builtin_type(name: &str) -> bool {
+pub(super) fn is_sql_builtin_type(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         // Numeric

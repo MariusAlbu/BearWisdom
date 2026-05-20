@@ -70,14 +70,6 @@ impl LanguageResolver for JinjaResolver {
         }
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        infer_ansible_external(ref_ctx.extracted_ref.target_name.as_str(), project_ctx)
-    }
 }
 
 /// Classify a Jinja TypeRef as external when its name starts with a
@@ -86,7 +78,7 @@ impl LanguageResolver for JinjaResolver {
 /// Checks `project_ctx.manifests[AnsibleRequirements].dependencies` for
 /// every declared role name. When the target starts with `<role>_` the ref
 /// is classified as `external_refs` with namespace `ansible.<role>`.
-fn infer_ansible_external(
+pub(super) fn infer_ansible_external(
     target: &str,
     project_ctx: Option<&ProjectContext>,
 ) -> Option<String> {
