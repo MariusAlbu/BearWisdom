@@ -9,9 +9,11 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::HANDLEBARS_HOOKS;
 pub use profile::HANDLEBARS_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -41,5 +43,12 @@ impl LanguagePlugin for HandlebarsPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::HANDLEBARS_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::HANDLEBARS_HOOKS)
     }
 }

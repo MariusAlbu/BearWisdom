@@ -13,9 +13,11 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::EJS_HOOKS;
 pub use profile::EJS_PROFILE;
 
 use std::sync::Arc;
@@ -48,5 +50,12 @@ impl LanguagePlugin for EjsPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::EJS_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::EJS_HOOKS)
     }
 }

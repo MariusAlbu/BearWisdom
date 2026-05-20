@@ -11,9 +11,11 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::PUG_HOOKS;
 pub use profile::PUG_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -43,5 +45,12 @@ impl LanguagePlugin for PugPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PUG_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::PUG_HOOKS)
     }
 }

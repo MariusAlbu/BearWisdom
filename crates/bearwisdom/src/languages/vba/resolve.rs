@@ -31,37 +31,15 @@ impl LanguageResolver for VbaResolver {
         &["vba"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // VBA has no code-level import syntax. The extractor may emit
-        // EdgeKind::Imports for `Implements InterfaceName` or similar;
-        // collect them for completeness.
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: r.module.clone(),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "vba".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -100,4 +78,33 @@ impl LanguageResolver for VbaResolver {
         None
     }
 
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // VBA has no code-level import syntax. The extractor may emit
+    // EdgeKind::Imports for `Implements InterfaceName` or similar;
+    // collect them for completeness.
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: r.module.clone(),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "vba".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

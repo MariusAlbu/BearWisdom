@@ -41,69 +41,15 @@ impl LanguageResolver for RResolver {
         &["r"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // `library(pkg)` / `require(pkg)` are wildcard imports — every
-            // exported symbol from the package is brought into scope.
-            // `source("file.R")` is also treated as wildcard (all top-level
-            // symbols from the sourced file become visible).
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(r.target_name.clone()),
-                alias: None,
-                is_wildcard: true,
-            });
-        }
-
-        // R packages declare their namespace imports via `DESCRIPTION` Imports /
-        // Depends fields (parsed at index time into ManifestKind::Description).
-        // These don't produce explicit `library()` calls in source files — they
-        // are package-level implicit wildcard imports. Add a wildcard entry for
-        // every declared dep so the resolver can classify bare function calls
-        // (e.g. `abort()` from `rlang`) as external.
-        //
-        // We add these as *lower-priority* entries after any explicit library()
-        // calls; if a library() call already added the package, the resolver
-        // sees it once. Duplicates are harmless — the engine stops on first
-        // matching wildcard that passes the manifest check.
-        if let Some(ctx) = project_ctx {
-            let all_deps = ctx.all_dependency_names();
-            for dep in &all_deps {
-                // Skip base R "packages" that are never external.
-                if matches!(dep.as_str(), "methods" | "utils" | "stats" | "base"
-                    | "datasets" | "grDevices" | "graphics" | "tools") {
-                    continue;
-                }
-                // Only add if not already present from an explicit library() call.
-                if !imports.iter().any(|i| i.module_path.as_deref() == Some(dep)) {
-                    imports.push(ImportEntry {
-                        imported_name: dep.clone(),
-                        module_path: Some(dep.clone()),
-                        alias: None,
-                        is_wildcard: true,
-                    });
-                }
-            }
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "r".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -246,4 +192,65 @@ pub(crate) fn detect_flow_inner(
         }
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // `library(pkg)` / `require(pkg)` are wildcard imports — every
+        // exported symbol from the package is brought into scope.
+        // `source("file.R")` is also treated as wildcard (all top-level
+        // symbols from the sourced file become visible).
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(r.target_name.clone()),
+            alias: None,
+            is_wildcard: true,
+        });
+    }
+
+    // R packages declare their namespace imports via `DESCRIPTION` Imports /
+    // Depends fields (parsed at index time into ManifestKind::Description).
+    // These don't produce explicit `library()` calls in source files — they
+    // are package-level implicit wildcard imports. Add a wildcard entry for
+    // every declared dep so the resolver can classify bare function calls
+    // (e.g. `abort()` from `rlang`) as external.
+    //
+    // We add these as *lower-priority* entries after any explicit library()
+    // calls; if a library() call already added the package, the resolver
+    // sees it once. Duplicates are harmless — the engine stops on first
+    // matching wildcard that passes the manifest check.
+    if let Some(ctx) = project_ctx {
+        let all_deps = ctx.all_dependency_names();
+        for dep in &all_deps {
+            // Skip base R "packages" that are never external.
+            if matches!(dep.as_str(), "methods" | "utils" | "stats" | "base"
+                | "datasets" | "grDevices" | "graphics" | "tools") {
+                continue;
+            }
+            // Only add if not already present from an explicit library() call.
+            if !imports.iter().any(|i| i.module_path.as_deref() == Some(dep)) {
+                imports.push(ImportEntry {
+                    imported_name: dep.clone(),
+                    module_path: Some(dep.clone()),
+                    alias: None,
+                    is_wildcard: true,
+                });
+            }
+        }
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "r".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

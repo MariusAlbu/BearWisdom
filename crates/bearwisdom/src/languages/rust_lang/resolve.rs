@@ -59,74 +59,15 @@ impl LanguageResolver for RustResolver {
         &["rust"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Derive the module path for this file. The Rust extractor sets
-        // scope_path on top-level symbols to reflect the module path
-        // (e.g., "crate::models" for a symbol in src/models.rs).
-        // We take it from the first top-level symbol's scope_path.
-        let file_namespace = predicates::extract_module_path(file);
-
-        // Build import entries from EdgeKind::Imports refs.
-        // The Rust extractor emits one ref per `use` item brought into scope:
-        //   use serde::Deserialize;
-        //     → ref { target_name: "Deserialize", module: Some("serde"), kind: Imports }
-        //   use crate::models::User;
-        //     → ref { target_name: "User", module: Some("crate::models"), kind: Imports }
-        //   use std::collections::HashMap;
-        //     → ref { target_name: "HashMap", module: Some("std::collections"), kind: Imports }
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-
-            let module_path = r.module.clone().or_else(|| {
-                // If no module field, try splitting target_name on "::"
-                // e.g., target_name = "serde::Deserialize"
-                if r.target_name.contains("::") {
-                    let (mod_part, _name) = r.target_name.rsplit_once("::")?;
-                    Some(mod_part.to_string())
-                } else {
-                    None
-                }
-            });
-
-            // The imported name is the last segment of the path.
-            let imported_name = if r.target_name.contains("::") {
-                r.target_name
-                    .rsplit("::")
-                    .next()
-                    .unwrap_or(&r.target_name)
-                    .to_string()
-            } else {
-                r.target_name.clone()
-            };
-
-            // Wildcard import: `use foo::bar::*`
-            let is_wildcard = imported_name == "*";
-
-            imports.push(ImportEntry {
-                imported_name,
-                module_path,
-                alias: None,
-                is_wildcard,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "rust".to_string(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -1132,4 +1073,70 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Derive the module path for this file. The Rust extractor sets
+    // scope_path on top-level symbols to reflect the module path
+    // (e.g., "crate::models" for a symbol in src/models.rs).
+    // We take it from the first top-level symbol's scope_path.
+    let file_namespace = predicates::extract_module_path(file);
+
+    // Build import entries from EdgeKind::Imports refs.
+    // The Rust extractor emits one ref per `use` item brought into scope:
+    //   use serde::Deserialize;
+    //     → ref { target_name: "Deserialize", module: Some("serde"), kind: Imports }
+    //   use crate::models::User;
+    //     → ref { target_name: "User", module: Some("crate::models"), kind: Imports }
+    //   use std::collections::HashMap;
+    //     → ref { target_name: "HashMap", module: Some("std::collections"), kind: Imports }
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+
+        let module_path = r.module.clone().or_else(|| {
+            // If no module field, try splitting target_name on "::"
+            // e.g., target_name = "serde::Deserialize"
+            if r.target_name.contains("::") {
+                let (mod_part, _name) = r.target_name.rsplit_once("::")?;
+                Some(mod_part.to_string())
+            } else {
+                None
+            }
+        });
+
+        // The imported name is the last segment of the path.
+        let imported_name = if r.target_name.contains("::") {
+            r.target_name
+                .rsplit("::")
+                .next()
+                .unwrap_or(&r.target_name)
+                .to_string()
+        } else {
+            r.target_name.clone()
+        };
+
+        // Wildcard import: `use foo::bar::*`
+        let is_wildcard = imported_name == "*";
+
+        imports.push(ImportEntry {
+            imported_name,
+            module_path,
+            alias: None,
+            is_wildcard,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "rust".to_string(),
+        imports,
+        file_namespace,
+    }
 }

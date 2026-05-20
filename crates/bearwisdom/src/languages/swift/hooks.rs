@@ -30,6 +30,14 @@ impl LanguageEngineHooks for SwiftHooks {
         let _ = lookup;
         resolve::detect_flow_inner(file_ctx, ref_ctx)
     }
+
+    fn build_file_context(
+        &self,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<crate::indexer::resolve::engine::FileContext> {
+        Some(resolve::build_file_context_inner(file, project_ctx))
+    }
 }
 
 pub static SWIFT_HOOKS: SwiftHooks = SwiftHooks;

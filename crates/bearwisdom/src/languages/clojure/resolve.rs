@@ -32,44 +32,15 @@ impl LanguageResolver for ClojureResolver {
         &["clojure"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // target_name is the local alias or the full namespace.
-            // module is the canonical namespace when an alias is present.
-            let ns = r.module.as_deref().unwrap_or(&r.target_name);
-            let alias = if r.module.is_some() && r.target_name != ns {
-                Some(r.target_name.clone())
-            } else {
-                None
-            };
-
-            let is_wildcard = alias.is_none();
-            imports.push(ImportEntry {
-                imported_name: ns.to_string(),
-                module_path: Some(ns.to_string()),
-                alias,
-                is_wildcard,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "clojure".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -208,4 +179,40 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // target_name is the local alias or the full namespace.
+        // module is the canonical namespace when an alias is present.
+        let ns = r.module.as_deref().unwrap_or(&r.target_name);
+        let alias = if r.module.is_some() && r.target_name != ns {
+            Some(r.target_name.clone())
+        } else {
+            None
+        };
+
+        let is_wildcard = alias.is_none();
+        imports.push(ImportEntry {
+            imported_name: ns.to_string(),
+            module_path: Some(ns.to_string()),
+            alias,
+            is_wildcard,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "clojure".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

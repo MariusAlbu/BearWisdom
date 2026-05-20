@@ -37,22 +37,15 @@ impl LanguageResolver for HeexResolver {
         &["heex"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // HEEx files carry no import/alias directives of their own; all
-        // function components are resolved by name against the symbol index.
-        FileContext {
-            file_path: file.path.clone(),
-            language: "heex".to_string(),
-            imports: Vec::<ImportEntry>::new(),
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         _file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -116,3 +109,17 @@ impl LanguageResolver for HeexResolver {
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // HEEx files carry no import/alias directives of their own; all
+    // function components are resolved by name against the symbol index.
+    FileContext {
+        file_path: file.path.clone(),
+        language: "heex".to_string(),
+        imports: Vec::<ImportEntry>::new(),
+        file_namespace: None,
+    }
+}

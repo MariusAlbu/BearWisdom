@@ -15,10 +15,12 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::GDSCRIPT_HOOKS;
 pub use profile::GDSCRIPT_PROFILE;
 
 #[cfg(test)]
@@ -85,5 +87,12 @@ impl LanguagePlugin for GDScriptPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::GDSCRIPT_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::GDSCRIPT_HOOKS)
     }
 }

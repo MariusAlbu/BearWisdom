@@ -29,9 +29,11 @@ pub mod extract;
 pub mod fenced;
 pub mod host_scan;
 pub mod info_string;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::MARKDOWN_HOOKS;
 pub use profile::MARKDOWN_PROFILE;
 
 use std::sync::Arc;
@@ -95,5 +97,12 @@ impl LanguagePlugin for MarkdownPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::MARKDOWN_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::MARKDOWN_HOOKS)
     }
 }

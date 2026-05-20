@@ -31,37 +31,15 @@ impl LanguageResolver for CobolResolver {
         &["cobol"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // target_name is the copybook name or CALL target.
-            let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path,
-                alias: None,
-                // COPY is a textual include — all names become visible.
-                is_wildcard: true,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "cobol".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -118,4 +96,33 @@ pub(crate) fn detect_flow_inner(
         entity_name: "cobol.*".to_string(),
         operation: op,
     }]
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // target_name is the copybook name or CALL target.
+        let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path,
+            alias: None,
+            // COPY is a textual include — all names become visible.
+            is_wildcard: true,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "cobol".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

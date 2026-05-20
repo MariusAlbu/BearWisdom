@@ -38,70 +38,15 @@ impl LanguageResolver for ElixirResolver {
         &["elixir"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Extract the top-level module name as the file namespace.
-        let file_namespace = file.symbols.iter().find_map(|sym| {
-            if sym.kind == crate::types::SymbolKind::Module
-                || sym.kind == crate::types::SymbolKind::Namespace
-                || sym.kind == crate::types::SymbolKind::Class
-            {
-                Some(sym.qualified_name.clone())
-            } else {
-                None
-            }
-        });
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let full_module = r.module.as_deref().unwrap_or(&r.target_name);
-
-            // Determine the local binding name for this import:
-            //   - If `module` is set, `target_name` is the local alias/binding.
-            //   - If no `module`, `target_name` is the module itself; use last segment.
-            let imported_name = if r.module.is_some() {
-                r.target_name.clone()
-            } else {
-                // Default Elixir alias: last CamelCase segment.
-                full_module
-                    .split('.')
-                    .last()
-                    .unwrap_or(&r.target_name)
-                    .to_string()
-            };
-
-            // Detect whether the local name differs from the last segment (i.e., `as:` was used).
-            let last_segment = full_module.split('.').last().unwrap_or(full_module);
-            let alias = if imported_name != last_segment {
-                Some(imported_name.clone())
-            } else {
-                None
-            };
-
-            imports.push(ImportEntry {
-                imported_name,
-                module_path: Some(full_module.to_string()),
-                alias,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "elixir".to_string(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -789,4 +734,66 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Extract the top-level module name as the file namespace.
+    let file_namespace = file.symbols.iter().find_map(|sym| {
+        if sym.kind == crate::types::SymbolKind::Module
+            || sym.kind == crate::types::SymbolKind::Namespace
+            || sym.kind == crate::types::SymbolKind::Class
+        {
+            Some(sym.qualified_name.clone())
+        } else {
+            None
+        }
+    });
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let full_module = r.module.as_deref().unwrap_or(&r.target_name);
+
+        // Determine the local binding name for this import:
+        //   - If `module` is set, `target_name` is the local alias/binding.
+        //   - If no `module`, `target_name` is the module itself; use last segment.
+        let imported_name = if r.module.is_some() {
+            r.target_name.clone()
+        } else {
+            // Default Elixir alias: last CamelCase segment.
+            full_module
+                .split('.')
+                .last()
+                .unwrap_or(&r.target_name)
+                .to_string()
+        };
+
+        // Detect whether the local name differs from the last segment (i.e., `as:` was used).
+        let last_segment = full_module.split('.').last().unwrap_or(full_module);
+        let alias = if imported_name != last_segment {
+            Some(imported_name.clone())
+        } else {
+            None
+        };
+
+        imports.push(ImportEntry {
+            imported_name,
+            module_path: Some(full_module.to_string()),
+            alias,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "elixir".to_string(),
+        imports,
+        file_namespace,
+    }
 }

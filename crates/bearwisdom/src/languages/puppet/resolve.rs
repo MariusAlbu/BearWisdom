@@ -36,39 +36,15 @@ impl LanguageResolver for PuppetResolver {
         &["puppet"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // Puppet's autoloader resolves `<module>::<class>` against modules
-        // declared in `metadata.json` / `Puppetfile`. The `puppet-forge`
-        // manifest reader stores those as bare module names; injecting them
-        // as wildcard imports lets the resolver classify external refs
-        // without a hardcoded forge-module list.
-        let mut imports = Vec::new();
-        if let Some(ctx) = project_ctx {
-            if let Some(puppet) = ctx.manifest(ManifestKind::Puppet) {
-                for module in &puppet.dependencies {
-                    imports.push(ImportEntry {
-                        imported_name: module.clone(),
-                        module_path: Some(module.clone()),
-                        alias: None,
-                        is_wildcard: true,
-                    });
-                }
-            }
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "puppet".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -324,4 +300,35 @@ pub(super) fn infer_external_inner(
         return Some("puppet_module::external".to_string());
     }
     None
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // Puppet's autoloader resolves `<module>::<class>` against modules
+    // declared in `metadata.json` / `Puppetfile`. The `puppet-forge`
+    // manifest reader stores those as bare module names; injecting them
+    // as wildcard imports lets the resolver classify external refs
+    // without a hardcoded forge-module list.
+    let mut imports = Vec::new();
+    if let Some(ctx) = project_ctx {
+        if let Some(puppet) = ctx.manifest(ManifestKind::Puppet) {
+            for module in &puppet.dependencies {
+                imports.push(ImportEntry {
+                    imported_name: module.clone(),
+                    module_path: Some(module.clone()),
+                    alias: None,
+                    is_wildcard: true,
+                });
+            }
+        }
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "puppet".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

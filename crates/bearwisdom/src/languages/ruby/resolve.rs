@@ -50,76 +50,15 @@ impl LanguageResolver for RubyResolver {
         &["ruby"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Extract require / require_relative imports from EdgeKind::Imports refs.
-        // Ruby extractor emits:
-        //   require 'foo'          → target_name = "foo",        module = None (bare gem)
-        //   require_relative './x' → target_name = "x",          module = "./x" (relative)
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path,
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        // Add all declared gems from the project's Gemfile manifest as wildcard
-        // imports. This covers transitive requires — e.g., a test file that
-        // does `require_relative "helper"` where helper.rb requires minitest.
-        // Since Ruby's require is global-state-based, any gem declared in the
-        // project is potentially in scope for any file.
-        if let Some(ctx) = project_ctx {
-            let pkg_id = file.package_id;
-            if let Some(manifest) = ctx.manifests_for(pkg_id).get(&ManifestKind::Gemfile) {
-                for dep in &manifest.dependencies {
-                    // Avoid duplicating deps already in imports list.
-                    let gem_root = dep.split('/').next().unwrap_or(dep.as_str());
-                    if !imports.iter().any(|i| {
-                        i.module_path.as_deref().map(|m| m.split('/').next().unwrap_or(m)) == Some(gem_root)
-                    }) {
-                        imports.push(ImportEntry {
-                            imported_name: gem_root.to_string(),
-                            module_path: Some(gem_root.to_string()),
-                            alias: None,
-                            is_wildcard: true,
-                        });
-                    }
-                }
-            }
-        }
-
-        // Ruby has no file-level package/namespace declaration in the same sense —
-        // classes are constants defined at file scope. The outermost module name
-        // (if any) is extracted from the first Namespace/Module symbol.
-        // Ruby modules are represented as Namespace in the SymbolKind enum.
-        let file_namespace = file.symbols.iter().find_map(|sym| {
-            if sym.kind == crate::types::SymbolKind::Namespace {
-                Some(sym.qualified_name.clone())
-            } else {
-                None
-            }
-        });
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "ruby".to_string(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -688,4 +627,72 @@ pub(crate) fn detect_flow_inner(
         return vec![emission];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Extract require / require_relative imports from EdgeKind::Imports refs.
+    // Ruby extractor emits:
+    //   require 'foo'          → target_name = "foo",        module = None (bare gem)
+    //   require_relative './x' → target_name = "x",          module = "./x" (relative)
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path,
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    // Add all declared gems from the project's Gemfile manifest as wildcard
+    // imports. This covers transitive requires — e.g., a test file that
+    // does `require_relative "helper"` where helper.rb requires minitest.
+    // Since Ruby's require is global-state-based, any gem declared in the
+    // project is potentially in scope for any file.
+    if let Some(ctx) = project_ctx {
+        let pkg_id = file.package_id;
+        if let Some(manifest) = ctx.manifests_for(pkg_id).get(&ManifestKind::Gemfile) {
+            for dep in &manifest.dependencies {
+                // Avoid duplicating deps already in imports list.
+                let gem_root = dep.split('/').next().unwrap_or(dep.as_str());
+                if !imports.iter().any(|i| {
+                    i.module_path.as_deref().map(|m| m.split('/').next().unwrap_or(m)) == Some(gem_root)
+                }) {
+                    imports.push(ImportEntry {
+                        imported_name: gem_root.to_string(),
+                        module_path: Some(gem_root.to_string()),
+                        alias: None,
+                        is_wildcard: true,
+                    });
+                }
+            }
+        }
+    }
+
+    // Ruby has no file-level package/namespace declaration in the same sense —
+    // classes are constants defined at file scope. The outermost module name
+    // (if any) is extracted from the first Namespace/Module symbol.
+    // Ruby modules are represented as Namespace in the SymbolKind enum.
+    let file_namespace = file.symbols.iter().find_map(|sym| {
+        if sym.kind == crate::types::SymbolKind::Namespace {
+            Some(sym.qualified_name.clone())
+        } else {
+            None
+        }
+    });
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "ruby".to_string(),
+        imports,
+        file_namespace,
+    }
 }

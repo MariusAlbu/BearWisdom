@@ -32,37 +32,15 @@ impl LanguageResolver for PrologResolver {
         &["prolog"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // target_name is the module path (e.g., "library(lists)" or a file path).
-            let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path,
-                alias: None,
-                // use_module without an import list brings in all public predicates.
-                is_wildcard: true,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "prolog".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -179,4 +157,33 @@ fn is_prolog_runtime_path(path: &str) -> bool {
     let p = path.replace('\\', "/").to_ascii_lowercase();
     (p.contains("/library/") || p.contains("/boot/"))
         && (p.contains("swipl") || p.contains("swi-prolog") || p.contains("prolog"))
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // target_name is the module path (e.g., "library(lists)" or a file path).
+        let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path,
+            alias: None,
+            // use_module without an import list brings in all public predicates.
+            is_wildcard: true,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "prolog".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

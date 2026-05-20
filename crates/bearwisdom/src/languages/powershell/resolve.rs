@@ -80,51 +80,15 @@ impl LanguageResolver for PowerShellResolver {
         &["powershell"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-
-            // Part 1: collect .NET local-variable type bindings emitted by the
-            // extractor as sentinel Imports refs (target_name == "dotnet-stdlib").
-            // Encode each as an ImportEntry so `is_dotnet_bound_var` and
-            // `infer_external_namespace` can look them up cheaply.
-            if r.target_name == DOTNET_BINDING_SENTINEL {
-                if let Some(var_name) = &r.module {
-                    imports.push(ImportEntry {
-                        imported_name: var_name.clone(),
-                        module_path: Some(DOTNET_BINDING_SENTINEL.to_string()),
-                        alias: None,
-                        is_wildcard: false,
-                    });
-                }
-                continue; // don't also emit as a regular import
-            }
-
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(r.target_name.clone()),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "powershell".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -359,4 +323,47 @@ pub(super) fn infer_external_inner(
     // symbols for installed module cmdlets.
     let _ = (file_ctx, ref_ctx, project_ctx);
     None
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+
+        // Part 1: collect .NET local-variable type bindings emitted by the
+        // extractor as sentinel Imports refs (target_name == "dotnet-stdlib").
+        // Encode each as an ImportEntry so `is_dotnet_bound_var` and
+        // `infer_external_namespace` can look them up cheaply.
+        if r.target_name == DOTNET_BINDING_SENTINEL {
+            if let Some(var_name) = &r.module {
+                imports.push(ImportEntry {
+                    imported_name: var_name.clone(),
+                    module_path: Some(DOTNET_BINDING_SENTINEL.to_string()),
+                    alias: None,
+                    is_wildcard: false,
+                });
+            }
+            continue; // don't also emit as a regular import
+        }
+
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(r.target_name.clone()),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "powershell".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

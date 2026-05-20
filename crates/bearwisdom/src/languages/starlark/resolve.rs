@@ -51,36 +51,15 @@ impl LanguageResolver for StarlarkResolver {
         &["starlark", "bzl"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // load() statements import named symbols from a .bzl file.
-            // The extractor emits one Imports ref per loaded symbol.
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: r.module.clone(),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "starlark".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -315,4 +294,32 @@ pub(super) fn infer_external_inner(
     }
 
     None
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // load() statements import named symbols from a .bzl file.
+        // The extractor emits one Imports ref per loaded symbol.
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: r.module.clone(),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "starlark".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

@@ -1,6 +1,7 @@
 // Jinja hooks — classify_external delegates to the resolver's
 // Ansible-role classifier.
 
+use super::resolve;
 use super::resolve::infer_ansible_external;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
@@ -17,6 +18,14 @@ impl LanguageEngineHooks for JinjaHooks {
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         infer_ansible_external(ref_ctx.extracted_ref.target_name.as_str(), project_ctx)
+    }
+
+    fn build_file_context(
+        &self,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<crate::indexer::resolve::engine::FileContext> {
+        Some(resolve::build_file_context_inner(file, project_ctx))
     }
 }
 

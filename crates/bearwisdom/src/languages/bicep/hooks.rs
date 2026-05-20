@@ -1,3 +1,4 @@
+use super::resolve;
 use super::resolve::{is_azure_resource_type, is_child_resource_shorthand};
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{self as engine, FileContext, RefContext, SymbolLookup};
@@ -34,6 +35,14 @@ impl LanguageEngineHooks for BicepHooks {
         // No predicate-based builtin classification — builtin names come
         // from the `bicep-runtime` ecosystem walker via the symbol index.
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, |_| false)
+    }
+
+    fn build_file_context(
+        &self,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<crate::indexer::resolve::engine::FileContext> {
+        Some(resolve::build_file_context_inner(file, project_ctx))
     }
 }
 

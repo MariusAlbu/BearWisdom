@@ -29,21 +29,15 @@ impl LanguageResolver for DockerfileResolver {
         &["dockerfile"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // No imports in Dockerfiles; stage names are just symbols in the same file.
-        FileContext {
-            file_path: file.path.clone(),
-            language: "dockerfile".to_string(),
-            imports: Vec::new(),
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -70,3 +64,16 @@ impl LanguageResolver for DockerfileResolver {
 
 }
 
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // No imports in Dockerfiles; stage names are just symbols in the same file.
+    FileContext {
+        file_path: file.path.clone(),
+        language: "dockerfile".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    }
+}

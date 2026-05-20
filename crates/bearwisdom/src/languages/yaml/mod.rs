@@ -14,9 +14,11 @@
 pub mod ansible;
 pub mod embedded;
 pub mod extract;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::YAML_HOOKS;
 pub use profile::YAML_PROFILE;
 
 use std::sync::Arc;
@@ -51,5 +53,12 @@ impl LanguagePlugin for YamlPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::YAML_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::YAML_HOOKS)
     }
 }

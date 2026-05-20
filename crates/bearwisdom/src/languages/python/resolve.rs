@@ -59,51 +59,15 @@ impl LanguageResolver for PythonResolver {
         &["python"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Collect import entries from EdgeKind::Imports refs.
-        //
-        // The Python extractor emits:
-        //   `import os`
-        //     → ref { target_name: "os", module: None,    kind: Imports }
-        //   `from foo.bar import Baz`
-        //     → ref { target_name: "Baz", module: "foo.bar", kind: Imports }
-        //   `from . import something` (relative)
-        //     → ref { target_name: "something", module: ".", kind: Imports }
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-
-            // Bare `import os`: module_path = "os", imported_name = "os"
-            // `from foo import Bar`: module_path = "foo", imported_name = "Bar"
-            let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
-            let imported_name = r.target_name.clone();
-            let is_wildcard = imported_name == "*";
-
-            imports.push(ImportEntry {
-                imported_name,
-                module_path,
-                alias: None,
-                is_wildcard,
-            });
-        }
-
-        // Python has no explicit file-level namespace — identity is the file path.
-        FileContext {
-            file_path: file.path.clone(),
-            language: "python".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -686,4 +650,47 @@ pub(crate) fn detect_flow_inner_with_lookup(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Collect import entries from EdgeKind::Imports refs.
+    //
+    // The Python extractor emits:
+    //   `import os`
+    //     → ref { target_name: "os", module: None,    kind: Imports }
+    //   `from foo.bar import Baz`
+    //     → ref { target_name: "Baz", module: "foo.bar", kind: Imports }
+    //   `from . import something` (relative)
+    //     → ref { target_name: "something", module: ".", kind: Imports }
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+
+        // Bare `import os`: module_path = "os", imported_name = "os"
+        // `from foo import Bar`: module_path = "foo", imported_name = "Bar"
+        let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
+        let imported_name = r.target_name.clone();
+        let is_wildcard = imported_name == "*";
+
+        imports.push(ImportEntry {
+            imported_name,
+            module_path,
+            alias: None,
+            is_wildcard,
+        });
+    }
+
+    // Python has no explicit file-level namespace — identity is the file path.
+    FileContext {
+        file_path: file.path.clone(),
+        language: "python".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

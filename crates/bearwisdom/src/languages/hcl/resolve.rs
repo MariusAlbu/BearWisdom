@@ -34,23 +34,15 @@ impl LanguageResolver for HclResolver {
         &["hcl", "terraform"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // HCL has no explicit import statements. All .tf files in a directory
-        // form a single module — scope is directory-wide, handled by global
-        // lookup with directory filtering.
-        FileContext {
-            file_path: file.path.clone(),
-            language: "hcl".to_string(),
-            imports: Vec::new(),
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -236,3 +228,18 @@ pub(super) fn is_provider_resource_type(name: &str) -> bool {
             || name.starts_with("nomad_"))
 }
 
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // HCL has no explicit import statements. All .tf files in a directory
+    // form a single module — scope is directory-wide, handled by global
+    // lookup with directory filtering.
+    FileContext {
+        file_path: file.path.clone(),
+        language: "hcl".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    }
+}

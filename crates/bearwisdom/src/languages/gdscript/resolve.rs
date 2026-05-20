@@ -32,37 +32,15 @@ impl LanguageResolver for GDScriptResolver {
         &["gdscript"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // target_name holds the preload/load path or the base class name.
-            let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path,
-                alias: None,
-                // preload / load bring in the whole script — treat as wildcard.
-                is_wildcard: true,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "gdscript".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -123,4 +101,33 @@ impl LanguageResolver for GDScriptResolver {
         engine::resolve_common("gdscript", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // target_name holds the preload/load path or the base class name.
+        let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path,
+            alias: None,
+            // preload / load bring in the whole script — treat as wildcard.
+            is_wildcard: true,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "gdscript".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

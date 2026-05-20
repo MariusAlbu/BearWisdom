@@ -29,38 +29,15 @@ impl LanguageResolver for MatlabResolver {
         &["matlab"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // MATLAB uses addpath() rather than import directives, but the extractor
-        // may emit EdgeKind::Imports for `import pkg.*` (OOP MATLAB). Collect
-        // those here so downstream steps can use them.
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path,
-                alias: None,
-                is_wildcard: r.target_name.ends_with(".*"),
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "matlab".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -130,4 +107,34 @@ pub(crate) fn detect_flow_inner(
         }
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // MATLAB uses addpath() rather than import directives, but the extractor
+    // may emit EdgeKind::Imports for `import pkg.*` (OOP MATLAB). Collect
+    // those here so downstream steps can use them.
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path,
+            alias: None,
+            is_wildcard: r.target_name.ends_with(".*"),
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "matlab".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

@@ -32,15 +32,15 @@ impl LanguageResolver for GroovyResolver {
         &["groovy"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        JavaResolver.build_file_context(file, project_ctx)
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -143,4 +143,11 @@ pub(crate) fn detect_flow_inner(
         }
     }
     emissions
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    JavaResolver.build_file_context(file, project_ctx)
 }

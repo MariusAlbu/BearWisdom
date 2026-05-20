@@ -46,53 +46,15 @@ impl LanguageResolver for PhpResolver {
         &["php"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Extract the current namespace from the first Namespace symbol.
-        let file_namespace = file.symbols.iter().find_map(|sym| {
-            if sym.kind == crate::types::SymbolKind::Namespace {
-                Some(sym.qualified_name.clone())
-            } else {
-                None
-            }
-        });
-
-        // Extract `use` declarations from EdgeKind::Imports refs.
-        // PHP extractor emits:
-        //   use App\Models\User;       → target_name = "User",  module = "App\Models\User"
-        //   use App\Models\User as U;  → target_name = "U",     module = "App\Models\User"
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let module = r.module.as_deref().unwrap_or(&r.target_name);
-
-            // Normalize backslash separators to dots for index lookup consistency.
-            let normalized_module = predicates::normalize_php_ns(module);
-
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(normalized_module),
-                alias: None,
-                // PHP `use` is always an exact type import, not a wildcard.
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "php".to_string(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -838,4 +800,49 @@ pub(crate) fn detect_flow_inner(
         return vec![emission];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Extract the current namespace from the first Namespace symbol.
+    let file_namespace = file.symbols.iter().find_map(|sym| {
+        if sym.kind == crate::types::SymbolKind::Namespace {
+            Some(sym.qualified_name.clone())
+        } else {
+            None
+        }
+    });
+
+    // Extract `use` declarations from EdgeKind::Imports refs.
+    // PHP extractor emits:
+    //   use App\Models\User;       → target_name = "User",  module = "App\Models\User"
+    //   use App\Models\User as U;  → target_name = "U",     module = "App\Models\User"
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let module = r.module.as_deref().unwrap_or(&r.target_name);
+
+        // Normalize backslash separators to dots for index lookup consistency.
+        let normalized_module = predicates::normalize_php_ns(module);
+
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(normalized_module),
+            alias: None,
+            // PHP `use` is always an exact type import, not a wildcard.
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "php".to_string(),
+        imports,
+        file_namespace,
+    }
 }

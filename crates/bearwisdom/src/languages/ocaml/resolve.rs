@@ -31,53 +31,15 @@ impl LanguageResolver for OcamlResolver {
         &["ocaml"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // OCaml auto-opens `Stdlib` in every compilation unit. Bare calls
-        // like `close_in oc` or `open_in path` carry no module qualifier
-        // and no explicit `open` ref, so the wildcard-import step in
-        // resolve_common needs an implicit entry pointing at the Stdlib
-        // module file (file stem `stdlib` → ext:ocaml:ocaml/stdlib.ml).
-        let mut imports = vec![ImportEntry {
-            imported_name: "Stdlib".to_string(),
-            module_path: Some("stdlib".to_string()),
-            alias: None,
-            is_wildcard: true,
-        }];
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // target_name is the opened/included module or local alias.
-            // module is the original module when an alias is present.
-            let source_module = r.module.as_deref().unwrap_or(&r.target_name);
-            let alias = if r.module.is_some() && r.target_name != source_module {
-                Some(r.target_name.clone())
-            } else {
-                None
-            };
-
-            imports.push(ImportEntry {
-                imported_name: source_module.to_string(),
-                module_path: Some(source_module.to_string()),
-                alias,
-                is_wildcard: true,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "ocaml".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -311,4 +273,49 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // OCaml auto-opens `Stdlib` in every compilation unit. Bare calls
+    // like `close_in oc` or `open_in path` carry no module qualifier
+    // and no explicit `open` ref, so the wildcard-import step in
+    // resolve_common needs an implicit entry pointing at the Stdlib
+    // module file (file stem `stdlib` → ext:ocaml:ocaml/stdlib.ml).
+    let mut imports = vec![ImportEntry {
+        imported_name: "Stdlib".to_string(),
+        module_path: Some("stdlib".to_string()),
+        alias: None,
+        is_wildcard: true,
+    }];
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // target_name is the opened/included module or local alias.
+        // module is the original module when an alias is present.
+        let source_module = r.module.as_deref().unwrap_or(&r.target_name);
+        let alias = if r.module.is_some() && r.target_name != source_module {
+            Some(r.target_name.clone())
+        } else {
+            None
+        };
+
+        imports.push(ImportEntry {
+            imported_name: source_module.to_string(),
+            module_path: Some(source_module.to_string()),
+            alias,
+            is_wildcard: true,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "ocaml".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

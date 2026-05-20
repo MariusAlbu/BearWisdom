@@ -65,69 +65,15 @@ impl LanguageResolver for GoResolver {
         &["go"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Derive the package name from symbols' scope_path or qualified_name prefix.
-        // The Go extractor sets scope_path = Some(package_name) for top-level symbols,
-        // and qualified_name = "package.SymbolName". We take the first segment.
-        let file_namespace = extract_package_name(file);
-
-        // Build import entries from EdgeKind::Imports refs.
-        // The Go extractor emits:
-        //   target_name = last path segment (the package alias by convention)
-        //   module      = full import path
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let full_path = match &r.module {
-                Some(m) => m.clone(),
-                None => r.target_name.clone(),
-            };
-
-            // Detect alias, dot-import, and blank import by examining target_name
-            // relative to the last segment of the full path.
-            let last_segment = full_path.rsplit('/').next().unwrap_or(&full_path);
-
-            // Blank import (`import _ "path"`) — side effects only, skip.
-            if r.target_name == "_" {
-                continue;
-            }
-
-            // Dot import (`import . "path"`) — all exported names enter scope directly.
-            let is_dot_import = r.target_name == ".";
-
-            // The alias used in source code: explicit alias overrides the last segment.
-            let alias = if is_dot_import || r.target_name == last_segment {
-                None
-            } else {
-                Some(r.target_name.clone())
-            };
-
-            imports.push(ImportEntry {
-                imported_name: alias.clone().unwrap_or_else(|| last_segment.to_string()),
-                module_path: Some(full_path),
-                alias,
-                // Dot imports bring all exported names into scope without qualification.
-                // Regular imports require `pkg.Symbol` — not a wildcard in our model.
-                is_wildcard: is_dot_import,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "go".to_string(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -625,4 +571,65 @@ pub(crate) fn detect_flow_inner_with_lookup(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Derive the package name from symbols' scope_path or qualified_name prefix.
+    // The Go extractor sets scope_path = Some(package_name) for top-level symbols,
+    // and qualified_name = "package.SymbolName". We take the first segment.
+    let file_namespace = extract_package_name(file);
+
+    // Build import entries from EdgeKind::Imports refs.
+    // The Go extractor emits:
+    //   target_name = last path segment (the package alias by convention)
+    //   module      = full import path
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let full_path = match &r.module {
+            Some(m) => m.clone(),
+            None => r.target_name.clone(),
+        };
+
+        // Detect alias, dot-import, and blank import by examining target_name
+        // relative to the last segment of the full path.
+        let last_segment = full_path.rsplit('/').next().unwrap_or(&full_path);
+
+        // Blank import (`import _ "path"`) — side effects only, skip.
+        if r.target_name == "_" {
+            continue;
+        }
+
+        // Dot import (`import . "path"`) — all exported names enter scope directly.
+        let is_dot_import = r.target_name == ".";
+
+        // The alias used in source code: explicit alias overrides the last segment.
+        let alias = if is_dot_import || r.target_name == last_segment {
+            None
+        } else {
+            Some(r.target_name.clone())
+        };
+
+        imports.push(ImportEntry {
+            imported_name: alias.clone().unwrap_or_else(|| last_segment.to_string()),
+            module_path: Some(full_path),
+            alias,
+            // Dot imports bring all exported names into scope without qualification.
+            // Regular imports require `pkg.Symbol` — not a wildcard in our model.
+            is_wildcard: is_dot_import,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "go".to_string(),
+        imports,
+        file_namespace,
+    }
 }

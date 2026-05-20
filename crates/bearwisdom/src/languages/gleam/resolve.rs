@@ -32,38 +32,15 @@ impl LanguageResolver for GleamResolver {
         &["gleam"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(module_path),
-                alias: None,
-                // Gleam module imports bring qualified access into scope.
-                // Mark as wildcard so the import walk can classify unresolved
-                // bare names from external modules.
-                is_wildcard: true,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "gleam".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -214,4 +191,34 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(module_path),
+            alias: None,
+            // Gleam module imports bring qualified access into scope.
+            // Mark as wildcard so the import walk can classify unresolved
+            // bare names from external modules.
+            is_wildcard: true,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "gleam".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

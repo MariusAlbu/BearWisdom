@@ -1,3 +1,4 @@
+use super::resolve;
 use super::resolve::is_graphql_builtin;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{self as engine, FileContext, RefContext, SymbolLookup};
@@ -15,6 +16,14 @@ impl LanguageEngineHooks for GraphQlHooks {
     ) -> Option<String> {
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_graphql_builtin)
             .map(|_| "graphql".to_string())
+    }
+
+    fn build_file_context(
+        &self,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<crate::indexer::resolve::engine::FileContext> {
+        Some(resolve::build_file_context_inner(file, project_ctx))
     }
 }
 

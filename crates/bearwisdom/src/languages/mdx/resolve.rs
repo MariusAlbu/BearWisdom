@@ -47,21 +47,15 @@ impl LanguageResolver for MdxResolver {
         &["mdx"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // The TS sub-extractor's import refs carry `module` set, so the
-        // TypeScript file-context builder picks them up directly. The
-        // MDX host's link refs (kind = Imports, no module) are also
-        // appended but bring no usable ImportEntry — that's fine; the
-        // MarkdownResolver consults `extracted_ref.target_name` directly,
-        // not file_ctx.imports.
-        TypeScriptResolver.build_file_context(file, project_ctx)
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -102,4 +96,17 @@ pub(super) fn infer_external_inner_with_lookup(
     crate::languages::typescript::resolve::infer_external_inner_with_lookup(
         file_ctx, ref_ctx, project_ctx, lookup,
     )
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // The TS sub-extractor's import refs carry `module` set, so the
+    // TypeScript file-context builder picks them up directly. The
+    // MDX host's link refs (kind = Imports, no module) are also
+    // appended but bring no usable ImportEntry — that's fine; the
+    // MarkdownResolver consults `extracted_ref.target_name` directly,
+    // not file_ctx.imports.
+    TypeScriptResolver.build_file_context(file, project_ctx)
 }

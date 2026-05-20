@@ -34,41 +34,15 @@ impl LanguageResolver for HareResolver {
         &["hare"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
-            // The local name is the last segment of the module path.
-            let local_name = module_path
-                .rsplit("::")
-                .next()
-                .unwrap_or(module_path.as_str())
-                .to_string();
-            imports.push(ImportEntry {
-                imported_name: local_name,
-                module_path: Some(module_path),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "hare".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -189,4 +163,37 @@ pub(crate) fn detect_flow_inner(
         method: Some(HttpMethod::Any),
     streaming: None,
     }]
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
+        // The local name is the last segment of the module path.
+        let local_name = module_path
+            .rsplit("::")
+            .next()
+            .unwrap_or(module_path.as_str())
+            .to_string();
+        imports.push(ImportEntry {
+            imported_name: local_name,
+            module_path: Some(module_path),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "hare".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

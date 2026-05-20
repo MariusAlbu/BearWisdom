@@ -39,36 +39,15 @@ impl LanguageResolver for SwiftResolver {
         &["swift"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let module = r.module.as_deref().unwrap_or(&r.target_name);
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(module.to_string()),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "swift".to_string(),
-            imports,
-            // Swift has no file-level namespace; module is the product name.
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -463,4 +442,32 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let module = r.module.as_deref().unwrap_or(&r.target_name);
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(module.to_string()),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "swift".to_string(),
+        imports,
+        // Swift has no file-level namespace; module is the product name.
+        file_namespace: None,
+    }
 }

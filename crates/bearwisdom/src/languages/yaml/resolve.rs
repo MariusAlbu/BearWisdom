@@ -32,31 +32,15 @@ impl LanguageResolver for YamlResolver {
         &["yaml"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let imports: Vec<ImportEntry> = file
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Imports)
-            .map(|r| ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: None,
-                alias: None,
-                is_wildcard: false,
-            })
-            .collect();
-        FileContext {
-            file_path: file.path.clone(),
-            language: "yaml".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -150,3 +134,26 @@ fn lexical_normalize(p: &Path) -> PathBuf {
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let imports: Vec<ImportEntry> = file
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .map(|r| ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: None,
+            alias: None,
+            is_wildcard: false,
+        })
+        .collect();
+    FileContext {
+        file_path: file.path.clone(),
+        language: "yaml".to_string(),
+        imports,
+        file_namespace: None,
+    }
+}

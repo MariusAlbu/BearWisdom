@@ -37,57 +37,15 @@ impl LanguageResolver for ScssResolver {
         &["scss"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Collect @use / @import / @forward paths from Imports refs.
-        //
-        // When `@use 'path' as alias` is present the extractor stores the
-        // alias as `target_name` and the raw path as `module`. The import
-        // entry's `alias` field carries the alias so the resolver can match
-        // `@include alias.mixin()` calls back to this entry.
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
-            // Detect whether `target_name` is an alias (differs from the
-            // last path segment after stripping the leading underscore and
-            // extension — the shape `path_to_target` would produce).
-            let bare_segment = module_path
-                .rsplit('/')
-                .next()
-                .unwrap_or(module_path.as_str())
-                .trim_start_matches('_')
-                .trim_end_matches(".scss")
-                .trim_end_matches(".sass")
-                .trim_end_matches(".css");
-            let alias = if r.target_name != bare_segment {
-                Some(r.target_name.clone())
-            } else {
-                None
-            };
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(module_path),
-                alias,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "scss".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -191,4 +149,53 @@ impl LanguageResolver for ScssResolver {
         None
     }
 
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Collect @use / @import / @forward paths from Imports refs.
+    //
+    // When `@use 'path' as alias` is present the extractor stores the
+    // alias as `target_name` and the raw path as `module`. The import
+    // entry's `alias` field carries the alias so the resolver can match
+    // `@include alias.mixin()` calls back to this entry.
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
+        // Detect whether `target_name` is an alias (differs from the
+        // last path segment after stripping the leading underscore and
+        // extension — the shape `path_to_target` would produce).
+        let bare_segment = module_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(module_path.as_str())
+            .trim_start_matches('_')
+            .trim_end_matches(".scss")
+            .trim_end_matches(".sass")
+            .trim_end_matches(".css");
+        let alias = if r.target_name != bare_segment {
+            Some(r.target_name.clone())
+        } else {
+            None
+        };
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(module_path),
+            alias,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "scss".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

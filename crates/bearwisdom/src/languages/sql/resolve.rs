@@ -29,21 +29,15 @@ impl LanguageResolver for SqlResolver {
         &["sql"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // SQL has no imports and no file-level namespace.
-        FileContext {
-            file_path: file.path.clone(),
-            language: "sql".to_string(),
-            imports: Vec::new(),
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -135,4 +129,17 @@ pub(super) fn is_sql_builtin_type(name: &str) -> bool {
             | "count" | "sum" | "avg" | "min" | "max" | "coalesce" | "nullif"
             | "cast" | "convert" | "isnull" | "ifnull" | "nvl"
     )
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // SQL has no imports and no file-level namespace.
+    FileContext {
+        file_path: file.path.clone(),
+        language: "sql".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    }
 }

@@ -40,43 +40,15 @@ impl LanguageResolver for DartResolver {
         &["dart"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // For Dart, target_name is the import URI (or alias for `as` imports).
-            // module is the URI when an alias is present.
-            let uri = r.module.as_deref().unwrap_or(&r.target_name);
-            let alias = if r.module.is_some() && r.target_name != uri {
-                Some(r.target_name.clone())
-            } else {
-                None
-            };
-
-            imports.push(ImportEntry {
-                imported_name: uri.to_string(),
-                module_path: Some(uri.to_string()),
-                alias,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "dart".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -366,4 +338,39 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // For Dart, target_name is the import URI (or alias for `as` imports).
+        // module is the URI when an alias is present.
+        let uri = r.module.as_deref().unwrap_or(&r.target_name);
+        let alias = if r.module.is_some() && r.target_name != uri {
+            Some(r.target_name.clone())
+        } else {
+            None
+        };
+
+        imports.push(ImportEntry {
+            imported_name: uri.to_string(),
+            module_path: Some(uri.to_string()),
+            alias,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "dart".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

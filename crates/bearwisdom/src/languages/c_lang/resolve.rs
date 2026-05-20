@@ -41,53 +41,15 @@ impl LanguageResolver for CLangResolver {
         &["c", "cpp"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // C/C++ uses `#include` -- the extractor emits these as EdgeKind::Imports.
-        // target_name = the header path (e.g., "stdio.h", "vector", "mylib/foo.h").
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let header = r.target_name.trim_matches(|c| c == '<' || c == '>' || c == '"');
-            imports.push(ImportEntry {
-                imported_name: header.to_string(),
-                module_path: Some(header.to_string()),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        // C/C++ files belong to no named namespace by default; namespace
-        // declarations are per-block, not file-level.
-        //
-        // Exception: when the project has a DESCRIPTION manifest the C file
-        // lives inside an R package. Store a sentinel in file_namespace so
-        // resolve() / infer_external_namespace() can classify R C API
-        // symbols (SEXP, PROTECT, Rf_*, ...) without ProjectContext threading.
-        let file_namespace = if project_ctx
-            .map(|ctx| ctx.manifests.contains_key(&ManifestKind::Description))
-            .unwrap_or(false)
-        {
-            Some(R_PACKAGE_SENTINEL.to_string())
-        } else {
-            None
-        };
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: file.language.clone(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -347,4 +309,49 @@ pub(crate) fn detect_flow_inner(
         }
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // C/C++ uses `#include` -- the extractor emits these as EdgeKind::Imports.
+    // target_name = the header path (e.g., "stdio.h", "vector", "mylib/foo.h").
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let header = r.target_name.trim_matches(|c| c == '<' || c == '>' || c == '"');
+        imports.push(ImportEntry {
+            imported_name: header.to_string(),
+            module_path: Some(header.to_string()),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    // C/C++ files belong to no named namespace by default; namespace
+    // declarations are per-block, not file-level.
+    //
+    // Exception: when the project has a DESCRIPTION manifest the C file
+    // lives inside an R package. Store a sentinel in file_namespace so
+    // resolve() / infer_external_namespace() can classify R C API
+    // symbols (SEXP, PROTECT, Rf_*, ...) without ProjectContext threading.
+    let file_namespace = if project_ctx
+        .map(|ctx| ctx.manifests.contains_key(&ManifestKind::Description))
+        .unwrap_or(false)
+    {
+        Some(R_PACKAGE_SENTINEL.to_string())
+    } else {
+        None
+    };
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: file.language.clone(),
+        imports,
+        file_namespace,
+    }
 }

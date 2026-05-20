@@ -84,94 +84,15 @@ impl LanguageResolver for TypeScriptResolver {
         &["typescript", "javascript", "tsx", "jsx"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // NestJS controller-prefix pre-pass: stash one synthetic ImportEntry
-        // per `@Controller(...)` decorator so method-level `@Get/@Post/...`
-        // refs can recover the route prefix when assembling their full
-        // pattern. The key is `__ts_controller_prefix__:<class-qualified-name>`
-        // and the value is the prefix string (or empty when the prefix arg
-        // is not a string literal — e.g. `@Controller(RouteKey.User)`).
-        //
-        // Both `import { Controller } from '@nestjs/common'` AND `@Controller(...)`
-        // produce TypeRef refs with target_name="Controller". The decorator
-        // ref now carries its first_arg in `call_args` (not `module`); the
-        // import ref has `module = Some("@nestjs/common")` and empty
-        // call_args. Use the presence of `module` to skip imports — only
-        // decorator refs feed the prefix lookup.
-        for r in &file.refs {
-            if r.kind != EdgeKind::TypeRef || r.target_name != "Controller" {
-                continue;
-            }
-            if r.module.is_some() {
-                // Import ref — `import { Controller } from '@nestjs/common'`.
-                continue;
-            }
-            let Some(sym) = file.symbols.get(r.source_symbol_index) else { continue; };
-            let prefix = r
-                .call_args
-                .iter()
-                .find_map(|a| match a {
-                    crate::types::CallArg::StringLit(s) => Some(s.clone()),
-                    _ => None,
-                })
-                .unwrap_or_default();
-            imports.push(ImportEntry {
-                imported_name: format!("{CONTROLLER_PREFIX_KEY}{}", sym.qualified_name),
-                module_path: Some(prefix),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        // Background-job queue-binding entries: `const NAME = new Queue("Q")`
-        // emits a synthetic `EdgeKind::Imports` ref keyed
-        // `__ts_bgjob_queue_binding__:NAME` with module `"Q"` (see
-        // `calls::emit_new_ref`). The generic import loop below picks them up
-        // alongside real imports — no special-case handling needed here.
-
-        // Collect import entries from any ref that has a `module` field set.
-        //
-        // The TS/JS parser emits one ref per imported binding, e.g.:
-        //   import { useState, useEffect } from 'react'
-        //     → ref { target_name: "useState",  module: "react",  kind: TypeRef }
-        //     → ref { target_name: "useEffect", module: "react",  kind: TypeRef }
-        //
-        //   import React from 'react'           (default import)
-        //     → ref { target_name: "React",     module: "react",  kind: TypeRef }
-        //
-        //   import { formatDate } from './utils'
-        //     → ref { target_name: "formatDate", module: "./utils", kind: TypeRef }
-        //
-        // We distinguish external (bare) vs relative by the module specifier.
-        // is_wildcard is unused in the TS resolver — all TS imports are explicit.
-        for r in &file.refs {
-            let Some(module_path) = r.module.clone() else {
-                continue;
-            };
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(module_path),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        // TypeScript has no file-level namespace — module identity is the file path.
-        FileContext {
-            file_path: file.path.clone(),
-            language: file.language.clone(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -1099,4 +1020,90 @@ pub(crate) fn detect_flow_inner(
     detect_chain_flow_emission(chain_ref, &r.call_args, file_ctx)
         .map(|e| vec![e])
         .unwrap_or_default()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // NestJS controller-prefix pre-pass: stash one synthetic ImportEntry
+    // per `@Controller(...)` decorator so method-level `@Get/@Post/...`
+    // refs can recover the route prefix when assembling their full
+    // pattern. The key is `__ts_controller_prefix__:<class-qualified-name>`
+    // and the value is the prefix string (or empty when the prefix arg
+    // is not a string literal — e.g. `@Controller(RouteKey.User)`).
+    //
+    // Both `import { Controller } from '@nestjs/common'` AND `@Controller(...)`
+    // produce TypeRef refs with target_name="Controller". The decorator
+    // ref now carries its first_arg in `call_args` (not `module`); the
+    // import ref has `module = Some("@nestjs/common")` and empty
+    // call_args. Use the presence of `module` to skip imports — only
+    // decorator refs feed the prefix lookup.
+    for r in &file.refs {
+        if r.kind != EdgeKind::TypeRef || r.target_name != "Controller" {
+            continue;
+        }
+        if r.module.is_some() {
+            // Import ref — `import { Controller } from '@nestjs/common'`.
+            continue;
+        }
+        let Some(sym) = file.symbols.get(r.source_symbol_index) else { continue; };
+        let prefix = r
+            .call_args
+            .iter()
+            .find_map(|a| match a {
+                crate::types::CallArg::StringLit(s) => Some(s.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        imports.push(ImportEntry {
+            imported_name: format!("{CONTROLLER_PREFIX_KEY}{}", sym.qualified_name),
+            module_path: Some(prefix),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    // Background-job queue-binding entries: `const NAME = new Queue("Q")`
+    // emits a synthetic `EdgeKind::Imports` ref keyed
+    // `__ts_bgjob_queue_binding__:NAME` with module `"Q"` (see
+    // `calls::emit_new_ref`). The generic import loop below picks them up
+    // alongside real imports — no special-case handling needed here.
+
+    // Collect import entries from any ref that has a `module` field set.
+    //
+    // The TS/JS parser emits one ref per imported binding, e.g.:
+    //   import { useState, useEffect } from 'react'
+    //     → ref { target_name: "useState",  module: "react",  kind: TypeRef }
+    //     → ref { target_name: "useEffect", module: "react",  kind: TypeRef }
+    //
+    //   import React from 'react'           (default import)
+    //     → ref { target_name: "React",     module: "react",  kind: TypeRef }
+    //
+    //   import { formatDate } from './utils'
+    //     → ref { target_name: "formatDate", module: "./utils", kind: TypeRef }
+    //
+    // We distinguish external (bare) vs relative by the module specifier.
+    // is_wildcard is unused in the TS resolver — all TS imports are explicit.
+    for r in &file.refs {
+        let Some(module_path) = r.module.clone() else {
+            continue;
+        };
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(module_path),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    // TypeScript has no file-level namespace — module identity is the file path.
+    FileContext {
+        file_path: file.path.clone(),
+        language: file.language.clone(),
+        imports,
+        file_namespace: None,
+    }
 }

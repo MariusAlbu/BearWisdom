@@ -29,34 +29,15 @@ impl LanguageResolver for CMakeResolver {
         &["cmake"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: r.module.clone().or_else(|| Some(r.target_name.clone())),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "cmake".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -138,4 +119,30 @@ pub(super) fn is_cmake_builtin(name: &str) -> bool {
     }
 
     super::keywords::KEYWORDS.contains(&s)
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: r.module.clone().or_else(|| Some(r.target_name.clone())),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "cmake".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

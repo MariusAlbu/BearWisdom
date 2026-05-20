@@ -44,67 +44,15 @@ impl LanguageResolver for FortranResolver {
         &["fortran"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-
-            let is_rename = !r.namespace_segments.is_empty();
-
-            if is_rename {
-                // Shape (3): rename `local_name => source_name`.
-                // namespace_segments[0] = module_name, module = source_name,
-                // target_name = local_name.
-                let module_path = r.namespace_segments.first().cloned();
-                let source_name = r.module.clone().unwrap_or_default();
-                let local_name = r.target_name.clone();
-                if !source_name.is_empty() {
-                    imports.push(ImportEntry {
-                        // imported_name is the actual symbol name in the module.
-                        imported_name: source_name,
-                        module_path,
-                        // alias is the local call-site name.
-                        alias: Some(local_name),
-                        is_wildcard: false,
-                    });
-                }
-            } else if r.module.is_some() {
-                // Shape (2): named only-symbol.
-                // target_name = symbol, module = module_name.
-                imports.push(ImportEntry {
-                    imported_name: r.target_name.clone(),
-                    module_path: r.module.clone(),
-                    alias: None,
-                    is_wildcard: false,
-                });
-            } else {
-                // Shape (1): module-level wildcard.
-                // target_name = module_name.
-                imports.push(ImportEntry {
-                    imported_name: r.target_name.clone(),
-                    module_path: Some(r.target_name.clone()),
-                    alias: None,
-                    is_wildcard: true,
-                });
-            }
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "fortran".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -222,4 +170,63 @@ pub(crate) fn detect_flow_inner(
         method: Some(HttpMethod::Any),
     streaming: None,
     }]
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+
+        let is_rename = !r.namespace_segments.is_empty();
+
+        if is_rename {
+            // Shape (3): rename `local_name => source_name`.
+            // namespace_segments[0] = module_name, module = source_name,
+            // target_name = local_name.
+            let module_path = r.namespace_segments.first().cloned();
+            let source_name = r.module.clone().unwrap_or_default();
+            let local_name = r.target_name.clone();
+            if !source_name.is_empty() {
+                imports.push(ImportEntry {
+                    // imported_name is the actual symbol name in the module.
+                    imported_name: source_name,
+                    module_path,
+                    // alias is the local call-site name.
+                    alias: Some(local_name),
+                    is_wildcard: false,
+                });
+            }
+        } else if r.module.is_some() {
+            // Shape (2): named only-symbol.
+            // target_name = symbol, module = module_name.
+            imports.push(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: r.module.clone(),
+                alias: None,
+                is_wildcard: false,
+            });
+        } else {
+            // Shape (1): module-level wildcard.
+            // target_name = module_name.
+            imports.push(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: Some(r.target_name.clone()),
+                alias: None,
+                is_wildcard: true,
+            });
+        }
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "fortran".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

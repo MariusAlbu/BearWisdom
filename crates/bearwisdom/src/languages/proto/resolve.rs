@@ -34,40 +34,15 @@ impl LanguageResolver for ProtoResolver {
         &["proto", "protobuf"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // Import path like "google/protobuf/timestamp.proto" or "other.proto".
-            let path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(path),
-                alias: None,
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "proto".to_string(),
-            imports,
-            file_namespace: file
-                .symbols
-                .iter()
-                .find(|s| s.kind.as_str() == "package" || s.name.starts_with("package"))
-                .map(|s| s.name.clone()),
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -140,4 +115,36 @@ pub(super) fn is_proto_scalar(name: &str) -> bool {
             | "sint32" | "sint64" | "fixed32" | "fixed64"
             | "sfixed32" | "sfixed64" | "bool" | "string" | "bytes"
     )
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // Import path like "google/protobuf/timestamp.proto" or "other.proto".
+        let path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(path),
+            alias: None,
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "proto".to_string(),
+        imports,
+        file_namespace: file
+            .symbols
+            .iter()
+            .find(|s| s.kind.as_str() == "package" || s.name.starts_with("package"))
+            .map(|s| s.name.clone()),
+    }
 }

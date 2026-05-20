@@ -34,47 +34,15 @@ impl LanguageResolver for OdinResolver {
         &["odin"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // Odin: target_name holds the import path (e.g., "core:fmt").
-            // Derive the package name as the last segment after `:` or `/`.
-            let import_path = r.target_name.clone();
-            let pkg_name = import_path
-                .rsplit(':')
-                .next()
-                .and_then(|s| s.rsplit('/').next())
-                .unwrap_or(import_path.as_str())
-                .to_string();
-
-            imports.push(ImportEntry {
-                imported_name: pkg_name,
-                module_path: Some(import_path),
-                alias: None,
-                // Odin import brings all package exports into scope. The extractor
-                // strips package qualifiers (fmt.println → println), so bare names
-                // need the wildcard path to classify as external.
-                is_wildcard: true,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "odin".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -159,4 +127,43 @@ pub(crate) fn detect_flow_inner(
         method: Some(HttpMethod::Any),
     streaming: None,
     }]
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // Odin: target_name holds the import path (e.g., "core:fmt").
+        // Derive the package name as the last segment after `:` or `/`.
+        let import_path = r.target_name.clone();
+        let pkg_name = import_path
+            .rsplit(':')
+            .next()
+            .and_then(|s| s.rsplit('/').next())
+            .unwrap_or(import_path.as_str())
+            .to_string();
+
+        imports.push(ImportEntry {
+            imported_name: pkg_name,
+            module_path: Some(import_path),
+            alias: None,
+            // Odin import brings all package exports into scope. The extractor
+            // strips package qualifiers (fmt.println → println), so bare names
+            // need the wildcard path to classify as external.
+            is_wildcard: true,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "odin".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

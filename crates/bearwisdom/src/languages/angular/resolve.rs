@@ -74,15 +74,15 @@ impl LanguageResolver for AngularResolver {
         &["angular", "angular_template"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        TypeScriptResolver.build_file_context(file, project_ctx)
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -192,4 +192,11 @@ pub(super) fn infer_external_inner_with_lookup(
         }
     }
     fallback
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    TypeScriptResolver.build_file_context(file, project_ctx)
 }

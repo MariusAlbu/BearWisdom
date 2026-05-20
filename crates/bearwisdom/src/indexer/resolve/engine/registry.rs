@@ -30,11 +30,22 @@ pub trait LanguageResolver: Send + Sync {
 
     /// Build the file context for a parsed file.
     /// `project_ctx` provides global usings and external prefix data.
+    ///
+    /// Default returns a minimal placeholder; languages migrating onto the
+    /// LanguageEngineHooks path satisfy this trait via the default and the
+    /// real construction lives in `hooks::build_file_context`.
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> FileContext;
+        _project_ctx: Option<&ProjectContext>,
+    ) -> FileContext {
+        FileContext {
+            file_path: file.path.clone(),
+            language: file.language.clone(),
+            imports: Vec::new(),
+            file_namespace: None,
+        }
+    }
 
     /// Attempt to resolve a reference using language-specific scope rules.
     ///

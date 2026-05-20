@@ -16,6 +16,14 @@ impl LanguageEngineHooks for PowerShellHooks {
         let _ = lookup;
         resolve::infer_external_inner(file_ctx, ref_ctx, project_ctx)
     }
+
+    fn build_file_context(
+        &self,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<crate::indexer::resolve::engine::FileContext> {
+        Some(resolve::build_file_context_inner(file, project_ctx))
+    }
 }
 
 pub static POWERSHELL_HOOKS: PowerShellHooks = PowerShellHooks;

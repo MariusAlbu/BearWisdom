@@ -31,43 +31,15 @@ impl LanguageResolver for ErlangResolver {
         &["erlang"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // After the extractor update, -import(lists, [map/2, foldl/3]) emits:
-            //   target_name = "map/2",  module = Some("lists")
-            //   target_name = "foldl/3", module = Some("lists")
-            // The fallback (empty funs list) emits:
-            //   target_name = "lists", module = Some("lists"), is_wildcard treated below.
-            //
-            // Include and wildcard module-level entries are non-function references
-            // (path strings or bare module names) and stay as wildcards.
-            let is_function_import = r.target_name.contains('/');
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: r.module.clone().or_else(|| Some(r.target_name.clone())),
-                alias: None,
-                is_wildcard: !is_function_import,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "erlang".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -314,4 +286,39 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // After the extractor update, -import(lists, [map/2, foldl/3]) emits:
+        //   target_name = "map/2",  module = Some("lists")
+        //   target_name = "foldl/3", module = Some("lists")
+        // The fallback (empty funs list) emits:
+        //   target_name = "lists", module = Some("lists"), is_wildcard treated below.
+        //
+        // Include and wildcard module-level entries are non-function references
+        // (path strings or bare module names) and stay as wildcards.
+        let is_function_import = r.target_name.contains('/');
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: r.module.clone().or_else(|| Some(r.target_name.clone())),
+            alias: None,
+            is_wildcard: !is_function_import,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "erlang".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

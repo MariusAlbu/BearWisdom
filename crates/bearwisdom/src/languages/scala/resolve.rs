@@ -36,56 +36,15 @@ impl LanguageResolver for ScalaResolver {
         &["scala"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Extract package declaration.
-        let file_namespace = file.symbols.iter().find_map(|sym| {
-            if sym.kind == crate::types::SymbolKind::Namespace {
-                Some(sym.qualified_name.clone())
-            } else {
-                None
-            }
-        });
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let module = r.module.as_deref().unwrap_or(&r.target_name);
-            // Scala wildcard is `_` (Scala 2) or `*` (Scala 3).
-            let is_wildcard = r.target_name == "_" || r.target_name == "*";
-
-            if is_wildcard {
-                imports.push(ImportEntry {
-                    imported_name: String::new(),
-                    module_path: Some(module.to_string()),
-                    alias: None,
-                    is_wildcard: true,
-                });
-            } else {
-                imports.push(ImportEntry {
-                    imported_name: r.target_name.clone(),
-                    module_path: Some(module.to_string()),
-                    alias: None,
-                    is_wildcard: false,
-                });
-            }
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "scala".to_string(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -636,4 +595,52 @@ pub(crate) fn detect_flow_inner(
         return vec![em];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Extract package declaration.
+    let file_namespace = file.symbols.iter().find_map(|sym| {
+        if sym.kind == crate::types::SymbolKind::Namespace {
+            Some(sym.qualified_name.clone())
+        } else {
+            None
+        }
+    });
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let module = r.module.as_deref().unwrap_or(&r.target_name);
+        // Scala wildcard is `_` (Scala 2) or `*` (Scala 3).
+        let is_wildcard = r.target_name == "_" || r.target_name == "*";
+
+        if is_wildcard {
+            imports.push(ImportEntry {
+                imported_name: String::new(),
+                module_path: Some(module.to_string()),
+                alias: None,
+                is_wildcard: true,
+            });
+        } else {
+            imports.push(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: Some(module.to_string()),
+                alias: None,
+                is_wildcard: false,
+            });
+        }
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "scala".to_string(),
+        imports,
+        file_namespace,
+    }
 }

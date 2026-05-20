@@ -28,22 +28,15 @@ impl LanguageResolver for PrismaResolver {
         &["prisma"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // Prisma has no import statements — all types in a schema are globally
-        // visible. Multi-file Prisma schemas are treated as a flat namespace.
-        FileContext {
-            file_path: file.path.clone(),
-            language: "prisma".to_string(),
-            imports: Vec::new(),
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -86,4 +79,18 @@ pub(super) fn is_prisma_scalar(name: &str) -> bool {
             | "autoincrement" | "cuid" | "uuid" | "now" | "dbgenerated"
             | "auto"
     )
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // Prisma has no import statements — all types in a schema are globally
+    // visible. Multi-file Prisma schemas are treated as a flat namespace.
+    FileContext {
+        file_path: file.path.clone(),
+        language: "prisma".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    }
 }

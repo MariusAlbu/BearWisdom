@@ -96,39 +96,15 @@ impl LanguageResolver for BashResolver {
         &["shell"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // module_path keeps the stem (r.target_name) so resolve_common and
-            // infer_external_common behave identically to baseline.  The raw path
-            // (with $VAR/ or ./ prefixes) goes into `alias` for exclusive use by
-            // resolve_via_shell_source's suffix-matching logic.
-            let raw_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(r.target_name.clone()),
-                alias: Some(raw_path),
-                is_wildcard: false,
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "shell".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -265,3 +241,34 @@ impl BashResolver {
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // module_path keeps the stem (r.target_name) so resolve_common and
+        // infer_external_common behave identically to baseline.  The raw path
+        // (with $VAR/ or ./ prefixes) goes into `alias` for exclusive use by
+        // resolve_via_shell_source's suffix-matching logic.
+        let raw_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(r.target_name.clone()),
+            alias: Some(raw_path),
+            is_wildcard: false,
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "shell".to_string(),
+        imports,
+        file_namespace: None,
+    }
+}

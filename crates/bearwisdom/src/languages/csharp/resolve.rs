@@ -40,63 +40,15 @@ impl LanguageResolver for CSharpResolver {
         &["csharp", "vbnet"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-        let mut file_namespace = None;
-
-        // Extract namespace from the first Namespace symbol.
-        for sym in &file.symbols {
-            if sym.kind == crate::types::SymbolKind::Namespace {
-                file_namespace = Some(sym.qualified_name.clone());
-                break;
-            }
-        }
-
-        // Inject global usings from the NuGet manifest (SDK implicit + GlobalUsings.cs).
-        // These go first so per-file usings can override.
-        if let Some(ctx) = project_ctx {
-            let global_usings: &[String] = ctx
-                .manifest(ManifestKind::NuGet)
-                .map(|m| m.global_usings.as_slice())
-                .unwrap_or(&[]);
-            for ns in global_usings {
-                imports.push(ImportEntry {
-                    imported_name: ns.clone(),
-                    module_path: Some(ns.clone()),
-                    alias: None,
-                    is_wildcard: true,
-                });
-            }
-        }
-
-        // Extract per-file using directives from refs with EdgeKind::Imports.
-        for r in &file.refs {
-            if r.kind == EdgeKind::Imports {
-                let module = r.module.as_deref().unwrap_or(&r.target_name);
-                imports.push(ImportEntry {
-                    imported_name: r.target_name.clone(),
-                    module_path: Some(module.to_string()),
-                    alias: None,
-                    // C# `using Namespace;` is a wildcard import — all public types
-                    // in that namespace become visible.
-                    is_wildcard: module.contains('.'),
-                });
-            }
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "csharp".to_string(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -903,4 +855,59 @@ pub(crate) fn detect_flow_inner(
         return vec![emission];
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+    let mut file_namespace = None;
+
+    // Extract namespace from the first Namespace symbol.
+    for sym in &file.symbols {
+        if sym.kind == crate::types::SymbolKind::Namespace {
+            file_namespace = Some(sym.qualified_name.clone());
+            break;
+        }
+    }
+
+    // Inject global usings from the NuGet manifest (SDK implicit + GlobalUsings.cs).
+    // These go first so per-file usings can override.
+    if let Some(ctx) = project_ctx {
+        let global_usings: &[String] = ctx
+            .manifest(ManifestKind::NuGet)
+            .map(|m| m.global_usings.as_slice())
+            .unwrap_or(&[]);
+        for ns in global_usings {
+            imports.push(ImportEntry {
+                imported_name: ns.clone(),
+                module_path: Some(ns.clone()),
+                alias: None,
+                is_wildcard: true,
+            });
+        }
+    }
+
+    // Extract per-file using directives from refs with EdgeKind::Imports.
+    for r in &file.refs {
+        if r.kind == EdgeKind::Imports {
+            let module = r.module.as_deref().unwrap_or(&r.target_name);
+            imports.push(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: Some(module.to_string()),
+                alias: None,
+                // C# `using Namespace;` is a wildcard import — all public types
+                // in that namespace become visible.
+                is_wildcard: module.contains('.'),
+            });
+        }
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "csharp".to_string(),
+        imports,
+        file_namespace,
+    }
 }

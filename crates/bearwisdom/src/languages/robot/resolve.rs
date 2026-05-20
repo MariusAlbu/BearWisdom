@@ -198,123 +198,15 @@ impl LanguageResolver for RobotResolver {
         &["robot"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Robot Framework auto-imports `BuiltIn` for every test/resource
-        // file per spec — no explicit `Library  BuiltIn` is required.
-        // Seed the entry unconditionally so qualified calls like
-        // `BuiltIn.Should Be Equal` route through `is_library_import` even
-        // when the project doesn't vendor `BuiltIn.py`. The
-        // `robot_library_map` seam still binds the entry to a real `.py`
-        // file when one is present in the project tree (used by Step 4.5).
-        imports.push(ImportEntry {
-            imported_name: "BuiltIn".to_string(),
-            module_path: Some("BuiltIn".to_string()),
-            alias: None,
-            is_wildcard: false,
-        });
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            let raw_path = r.module.as_deref().unwrap_or(&r.target_name);
-            let is_file_import =
-                raw_path.ends_with(".robot") || raw_path.ends_with(".resource");
-
-            // Rewrite resource basenames to indexed full paths so Step 4's
-            // `lookup.in_file()` can find the symbols. Without this the
-            // extractor's bare `atest_resource.robot` never matches the
-            // indexed `atest/resources/atest_resource.robot` path and
-            // every cross-file resource keyword call falls through to
-            // Step 5 (which often loses to ambiguity).
-            //
-            // The extractor preserves the literal user-written path —
-            // could be a basename (`atest_resource.robot`), a relative
-            // path (`../runner/cli_resource.robot`), or `${CURDIR}/foo`.
-            // The basename map keys on the file-name suffix only.
-            let resolved_path = if is_file_import {
-                let lookup_key = std::path::Path::new(raw_path)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or(raw_path);
-                project_ctx
-                    .and_then(|ctx| {
-                        ctx.plugin_state
-                            .get::<super::RobotProjectState>()
-                            .and_then(|s| s.resource_basenames.get(lookup_key))
-                            .and_then(|paths| {
-                                super::library_map::pick_resource_for_importer(
-                                    paths, &file.path,
-                                )
-                                .map(String::from)
-                            })
-                    })
-                    .unwrap_or_else(|| raw_path.to_string())
-            } else {
-                raw_path.to_string()
-            };
-
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(resolved_path),
-                alias: None,
-                is_wildcard: is_file_import,
-            });
-        }
-
-        // Inject transitive Python Library bindings as additional imports
-        // tagged with `is_wildcard=true` and a `.py` module path. The
-        // resolve step uses these to walk Python methods imported via a
-        // `Library` directive (possibly several Resource hops away). See
-        // `library_map::build_robot_library_map`.
-        //
-        // Each Library import additionally contributes one
-        // `is_wildcard=false` ImportEntry per dynamic keyword exposed by
-        // its `.py` file (KEYWORDS dict keys / get_keyword_names list
-        // items). The resolver's Step 4.6 walks these to reach keywords
-        // that have no `def name():` declaration in source. See
-        // `dynamic_keywords::build_robot_dynamic_keyword_map`.
-        if let Some(ctx) = project_ctx {
-            if let Some(robot_state) = ctx.plugin_state.get::<super::RobotProjectState>() {
-                if let Some(libs) = robot_state.library_map.get(&file.path) {
-                    for lib in libs {
-                        imports.push(ImportEntry {
-                            imported_name: lib.library_name.clone(),
-                            module_path: Some(lib.py_file_path.clone()),
-                            alias: None,
-                            is_wildcard: true,
-                        });
-
-                        if let Some(dyn_kws) = robot_state.dynamic_keywords.get(&lib.py_file_path) {
-                            for kw in dyn_kws {
-                                imports.push(ImportEntry {
-                                    imported_name: kw.normalized_name.clone(),
-                                    module_path: Some(lib.py_file_path.clone()),
-                                    alias: encode_dynamic_alias(&kw.class_name, &kw.method_name),
-                                    is_wildcard: false,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "robot".to_string(),
-            imports,
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -654,4 +546,119 @@ pub(super) fn infer_external_inner(
     }
 
     None
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Robot Framework auto-imports `BuiltIn` for every test/resource
+    // file per spec — no explicit `Library  BuiltIn` is required.
+    // Seed the entry unconditionally so qualified calls like
+    // `BuiltIn.Should Be Equal` route through `is_library_import` even
+    // when the project doesn't vendor `BuiltIn.py`. The
+    // `robot_library_map` seam still binds the entry to a real `.py`
+    // file when one is present in the project tree (used by Step 4.5).
+    imports.push(ImportEntry {
+        imported_name: "BuiltIn".to_string(),
+        module_path: Some("BuiltIn".to_string()),
+        alias: None,
+        is_wildcard: false,
+    });
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        let raw_path = r.module.as_deref().unwrap_or(&r.target_name);
+        let is_file_import =
+            raw_path.ends_with(".robot") || raw_path.ends_with(".resource");
+
+        // Rewrite resource basenames to indexed full paths so Step 4's
+        // `lookup.in_file()` can find the symbols. Without this the
+        // extractor's bare `atest_resource.robot` never matches the
+        // indexed `atest/resources/atest_resource.robot` path and
+        // every cross-file resource keyword call falls through to
+        // Step 5 (which often loses to ambiguity).
+        //
+        // The extractor preserves the literal user-written path —
+        // could be a basename (`atest_resource.robot`), a relative
+        // path (`../runner/cli_resource.robot`), or `${CURDIR}/foo`.
+        // The basename map keys on the file-name suffix only.
+        let resolved_path = if is_file_import {
+            let lookup_key = std::path::Path::new(raw_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(raw_path);
+            project_ctx
+                .and_then(|ctx| {
+                    ctx.plugin_state
+                        .get::<super::RobotProjectState>()
+                        .and_then(|s| s.resource_basenames.get(lookup_key))
+                        .and_then(|paths| {
+                            super::library_map::pick_resource_for_importer(
+                                paths, &file.path,
+                            )
+                            .map(String::from)
+                        })
+                })
+                .unwrap_or_else(|| raw_path.to_string())
+        } else {
+            raw_path.to_string()
+        };
+
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(resolved_path),
+            alias: None,
+            is_wildcard: is_file_import,
+        });
+    }
+
+    // Inject transitive Python Library bindings as additional imports
+    // tagged with `is_wildcard=true` and a `.py` module path. The
+    // resolve step uses these to walk Python methods imported via a
+    // `Library` directive (possibly several Resource hops away). See
+    // `library_map::build_robot_library_map`.
+    //
+    // Each Library import additionally contributes one
+    // `is_wildcard=false` ImportEntry per dynamic keyword exposed by
+    // its `.py` file (KEYWORDS dict keys / get_keyword_names list
+    // items). The resolver's Step 4.6 walks these to reach keywords
+    // that have no `def name():` declaration in source. See
+    // `dynamic_keywords::build_robot_dynamic_keyword_map`.
+    if let Some(ctx) = project_ctx {
+        if let Some(robot_state) = ctx.plugin_state.get::<super::RobotProjectState>() {
+            if let Some(libs) = robot_state.library_map.get(&file.path) {
+                for lib in libs {
+                    imports.push(ImportEntry {
+                        imported_name: lib.library_name.clone(),
+                        module_path: Some(lib.py_file_path.clone()),
+                        alias: None,
+                        is_wildcard: true,
+                    });
+
+                    if let Some(dyn_kws) = robot_state.dynamic_keywords.get(&lib.py_file_path) {
+                        for kw in dyn_kws {
+                            imports.push(ImportEntry {
+                                imported_name: kw.normalized_name.clone(),
+                                module_path: Some(lib.py_file_path.clone()),
+                                alias: encode_dynamic_alias(&kw.class_name, &kw.method_name),
+                                is_wildcard: false,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "robot".to_string(),
+        imports,
+        file_namespace: None,
+    }
 }

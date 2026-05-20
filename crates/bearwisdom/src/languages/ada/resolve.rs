@@ -61,53 +61,15 @@ impl LanguageResolver for AdaResolver {
         &["ada"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut imports = Vec::new();
-
-        // Capture the outermost package/namespace qname (e.g. `Alr.Commands.Run`).
-        // Ada body/spec files declare exactly one top-level package; its qualified
-        // name is the compilation unit's identifier in dot notation.
-        let file_namespace = file
-            .symbols
-            .iter()
-            .find(|s| s.kind == SymbolKind::Namespace && s.parent_index.is_none())
-            .map(|s| s.qualified_name.clone());
-
-        for r in &file.refs {
-            if r.kind != EdgeKind::Imports {
-                continue;
-            }
-            // Both `with` and `use` clauses produce Imports edges. The
-            // package_renaming_declaration handler in the extractor sets
-            // `module` to the renamed-target package (e.g. for
-            // `package Trace renames Simple_Logging;` the ref carries
-            // target_name="Trace" and module=Some("Simple_Logging"));
-            // when present, that's the actual module to look up.
-            let module_path = r
-                .module
-                .clone()
-                .unwrap_or_else(|| r.target_name.clone());
-            imports.push(ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: Some(module_path),
-                alias: None,
-                is_wildcard: true, // Ada `use` makes all names visible
-            });
-        }
-
-        FileContext {
-            file_path: file.path.clone(),
-            language: "ada".to_string(),
-            imports,
-            file_namespace,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -906,4 +868,49 @@ pub(crate) fn detect_flow_inner(
         }
     }
     Vec::new()
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    let mut imports = Vec::new();
+
+    // Capture the outermost package/namespace qname (e.g. `Alr.Commands.Run`).
+    // Ada body/spec files declare exactly one top-level package; its qualified
+    // name is the compilation unit's identifier in dot notation.
+    let file_namespace = file
+        .symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Namespace && s.parent_index.is_none())
+        .map(|s| s.qualified_name.clone());
+
+    for r in &file.refs {
+        if r.kind != EdgeKind::Imports {
+            continue;
+        }
+        // Both `with` and `use` clauses produce Imports edges. The
+        // package_renaming_declaration handler in the extractor sets
+        // `module` to the renamed-target package (e.g. for
+        // `package Trace renames Simple_Logging;` the ref carries
+        // target_name="Trace" and module=Some("Simple_Logging"));
+        // when present, that's the actual module to look up.
+        let module_path = r
+            .module
+            .clone()
+            .unwrap_or_else(|| r.target_name.clone());
+        imports.push(ImportEntry {
+            imported_name: r.target_name.clone(),
+            module_path: Some(module_path),
+            alias: None,
+            is_wildcard: true, // Ada `use` makes all names visible
+        });
+    }
+
+    FileContext {
+        file_path: file.path.clone(),
+        language: "ada".to_string(),
+        imports,
+        file_namespace,
+    }
 }

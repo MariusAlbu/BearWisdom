@@ -30,22 +30,15 @@ impl LanguageResolver for GraphQlResolver {
         &["graphql"]
     }
 
+    
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        // GraphQL has no import system — all types in the schema are globally
-        // visible within the project.
-        FileContext {
-            file_path: file.path.clone(),
-            language: "graphql".to_string(),
-            imports: Vec::new(),
-            file_namespace: None,
-        }
+        build_file_context_inner(file, project_ctx)
     }
-
-    fn resolve(
+fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -83,4 +76,18 @@ pub(super) fn is_graphql_builtin(name: &str) -> bool {
             | "__EnumValue" | "__Directive" | "__DirectiveLocation"
             | "__TypeKind"
     )
+}
+
+pub(crate) fn build_file_context_inner(
+    file: &ParsedFile,
+    _project_ctx: Option<&ProjectContext>,
+) -> FileContext {
+    // GraphQL has no import system — all types in the schema are globally
+    // visible within the project.
+    FileContext {
+        file_path: file.path.clone(),
+        language: "graphql".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    }
 }

@@ -7,10 +7,12 @@ pub mod extract;
 pub mod keywords;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::PROLOG_HOOKS;
 pub use profile::PROLOG_PROFILE;
 
 #[cfg(test)]
@@ -77,5 +79,12 @@ impl LanguagePlugin for PrologPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PROLOG_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::PROLOG_HOOKS)
     }
 }

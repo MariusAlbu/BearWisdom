@@ -1,3 +1,4 @@
+use super::resolve;
 use super::resolve::{
     is_dynamic_block_iterator, is_provider_resource_type, is_terraform_meta_ref,
 };
@@ -40,6 +41,14 @@ impl LanguageEngineHooks for HclHooks {
             }
         }
         None
+    }
+
+    fn build_file_context(
+        &self,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<crate::indexer::resolve::engine::FileContext> {
+        Some(resolve::build_file_context_inner(file, project_ctx))
     }
 }
 
