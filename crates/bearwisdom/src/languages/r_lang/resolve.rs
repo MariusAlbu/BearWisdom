@@ -157,36 +157,6 @@ impl LanguageResolver for RResolver {
         resolve_r("r", file_ctx, ref_ctx, lookup)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import refs: the package name IS the external namespace.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return Some(target.clone());
-        }
-
-        // Namespace-qualified ref to a declared R package (`pkg::fn`).
-        // `file_ctx.imports` carries every DESCRIPTION dep + library() call,
-        // so the namespace bucket falls out of the same data the resolver
-        // used above.
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            if file_ctx
-                .imports
-                .iter()
-                .any(|i| i.module_path.as_deref() == Some(module.as_str()))
-            {
-                return Some(module.clone());
-            }
-        }
-
-        infer_r_external(file_ctx, ref_ctx, project_ctx)
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,
@@ -267,7 +237,7 @@ fn resolve_r(
     engine::resolve_common(lang_prefix, file_ctx, ref_ctx, lookup, predicates::kind_compatible)
 }
 
-fn infer_r_external(
+pub(super) fn infer_r_external(
     _file_ctx: &FileContext,
     _ref_ctx: &RefContext,
     _project_ctx: Option<&ProjectContext>,

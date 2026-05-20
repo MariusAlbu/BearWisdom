@@ -8,10 +8,12 @@ pub mod extract;
 pub mod flow;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::R_HOOKS;
 pub use profile::R_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -81,6 +83,13 @@ impl LanguagePlugin for RLangPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::R_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::R_HOOKS)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
