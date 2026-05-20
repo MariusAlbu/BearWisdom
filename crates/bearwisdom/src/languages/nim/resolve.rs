@@ -108,28 +108,6 @@ impl LanguageResolver for NimResolver {
         nim_module_file_stem_resolve(file_ctx, target, edge_kind, lookup)
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        let target = r.target_name.as_str();
-        if let Some(em) = detect_nim_jester_route(target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_nim_http_producer(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_nim_db_emission(module, target, &r.call_args) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_nim_jester_route(
@@ -382,4 +360,26 @@ fn nim_module_file_stem_resolve(
     }
 
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    if let Some(em) = detect_nim_jester_route(target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_nim_http_producer(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_nim_db_emission(module, target, &r.call_args) {
+        return vec![em];
+    }
+    Vec::new()
 }

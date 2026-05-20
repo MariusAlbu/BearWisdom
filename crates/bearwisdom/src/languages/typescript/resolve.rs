@@ -754,128 +754,6 @@ impl LanguageResolver for TypeScriptResolver {
         None
     }
 
-    fn detect_flow_emission(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-
-        // Decorator-based detection: TypeRef refs whose target_name matches a
-        // well-known decorator (NestJS guards, TypeORM/Sequelize entity markers, etc.).
-        if r.kind == EdgeKind::TypeRef {
-            // Decorator refs no longer carry first_arg in r.module — read it
-            // from r.call_args[0] (CallArg::StringLit) instead. r.module is
-            // reserved for import-source paths.
-            let decorator_first_arg: Option<&str> = r.call_args.iter().find_map(|a| {
-                if let crate::types::CallArg::StringLit(s) = a {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            });
-            // NestJS HTTP route decorators (Consumer-role HttpCall). Checked
-            // first because @Get/@Post/etc. would otherwise pass through the
-            // generic decorator handler unrecognised.
-            if let Some(emission) = detect_route_decorator_flow_emission(
-                r.target_name.as_str(),
-                decorator_first_arg,
-                ref_ctx.source_symbol.qualified_name.as_str(),
-                file_ctx,
-            ) {
-                return vec![emission];
-            }
-            // NestJS gRPC decorators (Consumer-role RpcCall). Reads the second
-            // call argument (method name) when present and falls back to the
-            // enclosing method's name otherwise.
-            if let Some(emission) = detect_grpc_decorator_flow_emission(
-                r.target_name.as_str(),
-                &r.call_args,
-                ref_ctx.source_symbol.name.as_str(),
-            ) {
-                return vec![emission];
-            }
-            if let Some(emission) = detect_decorator_flow_emission_with_imports(
-                r.target_name.as_str(),
-                decorator_first_arg,
-                Some(ref_ctx.source_symbol.name.as_str()),
-                &file_ctx.imports,
-            ) {
-                return vec![emission];
-            }
-            // DiBinding: `@Inject('TOKEN')` decorator (NestJS explicit DI).
-            // Emits a single-ended DiBinding row tagged container=nestjs.
-            // `service_symbol_id` carries 0 as a placeholder — the field
-            // isn't written to the `flow_edges` table; only the `edge_type`
-            // column is consulted for downstream queries.
-            if r.target_name == "Inject" {
-                if let Some(token) = decorator_first_arg {
-                    if !token.is_empty() {
-                        return vec![FlowEmission::DiBinding {
-                            service_symbol_id: 0,
-                            container: Some(format!("nestjs:{}", token)),
-                        }];
-                    }
-                }
-                return vec![FlowEmission::DiBinding {
-                    service_symbol_id: 0,
-                    container: Some("nestjs".to_string()),
-                }];
-            }
-            // DiBinding: `@Injectable()` decorator (Angular service marker).
-            // Emits a single-ended DiBinding tagged container=angular so the
-            // architecture overview clusters Angular services next to NestJS
-            // providers. Constructor-injection consumer sites are not
-            // resolved here — the pair-keyed match against component
-            // constructors would need cross-symbol state that the resolver
-            // doesn't carry; the single-ended emission still clusters.
-            if let Some(emission) = detect_angular_injectable_emission(r.target_name.as_str()) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
-
-        // Imports-kind synthetic refs from member-access detection (see
-        // `calls::emit_config_lookup_ref`). The extractor emits these for
-        // `process.env.X`, `import.meta.env.X`, and feature-flag-shaped
-        // member access (`featureFlags.X`, `<...featureFlagsManager>.value.X`).
-        // Routed here so the chain shape drives a single-ended `ConfigLookup`
-        // or `FeatureFlag` emission without polluting the `unresolved_refs`
-        // table (Imports refs are classified as external by the loop).
-        if r.kind == EdgeKind::Imports {
-            if let Some(chain) = &r.chain {
-                if let Some(emission) = detect_member_access_config_emission(chain) {
-                    return vec![emission];
-                }
-                if let Some(emission) = detect_member_access_feature_flag_emission(chain) {
-                    return vec![emission];
-                }
-            }
-            return Vec::new();
-        }
-
-        // Call-based detection: Calls and Instantiates refs that carry a chain.
-        // Instantiates emits a single-segment chain `[ConstructorName]` plus
-        // `call_args`, so constructor-keyed patterns flow through the same
-        // detector surface as method calls (`new Worker('queue', ...)`).
-        if r.kind != EdgeKind::Calls && r.kind != EdgeKind::Instantiates {
-            return Vec::new();
-        }
-        let Some(chain_ref) = r.chain.as_ref() else { return Vec::new(); };
-
-        // gRPC `server.addService(SvcDef, { m1: h, m2: h })`: expand to one
-        // Consumer emission per registered method when the object-literal
-        // keys are captured. Falls back to the wildcard form when the second
-        // argument isn't a plain object.
-        if let Some(expanded) = detect_addservice_object_keys(chain_ref, &r.call_args, file_ctx) {
-            return expanded;
-        }
-
-        detect_chain_flow_emission(chain_ref, &r.call_args, file_ctx)
-            .map(|e| vec![e])
-            .unwrap_or_default()
-    }
-
     // is_visible: default implementation (always true) is correct for TS.
     // TypeScript's `export` keyword controls visibility, but for resolution
     // purposes we treat all indexed symbols as accessible.
@@ -1100,4 +978,125 @@ pub(crate) fn infer_external_inner_with_lookup(
     }
 
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+
+    // Decorator-based detection: TypeRef refs whose target_name matches a
+    // well-known decorator (NestJS guards, TypeORM/Sequelize entity markers, etc.).
+    if r.kind == EdgeKind::TypeRef {
+        // Decorator refs no longer carry first_arg in r.module — read it
+        // from r.call_args[0] (CallArg::StringLit) instead. r.module is
+        // reserved for import-source paths.
+        let decorator_first_arg: Option<&str> = r.call_args.iter().find_map(|a| {
+            if let crate::types::CallArg::StringLit(s) = a {
+                Some(s.as_str())
+            } else {
+                None
+            }
+        });
+        // NestJS HTTP route decorators (Consumer-role HttpCall). Checked
+        // first because @Get/@Post/etc. would otherwise pass through the
+        // generic decorator handler unrecognised.
+        if let Some(emission) = detect_route_decorator_flow_emission(
+            r.target_name.as_str(),
+            decorator_first_arg,
+            ref_ctx.source_symbol.qualified_name.as_str(),
+            file_ctx,
+        ) {
+            return vec![emission];
+        }
+        // NestJS gRPC decorators (Consumer-role RpcCall). Reads the second
+        // call argument (method name) when present and falls back to the
+        // enclosing method's name otherwise.
+        if let Some(emission) = detect_grpc_decorator_flow_emission(
+            r.target_name.as_str(),
+            &r.call_args,
+            ref_ctx.source_symbol.name.as_str(),
+        ) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_decorator_flow_emission_with_imports(
+            r.target_name.as_str(),
+            decorator_first_arg,
+            Some(ref_ctx.source_symbol.name.as_str()),
+            &file_ctx.imports,
+        ) {
+            return vec![emission];
+        }
+        // DiBinding: `@Inject('TOKEN')` decorator (NestJS explicit DI).
+        // Emits a single-ended DiBinding row tagged container=nestjs.
+        // `service_symbol_id` carries 0 as a placeholder — the field
+        // isn't written to the `flow_edges` table; only the `edge_type`
+        // column is consulted for downstream queries.
+        if r.target_name == "Inject" {
+            if let Some(token) = decorator_first_arg {
+                if !token.is_empty() {
+                    return vec![FlowEmission::DiBinding {
+                        service_symbol_id: 0,
+                        container: Some(format!("nestjs:{}", token)),
+                    }];
+                }
+            }
+            return vec![FlowEmission::DiBinding {
+                service_symbol_id: 0,
+                container: Some("nestjs".to_string()),
+            }];
+        }
+        // DiBinding: `@Injectable()` decorator (Angular service marker).
+        // Emits a single-ended DiBinding tagged container=angular so the
+        // architecture overview clusters Angular services next to NestJS
+        // providers. Constructor-injection consumer sites are not
+        // resolved here — the pair-keyed match against component
+        // constructors would need cross-symbol state that the resolver
+        // doesn't carry; the single-ended emission still clusters.
+        if let Some(emission) = detect_angular_injectable_emission(r.target_name.as_str()) {
+            return vec![emission];
+        }
+        return Vec::new();
+    }
+
+    // Imports-kind synthetic refs from member-access detection (see
+    // `calls::emit_config_lookup_ref`). The extractor emits these for
+    // `process.env.X`, `import.meta.env.X`, and feature-flag-shaped
+    // member access (`featureFlags.X`, `<...featureFlagsManager>.value.X`).
+    // Routed here so the chain shape drives a single-ended `ConfigLookup`
+    // or `FeatureFlag` emission without polluting the `unresolved_refs`
+    // table (Imports refs are classified as external by the loop).
+    if r.kind == EdgeKind::Imports {
+        if let Some(chain) = &r.chain {
+            if let Some(emission) = detect_member_access_config_emission(chain) {
+                return vec![emission];
+            }
+            if let Some(emission) = detect_member_access_feature_flag_emission(chain) {
+                return vec![emission];
+            }
+        }
+        return Vec::new();
+    }
+
+    // Call-based detection: Calls and Instantiates refs that carry a chain.
+    // Instantiates emits a single-segment chain `[ConstructorName]` plus
+    // `call_args`, so constructor-keyed patterns flow through the same
+    // detector surface as method calls (`new Worker('queue', ...)`).
+    if r.kind != EdgeKind::Calls && r.kind != EdgeKind::Instantiates {
+        return Vec::new();
+    }
+    let Some(chain_ref) = r.chain.as_ref() else { return Vec::new(); };
+
+    // gRPC `server.addService(SvcDef, { m1: h, m2: h })`: expand to one
+    // Consumer emission per registered method when the object-literal
+    // keys are captured. Falls back to the wildcard form when the second
+    // argument isn't a plain object.
+    if let Some(expanded) = detect_addservice_object_keys(chain_ref, &r.call_args, file_ctx) {
+        return expanded;
+    }
+
+    detect_chain_flow_emission(chain_ref, &r.call_args, file_ctx)
+        .map(|e| vec![e])
+        .unwrap_or_default()
 }

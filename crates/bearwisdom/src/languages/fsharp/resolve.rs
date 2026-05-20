@@ -97,37 +97,6 @@ impl LanguageResolver for FSharpResolver {
         engine::resolve_common("fsharp", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        let target = r.target_name.as_str();
-        // Giraffe / Saturn route — `route "/x" >=> handler` or
-        // `router { get "/x" handler }`. Bare calls.
-        if let Some(em) = detect_fsharp_route(target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_fsharp_http_producer(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_fsharp_db_query(module, target) {
-            return vec![em];
-        }
-        if let Some(chain) = r.chain.as_ref() {
-            if let Some(em) = detect_fsharp_di_chain_emission(chain) {
-                return vec![em];
-            }
-        } else if let Some(em) = detect_fsharp_di_bare_emission(target) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 /// Match `AddScoped` / `AddTransient` / `AddSingleton` chain leaves emitted
@@ -298,4 +267,35 @@ pub(super) fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> 
     // `open Giraffe.ViewEngine`, `open Saturn`, `open Expecto`, etc. are
     // classified as external without needing an explicit manifest entry.
     predicates::is_external_namespace_fallback(ns)
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    // Giraffe / Saturn route — `route "/x" >=> handler` or
+    // `router { get "/x" handler }`. Bare calls.
+    if let Some(em) = detect_fsharp_route(target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_fsharp_http_producer(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_fsharp_db_query(module, target) {
+        return vec![em];
+    }
+    if let Some(chain) = r.chain.as_ref() {
+        if let Some(em) = detect_fsharp_di_chain_emission(chain) {
+            return vec![em];
+        }
+    } else if let Some(em) = detect_fsharp_di_bare_emission(target) {
+        return vec![em];
+    }
+    Vec::new()
 }

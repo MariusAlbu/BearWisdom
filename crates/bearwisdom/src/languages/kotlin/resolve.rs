@@ -352,54 +352,6 @@ impl LanguageResolver for KotlinResolver {
         }
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-
-        // Annotation-based: Spring @GetMapping etc. are handled by the
-        // ExtractedRoute adapter for Spring-Kotlin. Retrofit `@GET("/x")`
-        // attribute Producer.
-        if r.kind == EdgeKind::TypeRef {
-            if let Some(em) = super::super::java::resolve::detect_retrofit_attribute_emission(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![em];
-            }
-            return Vec::new();
-        }
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let Some(chain) = r.chain.as_ref() else {
-            // Ktor `routing { get("/x") { ... } }` lands as a bare Calls ref
-            // with target_name = "get"/"post"/etc., no chain. The first arg
-            // is the URL string.
-            if let Some(em) = detect_kotlin_ktor_route_emission(
-                r.target_name.as_str(),
-                &r.call_args,
-            ) {
-                return vec![em];
-            }
-            return Vec::new();
-        };
-        if let Some(em) = detect_kotlin_ktor_client_emission(chain, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_kotlin_exposed_emission(chain) {
-            return vec![em];
-        }
-        if let Some(em) = detect_kotlin_grpc_stub_emission(chain) {
-            return vec![em];
-        }
-        if let Some(em) = detect_kotlin_akka_tell_emission(chain) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 /// Akka `actor.tell(msg, sender)` / `actor.ask(msg)` / `actorRef ! msg`.
@@ -737,4 +689,52 @@ pub(super) fn infer_external_inner_with_lookup(
         }
     }
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+
+    // Annotation-based: Spring @GetMapping etc. are handled by the
+    // ExtractedRoute adapter for Spring-Kotlin. Retrofit `@GET("/x")`
+    // attribute Producer.
+    if r.kind == EdgeKind::TypeRef {
+        if let Some(em) = super::super::java::resolve::detect_retrofit_attribute_emission(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
+            return vec![em];
+        }
+        return Vec::new();
+    }
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let Some(chain) = r.chain.as_ref() else {
+        // Ktor `routing { get("/x") { ... } }` lands as a bare Calls ref
+        // with target_name = "get"/"post"/etc., no chain. The first arg
+        // is the URL string.
+        if let Some(em) = detect_kotlin_ktor_route_emission(
+            r.target_name.as_str(),
+            &r.call_args,
+        ) {
+            return vec![em];
+        }
+        return Vec::new();
+    };
+    if let Some(em) = detect_kotlin_ktor_client_emission(chain, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_kotlin_exposed_emission(chain) {
+        return vec![em];
+    }
+    if let Some(em) = detect_kotlin_grpc_stub_emission(chain) {
+        return vec![em];
+    }
+    if let Some(em) = detect_kotlin_akka_tell_emission(chain) {
+        return vec![em];
+    }
+    Vec::new()
 }

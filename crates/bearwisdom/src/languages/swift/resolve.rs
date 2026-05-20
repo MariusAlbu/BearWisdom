@@ -218,35 +218,6 @@ impl LanguageResolver for SwiftResolver {
         None
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        // Vapor `app.get("/x") { ... }`, `app.post(...)` etc. — bare call,
-        // first arg is the URL.
-        if r.chain.is_none() {
-            if let Some(em) = detect_swift_vapor_route(r.target_name.as_str(), &r.call_args) {
-                return vec![em];
-            }
-            return Vec::new();
-        }
-        let chain = r.chain.as_ref().unwrap();
-        if let Some(em) = detect_swift_http_chain(chain, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_swift_grdb_emission(chain) {
-            return vec![em];
-        }
-        if let Some(em) = detect_swift_grpc_emission(chain) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_swift_vapor_route(
@@ -463,4 +434,33 @@ pub(super) fn infer_external_inner(
     }
 
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    // Vapor `app.get("/x") { ... }`, `app.post(...)` etc. — bare call,
+    // first arg is the URL.
+    if r.chain.is_none() {
+        if let Some(em) = detect_swift_vapor_route(r.target_name.as_str(), &r.call_args) {
+            return vec![em];
+        }
+        return Vec::new();
+    }
+    let chain = r.chain.as_ref().unwrap();
+    if let Some(em) = detect_swift_http_chain(chain, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_swift_grdb_emission(chain) {
+        return vec![em];
+    }
+    if let Some(em) = detect_swift_grpc_emission(chain) {
+        return vec![em];
+    }
+    Vec::new()
 }

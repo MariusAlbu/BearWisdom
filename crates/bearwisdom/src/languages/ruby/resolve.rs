@@ -363,39 +363,6 @@ impl LanguageResolver for RubyResolver {
     // Ruby access control (private/protected) is enforced at runtime, not
     // at the call site — all indexed symbols are accessible for our purposes.
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        // ActionCable channel inheritance — `class XChannel < ApplicationCable::Channel`.
-        if r.kind == EdgeKind::Inherits {
-            if let Some(emission) = detect_ruby_actioncable_emission(r.target_name.as_str()) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let Some(chain) = r.chain.as_ref() else {
-            return Vec::new();
-        };
-        if let Some(emission) = detect_ruby_activerecord_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_ruby_actionmailer_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_ruby_bgjob_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_ruby_http_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        Vec::new()
-    }
 }
 
 /// Detect Net::HTTP / Faraday / HTTParty / RestClient client calls.
@@ -688,4 +655,37 @@ pub(super) fn infer_external_inner(
     }
 
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    // ActionCable channel inheritance — `class XChannel < ApplicationCable::Channel`.
+    if r.kind == EdgeKind::Inherits {
+        if let Some(emission) = detect_ruby_actioncable_emission(r.target_name.as_str()) {
+            return vec![emission];
+        }
+        return Vec::new();
+    }
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let Some(chain) = r.chain.as_ref() else {
+        return Vec::new();
+    };
+    if let Some(emission) = detect_ruby_activerecord_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_ruby_actionmailer_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_ruby_bgjob_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_ruby_http_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    Vec::new()
 }

@@ -369,75 +369,6 @@ impl LanguageResolver for JavaResolver {
         }
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-
-        // Annotation-based detection — Spring Data `@Query`, Retrofit
-        // `@GET("/x")` Producer. Spring controller routes
-        // (`@GetMapping` / `@PostMapping` / `@RequestMapping`) are already
-        // surfaced as Consumer HttpCall via the generic ExtractedRoute
-        // adapter, so we don't double-emit those here.
-        if r.kind == EdgeKind::TypeRef {
-            if let Some(emission) = detect_jpa_query_annotation_emission(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![emission];
-            }
-            if let Some(emission) = detect_retrofit_attribute_emission(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![emission];
-            }
-            if let Some(emission) = detect_java_message_mapping_emission(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![emission];
-            }
-            if let Some(emission) = detect_spring_stereotype_emission(r.target_name.as_str()) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
-
-        // Chain-call detection — RestTemplate / WebClient / OkHttp Producer,
-        // EntityManager JPA + JdbcTemplate DbQuery, and gRPC Stub RpcCall.
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let Some(chain) = r.chain.as_ref() else { return Vec::new(); };
-        if let Some(emission) = detect_java_http_chain_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_java_db_query_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_java_jdbc_template_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_java_grpc_stub_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_java_mailer_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_java_quartz_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_java_jms_kafka_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_java_redis_template_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn infer_external_inner(
@@ -513,4 +444,73 @@ pub(crate) fn infer_external_inner(
     }
 
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+
+    // Annotation-based detection — Spring Data `@Query`, Retrofit
+    // `@GET("/x")` Producer. Spring controller routes
+    // (`@GetMapping` / `@PostMapping` / `@RequestMapping`) are already
+    // surfaced as Consumer HttpCall via the generic ExtractedRoute
+    // adapter, so we don't double-emit those here.
+    if r.kind == EdgeKind::TypeRef {
+        if let Some(emission) = detect_jpa_query_annotation_emission(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_retrofit_attribute_emission(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_java_message_mapping_emission(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
+            return vec![emission];
+        }
+        if let Some(emission) = detect_spring_stereotype_emission(r.target_name.as_str()) {
+            return vec![emission];
+        }
+        return Vec::new();
+    }
+
+    // Chain-call detection — RestTemplate / WebClient / OkHttp Producer,
+    // EntityManager JPA + JdbcTemplate DbQuery, and gRPC Stub RpcCall.
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let Some(chain) = r.chain.as_ref() else { return Vec::new(); };
+    if let Some(emission) = detect_java_http_chain_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_java_db_query_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_java_jdbc_template_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_java_grpc_stub_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_java_mailer_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_java_quartz_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_java_jms_kafka_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_java_redis_template_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    Vec::new()
 }

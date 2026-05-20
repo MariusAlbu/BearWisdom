@@ -11,6 +11,7 @@
 // LanguageResolver trait entirely.
 // =============================================================================
 
+use super::resolve;
 use super::predicates;
 use super::resolve::is_manifest_go_external;
 use crate::indexer::project_context::ProjectContext;
@@ -68,6 +69,15 @@ impl LanguageEngineHooks for GoHooks {
             }
         }
         best.map(|s| s.to_string())
+    }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        resolve::detect_flow_inner_with_lookup(file_ctx, ref_ctx, lookup)
     }
 }
 

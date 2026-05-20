@@ -24,6 +24,15 @@ impl LanguageEngineHooks for RustHooks {
     ) -> Option<String> {
         resolve::infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
     }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        resolve::detect_flow_inner_with_lookup(file_ctx, ref_ctx, lookup)
+    }
 }
 
 pub static RUST_HOOKS: RustHooks = RustHooks;

@@ -19,6 +19,16 @@ impl LanguageEngineHooks for TypeScriptHooks {
     ) -> Option<String> {
         resolve::infer_external_inner_with_lookup(file_ctx, ref_ctx, project_ctx, lookup)
     }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let _ = lookup;
+        resolve::detect_flow_inner(file_ctx, ref_ctx)
+    }
 }
 
 /// Static instance the language plugin returns. `'static` so the engine

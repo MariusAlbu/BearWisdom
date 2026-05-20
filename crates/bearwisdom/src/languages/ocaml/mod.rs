@@ -10,12 +10,14 @@
 //! - `open_module` → Imports edge
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
 
+pub use hooks::OCAML_HOOKS;
 pub use profile::OCAML_PROFILE;
 
 #[cfg(test)]
@@ -119,5 +121,12 @@ impl LanguagePlugin for OcamlPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::OCAML_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::OCAML_HOOKS)
     }
 }

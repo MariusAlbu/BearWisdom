@@ -124,25 +124,6 @@ impl LanguageResolver for GleamResolver {
         engine::resolve_common("gleam", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        let target = r.target_name.as_str();
-        if let Some(em) = detect_gleam_http_producer(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_gleam_pgo_emission(module, target, &r.call_args) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_gleam_http_producer(
@@ -214,4 +195,23 @@ fn is_gleam_operator(name: &str) -> bool {
             | "&&" | "||" | "!" | "|>" | "<>" | "+." | "-." | "*." | "/."
             | "==." | "!=." | "<." | "<=." | ">." | ">=."
     )
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    if let Some(em) = detect_gleam_http_producer(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_gleam_pgo_emission(module, target, &r.call_args) {
+        return vec![em];
+    }
+    Vec::new()
 }

@@ -207,31 +207,6 @@ impl LanguageResolver for DartResolver {
         None
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        if let Some(chain) = r.chain.as_ref() {
-            if let Some(em) = detect_dart_http_chain(chain, &r.call_args) {
-                return vec![em];
-            }
-            if let Some(em) = detect_dart_drift_emission(chain) {
-                return vec![em];
-            }
-            if let Some(em) = detect_dart_grpc_emission(chain) {
-                return vec![em];
-            }
-        }
-        if let Some(em) = detect_dart_shelf_route(r.target_name.as_str(), &r.call_args) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_dart_shelf_route(
@@ -367,3 +342,28 @@ pub(crate) fn detect_dart_grpc_emission(
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    if let Some(chain) = r.chain.as_ref() {
+        if let Some(em) = detect_dart_http_chain(chain, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_dart_drift_emission(chain) {
+            return vec![em];
+        }
+        if let Some(em) = detect_dart_grpc_emission(chain) {
+            return vec![em];
+        }
+    }
+    if let Some(em) = detect_dart_shelf_route(r.target_name.as_str(), &r.call_args) {
+        return vec![em];
+    }
+    Vec::new()
+}

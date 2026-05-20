@@ -7177,7 +7177,7 @@ fn test_di_binding_inject_decorator_emits() {
 
     use crate::indexer::resolve::engine::LanguageResolver;
     let resolver = super::resolve::TypeScriptResolver;
-    let emissions = resolver.detect_flow_emission(&file_ctx, &ref_ctx);
+    let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::DiBinding { container, .. } => {
@@ -7239,7 +7239,7 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
 
     use crate::indexer::resolve::engine::LanguageResolver;
     let resolver = super::resolve::TypeScriptResolver;
-    let emissions = resolver.detect_flow_emission(&file_ctx, &ref_ctx);
+    let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
     assert!(emissions.is_empty());
 }
 
@@ -7297,7 +7297,7 @@ fn test_di_binding_inject_without_token_still_emits() {
 
     use crate::indexer::resolve::engine::LanguageResolver;
     let resolver = super::resolve::TypeScriptResolver;
-    let emissions = resolver.detect_flow_emission(&file_ctx, &ref_ctx);
+    let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::DiBinding { container, .. } => {

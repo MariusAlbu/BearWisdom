@@ -16,6 +16,16 @@ impl LanguageEngineHooks for ScalaHooks {
         let _ = lookup;
         resolve::infer_external_inner(file_ctx, ref_ctx, project_ctx)
     }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let _ = lookup;
+        resolve::detect_flow_inner(file_ctx, ref_ctx)
+    }
 }
 
 pub static SCALA_HOOKS: ScalaHooks = ScalaHooks;

@@ -137,28 +137,6 @@ impl LanguageResolver for LuaResolver {
     }
 
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        let target = r.target_name.as_str();
-        if let Some(em) = detect_lua_lapis_route(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_lua_resty_http(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_lua_db_emission(module, target) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_lua_lapis_route(
@@ -248,3 +226,25 @@ pub(crate) fn detect_lua_db_emission(
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    if let Some(em) = detect_lua_lapis_route(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_lua_resty_http(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_lua_db_emission(module, target) {
+        return vec![em];
+    }
+    Vec::new()
+}

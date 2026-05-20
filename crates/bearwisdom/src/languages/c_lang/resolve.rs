@@ -304,47 +304,47 @@ impl LanguageResolver for CLangResolver {
         None
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-        use crate::types::CallArg;
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let target = r.target_name.as_str();
-        // libpq `PQexec(conn, "SELECT ...")` / sqlite3_prepare_v2 / sqlite3_exec.
-        if matches!(target, "PQexec" | "PQexecParams" | "sqlite3_prepare_v2" | "sqlite3_exec" | "mysql_query") {
-            let sql = r.call_args.iter().find_map(|a| match a {
-                CallArg::StringLit(s) => Some(s.as_str()),
-                _ => None,
-            });
-            if let Some(sql) = sql {
-                let upper = sql.to_ascii_uppercase();
-                let op = if upper.contains("INSERT INTO") {
-                    DbQueryOp::Insert
-                } else if upper.contains("UPDATE ") {
-                    DbQueryOp::Update
-                } else if upper.contains("DELETE FROM") {
-                    DbQueryOp::Delete
-                } else if upper.contains(" FROM ") || upper.starts_with("SELECT") {
-                    DbQueryOp::Select
-                } else {
-                    DbQueryOp::Other
-                };
-                return vec![FlowEmission::DbQuery {
-                    entity_name: "c.*".to_string(),
-                    operation: op,
-                }];
-            }
-        }
-        Vec::new()
-    }
 }
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use crate::types::CallArg;
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let target = r.target_name.as_str();
+    // libpq `PQexec(conn, "SELECT ...")` / sqlite3_prepare_v2 / sqlite3_exec.
+    if matches!(target, "PQexec" | "PQexecParams" | "sqlite3_prepare_v2" | "sqlite3_exec" | "mysql_query") {
+        let sql = r.call_args.iter().find_map(|a| match a {
+            CallArg::StringLit(s) => Some(s.as_str()),
+            _ => None,
+        });
+        if let Some(sql) = sql {
+            let upper = sql.to_ascii_uppercase();
+            let op = if upper.contains("INSERT INTO") {
+                DbQueryOp::Insert
+            } else if upper.contains("UPDATE ") {
+                DbQueryOp::Update
+            } else if upper.contains("DELETE FROM") {
+                DbQueryOp::Delete
+            } else if upper.contains(" FROM ") || upper.starts_with("SELECT") {
+                DbQueryOp::Select
+            } else {
+                DbQueryOp::Other
+            };
+            return vec![FlowEmission::DbQuery {
+                entity_name: "c.*".to_string(),
+                operation: op,
+            }];
+        }
+    }
+    Vec::new()
+}

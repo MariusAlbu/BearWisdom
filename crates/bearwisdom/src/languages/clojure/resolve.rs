@@ -85,28 +85,6 @@ impl LanguageResolver for ClojureResolver {
         engine::resolve_common("clojure", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        let target = r.target_name.as_str();
-        if let Some(em) = detect_clj_compojure_route(target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_clj_http_producer(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_clj_jdbc_db_query(module, target) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_clj_compojure_route(
@@ -209,3 +187,25 @@ pub(crate) fn detect_clj_jdbc_db_query(
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    if let Some(em) = detect_clj_compojure_route(target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_clj_http_producer(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_clj_jdbc_db_query(module, target) {
+        return vec![em];
+    }
+    Vec::new()
+}

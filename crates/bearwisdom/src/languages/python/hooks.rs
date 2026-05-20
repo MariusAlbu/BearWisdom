@@ -8,6 +8,7 @@
 // =============================================================================
 
 use super::externals;
+use super::resolve;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
@@ -23,6 +24,15 @@ impl LanguageEngineHooks for PythonHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         externals::infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
+    }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        resolve::detect_flow_inner_with_lookup(file_ctx, ref_ctx, lookup)
     }
 }
 

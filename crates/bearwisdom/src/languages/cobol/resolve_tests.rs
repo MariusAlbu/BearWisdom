@@ -35,7 +35,7 @@ fn test_cobol_exec_sql_select_emits_db_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let (r, sym, fc) = fixture("EXEC_SQL", vec![CallArg::StringLit("SELECT * FROM customers".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    match CobolResolver.detect_flow_emission(&fc, &rc).first().unwrap() {
+    match super::detect_flow_inner(&fc, &rc).first().unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(*operation, DbQueryOp::Select),
         _ => panic!("expected DbQuery"),
     }
@@ -46,7 +46,7 @@ fn test_cobol_exec_sql_insert_emits_db_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let (r, sym, fc) = fixture("EXEC_SQL", vec![CallArg::StringLit("INSERT INTO orders VALUES (1)".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    match CobolResolver.detect_flow_emission(&fc, &rc).first().unwrap() {
+    match super::detect_flow_inner(&fc, &rc).first().unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(*operation, DbQueryOp::Insert),
         _ => panic!("expected DbQuery"),
     }
@@ -56,7 +56,7 @@ fn test_cobol_exec_sql_insert_emits_db_insert() {
 fn test_cobol_no_emit_for_non_sql() {
     let (r, sym, fc) = fixture("DISPLAY", vec![CallArg::StringLit("hello".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    assert!(CobolResolver.detect_flow_emission(&fc, &rc).is_empty());
+    assert!(super::detect_flow_inner(&fc, &rc).is_empty());
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn test_cobol_update_op() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let (r, sym, fc) = fixture("EXEC_SQL", vec![CallArg::StringLit("UPDATE accounts SET balance = 0".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    match CobolResolver.detect_flow_emission(&fc, &rc).first().unwrap() {
+    match super::detect_flow_inner(&fc, &rc).first().unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(*operation, DbQueryOp::Update),
         _ => panic!("expected DbQuery"),
     }

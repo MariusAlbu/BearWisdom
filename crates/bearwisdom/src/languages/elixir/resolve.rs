@@ -221,65 +221,6 @@ impl LanguageResolver for ElixirResolver {
         None
     }
 
-    /// Resolve bare calls to definitions injected by `use ExternalModule`
-    /// statements. Phoenix.Controller, Ecto.Schema, GenServer, etc. work
-    /// by injecting public `defmacro` / `def` declarations into the using
-    /// module's scope; the call sites look like bare names with no
-    /// receiver. The Hex locator walks deps/<dep>/lib and the Elixir
-    /// extractor surfaces those defmacros/defs at their fully-qualified
-    /// names — a single by-qname lookup against `<module>.<target>`
-    /// confirms the bare call resolves against the real upstream symbol.
-    ///
-    /// Falls back to `infer_external_namespace` when no `use` injection
-    /// matches, so other resolution paths (manifest deps, internal-schema
-    /// modules, etc.) still apply.
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        // Phoenix Channel macro: `use Phoenix.Channel` lands as an Imports
-        // ref. The presence of the macro marks the surrounding module as
-        // a WebSocket Consumer endpoint.
-        if r.kind == EdgeKind::Imports {
-            if let Some(em) = detect_elixir_phoenix_channel_use(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![em];
-            }
-            return Vec::new();
-        }
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        let target = r.target_name.as_str();
-
-        // Ecto DbQuery — `Repo.get(User, id)`, `Repo.all(query)`,
-        // `Repo.insert(struct)`, etc.
-        if let Some(em) = detect_elixir_ecto_emission(module, target) {
-            return vec![em];
-        }
-        // HTTP Producer — HTTPoison/Tesla/Req `.get/post/...`.
-        if let Some(em) = detect_elixir_http_emission(module, target, &r.call_args) {
-            return vec![em];
-        }
-        // gRPC stub.
-        if let Some(em) = detect_elixir_grpc_emission(module, target) {
-            return vec![em];
-        }
-        // BgJob — `Oban.insert(MyWorker.new(args))`.
-        if let Some(em) = detect_elixir_oban_emission(module, target, &r.call_args) {
-            return vec![em];
-        }
-        // Mailer — `Bamboo.deliver_now(email)` / `Mailer.deliver(email)` (Swoosh).
-        if let Some(em) = detect_elixir_mailer_emission(module, target) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -801,4 +742,51 @@ pub(super) fn infer_external_inner_with_lookup(
     }
 
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    // Phoenix Channel macro: `use Phoenix.Channel` lands as an Imports
+    // ref. The presence of the macro marks the surrounding module as
+    // a WebSocket Consumer endpoint.
+    if r.kind == EdgeKind::Imports {
+        if let Some(em) = detect_elixir_phoenix_channel_use(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
+            return vec![em];
+        }
+        return Vec::new();
+    }
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+
+    // Ecto DbQuery — `Repo.get(User, id)`, `Repo.all(query)`,
+    // `Repo.insert(struct)`, etc.
+    if let Some(em) = detect_elixir_ecto_emission(module, target) {
+        return vec![em];
+    }
+    // HTTP Producer — HTTPoison/Tesla/Req `.get/post/...`.
+    if let Some(em) = detect_elixir_http_emission(module, target, &r.call_args) {
+        return vec![em];
+    }
+    // gRPC stub.
+    if let Some(em) = detect_elixir_grpc_emission(module, target) {
+        return vec![em];
+    }
+    // BgJob — `Oban.insert(MyWorker.new(args))`.
+    if let Some(em) = detect_elixir_oban_emission(module, target, &r.call_args) {
+        return vec![em];
+    }
+    // Mailer — `Bamboo.deliver_now(email)` / `Mailer.deliver(email)` (Swoosh).
+    if let Some(em) = detect_elixir_mailer_emission(module, target) {
+        return vec![em];
+    }
+    Vec::new()
 }

@@ -233,28 +233,6 @@ impl ErlangResolver {
         None
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        // target_name may include arity suffix `/N` — strip for matching.
-        let raw_target = r.target_name.as_str();
-        let target = raw_target.split('/').next().unwrap_or(raw_target);
-
-        if let Some(em) = detect_erlang_http_emission(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_erlang_db_emission(module, target, &r.call_args) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_erlang_http_emission(
@@ -315,3 +293,25 @@ pub(crate) fn detect_erlang_db_emission(
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    // target_name may include arity suffix `/N` — strip for matching.
+    let raw_target = r.target_name.as_str();
+    let target = raw_target.split('/').next().unwrap_or(raw_target);
+
+    if let Some(em) = detect_erlang_http_emission(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_erlang_db_emission(module, target, &r.call_args) {
+        return vec![em];
+    }
+    Vec::new()
+}

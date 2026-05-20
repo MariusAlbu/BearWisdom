@@ -306,94 +306,6 @@ impl LanguageResolver for CSharpResolver {
         }
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-
-        // Refit interface methods: `[Get("/x")] Task<Foo> GetFoo();` lands
-        // as a TypeRef attribute ref whose `target_name` is the HTTP verb
-        // and `module` carries the route URL. Emit a Producer HttpCall
-        // keyed on the normalized URL with `method` parsed from the
-        // attribute name. The same `Get`/`Post`/… attribute names are
-        // also used by ASP.NET (`[HttpGet]`) but those are
-        // `[Http*]`-prefixed — the per-file ExtractedRoute adapter
-        // handles those on the Consumer side.
-        if r.kind == EdgeKind::TypeRef {
-            if let Some(emission) = detect_refit_attribute_emission(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![emission];
-            }
-            // HotChocolate GraphQL: `[QueryType]`, `[MutationType]`,
-            // `[Query]`, `[Mutation]`, `[Subscription]`, `[GraphQLName(...)]`.
-            // Annotates a class or method as a GraphQL operation root.
-            if let Some(emission) = detect_csharp_hotchocolate_emission(
-                r.target_name.as_str(),
-            ) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
-
-        // SignalR Hub inheritance — `public class ChatHub : Hub` /
-        // `: Hub<IClient>`. Emit single-ended Consumer WebSocket so the
-        // architecture overview clusters SignalR hubs with the ws_call edges.
-        if r.kind == EdgeKind::Inherits {
-            if let Some(emission) = detect_csharp_signalr_hub_emission(
-                r.target_name.as_str(),
-            ) {
-                return vec![emission];
-            }
-            // Integration event class — `class FooEvent : IntegrationEvent`.
-            // Emits Producer EventBus keyed on the event class name.
-            if let Some(emission) = detect_csharp_integration_event_emission(
-                r.target_name.as_str(),
-                &ref_ctx.source_symbol.name,
-            ) {
-                return vec![emission];
-            }
-            // Integration event handler — `class FooHandler :
-            // IIntegrationEventHandler<FooEvent>`. Emits Consumer EventBus
-            // keyed on `T` (the event type) so it pairs with the matching
-            // Producer emitted by the event class above.
-            if let Some(emission) = detect_csharp_integration_event_handler_emission(
-                r.target_name.as_str(),
-                ref_ctx.source_symbol.signature.as_deref(),
-                &ref_ctx.source_symbol.name,
-            ) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
-
-        // Chain-call detection: HttpClient + RestSharp + Dapper + EF Core.
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let Some(chain_ref) = r.chain.as_ref() else {
-            return Vec::new();
-        };
-        if let Some(emission) = detect_csharp_http_chain_emission(chain_ref, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_csharp_db_query_emission(chain_ref, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_csharp_mailer_emission(chain_ref) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_csharp_hangfire_bg_emission(chain_ref) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_dotnet_di_chain_emission(chain_ref) {
-            return vec![emission];
-        }
-        Vec::new()
-    }
 }
 
 /// Hangfire: `BackgroundJob.Enqueue(...)`, `RecurringJob.AddOrUpdate(...)`.
@@ -904,3 +816,91 @@ pub(crate) fn detect_dotnet_di_chain_emission(
 
 // ---------------------------------------------------------------------------
 // Tests are in resolve_tests.rs, declared in mod.rs
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+
+    // Refit interface methods: `[Get("/x")] Task<Foo> GetFoo();` lands
+    // as a TypeRef attribute ref whose `target_name` is the HTTP verb
+    // and `module` carries the route URL. Emit a Producer HttpCall
+    // keyed on the normalized URL with `method` parsed from the
+    // attribute name. The same `Get`/`Post`/… attribute names are
+    // also used by ASP.NET (`[HttpGet]`) but those are
+    // `[Http*]`-prefixed — the per-file ExtractedRoute adapter
+    // handles those on the Consumer side.
+    if r.kind == EdgeKind::TypeRef {
+        if let Some(emission) = detect_refit_attribute_emission(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
+            return vec![emission];
+        }
+        // HotChocolate GraphQL: `[QueryType]`, `[MutationType]`,
+        // `[Query]`, `[Mutation]`, `[Subscription]`, `[GraphQLName(...)]`.
+        // Annotates a class or method as a GraphQL operation root.
+        if let Some(emission) = detect_csharp_hotchocolate_emission(
+            r.target_name.as_str(),
+        ) {
+            return vec![emission];
+        }
+        return Vec::new();
+    }
+
+    // SignalR Hub inheritance — `public class ChatHub : Hub` /
+    // `: Hub<IClient>`. Emit single-ended Consumer WebSocket so the
+    // architecture overview clusters SignalR hubs with the ws_call edges.
+    if r.kind == EdgeKind::Inherits {
+        if let Some(emission) = detect_csharp_signalr_hub_emission(
+            r.target_name.as_str(),
+        ) {
+            return vec![emission];
+        }
+        // Integration event class — `class FooEvent : IntegrationEvent`.
+        // Emits Producer EventBus keyed on the event class name.
+        if let Some(emission) = detect_csharp_integration_event_emission(
+            r.target_name.as_str(),
+            &ref_ctx.source_symbol.name,
+        ) {
+            return vec![emission];
+        }
+        // Integration event handler — `class FooHandler :
+        // IIntegrationEventHandler<FooEvent>`. Emits Consumer EventBus
+        // keyed on `T` (the event type) so it pairs with the matching
+        // Producer emitted by the event class above.
+        if let Some(emission) = detect_csharp_integration_event_handler_emission(
+            r.target_name.as_str(),
+            ref_ctx.source_symbol.signature.as_deref(),
+            &ref_ctx.source_symbol.name,
+        ) {
+            return vec![emission];
+        }
+        return Vec::new();
+    }
+
+    // Chain-call detection: HttpClient + RestSharp + Dapper + EF Core.
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let Some(chain_ref) = r.chain.as_ref() else {
+        return Vec::new();
+    };
+    if let Some(emission) = detect_csharp_http_chain_emission(chain_ref, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_csharp_db_query_emission(chain_ref, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_csharp_mailer_emission(chain_ref) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_csharp_hangfire_bg_emission(chain_ref) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_dotnet_di_chain_emission(chain_ref) {
+        return vec![emission];
+    }
+    Vec::new()
+}

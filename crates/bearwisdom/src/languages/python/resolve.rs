@@ -539,152 +539,151 @@ impl LanguageResolver for PythonResolver {
     // is_visible: default (always true). Python has no enforced access control
     // at runtime — `_private` is convention only and we don't track it.
 
-    fn detect_flow_emission(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
+}
 
-        // Decorator-based detection — TypeRef refs from extract_decorators
-        // carry the decorator's dotted target name (`app.get`, `router.post`,
-        // `app.route`) and the first string arg in `module`.
-        if r.kind == EdgeKind::TypeRef {
-            if let Some(emission) = detect_python_route_decorator_emission(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![emission];
-            }
-            // Django Channels: `class XConsumer(AsyncWebsocketConsumer)`
-            // emits a TypeRef from the superclass list. Promote to a
-            // single-ended Consumer WebSocket so the class clusters with
-            // other WS endpoints.
-            if let Some(emission) = detect_python_channels_consumer_inheritance(
-                r.target_name.as_str(),
-            ) {
-                return vec![emission];
-            }
-            // Strawberry / Graphene GraphQL decorators: `@strawberry.type`,
-            // `@strawberry.field`, `@strawberry.mutation`, `@strawberry.subscription`,
-            // graphene `Schema(query=...)` / class-level `Query(graphene.ObjectType)`.
-            if let Some(emission) = detect_python_graphql_decorator_emission(
-                r.target_name.as_str(),
-                ref_ctx.source_symbol.name.as_str(),
-            ) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
+pub(crate) fn detect_flow_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
 
-        // Call-based detection — `requests.get('/x')`, `client.get('/x')`,
-        // SQLAlchemy session.query(Entity), Django Entity.objects.filter,
-        // FastAPI router-call-chain Producer.
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-
-        // Django `path("users/", views.list)` / `re_path(...)` route
-        // declarations land as Calls refs with no chain. Detection uses
-        // target_name + call_args.
-        if r.chain.is_none() {
-            // Channels routing: when the file imports `channels`, a
-            // `path("ws/x", X.as_asgi())` declares a WebSocket route, not
-            // an HTTP one. Probed before the HTTP-path detector so the
-            // emission is WS Consumer rather than HTTP Consumer.
-            if let Some(emission) = detect_python_channels_path_emission(
-                r.target_name.as_str(),
-                &r.call_args,
-                file_ctx,
-            ) {
-                return vec![emission];
-            }
-            if let Some(emission) = detect_python_django_path_emission(
-                r.target_name.as_str(),
-                &r.call_args,
-                file_ctx,
-            ) {
-                return vec![emission];
-            }
-            // SQLAlchemy 2.x `select(Entity)` — bare call. Emits DbQuery Select.
-            if let Some(emission) = detect_python_sqlalchemy_select_call(
-                r.target_name.as_str(),
-                &r.call_args,
-                file_ctx,
-            ) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
-        let chain = r.chain.as_ref().unwrap();
-        if let Some(emission) = detect_python_http_chain_emission(chain, &r.call_args, file_ctx) {
+    // Decorator-based detection — TypeRef refs from extract_decorators
+    // carry the decorator's dotted target name (`app.get`, `router.post`,
+    // `app.route`) and the first string arg in `module`.
+    if r.kind == EdgeKind::TypeRef {
+        if let Some(emission) = detect_python_route_decorator_emission(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
             return vec![emission];
         }
-        if let Some(emission) = detect_python_db_query_emission(chain) {
+        // Django Channels: `class XConsumer(AsyncWebsocketConsumer)`
+        // emits a TypeRef from the superclass list. Promote to a
+        // single-ended Consumer WebSocket so the class clusters with
+        // other WS endpoints.
+        if let Some(emission) = detect_python_channels_consumer_inheritance(
+            r.target_name.as_str(),
+        ) {
             return vec![emission];
         }
-        if let Some(emission) = detect_python_cursor_execute_emission(chain, &r.call_args) {
+        // Strawberry / Graphene GraphQL decorators: `@strawberry.type`,
+        // `@strawberry.field`, `@strawberry.mutation`, `@strawberry.subscription`,
+        // graphene `Schema(query=...)` / class-level `Query(graphene.ObjectType)`.
+        if let Some(emission) = detect_python_graphql_decorator_emission(
+            r.target_name.as_str(),
+            ref_ctx.source_symbol.name.as_str(),
+        ) {
             return vec![emission];
         }
-        if let Some(emission) = detect_python_grpc_stub_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_python_mailer_emission(r.target_name.as_str(), chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_python_bgjob_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_python_redis_lookup(chain, &r.call_args) {
-            return vec![emission];
-        }
-        Vec::new()
+        return Vec::new();
     }
 
-    fn detect_flow_emission_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let direct = self.detect_flow_emission(file_ctx, ref_ctx);
-        if !direct.is_empty() {
-            return direct;
+    // Call-based detection — `requests.get('/x')`, `client.get('/x')`,
+    // SQLAlchemy session.query(Entity), Django Entity.objects.filter,
+    // FastAPI router-call-chain Producer.
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+
+    // Django `path("users/", views.list)` / `re_path(...)` route
+    // declarations land as Calls refs with no chain. Detection uses
+    // target_name + call_args.
+    if r.chain.is_none() {
+        // Channels routing: when the file imports `channels`, a
+        // `path("ws/x", X.as_asgi())` declares a WebSocket route, not
+        // an HTTP one. Probed before the HTTP-path detector so the
+        // emission is WS Consumer rather than HTTP Consumer.
+        if let Some(emission) = detect_python_channels_path_emission(
+            r.target_name.as_str(),
+            &r.call_args,
+            file_ctx,
+        ) {
+            return vec![emission];
         }
-        // Let-binding propagation: `stub = UserServiceStub(channel); stub.GetUser(req)`.
-        let r = &ref_ctx.extracted_ref;
-        let Some(chain) = r.chain.as_ref() else { return Vec::new() };
-        let Some(root_seg) = chain.segments.first() else { return Vec::new() };
-        if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
-            return Vec::new();
+        if let Some(emission) = detect_python_django_path_emission(
+            r.target_name.as_str(),
+            &r.call_args,
+            file_ctx,
+        ) {
+            return vec![emission];
         }
-        let var_qname = match ref_ctx.source_symbol.scope_path.as_deref() {
-            Some(scope) => format!("{}.{}", scope, root_seg.name),
-            None => root_seg.name.clone(),
-        };
-        let type_name = match lookup.field_type_str(&var_qname) {
-            Some(t) => t.to_string(),
-            None => return Vec::new(),
-        };
-        if !type_name.ends_with("Stub") && !type_name.ends_with("Client") {
-            return Vec::new();
+        // SQLAlchemy 2.x `select(Entity)` — bare call. Emits DbQuery Select.
+        if let Some(emission) = detect_python_sqlalchemy_select_call(
+            r.target_name.as_str(),
+            &r.call_args,
+            file_ctx,
+        ) {
+            return vec![emission];
         }
-        let mut new_segments = vec![crate::types::ChainSegment {
-            name: type_name,
-            node_kind: "rewritten_var".to_string(),
-            kind: crate::types::SegmentKind::Identifier,
-            declared_type: None,
-            type_args: vec![],
-            optional_chaining: false,
-            byte_offset: 0,
-                    declared_type_id: None,
-            type_arg_ids: Vec::new(),
+        return Vec::new();
+    }
+    let chain = r.chain.as_ref().unwrap();
+    if let Some(emission) = detect_python_http_chain_emission(chain, &r.call_args, file_ctx) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_python_db_query_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_python_cursor_execute_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_python_grpc_stub_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_python_mailer_emission(r.target_name.as_str(), chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_python_bgjob_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_python_redis_lookup(chain, &r.call_args) {
+        return vec![emission];
+    }
+    Vec::new()
+}
+
+pub(crate) fn detect_flow_inner_with_lookup(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let direct = detect_flow_inner(file_ctx, ref_ctx);
+    if !direct.is_empty() {
+        return direct;
+    }
+    // Let-binding propagation: `stub = UserServiceStub(channel); stub.GetUser(req)`.
+    let r = &ref_ctx.extracted_ref;
+    let Some(chain) = r.chain.as_ref() else { return Vec::new() };
+    let Some(root_seg) = chain.segments.first() else { return Vec::new() };
+    if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
+        return Vec::new();
+    }
+    let var_qname = match ref_ctx.source_symbol.scope_path.as_deref() {
+        Some(scope) => format!("{}.{}", scope, root_seg.name),
+        None => root_seg.name.clone(),
+    };
+    let type_name = match lookup.field_type_str(&var_qname) {
+        Some(t) => t.to_string(),
+        None => return Vec::new(),
+    };
+    if !type_name.ends_with("Stub") && !type_name.ends_with("Client") {
+        return Vec::new();
+    }
+    let mut new_segments = vec![crate::types::ChainSegment {
+        name: type_name,
+        node_kind: "rewritten_var".to_string(),
+        kind: crate::types::SegmentKind::Identifier,
+        declared_type: None,
+        type_args: vec![],
+        optional_chaining: false,
+        byte_offset: 0,
+                declared_type_id: None,
+        type_arg_ids: Vec::new(),
 }];
-        new_segments.extend(chain.segments.iter().skip(1).cloned());
-        let rewritten = crate::types::MemberChain { segments: new_segments };
-        if let Some(em) = detect_python_grpc_stub_emission(&rewritten) {
-            return vec![em];
-        }
-        Vec::new()
+    new_segments.extend(chain.segments.iter().skip(1).cloned());
+    let rewritten = crate::types::MemberChain { segments: new_segments };
+    if let Some(em) = detect_python_grpc_stub_emission(&rewritten) {
+        return vec![em];
     }
+    Vec::new()
 }

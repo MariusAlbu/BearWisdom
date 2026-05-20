@@ -7,6 +7,7 @@
 // reused from `resolve` at `pub(super)` visibility.
 // =============================================================================
 
+use super::resolve;
 use super::predicates;
 use super::resolve::{is_manifest_external_namespace, matches_workspace_project};
 use crate::indexer::project_context::ProjectContext;
@@ -74,6 +75,16 @@ impl LanguageEngineHooks for CSharpHooks {
         }
 
         best.map(|s| s.to_string())
+    }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let _ = lookup;
+        resolve::detect_flow_inner(file_ctx, ref_ctx)
     }
 }
 

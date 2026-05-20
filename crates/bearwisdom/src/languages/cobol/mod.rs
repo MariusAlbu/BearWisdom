@@ -8,10 +8,12 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::COBOL_HOOKS;
 pub use profile::COBOL_PROFILE;
 
 #[cfg(test)]
@@ -83,5 +85,12 @@ impl LanguagePlugin for CobolPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::COBOL_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::COBOL_HOOKS)
     }
 }

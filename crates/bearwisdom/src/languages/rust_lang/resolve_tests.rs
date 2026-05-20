@@ -666,8 +666,7 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
         imports: vec![],
         file_namespace: None,
     };
-    let emissions = super::resolve::RustResolver
-        .detect_flow_emission_with_lookup(&file_ctx, &ref_ctx, &VarLookup);
+    let emissions = super::resolve::detect_flow_inner_with_lookup(&file_ctx, &ref_ctx, &VarLookup);
     assert!(
         matches!(emissions.first(), Some(FlowEmission::NamedChannel { kind: NamedChannelKind::RpcCall, .. })),
         "expected RpcCall via let-binding propagation, got {emissions:?}"

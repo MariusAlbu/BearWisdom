@@ -78,44 +78,44 @@ impl LanguageResolver for CobolResolver {
     }
 
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-        use crate::types::CallArg;
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        // EXEC SQL statements show up as Calls refs to "EXEC_SQL" or similar.
-        // Embedded SQL strings may sit in call_args.
-        let sql = r.call_args.iter().find_map(|a| match a {
-            CallArg::StringLit(s) => Some(s.as_str()),
-            _ => None,
-        });
-        let Some(sql) = sql else { return Vec::new() };
-        let upper = sql.to_ascii_uppercase();
-        if !upper.contains("SELECT") && !upper.contains("INSERT") && !upper.contains("UPDATE") && !upper.contains("DELETE") {
-            return Vec::new();
-        }
-        let op = if upper.contains("INSERT INTO") {
-            DbQueryOp::Insert
-        } else if upper.contains("UPDATE ") {
-            DbQueryOp::Update
-        } else if upper.contains("DELETE FROM") {
-            DbQueryOp::Delete
-        } else {
-            DbQueryOp::Select
-        };
-        vec![FlowEmission::DbQuery {
-            entity_name: "cobol.*".to_string(),
-            operation: op,
-        }]
-    }
 }
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use crate::types::CallArg;
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    // EXEC SQL statements show up as Calls refs to "EXEC_SQL" or similar.
+    // Embedded SQL strings may sit in call_args.
+    let sql = r.call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) => Some(s.as_str()),
+        _ => None,
+    });
+    let Some(sql) = sql else { return Vec::new() };
+    let upper = sql.to_ascii_uppercase();
+    if !upper.contains("SELECT") && !upper.contains("INSERT") && !upper.contains("UPDATE") && !upper.contains("DELETE") {
+        return Vec::new();
+    }
+    let op = if upper.contains("INSERT INTO") {
+        DbQueryOp::Insert
+    } else if upper.contains("UPDATE ") {
+        DbQueryOp::Update
+    } else if upper.contains("DELETE FROM") {
+        DbQueryOp::Delete
+    } else {
+        DbQueryOp::Select
+    };
+    vec![FlowEmission::DbQuery {
+        entity_name: "cobol.*".to_string(),
+        operation: op,
+    }]
+}

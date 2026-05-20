@@ -1,4 +1,5 @@
 use super::predicates;
+use super::resolve;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
@@ -73,6 +74,16 @@ impl LanguageEngineHooks for ClojureHooks {
         let ns = wildcard_ns.module_path.as_deref()?;
         let root = ns.split('.').next().unwrap_or(ns);
         Some(root.to_string())
+    }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let _ = lookup;
+        resolve::detect_flow_inner(file_ctx, ref_ctx)
     }
 }
 

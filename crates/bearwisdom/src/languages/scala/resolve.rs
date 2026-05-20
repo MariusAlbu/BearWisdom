@@ -297,41 +297,6 @@ impl LanguageResolver for ScalaResolver {
         }
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        if let Some(chain) = r.chain.as_ref() {
-            if let Some(em) = detect_scala_http_chain_emission(chain, &r.call_args) {
-                return vec![em];
-            }
-            if let Some(em) = detect_scala_db_query_emission(chain, &r.call_args) {
-                return vec![em];
-            }
-            if let Some(em) = detect_scala_doobie_emission(chain) {
-                return vec![em];
-            }
-            if let Some(em) = detect_scala_quill_emission(chain) {
-                return vec![em];
-            }
-            if let Some(em) = detect_scala_zio_sql_emission(chain, &r.call_args) {
-                return vec![em];
-            }
-            if let Some(em) = detect_scala_grpc_emission(chain) {
-                return vec![em];
-            }
-        }
-        // http4s / Akka HTTP `path("x") { get { ... } }` — bare calls.
-        if let Some(em) = detect_scala_http_path_call(r.target_name.as_str(), &r.call_args) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -636,4 +601,39 @@ pub(super) fn infer_external_inner(
     }
 
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    if let Some(chain) = r.chain.as_ref() {
+        if let Some(em) = detect_scala_http_chain_emission(chain, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_scala_db_query_emission(chain, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_scala_doobie_emission(chain) {
+            return vec![em];
+        }
+        if let Some(em) = detect_scala_quill_emission(chain) {
+            return vec![em];
+        }
+        if let Some(em) = detect_scala_zio_sql_emission(chain, &r.call_args) {
+            return vec![em];
+        }
+        if let Some(em) = detect_scala_grpc_emission(chain) {
+            return vec![em];
+        }
+    }
+    // http4s / Akka HTTP `path("x") { get { ... } }` — bare calls.
+    if let Some(em) = detect_scala_http_path_call(r.target_name.as_str(), &r.call_args) {
+        return vec![em];
+    }
+    Vec::new()
 }

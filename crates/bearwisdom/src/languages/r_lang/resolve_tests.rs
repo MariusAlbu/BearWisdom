@@ -35,7 +35,7 @@ fn test_r_httr_get_emits_producer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
     let (r, sym, fc) = fixture("GET", Some("httr"), vec![CallArg::StringLit("https://api.example.com/x".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    match RResolver.detect_flow_emission(&fc, &rc).first().unwrap() {
+    match super::detect_flow_inner(&fc, &rc).first().unwrap() {
         FlowEmission::NamedChannel { role, .. } => assert_eq!(*role, ChannelRole::Producer),
         _ => panic!("expected NamedChannel"),
     }
@@ -46,7 +46,7 @@ fn test_r_dbi_get_query_emits_db_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let (r, sym, fc) = fixture("dbGetQuery", None, vec![CallArg::Other, CallArg::StringLit("SELECT * FROM users".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    match RResolver.detect_flow_emission(&fc, &rc).first().unwrap() {
+    match super::detect_flow_inner(&fc, &rc).first().unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(*operation, DbQueryOp::Select),
         _ => panic!("expected DbQuery"),
     }
@@ -57,7 +57,7 @@ fn test_r_dbi_execute_insert_emits_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let (r, sym, fc) = fixture("dbExecute", None, vec![CallArg::Other, CallArg::StringLit("INSERT INTO items VALUES (1)".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    match RResolver.detect_flow_emission(&fc, &rc).first().unwrap() {
+    match super::detect_flow_inner(&fc, &rc).first().unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(*operation, DbQueryOp::Insert),
         _ => panic!("expected DbQuery"),
     }
@@ -67,5 +67,5 @@ fn test_r_dbi_execute_insert_emits_insert() {
 fn test_r_no_emit_for_non_http_module() {
     let (r, sym, fc) = fixture("GET", Some("base"), vec![CallArg::StringLit("/x".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    assert!(RResolver.detect_flow_emission(&fc, &rc).is_empty());
+    assert!(super::detect_flow_inner(&fc, &rc).is_empty());
 }

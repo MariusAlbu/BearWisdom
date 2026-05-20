@@ -163,28 +163,6 @@ impl LanguageResolver for OcamlResolver {
     }
 
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        let target = r.target_name.as_str();
-        if let Some(em) = detect_ocaml_dream_route(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_ocaml_cohttp_producer(module, target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_ocaml_caqti_emission(module, target) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_ocaml_dream_route(
@@ -312,3 +290,25 @@ pub(crate) fn detect_ocaml_caqti_with_imports(
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    if let Some(em) = detect_ocaml_dream_route(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_ocaml_cohttp_producer(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_ocaml_caqti_emission(module, target) {
+        return vec![em];
+    }
+    Vec::new()
+}

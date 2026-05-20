@@ -5,12 +5,14 @@
 //! type synonyms, imports, and function-application calls.
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
 
+pub use hooks::HASKELL_HOOKS;
 pub use profile::HASKELL_PROFILE;
 mod definitions;
 mod expressions;
@@ -94,5 +96,12 @@ impl LanguagePlugin for HaskellPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::HASKELL_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::HASKELL_HOOKS)
     }
 }

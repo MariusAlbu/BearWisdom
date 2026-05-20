@@ -109,24 +109,6 @@ impl LanguageResolver for PascalResolver {
         engine::resolve_common("pascal", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let target = r.target_name.as_str();
-        if let Some(em) = detect_pascal_http_producer(target, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_pascal_db_query(target, &r.call_args) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(crate) fn detect_pascal_http_producer(
@@ -296,4 +278,22 @@ pub(super) fn pascal_stem_matches(file_path: &str, module_lower: &str) -> bool {
     let stem = basename.rsplit_once('.').map(|(s, _)| s).unwrap_or(basename);
     let stem_lower = stem.to_lowercase();
     stem_lower == module_lower || stem_lower.starts_with(&format!("{module_lower}_"))
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let target = r.target_name.as_str();
+    if let Some(em) = detect_pascal_http_producer(target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_pascal_db_query(target, &r.call_args) {
+        return vec![em];
+    }
+    Vec::new()
 }

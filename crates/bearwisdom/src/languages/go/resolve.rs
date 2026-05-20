@@ -402,97 +402,6 @@ impl LanguageResolver for GoResolver {
         true
     }
 
-    fn detect_flow_emission(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let Some(chain) = r.chain.as_ref() else { return Vec::new(); };
-        if let Some(emission) = detect_go_http_chain_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_go_db_query_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_go_grpc_chain_emission(chain, file_ctx) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_go_mailer_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_go_bgjob_emission(chain) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_go_mq_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_go_redis_config_lookup(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_go_uds_emission(chain, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_go_gorilla_ws_consumer(chain) {
-            return vec![emission];
-        }
-        Vec::new()
-    }
-
-    fn detect_flow_emission_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let direct = self.detect_flow_emission(file_ctx, ref_ctx);
-        if !direct.is_empty() {
-            return direct;
-        }
-        // Let-binding propagation: `client := userpb.NewUserServiceClient(conn)`
-        // followed by `client.GetUser(...)`. The variable's recorded type
-        // (from the Go extractor's TypeRef on the Variable symbol) is
-        // consulted via `lookup.field_type_name`.
-        let r = &ref_ctx.extracted_ref;
-        let Some(chain) = r.chain.as_ref() else { return Vec::new() };
-        let Some(root_seg) = chain.segments.first() else { return Vec::new() };
-        if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
-            return Vec::new();
-        }
-        let var_qname = match ref_ctx.source_symbol.scope_path.as_deref() {
-            Some(scope) => format!("{}.{}", scope, root_seg.name),
-            None => root_seg.name.clone(),
-        };
-        let type_name = match lookup.field_type_str(&var_qname) {
-            Some(t) => t.to_string(),
-            None => return Vec::new(),
-        };
-        if !type_name.ends_with("Client") {
-            return Vec::new();
-        }
-        let mut new_segments = vec![
-            crate::types::ChainSegment {
-                name: type_name,
-                node_kind: "rewritten_var".to_string(),
-                kind: crate::types::SegmentKind::Identifier,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                            declared_type_id: None,
-                type_arg_ids: Vec::new(),
-},
-        ];
-        new_segments.extend(chain.segments.iter().skip(1).cloned());
-        let rewritten = crate::types::MemberChain { segments: new_segments };
-        if let Some(em) = detect_go_grpc_chain_emission(&rewritten, file_ctx) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 
@@ -627,3 +536,93 @@ pub(crate) fn is_manifest_go_external(ctx: &ProjectContext, import_path: &str) -
 // Tests
 // ---------------------------------------------------------------------------
 
+
+pub(crate) fn detect_flow_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let Some(chain) = r.chain.as_ref() else { return Vec::new(); };
+    if let Some(emission) = detect_go_http_chain_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_go_db_query_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_go_grpc_chain_emission(chain, file_ctx) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_go_mailer_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_go_bgjob_emission(chain) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_go_mq_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_go_redis_config_lookup(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_go_uds_emission(chain, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_go_gorilla_ws_consumer(chain) {
+        return vec![emission];
+    }
+    Vec::new()
+}
+
+pub(crate) fn detect_flow_inner_with_lookup(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let direct = detect_flow_inner(file_ctx, ref_ctx);
+    if !direct.is_empty() {
+        return direct;
+    }
+    // Let-binding propagation: `client := userpb.NewUserServiceClient(conn)`
+    // followed by `client.GetUser(...)`. The variable's recorded type
+    // (from the Go extractor's TypeRef on the Variable symbol) is
+    // consulted via `lookup.field_type_name`.
+    let r = &ref_ctx.extracted_ref;
+    let Some(chain) = r.chain.as_ref() else { return Vec::new() };
+    let Some(root_seg) = chain.segments.first() else { return Vec::new() };
+    if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
+        return Vec::new();
+    }
+    let var_qname = match ref_ctx.source_symbol.scope_path.as_deref() {
+        Some(scope) => format!("{}.{}", scope, root_seg.name),
+        None => root_seg.name.clone(),
+    };
+    let type_name = match lookup.field_type_str(&var_qname) {
+        Some(t) => t.to_string(),
+        None => return Vec::new(),
+    };
+    if !type_name.ends_with("Client") {
+        return Vec::new();
+    }
+    let mut new_segments = vec![
+        crate::types::ChainSegment {
+            name: type_name,
+            node_kind: "rewritten_var".to_string(),
+            kind: crate::types::SegmentKind::Identifier,
+            declared_type: None,
+            type_args: vec![],
+            optional_chaining: false,
+            byte_offset: 0,
+                        declared_type_id: None,
+            type_arg_ids: Vec::new(),
+},
+    ];
+    new_segments.extend(chain.segments.iter().skip(1).cloned());
+    let rewritten = crate::types::MemberChain { segments: new_segments };
+    if let Some(em) = detect_go_grpc_chain_emission(&rewritten, file_ctx) {
+        return vec![em];
+    }
+    Vec::new()
+}

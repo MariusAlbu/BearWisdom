@@ -100,22 +100,6 @@ impl LanguageResolver for GroovyResolver {
         JavaResolver.is_visible(file_ctx, ref_ctx, target)
     }
 
-    fn detect_flow_emission(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        // Reuse Java detectors — Groovy/Grails uses the same annotations
-        // (`@GetMapping`, etc.), JPA, JdbcTemplate, etc.
-        let mut emissions = JavaResolver.detect_flow_emission(file_ctx, ref_ctx);
-        // GORM `User.where { ... }.list()`, `User.findById(id)` — uses chain.
-        if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
-            if let Some(em) = detect_groovy_gorm_emission(chain) {
-                emissions.push(em);
-            }
-        }
-        emissions
-    }
 }
 
 pub(crate) fn detect_groovy_gorm_emission(
@@ -144,3 +128,19 @@ pub(crate) fn detect_groovy_gorm_emission(
     })
 }
 
+
+pub(crate) fn detect_flow_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    // Reuse Java detectors — Groovy/Grails uses the same annotations
+    // (`@GetMapping`, etc.), JPA, JdbcTemplate, etc.
+    let mut emissions = crate::languages::java::resolve::detect_flow_inner(file_ctx, ref_ctx);
+    // GORM `User.where { ... }.list()`, `User.findById(id)` — uses chain.
+    if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
+        if let Some(em) = detect_groovy_gorm_emission(chain) {
+            emissions.push(em);
+        }
+    }
+    emissions
+}

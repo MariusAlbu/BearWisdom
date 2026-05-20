@@ -851,45 +851,6 @@ impl LanguageResolver for AdaResolver {
         engine::resolve_common("ada", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-        use crate::types::CallArg;
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let target = r.target_name.as_str();
-        // GNATCOLL.SQL.Exec / AdaSQL Execute_Query.
-        if matches!(target, "Exec" | "Execute_Query" | "Execute" | "Query" | "Prepare") {
-            let sql = r.call_args.iter().find_map(|a| match a {
-                CallArg::StringLit(s) => Some(s.as_str()),
-                _ => None,
-            });
-            if let Some(sql) = sql {
-                let upper = sql.to_ascii_uppercase();
-                let op = if upper.contains("INSERT INTO") {
-                    DbQueryOp::Insert
-                } else if upper.contains("UPDATE ") {
-                    DbQueryOp::Update
-                } else if upper.contains("DELETE FROM") {
-                    DbQueryOp::Delete
-                } else if upper.contains(" FROM ") || upper.starts_with("SELECT") {
-                    DbQueryOp::Select
-                } else {
-                    return Vec::new();
-                };
-                return vec![FlowEmission::DbQuery {
-                    entity_name: "ada.*".to_string(),
-                    operation: op,
-                }];
-            }
-        }
-        Vec::new()
-    }
 }
 
 /// Given an Ada body path (`foo/bar.adb`), return the sibling spec path
@@ -906,4 +867,43 @@ pub(crate) fn spec_for_body(file_path: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    use crate::types::CallArg;
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let target = r.target_name.as_str();
+    // GNATCOLL.SQL.Exec / AdaSQL Execute_Query.
+    if matches!(target, "Exec" | "Execute_Query" | "Execute" | "Query" | "Prepare") {
+        let sql = r.call_args.iter().find_map(|a| match a {
+            CallArg::StringLit(s) => Some(s.as_str()),
+            _ => None,
+        });
+        if let Some(sql) = sql {
+            let upper = sql.to_ascii_uppercase();
+            let op = if upper.contains("INSERT INTO") {
+                DbQueryOp::Insert
+            } else if upper.contains("UPDATE ") {
+                DbQueryOp::Update
+            } else if upper.contains("DELETE FROM") {
+                DbQueryOp::Delete
+            } else if upper.contains(" FROM ") || upper.starts_with("SELECT") {
+                DbQueryOp::Select
+            } else {
+                return Vec::new();
+            };
+            return vec![FlowEmission::DbQuery {
+                entity_name: "ada.*".to_string(),
+                operation: op,
+            }];
+        }
+    }
+    Vec::new()
 }

@@ -1,3 +1,4 @@
+use super::resolve;
 use super::resolve::infer_r_external;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
@@ -28,6 +29,16 @@ impl LanguageEngineHooks for RHooks {
             }
         }
         infer_r_external(file_ctx, ref_ctx, project_ctx)
+    }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let _ = lookup;
+        resolve::detect_flow_inner(file_ctx, ref_ctx)
     }
 }
 

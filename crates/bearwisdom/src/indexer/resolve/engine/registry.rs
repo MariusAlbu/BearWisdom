@@ -47,41 +47,6 @@ pub trait LanguageResolver: Send + Sync {
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution>;
 
-    /// Detect a cross-tier flow-edge pattern for a ref, independent of
-    /// whether `resolve` succeeded.
-    ///
-    /// Called for every `Calls`-kind ref before the heuristic fallback.
-    /// The default returns an empty `Vec` (no emission). Language resolvers
-    /// that recognize HTTP-client chains, IPC calls, WebSocket emits, etc.
-    /// override this to emit one or more `FlowEmission`s without needing a
-    /// resolved target symbol. The Vec return shape supports patterns like
-    /// `server.addService(SvcDef, { m1: h, m2: h })` where a single ref site
-    /// registers handlers for multiple methods.
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        Vec::new()
-    }
-
-    /// Lookup-aware variant of `detect_flow_emission`. Override this when
-    /// the detector benefits from inspecting the SymbolIndex — for
-    /// instance, to look up the type of a let-bound variable so chains
-    /// like `let c = ServiceClient::new(); c.method(...)` can still emit
-    /// the appropriate RpcCall on the second call.
-    ///
-    /// The default forwards to the lookup-less version so existing
-    /// implementations need no changes.
-    fn detect_flow_emission_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _lookup: &dyn SymbolLookup,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        self.detect_flow_emission(file_ctx, ref_ctx)
-    }
-
     /// Check whether a target symbol is visible from the reference site.
     /// Default: always visible (no filtering).
     fn is_visible(

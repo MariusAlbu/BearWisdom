@@ -1,3 +1,4 @@
+use super::resolve;
 use super::resolve::is_hare_primitive;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{self as engine, FileContext, RefContext, SymbolLookup};
@@ -14,6 +15,16 @@ impl LanguageEngineHooks for HareHooks {
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_hare_primitive)
+    }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let _ = lookup;
+        resolve::detect_flow_inner(file_ctx, ref_ctx)
     }
 }
 

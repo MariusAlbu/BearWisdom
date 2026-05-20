@@ -690,166 +690,6 @@ impl LanguageResolver for RustResolver {
         }
     }
 
-    fn detect_flow_emission_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        // First try the chain as-is.
-        let direct = self.detect_flow_emission(file_ctx, ref_ctx);
-        if !direct.is_empty() {
-            return direct;
-        }
-
-        // Let-binding propagation: when the chain root is an Identifier
-        // segment, look up the variable's recorded type via field_type
-        // (populated for Variable symbols by the Rust extractor). If the
-        // type ends with `Client`, rewrite the chain with the type as the
-        // new root and rerun the Tonic detector.
-        let r = &ref_ctx.extracted_ref;
-        let Some(chain) = r.chain.as_ref() else { return Vec::new() };
-        let Some(root_seg) = chain.segments.first() else { return Vec::new() };
-        if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
-            return Vec::new();
-        }
-        // Resolve the variable in the source symbol's scope and read its type.
-        let var_qname = match ref_ctx.source_symbol.scope_path.as_deref() {
-            Some(scope) => format!("{}.{}", scope, root_seg.name),
-            None => root_seg.name.clone(),
-        };
-        let type_name = match lookup.field_type_str(&var_qname) {
-            Some(t) => t.to_string(),
-            None => return Vec::new(),
-        };
-        // Only rewrite for known-Client patterns.
-        if !type_name.ends_with("Client") && !type_name.ends_with("Stub") {
-            return Vec::new();
-        }
-        // Build a substituted chain: replace root identifier with the type +
-        // synthetic "new" constructor so the existing Tonic detector matches.
-        let mut new_segments = vec![
-            crate::types::ChainSegment {
-                name: type_name.clone(),
-                node_kind: "rewritten_var".to_string(),
-                kind: crate::types::SegmentKind::Identifier,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                            declared_type_id: None,
-                type_arg_ids: Vec::new(),
-},
-            crate::types::ChainSegment {
-                name: "new".to_string(),
-                node_kind: "rewritten_var".to_string(),
-                kind: crate::types::SegmentKind::Property,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                            declared_type_id: None,
-                type_arg_ids: Vec::new(),
-},
-        ];
-        new_segments.extend(chain.segments.iter().skip(1).cloned());
-        let rewritten = crate::types::MemberChain { segments: new_segments };
-        if let Some(em) = detect_rust_tonic_emission(&rewritten) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_reqwest_emission(&rewritten, &r.call_args) {
-            return vec![em];
-        }
-        Vec::new()
-    }
-
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-
-        // HTTP-method route attribute → Consumer HttpCall.
-        // Decorators emit a TypeRef with target_name=<verb> and module=URL
-        // for actix-web / Rocket `#[get("/x")]` style declarations.
-        if r.kind == EdgeKind::TypeRef {
-            if let Some(em) = detect_rust_route_attribute_emission(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![em];
-            }
-            if let Some(em) = detect_rust_tauri_command_attribute(r.target_name.as_str()) {
-                // The command name = the function's own symbol name;
-                // emission carries a wildcard and the pairer matches it
-                // against the TS-side invoke(name) producer.
-                return vec![em];
-            }
-            // async-graphql / juniper attribute markers — `#[Object]`,
-            // `#[graphql_object]`, `#[SimpleObject]`, `#[Subscription]`.
-            if let Some(em) = detect_rust_async_graphql_attribute(r.target_name.as_str()) {
-                return vec![em];
-            }
-            return Vec::new();
-        }
-
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-
-        // SQLx macros — `sqlx::query!`, `sqlx::query_as!`, `query_scalar!`
-        // etc. land as Calls refs with `module = Some("sqlx")` and
-        // `target_name` carrying the verb. `call_args` holds the entity
-        // name (for query_as) and the SQL string (parsed from the macro
-        // body by `extract_macro_string_args`).
-        if let Some(em) = detect_rust_sqlx_macro_emission(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-            &r.call_args,
-        ) {
-            return vec![em];
-        }
-
-        let Some(chain) = r.chain.as_ref() else {
-            return Vec::new();
-        };
-
-        if let Some(em) = detect_rust_axum_route_emission(chain, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_actix_resource_emission(chain, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_reqwest_emission(chain, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_diesel_emission(chain) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_tonic_emission(chain) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_lettre_mailer(chain) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_apalis_bgjob(chain) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_rdkafka_mq(chain) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_redis_config_lookup(chain, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_uds_emission(chain, &r.call_args) {
-            return vec![em];
-        }
-        if let Some(em) = detect_rust_axum_ws_consumer(chain) {
-            return vec![em];
-        }
-        Vec::new()
-    }
 }
 
 pub(super) fn infer_external_inner(
@@ -1133,4 +973,163 @@ fn is_manifest_rust_crate(ctx: &ProjectContext, name: &str) -> bool {
     keywords::STDLIB_CRATES.contains(&name)
         || ctx.has_dependency(ManifestKind::Cargo, name)
         || ctx.has_dependency(ManifestKind::Cargo, &name.replace('_', "-"))
+}
+
+pub(crate) fn detect_flow_inner_with_lookup(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    // First try the chain as-is.
+    let direct = detect_flow_inner(file_ctx, ref_ctx);
+    if !direct.is_empty() {
+        return direct;
+    }
+
+    // Let-binding propagation: when the chain root is an Identifier
+    // segment, look up the variable's recorded type via field_type
+    // (populated for Variable symbols by the Rust extractor). If the
+    // type ends with `Client`, rewrite the chain with the type as the
+    // new root and rerun the Tonic detector.
+    let r = &ref_ctx.extracted_ref;
+    let Some(chain) = r.chain.as_ref() else { return Vec::new() };
+    let Some(root_seg) = chain.segments.first() else { return Vec::new() };
+    if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
+        return Vec::new();
+    }
+    // Resolve the variable in the source symbol's scope and read its type.
+    let var_qname = match ref_ctx.source_symbol.scope_path.as_deref() {
+        Some(scope) => format!("{}.{}", scope, root_seg.name),
+        None => root_seg.name.clone(),
+    };
+    let type_name = match lookup.field_type_str(&var_qname) {
+        Some(t) => t.to_string(),
+        None => return Vec::new(),
+    };
+    // Only rewrite for known-Client patterns.
+    if !type_name.ends_with("Client") && !type_name.ends_with("Stub") {
+        return Vec::new();
+    }
+    // Build a substituted chain: replace root identifier with the type +
+    // synthetic "new" constructor so the existing Tonic detector matches.
+    let mut new_segments = vec![
+        crate::types::ChainSegment {
+            name: type_name.clone(),
+            node_kind: "rewritten_var".to_string(),
+            kind: crate::types::SegmentKind::Identifier,
+            declared_type: None,
+            type_args: vec![],
+            optional_chaining: false,
+            byte_offset: 0,
+                        declared_type_id: None,
+            type_arg_ids: Vec::new(),
+},
+        crate::types::ChainSegment {
+            name: "new".to_string(),
+            node_kind: "rewritten_var".to_string(),
+            kind: crate::types::SegmentKind::Property,
+            declared_type: None,
+            type_args: vec![],
+            optional_chaining: false,
+            byte_offset: 0,
+                        declared_type_id: None,
+            type_arg_ids: Vec::new(),
+},
+    ];
+    new_segments.extend(chain.segments.iter().skip(1).cloned());
+    let rewritten = crate::types::MemberChain { segments: new_segments };
+    if let Some(em) = detect_rust_tonic_emission(&rewritten) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_reqwest_emission(&rewritten, &r.call_args) {
+        return vec![em];
+    }
+    Vec::new()
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+
+    // HTTP-method route attribute → Consumer HttpCall.
+    // Decorators emit a TypeRef with target_name=<verb> and module=URL
+    // for actix-web / Rocket `#[get("/x")]` style declarations.
+    if r.kind == EdgeKind::TypeRef {
+        if let Some(em) = detect_rust_route_attribute_emission(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
+            return vec![em];
+        }
+        if let Some(em) = detect_rust_tauri_command_attribute(r.target_name.as_str()) {
+            // The command name = the function's own symbol name;
+            // emission carries a wildcard and the pairer matches it
+            // against the TS-side invoke(name) producer.
+            return vec![em];
+        }
+        // async-graphql / juniper attribute markers — `#[Object]`,
+        // `#[graphql_object]`, `#[SimpleObject]`, `#[Subscription]`.
+        if let Some(em) = detect_rust_async_graphql_attribute(r.target_name.as_str()) {
+            return vec![em];
+        }
+        return Vec::new();
+    }
+
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+
+    // SQLx macros — `sqlx::query!`, `sqlx::query_as!`, `query_scalar!`
+    // etc. land as Calls refs with `module = Some("sqlx")` and
+    // `target_name` carrying the verb. `call_args` holds the entity
+    // name (for query_as) and the SQL string (parsed from the macro
+    // body by `extract_macro_string_args`).
+    if let Some(em) = detect_rust_sqlx_macro_emission(
+        r.target_name.as_str(),
+        r.module.as_deref(),
+        &r.call_args,
+    ) {
+        return vec![em];
+    }
+
+    let Some(chain) = r.chain.as_ref() else {
+        return Vec::new();
+    };
+
+    if let Some(em) = detect_rust_axum_route_emission(chain, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_actix_resource_emission(chain, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_reqwest_emission(chain, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_diesel_emission(chain) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_tonic_emission(chain) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_lettre_mailer(chain) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_apalis_bgjob(chain) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_rdkafka_mq(chain) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_redis_config_lookup(chain, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_uds_emission(chain, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_rust_axum_ws_consumer(chain) {
+        return vec![em];
+    }
+    Vec::new()
 }

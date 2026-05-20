@@ -15,10 +15,12 @@ mod walk;
 pub mod fypp;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::FORTRAN_HOOKS;
 pub use profile::FORTRAN_PROFILE;
 
 pub use resolve::FortranResolver;
@@ -93,5 +95,12 @@ impl LanguagePlugin for FortranPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::FORTRAN_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::FORTRAN_HOOKS)
     }
 }

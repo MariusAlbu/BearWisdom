@@ -157,66 +157,6 @@ impl LanguageResolver for RResolver {
         resolve_r("r", file_ctx, ref_ctx, lookup)
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        use crate::indexer::resolve::flow_emit::{
-            ChannelRole, DbQueryOp, FlowEmission, HttpMethod, NamedChannelKind,
-        };
-        use crate::types::CallArg;
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let module = r.module.as_deref().unwrap_or("");
-        let target = r.target_name.as_str();
-        // httr / httr2 Producer.
-        if (module == "httr" || module == "httr2") && matches!(target, "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "PATCH" | "request") {
-            let url = r.call_args.iter().find_map(|a| match a {
-                CallArg::StringLit(s)
-                    if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
-                {
-                    Some(s.as_str())
-                }
-                _ => None,
-            });
-            if let Some(url) = url {
-                return vec![FlowEmission::NamedChannel {
-                    kind: NamedChannelKind::HttpCall,
-                    name: crate::connectors::url_pattern::normalize(url),
-                    role: ChannelRole::Producer,
-                    method: Some(HttpMethod::Any),
-                streaming: None,
-                }];
-            }
-        }
-        // DBI: dbGetQuery / dbSendQuery / dbExecute.
-        if matches!(target, "dbGetQuery" | "dbSendQuery" | "dbExecute") {
-            let sql = r.call_args.iter().find_map(|a| match a {
-                CallArg::StringLit(s) => Some(s.as_str()),
-                _ => None,
-            });
-            if let Some(sql) = sql {
-                let upper = sql.to_ascii_uppercase();
-                let op = if upper.contains("INSERT INTO") {
-                    DbQueryOp::Insert
-                } else if upper.contains("UPDATE ") {
-                    DbQueryOp::Update
-                } else if upper.contains("DELETE FROM") {
-                    DbQueryOp::Delete
-                } else {
-                    DbQueryOp::Select
-                };
-                return vec![FlowEmission::DbQuery {
-                    entity_name: "r.*".to_string(),
-                    operation: op,
-                }];
-            }
-        }
-        Vec::new()
-    }
 }
 
 #[cfg(test)]
@@ -246,4 +186,64 @@ pub(super) fn infer_r_external(
     // handled by the engine's keywords() set. Names that exhaust resolve()
     // stay unresolved rather than blanket-classified as `builtin`.
     None
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, DbQueryOp, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    // httr / httr2 Producer.
+    if (module == "httr" || module == "httr2") && matches!(target, "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "PATCH" | "request") {
+        let url = r.call_args.iter().find_map(|a| match a {
+            CallArg::StringLit(s)
+                if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+            {
+                Some(s.as_str())
+            }
+            _ => None,
+        });
+        if let Some(url) = url {
+            return vec![FlowEmission::NamedChannel {
+                kind: NamedChannelKind::HttpCall,
+                name: crate::connectors::url_pattern::normalize(url),
+                role: ChannelRole::Producer,
+                method: Some(HttpMethod::Any),
+            streaming: None,
+            }];
+        }
+    }
+    // DBI: dbGetQuery / dbSendQuery / dbExecute.
+    if matches!(target, "dbGetQuery" | "dbSendQuery" | "dbExecute") {
+        let sql = r.call_args.iter().find_map(|a| match a {
+            CallArg::StringLit(s) => Some(s.as_str()),
+            _ => None,
+        });
+        if let Some(sql) = sql {
+            let upper = sql.to_ascii_uppercase();
+            let op = if upper.contains("INSERT INTO") {
+                DbQueryOp::Insert
+            } else if upper.contains("UPDATE ") {
+                DbQueryOp::Update
+            } else if upper.contains("DELETE FROM") {
+                DbQueryOp::Delete
+            } else {
+                DbQueryOp::Select
+            };
+            return vec![FlowEmission::DbQuery {
+                entity_name: "r.*".to_string(),
+                operation: op,
+            }];
+        }
+    }
+    Vec::new()
 }

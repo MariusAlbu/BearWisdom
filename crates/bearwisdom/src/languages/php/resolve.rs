@@ -368,56 +368,6 @@ impl LanguageResolver for PhpResolver {
         None
     }
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let r = &ref_ctx.extracted_ref;
-
-        // Symfony `#[Route('/x', methods: ['GET'])]` on a controller method
-        // lands as a TypeRef whose `target_name` is "Route" and `module` is
-        // the first string arg (the URL). HTTP method isn't currently
-        // captured by the decorator extractor — fall back to Any.
-        if r.kind == EdgeKind::TypeRef {
-            if let Some(emission) = detect_symfony_route_attribute_emission(
-                r.target_name.as_str(),
-                r.module.as_deref(),
-            ) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
-
-        // Ratchet `class XHandler implements MessageComponentInterface` —
-        // also `Wamp` and `WampServerInterface`. Emit single-ended Consumer
-        // WebSocket so the handler clusters with WS endpoints.
-        if r.kind == EdgeKind::Implements || r.kind == EdgeKind::Inherits {
-            if let Some(emission) = detect_php_ratchet_emission(r.target_name.as_str()) {
-                return vec![emission];
-            }
-            return Vec::new();
-        }
-
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let Some(chain_ref) = r.chain.as_ref() else {
-            return Vec::new();
-        };
-
-        if let Some(emission) = detect_php_db_query_emission(chain_ref, &r.call_args) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_php_mailer_emission(chain_ref) {
-            return vec![emission];
-        }
-        if let Some(emission) = detect_php_bgjob_emission(chain_ref) {
-            return vec![emission];
-        }
-        Vec::new()
-    }
-
     fn is_visible(
         &self,
         file_ctx: &FileContext,
@@ -840,3 +790,52 @@ pub(crate) fn detect_symfony_route_attribute_emission(
 // Tests
 // ---------------------------------------------------------------------------
 
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+
+    // Symfony `#[Route('/x', methods: ['GET'])]` on a controller method
+    // lands as a TypeRef whose `target_name` is "Route" and `module` is
+    // the first string arg (the URL). HTTP method isn't currently
+    // captured by the decorator extractor — fall back to Any.
+    if r.kind == EdgeKind::TypeRef {
+        if let Some(emission) = detect_symfony_route_attribute_emission(
+            r.target_name.as_str(),
+            r.module.as_deref(),
+        ) {
+            return vec![emission];
+        }
+        return Vec::new();
+    }
+
+    // Ratchet `class XHandler implements MessageComponentInterface` —
+    // also `Wamp` and `WampServerInterface`. Emit single-ended Consumer
+    // WebSocket so the handler clusters with WS endpoints.
+    if r.kind == EdgeKind::Implements || r.kind == EdgeKind::Inherits {
+        if let Some(emission) = detect_php_ratchet_emission(r.target_name.as_str()) {
+            return vec![emission];
+        }
+        return Vec::new();
+    }
+
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let Some(chain_ref) = r.chain.as_ref() else {
+        return Vec::new();
+    };
+
+    if let Some(emission) = detect_php_db_query_emission(chain_ref, &r.call_args) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_php_mailer_emission(chain_ref) {
+        return vec![emission];
+    }
+    if let Some(emission) = detect_php_bgjob_emission(chain_ref) {
+        return vec![emission];
+    }
+    Vec::new()
+}

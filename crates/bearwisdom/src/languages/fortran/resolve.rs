@@ -180,46 +180,46 @@ impl LanguageResolver for FortranResolver {
     }
 
 
-    fn detect_flow_emission(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        use crate::indexer::resolve::flow_emit::{
-            ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
-        };
-        use crate::types::CallArg;
-        // libcurl bindings: curl_easy_setopt(handle, CURLOPT_URL, url).
-        let r = &ref_ctx.extracted_ref;
-        if r.kind != EdgeKind::Calls {
-            return Vec::new();
-        }
-        let target = r.target_name.as_str().to_lowercase();
-        if !matches!(
-            target.as_str(),
-            "curl_easy_setopt" | "curl_easy_perform"
-        ) {
-            return Vec::new();
-        }
-        let url = r.call_args.iter().find_map(|a| match a {
-            CallArg::StringLit(s)
-                if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
-            {
-                Some(s.as_str())
-            }
-            _ => None,
-        });
-        let Some(url) = url else { return Vec::new() };
-        vec![FlowEmission::NamedChannel {
-            kind: NamedChannelKind::HttpCall,
-            name: crate::connectors::url_pattern::normalize(url),
-            role: ChannelRole::Producer,
-            method: Some(HttpMethod::Any),
-        streaming: None,
-        }]
-    }
 }
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    // libcurl bindings: curl_easy_setopt(handle, CURLOPT_URL, url).
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let target = r.target_name.as_str().to_lowercase();
+    if !matches!(
+        target.as_str(),
+        "curl_easy_setopt" | "curl_easy_perform"
+    ) {
+        return Vec::new();
+    }
+    let url = r.call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    });
+    let Some(url) = url else { return Vec::new() };
+    vec![FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Producer,
+        method: Some(HttpMethod::Any),
+    streaming: None,
+    }]
+}

@@ -30,7 +30,7 @@ fn test_hare_http_emit() {
 };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
-    assert!(matches!(HareResolver.detect_flow_emission(&fc, &rc).first(), Some(FlowEmission::NamedChannel { .. })));
+    assert!(matches!(super::detect_flow_inner(&fc, &rc).first(), Some(FlowEmission::NamedChannel { .. })));
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn test_hare_no_emit_for_non_http_module() {
 };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
-    assert!(HareResolver.detect_flow_emission(&fc, &rc).is_empty());
+    assert!(super::detect_flow_inner(&fc, &rc).is_empty());
 }
 
 #[test]
@@ -90,5 +90,5 @@ fn test_hare_no_emit_for_non_url_arg() {
 };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
-    assert!(HareResolver.detect_flow_emission(&fc, &rc).is_empty());
+    assert!(super::detect_flow_inner(&fc, &rc).is_empty());
 }

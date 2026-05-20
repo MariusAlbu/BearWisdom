@@ -1,3 +1,4 @@
+use super::resolve;
 use super::predicates;
 use super::resolve::R_PACKAGE_SENTINEL;
 use crate::indexer::project_context::ProjectContext;
@@ -61,6 +62,16 @@ impl LanguageEngineHooks for CHooks {
         }
 
         None
+    }
+
+    fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let _ = lookup;
+        resolve::detect_flow_inner(file_ctx, ref_ctx)
     }
 }
 
