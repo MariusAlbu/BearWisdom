@@ -72,26 +72,10 @@ impl LanguageResolver for GraphQlResolver {
         })
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Introspection types (double-underscore prefix) are built-in.
-        if target.starts_with("__") {
-            return Some("graphql".to_string());
-        }
-
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_graphql_builtin)
-            .map(|_| "graphql".to_string())
-    }
 }
 
 /// GraphQL built-in scalar types and introspection system types.
-fn is_graphql_builtin(name: &str) -> bool {
+pub(super) fn is_graphql_builtin(name: &str) -> bool {
     matches!(
         name,
         "String" | "Int" | "Float" | "Boolean" | "ID"

@@ -3,9 +3,11 @@
 pub mod connectors;
 pub mod keywords;
 pub mod extract;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::GRAPHQL_HOOKS;
 pub use profile::GRAPHQL_PROFILE;
 
 #[cfg(test)]
@@ -83,5 +85,12 @@ impl LanguagePlugin for GraphQlPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::GRAPHQL_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::GRAPHQL_HOOKS)
     }
 }

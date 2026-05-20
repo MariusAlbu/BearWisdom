@@ -21,10 +21,12 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::ZIG_HOOKS;
 pub use profile::ZIG_PROFILE;
 
 pub use resolve::ZigResolver;
@@ -108,5 +110,12 @@ impl LanguagePlugin for ZigPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ZIG_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::ZIG_HOOKS)
     }
 }

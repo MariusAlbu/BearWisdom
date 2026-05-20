@@ -102,37 +102,6 @@ impl LanguageResolver for BicepResolver {
         resolve_against_bicep_runtime(target, edge_kind, lookup)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        // Azure resource type strings take priority.
-        if is_azure_resource_type(target) {
-            return Some("azure".to_string());
-        }
-
-        // Child-resource shorthand: inside a parent `resource` block a nested
-        // `resource childAlias 'subnets' existing = { ... }` uses a bare
-        // single-segment type name that resolves against the parent's type
-        // path at deploy time (→ `Microsoft.Network/virtualNetworks/subnets`).
-        // The bicep extractor only emits TypeRef refs for resource-declaration
-        // type strings, so any bare-name TypeRef here is a child shorthand.
-        if edge_kind == EdgeKind::TypeRef && is_child_resource_shorthand(target) {
-            return Some("azure".to_string());
-        }
-
-        // No predicate-based builtin classification: builtin names come from
-        // the `bicep-runtime` ecosystem walker via the symbol index. If a
-        // ref still doesn't resolve here, it's genuinely unresolved (the
-        // user has no local Azure/bicep source clone for the walker to
-        // find).
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, |_| false)
-    }
 }
 
 /// Match a bare-name target against the bicep-runtime ecosystem's
@@ -193,7 +162,7 @@ fn resolve_against_bicep_runtime(
 /// — so test fixtures (`My.Rp/parentType@2020-12-01`, `Mock.Rp/...`) and
 /// third-party providers route as external rather than dragging the resolution
 /// rate down. ACR registry refs (`br:` / `br/`) keep their own arms.
-fn is_azure_resource_type(name: &str) -> bool {
+pub(super) fn is_azure_resource_type(name: &str) -> bool {
     // Strip wrapping single quotes — the bicep extractor sometimes emits
     // quoted resource type strings (`'Microsoft.Foo/foos@2020-02-02-alpha'`)
     // as Calls when the type-string appears in an unexpected position.
@@ -227,7 +196,7 @@ fn is_azure_resource_type(name: &str) -> bool {
 ///   * fully-uppercase DNS record types: `A`, `AAAA`, `CNAME`, `MX`, `TXT`
 /// PascalCase (`MyOwnResource`) is intentionally rejected — those are
 /// user-defined symbol references, not child-resource shorthand.
-fn is_child_resource_shorthand(name: &str) -> bool {
+pub(super) fn is_child_resource_shorthand(name: &str) -> bool {
     if name.is_empty() || name.contains('/') {
         return false;
     }

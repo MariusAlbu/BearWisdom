@@ -120,29 +120,6 @@ impl LanguageResolver for HareResolver {
         engine::resolve_common("hare", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Hare stdlib modules take precedence — label them specifically.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let module = ref_ctx
-                .extracted_ref
-                .module
-                .as_deref()
-                .unwrap_or(target.as_str());
-            if is_hare_stdlib_module(module) {
-                return Some("hare_stdlib".to_string());
-            }
-        }
-
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_hare_primitive)
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,
@@ -203,7 +180,7 @@ fn is_hare_stdlib_module(module: &str) -> bool {
 }
 
 /// Hare primitive types.
-fn is_hare_primitive(name: &str) -> bool {
+pub(super) fn is_hare_primitive(name: &str) -> bool {
     matches!(
         name,
         "bool" | "void" | "never" | "null" | "opaque"

@@ -85,45 +85,6 @@ impl LanguageResolver for ZigResolver {
         engine::resolve_common("zig", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Imports: only non-relative, non-.zig paths are external (e.g. @import("std")).
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let uri = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            if !uri.starts_with('.') && !uri.ends_with(".zig") {
-                return Some(format!("zig.{uri}"));
-            }
-            return None;
-        }
-
-        // Delegate builtin detection to the common helper.
-        if let Some(ns) = engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_zig_builtin) {
-            // Common returns "builtin"; remap to zig's "zig.builtin" label.
-            return Some(if ns == "builtin" { "zig.builtin".to_string() } else { ns });
-        }
-
-        // Alias-qualified: `std.mem.Allocator` → check if `std` is an external import.
-        let root = target.split('.').next().unwrap_or(target);
-        for import in &file_ctx.imports {
-            if let Some(alias) = &import.alias {
-                if alias == root {
-                    let uri = import.module_path.as_deref().unwrap_or("");
-                    if !uri.starts_with('.') && !uri.ends_with(".zig") {
-                        return Some(format!("zig.{uri}"));
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,

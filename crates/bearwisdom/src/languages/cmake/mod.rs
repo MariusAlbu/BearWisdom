@@ -5,9 +5,11 @@ pub mod keywords;
 pub mod extract;
 mod arguments;
 mod commands;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::CMAKE_HOOKS;
 pub use profile::CMAKE_PROFILE;
 
 #[cfg(test)]
@@ -84,5 +86,12 @@ impl LanguagePlugin for CMakePlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::CMAKE_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::CMAKE_HOOKS)
     }
 }

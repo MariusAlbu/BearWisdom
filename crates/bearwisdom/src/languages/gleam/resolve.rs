@@ -124,37 +124,6 @@ impl LanguageResolver for GleamResolver {
         engine::resolve_common("gleam", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Gleam stdlib modules start with "gleam/" — mark them external before
-        // the common handler so the specific namespace is preserved.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let path = ref_ctx
-                .extracted_ref
-                .module
-                .as_deref()
-                .unwrap_or(target.as_str());
-            if path.starts_with("gleam/") {
-                return Some(path.to_string());
-            }
-        }
-
-        if is_gleam_operator(target) {
-            return Some("builtin".to_string());
-        }
-
-        // Stdlib function names classify via the engine's keywords() set
-        // populated from gleam/mod.rs::keywords(); gleam_stdlib + hex
-        // walkers emit real symbols for declared deps.
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, |_| false)
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,

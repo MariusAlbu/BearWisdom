@@ -73,25 +73,10 @@ impl LanguageResolver for PrismaResolver {
         )
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Language-specific: provider attribute paths like @db.Text are Prisma-external.
-        if target.starts_with("@db.") || target.starts_with("db.") {
-            return Some("prisma".to_string());
-        }
-
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_prisma_scalar)
-    }
 }
 
 /// Prisma built-in scalar types.
-fn is_prisma_scalar(name: &str) -> bool {
+pub(super) fn is_prisma_scalar(name: &str) -> bool {
     matches!(
         name,
         "String" | "Boolean" | "Int" | "BigInt" | "Float"

@@ -78,44 +78,6 @@ impl LanguageResolver for CMakeResolver {
         engine::resolve_common("cmake", file_ctx, ref_ctx, lookup, cmake_kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Imported targets use `Pkg::Component` syntax, which is never valid
-        // for user-defined CMake functions or project-local targets.
-        if target.contains("::") {
-            let pkg = target.split("::").next().unwrap_or(target);
-            return Some(pkg.to_string());
-        }
-
-        // Variables suffixed with `_SOURCE_DIR` or `_BINARY_DIR` are populated at
-        // configure time by CMake's FetchContent / CPM / ExternalProject mechanisms.
-        // They are not declared in any project source file and are structurally
-        // unresolvable from the static index.
-        if ref_ctx.extracted_ref.kind == crate::types::EdgeKind::TypeRef
-            && (target.ends_with("_SOURCE_DIR") || target.ends_with("_BINARY_DIR"))
-        {
-            return Some("cmake:fetched".to_string());
-        }
-
-        // When a file includes CPM.cmake, bare unresolved Calls targets from
-        // target_link_libraries are CPM-downloaded packages — their add_library
-        // declarations only exist in CMake's build-time fetch cache, not in the
-        // project source tree.  Classify them as external so they don't appear
-        // in unresolved_refs.
-        if ref_ctx.extracted_ref.kind == crate::types::EdgeKind::Calls
-            && file_uses_cpm(file_ctx)
-        {
-            return Some("cmake:cpm-package".to_string());
-        }
-
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_cmake_builtin)
-    }
 }
 
 /// Returns true when the file's imports indicate that CPM.cmake is active.

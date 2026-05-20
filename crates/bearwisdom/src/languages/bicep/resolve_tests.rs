@@ -104,7 +104,12 @@ fn child_resource_shorthand_classifies_as_azure() {
             scope_chain: vec![],
             file_package_id: None,
         };
-        let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+        let ns = {
+            use crate::type_checker::profile::hooks::LanguageEngineHooks;
+            crate::languages::bicep::hooks::BicepHooks.classify_external(
+                &ref_ctx, &file_ctx, None, &index,
+            )
+        };
         assert_eq!(ns.as_deref(), Some("azure"),
             "child-resource shorthand `{name}` should classify as azure");
     }

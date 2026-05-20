@@ -130,35 +130,10 @@ impl LanguageResolver for ProtoResolver {
         )
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Language-specific: well-known google.protobuf types and google/protobuf/* imports.
-        if target.starts_with("google.protobuf.") || target.starts_with(".google.protobuf.") {
-            return Some("protobuf".to_string());
-        }
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let module = ref_ctx
-                .extracted_ref
-                .module
-                .as_deref()
-                .unwrap_or(target.as_str());
-            if module.starts_with("google/protobuf/") {
-                return Some("protobuf".to_string());
-            }
-        }
-
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_proto_scalar)
-    }
 }
 
 /// Protobuf scalar (primitive) types.
-fn is_proto_scalar(name: &str) -> bool {
+pub(super) fn is_proto_scalar(name: &str) -> bool {
     matches!(
         name,
         "double" | "float" | "int32" | "int64" | "uint32" | "uint64"
