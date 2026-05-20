@@ -562,33 +562,16 @@ fn resolve_iteration_body(
                 }
             }
 
-            // ---------------------------------------------------------------
-            // Tier 1.5: External classification — BEFORE heuristic.
-            //
-            // Engine hook fires first for languages that have authored a
-            // `LanguageEngineHooks::classify_external` impl; legacy
-            // `infer_external_namespace_with_lookup` runs as fallback for
-            // languages that haven't migrated yet. Both feed the same
-            // `externals` write path downstream.
-            //
-            // `resolver` and `file_ctx` here are already the effective-language
-            // versions (embedded resolver for cross-lang refs, host resolver
-            // otherwise), so no special-casing is needed.
-            // ---------------------------------------------------------------
-            let inferred_ns = if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
+            // Tier 1.5: external classification — `LanguageEngineHooks::classify_external`
+            // is the only entry point. The legacy resolver method has been retired.
+            let inferred_ns = if let (Some(_resolver), Some(file_ctx)) = (resolver, &file_ctx) {
                 let ref_ctx = RefContext {
                     extracted_ref: r,
                     source_symbol: source_sym,
                     scope_chain: scope_chain.clone(),
                     file_package_id: pf.package_id,
                 };
-                type_engine
-                    .classify_external(&ref_ctx, file_ctx, project_ctx, index)
-                    .or_else(|| {
-                        resolver.infer_external_namespace_with_lookup(
-                            file_ctx, &ref_ctx, project_ctx, index,
-                        )
-                    })
+                type_engine.classify_external(&ref_ctx, file_ctx, project_ctx, index)
             } else {
                 None
             };
