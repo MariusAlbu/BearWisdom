@@ -201,9 +201,14 @@ impl<'a> Engine<'a> {
                 profile,
                 lookup,
             );
-            let resolution =
-                walker.walk_with_root(chain, ref_ctx, file_ctx, &DefaultRootResolver)?;
-            return Some(adapt_resolution(resolution, &self.arena));
+            let cr = walker.walk_with_root(chain, ref_ctx, file_ctx, &DefaultRootResolver)?;
+            return Some(Resolution {
+                target_symbol_id: cr.target_symbol_id,
+                confidence: 1.0,
+                strategy: cr.strategy,
+                resolved_yield_type: Some(cr.resolved_yield_type),
+                flow_emit: None,
+            });
         }
 
         let hooks = self.hooks.get(file_ctx.language.as_str()).copied();
@@ -245,8 +250,14 @@ impl<'a> Engine<'a> {
             profile,
             lookup,
         );
-        let resolution = walker.walk_with_root(chain, ref_ctx, file_ctx, root)?;
-        Some(adapt_resolution(resolution, &self.arena))
+        let cr = walker.walk_with_root(chain, ref_ctx, file_ctx, root)?;
+        Some(Resolution {
+            target_symbol_id: cr.target_symbol_id,
+            confidence: 1.0,
+            strategy: cr.strategy,
+            resolved_yield_type: Some(cr.resolved_yield_type),
+            flow_emit: None,
+        })
     }
 
     /// Direct access to engine-side inference for refs without an attached
@@ -341,19 +352,6 @@ impl<'a> Engine<'a> {
 
     pub fn profile_for(&self, language: &str) -> Option<&LanguageProfile> {
         self.profiles.get(language).copied()
-    }
-}
-
-/// Build a Resolution from a TypeId-native ChainResolution. With Resolution
-/// itself now TypeId-keyed, this is a thin field-rename — no string
-/// conversion at the engine boundary.
-fn adapt_resolution(cr: ChainResolution, _arena: &TypeArena) -> Resolution {
-    Resolution {
-        target_symbol_id: cr.target_symbol_id,
-        confidence: 1.0,
-        strategy: cr.strategy,
-        resolved_yield_type: Some(cr.resolved_yield_type),
-        flow_emit: None,
     }
 }
 
