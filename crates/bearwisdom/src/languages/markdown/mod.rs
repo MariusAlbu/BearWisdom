@@ -31,7 +31,10 @@ pub mod host_scan;
 pub mod info_string;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::MARKDOWN_HOOKS;
 pub use profile::MARKDOWN_PROFILE;

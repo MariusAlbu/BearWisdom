@@ -1,4 +1,5 @@
-use super::MdxResolver;
+use super::hooks::MdxHooks;
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::resolve::engine::{
     build_scope_chain, RefContext, SymbolIndex,
 };
@@ -130,16 +131,14 @@ fn jsx_calls_dispatched_to_ts_resolver_for_same_file_export() {
         vec![make_ref(0, "Button", EdgeKind::Calls, 5)],
     );
     let (index, id_map) = build_env(&[&mdx]);
-    let resolver = MdxResolver;
-    let file_ctx = resolver.build_file_context(&mdx, None);
+    let file_ctx = MdxHooks.build_file_context(&mdx, None).unwrap();
     let ref_ctx = RefContext {
         extracted_ref: &mdx.refs[0],
         source_symbol: &mdx.symbols[0],
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = MdxHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("JSX Calls ref must dispatch to TS resolver and bind same-file Button");
     assert_eq!(
         res.target_symbol_id,
@@ -173,16 +172,14 @@ fn markdown_link_imports_route_through_markdown_resolver() {
     );
 
     let (index, id_map) = build_env(&[&mdx, &target]);
-    let resolver = MdxResolver;
-    let file_ctx = resolver.build_file_context(&mdx, None);
+    let file_ctx = MdxHooks.build_file_context(&mdx, None).unwrap();
     let ref_ctx = RefContext {
         extracted_ref: &mdx.refs[0],
         source_symbol: &mdx.symbols[0],
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = MdxHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("relative .md link should resolve via MarkdownResolver");
     assert_eq!(res.strategy, "markdown_relative_link");
     assert_eq!(
@@ -204,8 +201,7 @@ fn jsx_calls_with_no_matching_import_falls_through_to_unresolved() {
         vec![make_ref(0, "Unrelated", EdgeKind::Calls, 5)],
     );
     let (index, _) = build_env(&[&mdx]);
-    let resolver = MdxResolver;
-    let file_ctx = resolver.build_file_context(&mdx, None);
+    let file_ctx = MdxHooks.build_file_context(&mdx, None).unwrap();
     let ref_ctx = RefContext {
         extracted_ref: &mdx.refs[0],
         source_symbol: &mdx.symbols[0],
@@ -213,7 +209,7 @@ fn jsx_calls_with_no_matching_import_falls_through_to_unresolved() {
         file_package_id: None,
     };
     assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
+        MdxHooks.resolve_ref(&file_ctx, &ref_ctx, &index).is_none(),
         "no import → no Tier-1 resolution"
     );
 }

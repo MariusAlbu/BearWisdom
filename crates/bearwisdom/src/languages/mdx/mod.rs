@@ -20,7 +20,10 @@ pub mod embedded;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::MDX_HOOKS;
 pub use profile::MDX_PROFILE;
@@ -28,7 +31,6 @@ pub use profile::MDX_PROFILE;
 use std::sync::Arc;
 
 use crate::languages::LanguagePlugin;
-use resolve::MdxResolver;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 

@@ -1,7 +1,11 @@
-use super::resolve;
+// MDX hooks. Absorbed from the deleted `mdx/resolve.rs`. MDX dispatches by
+// ref kind: Imports go through the markdown link resolver; everything else
+// goes through TypeScript via the TS resolver.
+
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup, Resolution};
+use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct MdxHooks;
 
@@ -13,24 +17,40 @@ impl LanguageEngineHooks for MdxHooks {
         project_ctx: Option<&ProjectContext>,
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
-        resolve::infer_external_inner_with_lookup(file_ctx, ref_ctx, project_ctx, lookup)
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            return None;
+        }
+        crate::languages::typescript::resolve::infer_external_inner_with_lookup(
+            file_ctx, ref_ctx, project_ctx, lookup,
+        )
     }
 
     fn build_file_context(
         &self,
-        file: &crate::types::ParsedFile,
+        file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
-    ) -> Option<crate::indexer::resolve::engine::FileContext> {
-        Some(resolve::build_file_context_inner(file, project_ctx))
+    ) -> Option<FileContext> {
+        Some(
+            crate::languages::typescript::resolve::build_file_context_inner(
+                file, project_ctx,
+            ),
+        )
     }
 
     fn resolve_ref(
         &self,
-        file_ctx: &crate::indexer::resolve::engine::FileContext,
-        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
-        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        super::resolve::MdxResolver.resolve(file_ctx, ref_ctx, lookup)
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            return crate::languages::markdown::hooks::resolve_markdown_link(
+                file_ctx, ref_ctx, lookup,
+            );
+        }
+        crate::languages::typescript::resolve::TypeScriptResolver.resolve(
+            file_ctx, ref_ctx, lookup,
+        )
     }
 }
 
