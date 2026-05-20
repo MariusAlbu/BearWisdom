@@ -10,12 +10,14 @@
 //! - `defmacro` → Function (macro)
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
 
+pub use hooks::CLOJURE_HOOKS;
 pub use profile::CLOJURE_PROFILE;
 mod method_bodies;
 mod reitit;
@@ -86,5 +88,12 @@ impl LanguagePlugin for ClojurePlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::CLOJURE_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::CLOJURE_HOOKS)
     }
 }
