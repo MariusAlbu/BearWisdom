@@ -248,64 +248,6 @@ impl LanguageResolver for StarlarkResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // Reconstruct the full dotted path for predicate checks that inspect
-        // the chain root (native.*, ctx.*, repository_ctx.*, etc.).
-        let full_name = dotted_name(&ref_ctx.extracted_ref);
-
-        // `native.*` attribute calls are always Bazel built-ins, regardless of
-        // whether the specific method appears in the static enumeration.
-        // Covers: native.cc_binary, native.cc_test, native.py_library, etc.
-        if full_name == "native" || full_name.starts_with("native.") {
-            return Some("bazel_native".to_string());
-        }
-
-        // Bazel framework parameter roots: `ctx.*`, `repository_ctx.*`, `env.*`,
-        // `directory.*` — these are opaque objects passed by the Bazel runtime.
-        // Any dotted ref starting with one of these roots is external at any depth
-        // (covers ctx.label.name, env.expect.that_str, directory.glob, etc.).
-        if predicates::is_bazel_framework_chain(&full_name) {
-            return Some("bazel".to_string());
-        }
-
-        // Dotted method call whose tail is a Python/Starlark builtin —
-        // classify as runtime since it binds to an str/list/dict/etc. type.
-        if full_name.contains('.') && predicates::is_builtin_method_tail(&full_name) {
-            return Some("starlark-runtime".to_string());
-        }
-
-        // load() from external repositories (@bazel_skylib, @rules_*) are external.
-        // This applies to both the module-label ref and each loaded symbol ref,
-        // since extract_load_refs propagates the module path to all.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or("");
-            if module.starts_with('@') {
-                return Some("bazel".to_string());
-            }
-        }
-
-        // Import walk: if the target (or its first dotted segment) was loaded
-        // from an external @-repository, classify as external.
-        // e.g., `asserts.equals` where `asserts` was loaded from `@bazel_skylib//...`
-        let simple = full_name.split('.').next().unwrap_or(&full_name);
-        for import in &file_ctx.imports {
-            if import.imported_name != simple {
-                continue;
-            }
-            if let Some(mod_path) = &import.module_path {
-                if mod_path.starts_with('@') {
-                    return Some("bazel".to_string());
-                }
-            }
-        }
-
-        None
-    }
 }
 
 /// Convert a Bazel label to a file path.
@@ -315,4 +257,62 @@ fn bazel_label_to_path(label: &str) -> String {
     let label = label.trim_start_matches("//");
     // Replace ":" with "/" to convert package:target to a path.
     label.replacen(':', "/", 1)
+}
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    _project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    // Reconstruct the full dotted path for predicate checks that inspect
+    // the chain root (native.*, ctx.*, repository_ctx.*, etc.).
+    let full_name = dotted_name(&ref_ctx.extracted_ref);
+
+    // `native.*` attribute calls are always Bazel built-ins, regardless of
+    // whether the specific method appears in the static enumeration.
+    // Covers: native.cc_binary, native.cc_test, native.py_library, etc.
+    if full_name == "native" || full_name.starts_with("native.") {
+        return Some("bazel_native".to_string());
+    }
+
+    // Bazel framework parameter roots: `ctx.*`, `repository_ctx.*`, `env.*`,
+    // `directory.*` — these are opaque objects passed by the Bazel runtime.
+    // Any dotted ref starting with one of these roots is external at any depth
+    // (covers ctx.label.name, env.expect.that_str, directory.glob, etc.).
+    if predicates::is_bazel_framework_chain(&full_name) {
+        return Some("bazel".to_string());
+    }
+
+    // Dotted method call whose tail is a Python/Starlark builtin —
+    // classify as runtime since it binds to an str/list/dict/etc. type.
+    if full_name.contains('.') && predicates::is_builtin_method_tail(&full_name) {
+        return Some("starlark-runtime".to_string());
+    }
+
+    // load() from external repositories (@bazel_skylib, @rules_*) are external.
+    // This applies to both the module-label ref and each loaded symbol ref,
+    // since extract_load_refs propagates the module path to all.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or("");
+        if module.starts_with('@') {
+            return Some("bazel".to_string());
+        }
+    }
+
+    // Import walk: if the target (or its first dotted segment) was loaded
+    // from an external @-repository, classify as external.
+    // e.g., `asserts.equals` where `asserts` was loaded from `@bazel_skylib//...`
+    let simple = full_name.split('.').next().unwrap_or(&full_name);
+    for import in &file_ctx.imports {
+        if import.imported_name != simple {
+            continue;
+        }
+        if let Some(mod_path) = &import.module_path {
+            if mod_path.starts_with('@') {
+                return Some("bazel".to_string());
+            }
+        }
+    }
+
+    None
 }

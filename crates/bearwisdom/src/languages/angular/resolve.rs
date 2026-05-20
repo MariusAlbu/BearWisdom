@@ -127,70 +127,69 @@ impl LanguageResolver for AngularResolver {
         TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        TypeScriptResolver.infer_external_namespace(file_ctx, ref_ctx, project_ctx)
-    }
-
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        if let Some(ns) = TypeScriptResolver.infer_external_namespace_with_lookup(
-            file_ctx, ref_ctx, project_ctx, lookup,
-        ) {
-            return Some(ns);
-        }
-        // Angular-template-only fallback: PascalCase component-selector
-        // synthesized from a kebab-case HTML tag (e.g. `<lucide-icon>` →
-        // target `LucideIcon`, `<router-outlet>` → `RouterOutlet`). These
-        // never match a symbol name directly because the real class lives
-        // under a package qname (`@angular/router.RouterOutletImpl`,
-        // `lucide-angular.LucideIcon`) AND the component's kebab selector
-        // metadata isn't extracted from `@Component({selector: ...})`. When
-        // the ref is a PascalCase Calls in a template and ANY companion
-        // import is a bare-specifier, classify against that package — the
-        // template is rendering a component from one of the imported
-        // Angular modules, whichever one provides the selector.
-        let target = &ref_ctx.extracted_ref.target_name;
-        let is_component_selector_ref = ref_ctx.extracted_ref.kind == crate::types::EdgeKind::Calls
-            && target
-                .chars()
-                .next()
-                .map_or(false, |c| c.is_ascii_uppercase())
-            && !target.contains('.');
-        if !is_component_selector_ref {
-            return None;
-        }
-        // Prefer imports whose first segment looks like a component-oriented
-        // Angular package (heuristic: scoped `@org/foo` or a name containing
-        // `angular`). Those are the modules that declare selectors.
-        let mut fallback: Option<String> = None;
-        for import in &file_ctx.imports {
-            let Some(module) = import.module_path.as_deref() else {
-                continue;
-            };
-            if !crate::languages::typescript::predicates::is_bare_specifier(module) {
-                continue;
-            }
-            if fallback.is_none() {
-                fallback = Some(module.to_string());
-            }
-            if module.starts_with('@') || module.contains("angular") {
-                return Some(module.to_string());
-            }
-        }
-        fallback
-    }
 }
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    crate::languages::typescript::resolve::infer_external_inner(file_ctx, ref_ctx, project_ctx)
+}
+
+pub(super) fn infer_external_inner_with_lookup(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    if let Some(ns) = crate::languages::typescript::resolve::infer_external_inner_with_lookup(
+        file_ctx, ref_ctx, project_ctx, lookup,
+    ) {
+        return Some(ns);
+    }
+    // Angular-template-only fallback: PascalCase component-selector
+    // synthesized from a kebab-case HTML tag (e.g. `<lucide-icon>` →
+    // target `LucideIcon`, `<router-outlet>` → `RouterOutlet`). These
+    // never match a symbol name directly because the real class lives
+    // under a package qname (`@angular/router.RouterOutletImpl`,
+    // `lucide-angular.LucideIcon`) AND the component's kebab selector
+    // metadata isn't extracted from `@Component({selector: ...})`. When
+    // the ref is a PascalCase Calls in a template and ANY companion
+    // import is a bare-specifier, classify against that package — the
+    // template is rendering a component from one of the imported
+    // Angular modules, whichever one provides the selector.
+    let target = &ref_ctx.extracted_ref.target_name;
+    let is_component_selector_ref = ref_ctx.extracted_ref.kind == crate::types::EdgeKind::Calls
+        && target
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_uppercase())
+        && !target.contains('.');
+    if !is_component_selector_ref {
+        return None;
+    }
+    // Prefer imports whose first segment looks like a component-oriented
+    // Angular package (heuristic: scoped `@org/foo` or a name containing
+    // `angular`). Those are the modules that declare selectors.
+    let mut fallback: Option<String> = None;
+    for import in &file_ctx.imports {
+        let Some(module) = import.module_path.as_deref() else {
+            continue;
+        };
+        if !crate::languages::typescript::predicates::is_bare_specifier(module) {
+            continue;
+        }
+        if fallback.is_none() {
+            fallback = Some(module.to_string());
+        }
+        if module.starts_with('@') || module.contains("angular") {
+            return Some(module.to_string());
+        }
+    }
+    fallback
+}

@@ -73,36 +73,33 @@ impl LanguageResolver for MdxResolver {
         TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return MarkdownResolver.infer_external_namespace(file_ctx, ref_ctx, project_ctx);
-        }
-        TypeScriptResolver.infer_external_namespace(file_ctx, ref_ctx, project_ctx)
-    }
-
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return MarkdownResolver.infer_external_namespace_with_lookup(
-                file_ctx, ref_ctx, project_ctx, lookup,
-            );
-        }
-        TypeScriptResolver.infer_external_namespace_with_lookup(
-            file_ctx, ref_ctx, project_ctx, lookup,
-        )
-    }
 }
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        return None;
+    }
+    crate::languages::typescript::resolve::infer_external_inner(file_ctx, ref_ctx, project_ctx)
+}
+
+pub(super) fn infer_external_inner_with_lookup(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        return None;
+    }
+    crate::languages::typescript::resolve::infer_external_inner_with_lookup(
+        file_ctx, ref_ctx, project_ctx, lookup,
+    )
+}

@@ -214,73 +214,6 @@ impl LanguageResolver for PowerShellResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // Part 3: member-access refs on .NET-bound variables → dotnet-stdlib.
-        // Covers both property reads (TypeRef) and method calls (Calls):
-        //   $border.Style          → module="border", kind=TypeRef
-        //   $border.Add_Click(…)   → module="border", kind=Calls
-        //
-        // Also covers static member access on .NET type literals:
-        //   [Windows.Visibility]::Visible  → module="Windows.Visibility", kind=TypeRef
-        //   [System.IO.File]::Exists(…)    → module="System.IO.File", kind=Calls
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            if is_dotnet_bound_var(module, file_ctx) {
-                return Some(DOTNET_BINDING_SENTINEL.to_string());
-            }
-            // Static member on a bare .NET type literal (no sentinel needed —
-            // the type name itself is the signal).
-            if is_dotnet_type_name(module) {
-                return Some(DOTNET_BINDING_SENTINEL.to_string());
-            }
-        }
-
-        // PowerShell auto-loads modules on first cmdlet use — a bare
-        // `Verb-Noun` call doesn't need an explicit import. Route any
-        // unresolved ref matching the cmdlet pattern to the stdlib/gallery
-        // ecosystem so the demand loop can surface it.
-        let target = &ref_ctx.extracted_ref.target_name;
-        if is_cmdlet_name(target) {
-            return Some("powershell-stdlib".to_string());
-        }
-        // Unqualified .NET base type used as inheritance / parameter target
-        // (`class MyError : Exception`, `[Object] $x`). Route to dotnet-stdlib
-        // so the ref leaves unresolved_refs without polluting the graph.
-        if is_dotnet_type_name(target) {
-            return Some(DOTNET_BINDING_SENTINEL.to_string());
-        }
-        // Module-qualified cmdlet call: `PSDscRunAsCredential\Set-X`. The
-        // module prefix names the gallery / DSC module that owns the
-        // cmdlet — classify under that module so DSC resource invocations
-        // leave unresolved_refs without polluting the graph.
-        if let Some((module_part, leaf)) = target.split_once('\\') {
-            if !module_part.is_empty() && is_cmdlet_name(leaf) {
-                return Some(module_part.to_string());
-            }
-        }
-
-        // External executables invoked as PowerShell commands — `git`,
-        // `dotnet`, `npm`, `curl`, `fsh`, etc. These are not PowerShell
-        // symbols at all; they're processes resolved via `$env:PATH` at
-        // runtime. Classify them under the `cli` namespace so they leave
-        // unresolved_refs while the graph still records the invocation.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Calls
-            && looks_like_external_executable(&ref_ctx.extracted_ref.target_name)
-        {
-            return Some("cli".to_string());
-        }
-
-        // PowerShell built-in cmdlets and language keywords classify via
-        // the engine's keywords() set populated from powershell/keywords.rs;
-        // powershell_stdlib + powershell_cmdlet_types walkers emit real
-        // symbols for installed module cmdlets.
-        let _ = (file_ctx, ref_ctx, project_ctx);
-        None
-    }
 }
 
 /// A command name looks like an external executable when it:
@@ -359,4 +292,71 @@ fn is_cmdlet_name(name: &str) -> bool {
         it.all(|c| c.is_ascii_alphanumeric() || c == '_')
     };
     is_ident_part(verb) && is_ident_part(noun)
+}
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    // Part 3: member-access refs on .NET-bound variables → dotnet-stdlib.
+    // Covers both property reads (TypeRef) and method calls (Calls):
+    //   $border.Style          → module="border", kind=TypeRef
+    //   $border.Add_Click(…)   → module="border", kind=Calls
+    //
+    // Also covers static member access on .NET type literals:
+    //   [Windows.Visibility]::Visible  → module="Windows.Visibility", kind=TypeRef
+    //   [System.IO.File]::Exists(…)    → module="System.IO.File", kind=Calls
+    if let Some(module) = &ref_ctx.extracted_ref.module {
+        if is_dotnet_bound_var(module, file_ctx) {
+            return Some(DOTNET_BINDING_SENTINEL.to_string());
+        }
+        // Static member on a bare .NET type literal (no sentinel needed —
+        // the type name itself is the signal).
+        if is_dotnet_type_name(module) {
+            return Some(DOTNET_BINDING_SENTINEL.to_string());
+        }
+    }
+
+    // PowerShell auto-loads modules on first cmdlet use — a bare
+    // `Verb-Noun` call doesn't need an explicit import. Route any
+    // unresolved ref matching the cmdlet pattern to the stdlib/gallery
+    // ecosystem so the demand loop can surface it.
+    let target = &ref_ctx.extracted_ref.target_name;
+    if is_cmdlet_name(target) {
+        return Some("powershell-stdlib".to_string());
+    }
+    // Unqualified .NET base type used as inheritance / parameter target
+    // (`class MyError : Exception`, `[Object] $x`). Route to dotnet-stdlib
+    // so the ref leaves unresolved_refs without polluting the graph.
+    if is_dotnet_type_name(target) {
+        return Some(DOTNET_BINDING_SENTINEL.to_string());
+    }
+    // Module-qualified cmdlet call: `PSDscRunAsCredential\Set-X`. The
+    // module prefix names the gallery / DSC module that owns the
+    // cmdlet — classify under that module so DSC resource invocations
+    // leave unresolved_refs without polluting the graph.
+    if let Some((module_part, leaf)) = target.split_once('\\') {
+        if !module_part.is_empty() && is_cmdlet_name(leaf) {
+            return Some(module_part.to_string());
+        }
+    }
+
+    // External executables invoked as PowerShell commands — `git`,
+    // `dotnet`, `npm`, `curl`, `fsh`, etc. These are not PowerShell
+    // symbols at all; they're processes resolved via `$env:PATH` at
+    // runtime. Classify them under the `cli` namespace so they leave
+    // unresolved_refs while the graph still records the invocation.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Calls
+        && looks_like_external_executable(&ref_ctx.extracted_ref.target_name)
+    {
+        return Some("cli".to_string());
+    }
+
+    // PowerShell built-in cmdlets and language keywords classify via
+    // the engine's keywords() set populated from powershell/keywords.rs;
+    // powershell_stdlib + powershell_cmdlet_types walkers emit real
+    // symbols for installed module cmdlets.
+    let _ = (file_ctx, ref_ctx, project_ctx);
+    None
 }

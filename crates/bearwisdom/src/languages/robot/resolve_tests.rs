@@ -189,7 +189,9 @@ fn infer_ns_first_ref(file: &ParsedFile, all_files: &[&ParsedFile]) -> Option<St
         scope_chain: build_scope_chain(src_sym.scope_path.as_deref()),
     file_package_id: None,
     };
-    resolver.infer_external_namespace(&file_ctx, &ref_ctx, None)
+    use crate::type_checker::profile::hooks::LanguageEngineHooks;
+    let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+    crate::languages::robot::hooks::RobotHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
 }
 
 // ---------------------------------------------------------------------------
@@ -618,7 +620,11 @@ fn qualified_library_keyword_external_namespace() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::robot::hooks::RobotHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(
         ns.as_deref(),
         Some("SeleniumLibrary"),

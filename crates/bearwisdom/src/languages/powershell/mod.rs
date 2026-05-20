@@ -17,10 +17,12 @@ mod dotnet_bindings;
 mod node_helpers;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::POWERSHELL_HOOKS;
 pub use profile::POWERSHELL_PROFILE;
 
 #[cfg(test)]
@@ -88,5 +90,12 @@ impl LanguagePlugin for PowerShellPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::POWERSHELL_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::POWERSHELL_HOOKS)
     }
 }

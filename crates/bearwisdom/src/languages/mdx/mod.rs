@@ -18,9 +18,11 @@
 
 pub mod embedded;
 pub mod extract;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::MDX_HOOKS;
 pub use profile::MDX_PROFILE;
 
 use std::sync::Arc;
@@ -89,5 +91,12 @@ impl LanguagePlugin for MdxPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::MDX_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::MDX_HOOKS)
     }
 }

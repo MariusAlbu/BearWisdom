@@ -15,9 +15,11 @@
 //! angular.json or @angular/* deps in package.json).
 
 pub mod extract;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::ANGULAR_HOOKS;
 pub use profile::ANGULAR_PROFILE;
 
 #[cfg(test)]
@@ -90,5 +92,12 @@ impl LanguagePlugin for AngularPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ANGULAR_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::ANGULAR_HOOKS)
     }
 }

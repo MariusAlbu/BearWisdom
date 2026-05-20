@@ -188,8 +188,9 @@ fn test_sentinel_constant() {
 // infer_external_namespace — integration via FileContext
 // ---------------------------------------------------------------------------
 
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, LanguageResolver};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, LanguageResolver, RefContext, SymbolIndex};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use std::collections::HashMap;
 use super::resolve::PowerShellResolver;
 
 fn make_file_ctx_with_binding(var_name: &str) -> FileContext {
@@ -255,7 +256,11 @@ fn test_infer_external_ns_dotnet_property() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(ns, Some("dotnet-stdlib".to_string()));
 }
 
@@ -271,7 +276,11 @@ fn test_infer_external_ns_dotnet_method() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(ns, Some("dotnet-stdlib".to_string()));
 }
 
@@ -288,7 +297,11 @@ fn test_infer_external_ns_unbound_var() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_ne!(ns, Some("dotnet-stdlib".to_string()));
 }
 
@@ -321,7 +334,11 @@ fn test_infer_external_ns_cmdlet_no_module() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(ns, Some("powershell-stdlib".to_string()));
 }
 
@@ -343,7 +360,11 @@ fn test_part1_sync_registry_var_classifies_as_dotnet() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(ns, Some("dotnet-stdlib".to_string()));
 }
 
@@ -359,7 +380,11 @@ fn test_part1_sync_invoke_classifies_as_dotnet() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(ns, Some("dotnet-stdlib".to_string()));
 }
 
@@ -376,7 +401,11 @@ fn test_part1_sync_text_visibility_findname() {
             scope_chain: vec![],
             file_package_id: None,
         };
-        let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+        let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
         assert_eq!(
             ns,
             Some("dotnet-stdlib".to_string()),
@@ -401,7 +430,11 @@ fn test_part2_pipeline_var_visibility_classifies_as_dotnet() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(ns, Some("dotnet-stdlib".to_string()));
 }
 
@@ -417,7 +450,11 @@ fn test_part2_pipeline_var_text_classifies_as_dotnet() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(ns, Some("dotnet-stdlib".to_string()));
 }
 
@@ -461,7 +498,11 @@ fn test_part3_infer_external_ns_cmdlet_result() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::powershell::hooks::PowerShellHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    };
     assert_eq!(ns, Some("dotnet-stdlib".to_string()));
 }
 

@@ -882,7 +882,7 @@ impl LanguageResolver for TypeScriptResolver {
 
 }
 
-pub(super) fn infer_external_inner(
+pub(crate) fn infer_external_inner(
     file_ctx: &FileContext,
     ref_ctx: &RefContext,
     project_ctx: Option<&ProjectContext>,
@@ -1013,7 +1013,7 @@ pub(super) fn infer_external_inner(
     None
 }
 
-pub(super) fn infer_external_inner_with_lookup(
+pub(crate) fn infer_external_inner_with_lookup(
     file_ctx: &FileContext,
     ref_ctx: &RefContext,
     project_ctx: Option<&ProjectContext>,

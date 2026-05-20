@@ -616,42 +616,42 @@ impl LanguageResolver for RobotResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
+}
 
-        // Library imports: non-file-path imports are external Robot libraries.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            if !path.contains('/') && !path.contains('\\') && !path.ends_with(".robot")
-                && !path.ends_with(".resource")
-            {
-                return Some("robot".to_string());
-            }
-            return None;
-        }
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    _project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
 
-        // Qualified `Library.Keyword` call: namespace is the library name.
-        // Reuses the same multi-segment resolution as Step 1 of `resolve()`
-        // so dotted libraries like `libraryscope.Global` are classified
-        // external instead of leaking as unresolved.
-        if let Some((lib, _)) = resolve_qualified_library(
-            file_ctx,
-            ref_ctx.extracted_ref.module.as_deref(),
-            target,
-        ) {
-            return Some(lib);
-        }
-
-        // Variable references that weren't resolved are external (env vars, CLI vars, etc.).
-        if is_variable_ref(target) {
+    // Library imports: non-file-path imports are external Robot libraries.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+        if !path.contains('/') && !path.contains('\\') && !path.ends_with(".robot")
+            && !path.ends_with(".resource")
+        {
             return Some("robot".to_string());
         }
-
-        None
+        return None;
     }
+
+    // Qualified `Library.Keyword` call: namespace is the library name.
+    // Reuses the same multi-segment resolution as Step 1 of `resolve()`
+    // so dotted libraries like `libraryscope.Global` are classified
+    // external instead of leaking as unresolved.
+    if let Some((lib, _)) = resolve_qualified_library(
+        file_ctx,
+        ref_ctx.extracted_ref.module.as_deref(),
+        target,
+    ) {
+        return Some(lib);
+    }
+
+    // Variable references that weren't resolved are external (env vars, CLI vars, etc.).
+    if is_variable_ref(target) {
+        return Some("robot".to_string());
+    }
+
+    None
 }

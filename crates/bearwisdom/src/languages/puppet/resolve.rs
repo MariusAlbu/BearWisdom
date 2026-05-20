@@ -204,63 +204,6 @@ impl LanguageResolver for PuppetResolver {
         engine::resolve_common("puppet", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Puppet built-in global variables: `$facts`, `$trusted`, `$server_facts`,
-        // etc. are always available without declaration.
-        if is_puppet_global_var(target) {
-            return Some("puppet-stdlib".to_string());
-        }
-
-        // Any `<prefix>::<rest>` reference that reached infer_external_namespace
-        // (i.e. resolve already failed to find a project symbol for it) belongs
-        // to a module Puppet would have auto-loaded from the module path. Classify
-        // it as external under the prefix's namespace — the prefix is the module
-        // name in every real Puppet codebase. Declared forge modules get the
-        // `puppet_forge::<prefix>` bucket; everything else falls into
-        // `puppet_module::<prefix>` so cross-project dashboards can still group
-        // them.
-        if let Some(prefix) = target.split("::").next() {
-            // Strip a leading `$` for variable refs like `$mysql::server::opt` —
-            // the prefix is `mysql`, the rest is a class-scoped variable.
-            let bare_prefix = prefix.strip_prefix('$').unwrap_or(prefix);
-            if !bare_prefix.is_empty()
-                && bare_prefix.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                && target.contains("::")
-            {
-                let is_declared_forge = file_ctx
-                    .imports
-                    .iter()
-                    .any(|i| i.module_path.as_deref() == Some(bare_prefix));
-                if is_declared_forge {
-                    return Some(format!("puppet_forge::{bare_prefix}"));
-                }
-                return Some(format!("puppet_module::{bare_prefix}"));
-            }
-        }
-
-        // Bare-name fall-through: Puppet auto-loads classes, defined types,
-        // and functions from the module path. A reference that reached this
-        // point exhausted resolve()'s same-file, synthetic, qualified, and
-        // global lookups — Puppet's loader would have searched the module
-        // path next, so classify as external rather than leave unresolved.
-        // Skip variables (start with `$`) since those genuinely indicate a
-        // missing local binding the maintainer should see.
-        if !target.is_empty()
-            && !target.starts_with('$')
-            && ref_ctx.extracted_ref.kind != EdgeKind::Imports
-            && target.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
-        {
-            return Some("puppet_module::external".to_string());
-        }
-        None
-    }
 }
 
 /// Puppet's built-in top-level variables, always in scope without declaration.
@@ -325,3 +268,60 @@ fn is_puppet_global_var(name: &str) -> bool {
     )
 }
 
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    _project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    // Puppet built-in global variables: `$facts`, `$trusted`, `$server_facts`,
+    // etc. are always available without declaration.
+    if is_puppet_global_var(target) {
+        return Some("puppet-stdlib".to_string());
+    }
+
+    // Any `<prefix>::<rest>` reference that reached infer_external_namespace
+    // (i.e. resolve already failed to find a project symbol for it) belongs
+    // to a module Puppet would have auto-loaded from the module path. Classify
+    // it as external under the prefix's namespace — the prefix is the module
+    // name in every real Puppet codebase. Declared forge modules get the
+    // `puppet_forge::<prefix>` bucket; everything else falls into
+    // `puppet_module::<prefix>` so cross-project dashboards can still group
+    // them.
+    if let Some(prefix) = target.split("::").next() {
+        // Strip a leading `$` for variable refs like `$mysql::server::opt` —
+        // the prefix is `mysql`, the rest is a class-scoped variable.
+        let bare_prefix = prefix.strip_prefix('$').unwrap_or(prefix);
+        if !bare_prefix.is_empty()
+            && bare_prefix.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && target.contains("::")
+        {
+            let is_declared_forge = file_ctx
+                .imports
+                .iter()
+                .any(|i| i.module_path.as_deref() == Some(bare_prefix));
+            if is_declared_forge {
+                return Some(format!("puppet_forge::{bare_prefix}"));
+            }
+            return Some(format!("puppet_module::{bare_prefix}"));
+        }
+    }
+
+    // Bare-name fall-through: Puppet auto-loads classes, defined types,
+    // and functions from the module path. A reference that reached this
+    // point exhausted resolve()'s same-file, synthetic, qualified, and
+    // global lookups — Puppet's loader would have searched the module
+    // path next, so classify as external rather than leave unresolved.
+    // Skip variables (start with `$`) since those genuinely indicate a
+    // missing local binding the maintainer should see.
+    if !target.is_empty()
+        && !target.starts_with('$')
+        && ref_ctx.extracted_ref.kind != EdgeKind::Imports
+        && target.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+    {
+        return Some("puppet_module::external".to_string());
+    }
+    None
+}
