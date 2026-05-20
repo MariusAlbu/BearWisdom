@@ -354,22 +354,27 @@ impl SymbolIndex {
                     .map(|id| arena.format_type(*id))
                     .collect();
             }
-            if ti.generic_param_type_ids.is_empty() && !ti.generic_params.is_empty() {
-                ti.generic_param_type_ids = ti
-                    .generic_params
-                    .iter()
-                    .map(|name| {
-                        let param = arena.intern_generic(
-                            crate::type_checker::core::types::GenericParamData {
-                                name: name.clone(),
-                                owner_symbol_index: 0,
-                                bound: None,
-                            },
-                        );
-                        arena.intern(crate::type_checker::core::types::Type::Generic { param })
-                    })
-                    .collect();
+        }
+
+        for (key, ti) in self.type_info.iter_mut() {
+            if !ti.generic_param_type_ids.is_empty() || ti.generic_params.is_empty() {
+                continue;
             }
+            let owner_id = self.by_qname.get(key).map(|info| info.id).unwrap_or(0) as usize;
+            ti.generic_param_type_ids = ti
+                .generic_params
+                .iter()
+                .map(|name| {
+                    let param = arena.intern_generic(
+                        crate::type_checker::core::types::GenericParamData {
+                            name: name.clone(),
+                            owner_symbol_index: owner_id,
+                            bound: None,
+                        },
+                    );
+                    arena.intern(crate::type_checker::core::types::Type::Generic { param })
+                })
+                .collect();
         }
     }
 

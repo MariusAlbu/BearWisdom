@@ -877,22 +877,34 @@ impl SymbolIndex {
                     .map(|id| type_arena.format_type(*id))
                     .collect();
             }
-            if ti.generic_param_type_ids.is_empty() && !ti.generic_params.is_empty() {
-                ti.generic_param_type_ids = ti
-                    .generic_params
-                    .iter()
-                    .map(|name| {
-                        let param = type_arena.intern_generic(
-                            crate::type_checker::core::types::GenericParamData {
-                                name: name.clone(),
-                                owner_symbol_index: 0,
-                                bound: None,
-                            },
-                        );
-                        type_arena.intern(crate::type_checker::core::types::Type::Generic { param })
-                    })
-                    .collect();
+        }
+
+        // generic_params get their TypeId companions interned through
+        // arena.intern_generic. Owner is the symbol DB id when the
+        // type_info key resolves to a unique symbol via by_qname — so T
+        // declared on class A and T declared on class B get distinct
+        // GenericParamIds. When no unique owner exists (simple-name keys
+        // that collide across files, ambient declarations), owner stays
+        // 0 and same-name params collapse — a known-and-documented loss.
+        for (key, ti) in type_info.iter_mut() {
+            if !ti.generic_param_type_ids.is_empty() || ti.generic_params.is_empty() {
+                continue;
             }
+            let owner_id = by_qname.get(key).map(|info| info.id).unwrap_or(0) as usize;
+            ti.generic_param_type_ids = ti
+                .generic_params
+                .iter()
+                .map(|name| {
+                    let param = type_arena.intern_generic(
+                        crate::type_checker::core::types::GenericParamData {
+                            name: name.clone(),
+                            owner_symbol_index: owner_id,
+                            bound: None,
+                        },
+                    );
+                    type_arena.intern(crate::type_checker::core::types::Type::Generic { param })
+                })
+                .collect();
         }
 
         Self {
