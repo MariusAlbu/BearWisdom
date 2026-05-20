@@ -14,9 +14,11 @@ pub mod extract;
 
 mod chain;
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use profile::ADA_PROFILE;
 pub use resolve::AdaResolver;
 
 #[cfg(test)]
@@ -85,5 +87,11 @@ impl LanguagePlugin for AdaPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::AdaChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::ADA_PROFILE)
     }
 }

@@ -22,7 +22,10 @@ pub mod keywords;
 pub mod macro_catalog;
 
 mod predicates;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::C_LANG_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -134,6 +137,12 @@ impl LanguagePlugin for CLangPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::CChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::C_LANG_PROFILE)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
