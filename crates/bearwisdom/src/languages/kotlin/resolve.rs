@@ -658,7 +658,7 @@ pub(crate) fn detect_flow_inner(
     // ExtractedRoute adapter for Spring-Kotlin. Retrofit `@GET("/x")`
     // attribute Producer.
     if r.kind == EdgeKind::TypeRef {
-        if let Some(em) = super::super::java::resolve::detect_retrofit_attribute_emission(
+        if let Some(em) = super::super::java::hooks::detect_retrofit_attribute_emission(
             r.target_name.as_str(),
             r.module.as_deref(),
         ) {

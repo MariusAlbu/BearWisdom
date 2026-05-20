@@ -1,4 +1,4 @@
-use super::resolve::JavaResolver;
+use super::hooks::JavaResolver;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolInfo};
 use crate::types::*;
@@ -430,7 +430,7 @@ fn make_chain(segments: &[&str]) -> MemberChain {
 #[test]
 fn test_java_resttemplate_get_for_object_emits_producer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_java_http_chain_emission;
+    use super::hooks::detect_java_http_chain_emission;
 
     let chain = make_chain(&["restTemplate", "getForObject"]);
     let call_args = vec![
@@ -451,7 +451,7 @@ fn test_java_resttemplate_get_for_object_emits_producer() {
 #[test]
 fn test_java_resttemplate_post_for_entity_emits_post() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_java_http_chain_emission;
+    use super::hooks::detect_java_http_chain_emission;
 
     let chain = make_chain(&["restTemplate", "postForEntity"]);
     let call_args = vec![
@@ -471,7 +471,7 @@ fn test_java_resttemplate_post_for_entity_emits_post() {
 #[test]
 fn test_java_webclient_get_uri_emits_producer() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_java_http_chain_emission;
+    use super::hooks::detect_java_http_chain_emission;
 
     let chain = make_chain(&["webClient", "get", "uri"]);
     let call_args = vec![CallArg::StringLit("/api/things".to_string())];
@@ -487,7 +487,7 @@ fn test_java_webclient_get_uri_emits_producer() {
 #[test]
 fn test_java_okhttp_url_emits_any_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_java_http_chain_emission;
+    use super::hooks::detect_java_http_chain_emission;
 
     let chain = make_chain(&["builder", "url"]);
     let call_args = vec![CallArg::StringLit("https://api.example.com/x".to_string())];
@@ -502,7 +502,7 @@ fn test_java_okhttp_url_emits_any_method() {
 
 #[test]
 fn test_java_http_no_emit_for_unknown_verb() {
-    use super::resolve::detect_java_http_chain_emission;
+    use super::hooks::detect_java_http_chain_emission;
 
     let chain = make_chain(&["restTemplate", "doSomething"]);
     let call_args = vec![CallArg::StringLit("/x".to_string())];
@@ -511,7 +511,7 @@ fn test_java_http_no_emit_for_unknown_verb() {
 
 #[test]
 fn test_java_http_no_emit_when_url_is_variable() {
-    use super::resolve::detect_java_http_chain_emission;
+    use super::hooks::detect_java_http_chain_emission;
 
     let chain = make_chain(&["restTemplate", "getForObject"]);
     let call_args = vec![CallArg::Ident("url".to_string()), CallArg::Ident("Object".to_string())];
@@ -521,7 +521,7 @@ fn test_java_http_no_emit_when_url_is_variable() {
 #[test]
 fn test_java_jpa_find_emits_dbquery() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_java_db_query_emission;
+    use super::hooks::detect_java_db_query_emission;
 
     let chain = make_chain(&["entityManager", "find"]);
     let call_args = vec![CallArg::Ident("User".to_string()), CallArg::Literal("1".to_string())];
@@ -537,7 +537,7 @@ fn test_java_jpa_find_emits_dbquery() {
 #[test]
 fn test_java_jpa_create_query_emits_dbquery() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_java_db_query_emission;
+    use super::hooks::detect_java_db_query_emission;
 
     let chain = make_chain(&["entityManager", "createQuery"]);
     let call_args = vec![
@@ -555,7 +555,7 @@ fn test_java_jpa_create_query_emits_dbquery() {
 
 #[test]
 fn test_java_jpa_no_emit_without_entity_class() {
-    use super::resolve::detect_java_db_query_emission;
+    use super::hooks::detect_java_db_query_emission;
 
     let chain = make_chain(&["entityManager", "find"]);
     let call_args = vec![CallArg::Ident("entity".to_string())];
@@ -564,7 +564,7 @@ fn test_java_jpa_no_emit_without_entity_class() {
 
 #[test]
 fn test_java_jpa_no_emit_for_unknown_method() {
-    use super::resolve::detect_java_db_query_emission;
+    use super::hooks::detect_java_db_query_emission;
 
     let chain = make_chain(&["entityManager", "flush"]);
     let call_args: Vec<CallArg> = vec![];
@@ -574,7 +574,7 @@ fn test_java_jpa_no_emit_for_unknown_method() {
 #[test]
 fn test_java_spring_data_query_annotation_emits_dbquery() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_jpa_query_annotation_emission;
+    use super::hooks::detect_jpa_query_annotation_emission;
 
     let sql = "SELECT u FROM User u WHERE u.email = :email";
     match detect_jpa_query_annotation_emission("Query", Some(sql)).unwrap() {
@@ -588,7 +588,7 @@ fn test_java_spring_data_query_annotation_emits_dbquery() {
 
 #[test]
 fn test_java_query_annotation_no_emit_for_other_annotations() {
-    use super::resolve::detect_jpa_query_annotation_emission;
+    use super::hooks::detect_jpa_query_annotation_emission;
 
     assert!(detect_jpa_query_annotation_emission("GetMapping", Some("/x")).is_none());
     assert!(detect_jpa_query_annotation_emission("Service", None).is_none());
@@ -603,7 +603,7 @@ fn test_java_query_annotation_no_emit_for_other_annotations() {
 #[test]
 fn test_java_jdbc_template_query_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_java_jdbc_template_emission;
+    use super::hooks::detect_java_jdbc_template_emission;
 
     let chain = make_chain(&["jdbcTemplate", "query"]);
     let args = vec![CallArg::StringLit("SELECT id FROM users WHERE x = ?".to_string()), CallArg::Other];
@@ -619,7 +619,7 @@ fn test_java_jdbc_template_query_select() {
 #[test]
 fn test_java_jdbc_template_update() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_java_jdbc_template_emission;
+    use super::hooks::detect_java_jdbc_template_emission;
 
     let chain = make_chain(&["jdbcTemplate", "update"]);
     let args = vec![CallArg::StringLit("UPDATE accounts SET balance = ? WHERE id = ?".to_string())];
@@ -634,7 +634,7 @@ fn test_java_jdbc_template_update() {
 
 #[test]
 fn test_java_jdbc_template_rejects_non_template_root() {
-    use super::resolve::detect_java_jdbc_template_emission;
+    use super::hooks::detect_java_jdbc_template_emission;
 
     let chain = make_chain(&["someService", "query"]);
     let args = vec![CallArg::StringLit("SELECT * FROM x".to_string())];
@@ -644,7 +644,7 @@ fn test_java_jdbc_template_rejects_non_template_root() {
 #[test]
 fn test_java_retrofit_get_attribute_emits_producer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_retrofit_attribute_emission;
+    use super::hooks::detect_retrofit_attribute_emission;
 
     match detect_retrofit_attribute_emission("GET", Some("/api/users")).unwrap() {
         FlowEmission::NamedChannel { kind, role, name, method, .. } => {
@@ -660,7 +660,7 @@ fn test_java_retrofit_get_attribute_emits_producer() {
 #[test]
 fn test_java_retrofit_post_emits_post_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_retrofit_attribute_emission;
+    use super::hooks::detect_retrofit_attribute_emission;
 
     match detect_retrofit_attribute_emission("POST", Some("/login")).unwrap() {
         FlowEmission::NamedChannel { method, .. } => assert_eq!(method, Some(HttpMethod::Post)),
@@ -670,7 +670,7 @@ fn test_java_retrofit_post_emits_post_method() {
 
 #[test]
 fn test_java_retrofit_rejects_non_verb_attribute() {
-    use super::resolve::detect_retrofit_attribute_emission;
+    use super::hooks::detect_retrofit_attribute_emission;
 
     assert!(detect_retrofit_attribute_emission("Service", Some("/x")).is_none());
     assert!(detect_retrofit_attribute_emission("GET", None).is_none());
@@ -680,7 +680,7 @@ fn test_java_retrofit_rejects_non_verb_attribute() {
 #[test]
 fn test_java_grpc_stub_emits_rpc_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_java_grpc_stub_emission;
+    use super::hooks::detect_java_grpc_stub_emission;
 
     let chain = make_chain(&["UserServiceGrpc", "newBlockingStub", "getUser"]);
     match detect_java_grpc_stub_emission(&chain).unwrap() {
@@ -695,7 +695,7 @@ fn test_java_grpc_stub_emits_rpc_call() {
 
 #[test]
 fn test_java_grpc_future_stub_works() {
-    use super::resolve::detect_java_grpc_stub_emission;
+    use super::hooks::detect_java_grpc_stub_emission;
 
     let chain = make_chain(&["HelloServiceGrpc", "newFutureStub", "sayHello"]);
     assert!(detect_java_grpc_stub_emission(&chain).is_some());
@@ -703,7 +703,7 @@ fn test_java_grpc_future_stub_works() {
 
 #[test]
 fn test_java_grpc_rejects_non_grpc_root() {
-    use super::resolve::detect_java_grpc_stub_emission;
+    use super::hooks::detect_java_grpc_stub_emission;
 
     let chain = make_chain(&["UserService", "newBlockingStub", "getUser"]);
     assert!(detect_java_grpc_stub_emission(&chain).is_none());
@@ -712,7 +712,7 @@ fn test_java_grpc_rejects_non_grpc_root() {
 #[test]
 fn test_java_quartz_schedule_emits_bgjob() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_java_quartz_emission;
+    use super::hooks::detect_java_quartz_emission;
     let chain = make_chain(&["scheduler", "scheduleJob"]);
     match detect_java_quartz_emission(&chain).unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {
@@ -727,7 +727,7 @@ fn test_java_quartz_schedule_emits_bgjob() {
 #[test]
 fn test_java_kafka_template_send_emits_mq_with_topic() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_java_jms_kafka_emission;
+    use super::hooks::detect_java_jms_kafka_emission;
     let chain = make_chain(&["kafkaTemplate", "send"]);
     let args = vec![
         CallArg::StringLit("user.created".to_string()),
@@ -745,7 +745,7 @@ fn test_java_kafka_template_send_emits_mq_with_topic() {
 #[test]
 fn test_java_jms_template_send_emits_mq() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_java_jms_kafka_emission;
+    use super::hooks::detect_java_jms_kafka_emission;
     let chain = make_chain(&["jmsTemplate", "send"]);
     match detect_java_jms_kafka_emission(&chain, &[]).unwrap() {
         FlowEmission::NamedChannel { kind, name, .. } => {
@@ -759,7 +759,7 @@ fn test_java_jms_template_send_emits_mq() {
 #[test]
 fn test_java_redis_template_get_emits_config_lookup() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_java_redis_template_emission;
+    use super::hooks::detect_java_redis_template_emission;
     let chain = make_chain(&["redisTemplate", "opsForValue", "get"]);
     let args = vec![CallArg::StringLit("feature:flag".to_string())];
     match detect_java_redis_template_emission(&chain, &args).unwrap() {
@@ -771,7 +771,7 @@ fn test_java_redis_template_get_emits_config_lookup() {
 #[test]
 fn test_java_message_mapping_emits_ws_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_java_message_mapping_emission;
+    use super::hooks::detect_java_message_mapping_emission;
     match detect_java_message_mapping_emission("MessageMapping", Some("/chat/{room}")).unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
@@ -784,14 +784,14 @@ fn test_java_message_mapping_emits_ws_consumer() {
 
 #[test]
 fn test_java_message_mapping_rejects_other_annotations() {
-    use super::resolve::detect_java_message_mapping_emission;
+    use super::hooks::detect_java_message_mapping_emission;
     assert!(detect_java_message_mapping_emission("Component", None).is_none());
 }
 
 #[test]
 fn test_java_jakarta_server_endpoint_with_path() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_java_message_mapping_emission;
+    use super::hooks::detect_java_message_mapping_emission;
     match detect_java_message_mapping_emission("ServerEndpoint", Some("/ws/chat")).unwrap() {
         FlowEmission::NamedChannel { kind, name, .. } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
@@ -803,7 +803,7 @@ fn test_java_jakarta_server_endpoint_with_path() {
 
 #[test]
 fn test_java_jakarta_on_open_recognised() {
-    use super::resolve::detect_java_message_mapping_emission;
+    use super::hooks::detect_java_message_mapping_emission;
     assert!(detect_java_message_mapping_emission("OnOpen", None).is_some());
     assert!(detect_java_message_mapping_emission("OnClose", None).is_some());
     assert!(detect_java_message_mapping_emission("OnError", None).is_some());

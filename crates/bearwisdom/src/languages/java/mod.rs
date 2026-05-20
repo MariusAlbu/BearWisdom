@@ -15,9 +15,9 @@ pub mod hooks;
 mod predicates;
 pub mod profile;
 pub(crate) mod type_checker;
-pub mod resolve;
 
 pub use hooks::JAVA_HOOKS;
+pub use hooks::JavaResolver;
 pub use profile::JAVA_PROFILE;
 
 #[cfg(test)]
@@ -39,8 +39,6 @@ mod predicates_tests;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::JavaResolver;
 
 pub struct JavaPlugin;
 

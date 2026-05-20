@@ -4,8 +4,8 @@
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
-use crate::languages::java::resolve::infer_external_inner as java_infer;
-use crate::languages::java::resolve::JavaResolver;
+use crate::languages::java::hooks::infer_external_inner as java_infer;
+use crate::languages::java::hooks::JavaResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, MemberChain, ParsedFile};
 
@@ -55,7 +55,7 @@ impl LanguageEngineHooks for GroovyHooks {
         _lookup: &dyn SymbolLookup,
     ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
         let mut emissions =
-            crate::languages::java::resolve::detect_flow_inner(file_ctx, ref_ctx);
+            crate::languages::java::hooks::detect_flow_inner(file_ctx, ref_ctx);
         if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
             if let Some(em) = detect_groovy_gorm_emission(chain) {
                 emissions.push(em);
