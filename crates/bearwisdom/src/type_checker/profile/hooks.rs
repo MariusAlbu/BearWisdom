@@ -11,6 +11,9 @@
 // engine binds when a language plugin does not ship its own hooks.
 // =============================================================================
 
+use crate::indexer::resolve::engine::{
+    FileContext, RefContext as ResolveRefContext, Resolution, SymbolLookup,
+};
 use crate::types::ExtractedRef;
 
 use super::super::core::types::{TypeArena, TypeId};
@@ -89,6 +92,38 @@ pub trait LanguageEngineHooks: Send + Sync {
         _ref_: &ExtractedRef,
         _ctx: &RefContext<'_>,
     ) -> Option<CustomFlowEmission> {
+        None
+    }
+
+    /// Resolve a chain-less ref BEFORE the engine's generic bare-name
+    /// strategies run. Used for language-specific behaviors that take
+    /// priority over the generic scope-chain / same-file / qname path:
+    /// TypeScript workspace-package imports and tsconfig path aliases,
+    /// Python relative-import resolution, Go package-qualifier rewrites.
+    /// Returns `Some(Resolution)` to short-circuit; `None` to defer to
+    /// the engine's generic path.
+    fn resolve_bare_pre(
+        &self,
+        _ref_ctx: &ResolveRefContext<'_>,
+        _file_ctx: &FileContext,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        None
+    }
+
+    /// Resolve a chain-less ref AFTER the engine's generic bare-name
+    /// strategies declined. Used for language-specific fallback paths
+    /// that don't compete with the generic resolution (TS npm globals
+    /// and core-lib ambient-global fallback, .NET extension-method
+    /// search across using directives). Returns `Some(Resolution)` to
+    /// recover an otherwise-unresolved ref; `None` lets the resolver
+    /// loop fall through to its legacy/heuristic tier.
+    fn resolve_bare_post(
+        &self,
+        _ref_ctx: &ResolveRefContext<'_>,
+        _file_ctx: &FileContext,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
         None
     }
 }

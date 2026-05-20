@@ -206,7 +206,21 @@ impl<'a> Engine<'a> {
             return Some(adapt_resolution(resolution, &self.arena));
         }
 
-        crate::type_checker::bare::resolve_bare(ref_ctx, file_ctx, lookup, profile)
+        let hooks = self.hooks.get(file_ctx.language.as_str()).copied();
+        if let Some(hooks) = hooks {
+            if let Some(r) = hooks.resolve_bare_pre(ref_ctx, file_ctx, lookup) {
+                return Some(r);
+            }
+        }
+        if let Some(r) =
+            crate::type_checker::bare::resolve_bare(ref_ctx, file_ctx, lookup, profile)
+        {
+            return Some(r);
+        }
+        if let Some(hooks) = hooks {
+            return hooks.resolve_bare_post(ref_ctx, file_ctx, lookup);
+        }
+        None
     }
 
     /// Same as `resolve` but exposes a caller-supplied `RootResolver` so
