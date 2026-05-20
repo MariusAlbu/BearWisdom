@@ -12,10 +12,10 @@ pub mod extract;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 pub(crate) mod type_checker;
 
 pub use hooks::KOTLIN_HOOKS;
+pub use hooks::KotlinResolver;
 pub use profile::KOTLIN_PROFILE;
 
 #[cfg(test)]
@@ -26,14 +26,16 @@ mod extract_tests;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
+
 use crate::ecosystem::manifest::gradle::discover_gradle_catalog_names;
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult, ParsedFile};
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::KotlinResolver;
 
 pub struct KotlinPlugin;
 

@@ -1,4 +1,8 @@
-use super::*;
+use super::hooks::{
+    detect_kotlin_akka_tell_emission, detect_kotlin_exposed_emission,
+    detect_kotlin_grpc_stub_emission, detect_kotlin_ktor_client_emission,
+    detect_kotlin_ktor_route_emission,
+};
 use crate::types::*;
 
 fn make_chain(segments: &[&str]) -> MemberChain {
