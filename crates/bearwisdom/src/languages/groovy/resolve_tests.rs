@@ -2,17 +2,13 @@
 // groovy/resolve_tests.rs — unit tests for GroovyResolver
 // =============================================================================
 
-use super::resolve::GroovyResolver;
 use crate::indexer::resolve::engine::{FileContext};
-
-// `groovy_resolver_declares_only_groovy_language` removed — `language_ids` is
-// no longer a per-resolver method; language IDs are owned by `LanguagePlugin`.
 
 // ---------------------------------------------------------------------------
 // Goal 31 — GORM flow emission
 // ---------------------------------------------------------------------------
 
-use super::resolve::detect_groovy_gorm_emission;
+use super::hooks::detect_groovy_gorm_emission;
 use crate::types::*;
 
 fn make_chain(segments: &[&str]) -> MemberChain {
