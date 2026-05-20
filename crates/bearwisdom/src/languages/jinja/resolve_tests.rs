@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
 
-use super::infer_ansible_external;
+use super::hooks::infer_ansible_external;
 
 fn ctx_with_roles(role_names: &[&str]) -> ProjectContext {
     let mut deps = std::collections::HashSet::new();
