@@ -1,4 +1,4 @@
-use super::{spec_for_body, AdaResolver, _test_probe_package_of_type, _test_walk_field_chain};
+use super::hooks::{spec_for_body, AdaResolver, _test_probe_package_of_type, _test_walk_field_chain};
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
 };
@@ -714,7 +714,7 @@ fn test_ada_exec_select_emits_db_select() {
 };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
-    let em = super::detect_flow_inner(&fc, &rc);
+    let em = super::hooks::detect_flow_inner(&fc, &rc);
     match em.first().unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(*operation, DbQueryOp::Select),
         _ => panic!("expected DbQuery"),
@@ -749,6 +749,6 @@ fn test_ada_no_emit_for_non_sql() {
 };
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
     let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
-    assert!(super::detect_flow_inner(&fc, &rc).is_empty());
+    assert!(super::hooks::detect_flow_inner(&fc, &rc).is_empty());
 }
 

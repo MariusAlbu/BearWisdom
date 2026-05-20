@@ -17,15 +17,18 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub(crate) mod resolve;
 
 pub use hooks::ADA_HOOKS;
+pub use hooks::AdaResolver;
 pub use profile::ADA_PROFILE;
-pub use resolve::AdaResolver;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -80,7 +83,7 @@ impl LanguagePlugin for AdaPlugin {
     fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
     fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        resolve::spec_for_body(file_path)
+        hooks::spec_for_body(file_path)
     }
 
     fn profile(
