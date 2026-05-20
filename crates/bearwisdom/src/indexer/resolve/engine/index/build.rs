@@ -860,6 +860,9 @@ impl SymbolIndex {
         // extractor-set TypeIds (which can carry structural Apply) propagate
         // to the string surface so the two views never drift. The string
         // fallback is now a derived projection, not an independent source.
+        // generic_params get a TypeId companion through
+        // `arena.intern_generic` so substitution code can switch from
+        // string-keyed lookups to id-keyed ones.
         for ti in type_info.values_mut() {
             if let Some(id) = ti.field_type_id {
                 ti.field_type = Some(type_arena.format_type(id));
@@ -872,6 +875,22 @@ impl SymbolIndex {
                     .type_arg_ids
                     .iter()
                     .map(|id| type_arena.format_type(*id))
+                    .collect();
+            }
+            if ti.generic_param_type_ids.is_empty() && !ti.generic_params.is_empty() {
+                ti.generic_param_type_ids = ti
+                    .generic_params
+                    .iter()
+                    .map(|name| {
+                        let param = type_arena.intern_generic(
+                            crate::type_checker::core::types::GenericParamData {
+                                name: name.clone(),
+                                owner_symbol_index: 0,
+                                bound: None,
+                            },
+                        );
+                        type_arena.intern(crate::type_checker::core::types::Type::Generic { param })
+                    })
                     .collect();
             }
         }

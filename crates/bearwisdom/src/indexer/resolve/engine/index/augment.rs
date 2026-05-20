@@ -338,6 +338,8 @@ impl SymbolIndex {
 
         // Final sweep: derive strings from canonical TypeIds so the legacy
         // string accessors always reflect the TypeId-typed source of truth.
+        // generic_params get their TypeId companions interned through
+        // arena.intern_generic for substitution consumers.
         for ti in self.type_info.values_mut() {
             if let Some(id) = ti.field_type_id {
                 ti.field_type = Some(arena.format_type(id));
@@ -350,6 +352,22 @@ impl SymbolIndex {
                     .type_arg_ids
                     .iter()
                     .map(|id| arena.format_type(*id))
+                    .collect();
+            }
+            if ti.generic_param_type_ids.is_empty() && !ti.generic_params.is_empty() {
+                ti.generic_param_type_ids = ti
+                    .generic_params
+                    .iter()
+                    .map(|name| {
+                        let param = arena.intern_generic(
+                            crate::type_checker::core::types::GenericParamData {
+                                name: name.clone(),
+                                owner_symbol_index: 0,
+                                bound: None,
+                            },
+                        );
+                        arena.intern(crate::type_checker::core::types::Type::Generic { param })
+                    })
                     .collect();
             }
         }

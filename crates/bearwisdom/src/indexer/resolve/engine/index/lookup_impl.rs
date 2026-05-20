@@ -188,6 +188,16 @@ impl SymbolLookup for SymbolIndex {
         })
     }
 
+    fn generic_param_type_ids(&self, type_name: &str) -> Option<&[TypeId]> {
+        self.type_info.get(type_name).and_then(|ti| {
+            if ti.generic_param_type_ids.is_empty() {
+                None
+            } else {
+                Some(ti.generic_param_type_ids.as_slice())
+            }
+        })
+    }
+
     fn type_arena(&self) -> Option<&TypeArena> {
         Some(&self.type_arena)
     }

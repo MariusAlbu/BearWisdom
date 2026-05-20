@@ -158,4 +158,11 @@ pub struct TypeInfo {
     pub return_type_id: Option<TypeId>,
     /// Canonical TypeIds of `type_args`, in declaration order.
     pub type_arg_ids: Vec<TypeId>,
+    /// Canonical TypeIds of declared generic parameters — each one a
+    /// `Type::Generic { param }` interned through the workspace arena.
+    /// Populated alongside `generic_params` so consumers that drive
+    /// substitution can resolve `T` / `K` / `V` symbols by id instead of
+    /// by name. `owner_symbol_index` is currently a placeholder (0); a
+    /// future wave will wire real owner indices from the extractor.
+    pub generic_param_type_ids: Vec<TypeId>,
 }

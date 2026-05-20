@@ -131,6 +131,14 @@ pub trait SymbolLookup {
         None
     }
 
+    /// Canonical `Type::Generic` TypeIds for `type_name`'s declared
+    /// generic parameters. Each id resolves to `Type::Generic { param }`
+    /// where `param` is the `GenericParamId` for that parameter slot.
+    /// Default returns `None` so synthetic test lookups don't opt in.
+    fn generic_param_type_ids(&self, _type_name: &str) -> Option<&[TypeId]> {
+        None
+    }
+
     /// Borrow the workspace TypeArena that owns every TypeId returned by
     /// `field_type_id` / `return_type_id` / `field_type_arg_ids`. Returns
     /// `None` for synthetic test lookups that haven't opted into the
