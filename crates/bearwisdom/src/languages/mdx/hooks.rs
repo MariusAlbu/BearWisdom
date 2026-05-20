@@ -20,7 +20,7 @@ impl LanguageEngineHooks for MdxHooks {
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             return None;
         }
-        crate::languages::typescript::resolve::infer_external_inner_with_lookup(
+        crate::languages::typescript::hooks::infer_external_inner_with_lookup(
             file_ctx, ref_ctx, project_ctx, lookup,
         )
     }
@@ -31,7 +31,7 @@ impl LanguageEngineHooks for MdxHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(
-            crate::languages::typescript::resolve::build_file_context_inner(
+            crate::languages::typescript::hooks::build_file_context_inner(
                 file, project_ctx,
             ),
         )
@@ -48,7 +48,7 @@ impl LanguageEngineHooks for MdxHooks {
                 file_ctx, ref_ctx, lookup,
             );
         }
-        crate::languages::typescript::resolve::TypeScriptResolver.resolve(
+        crate::languages::typescript::hooks::TypeScriptResolver.resolve(
             file_ctx, ref_ctx, lookup,
         )
     }

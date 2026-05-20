@@ -4,7 +4,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     FileContext, RefContext, Resolution, SymbolLookup,
 };
-use crate::languages::typescript::resolve::TypeScriptResolver;
+use crate::languages::typescript::hooks::TypeScriptResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -29,7 +29,7 @@ impl LanguageEngineHooks for AngularHooks {
         project_ctx: Option<&ProjectContext>,
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
-        if let Some(ns) = crate::languages::typescript::resolve::infer_external_inner_with_lookup(
+        if let Some(ns) = crate::languages::typescript::hooks::infer_external_inner_with_lookup(
             file_ctx, ref_ctx, project_ctx, lookup,
         ) {
             return Some(ns);

@@ -52,7 +52,7 @@ impl VueResolver {
         file: &crate::types::ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        let mut ctx = crate::languages::typescript::resolve::TypeScriptResolver
+        let mut ctx = crate::languages::typescript::hooks::TypeScriptResolver
             .build_file_context(file, project_ctx);
 
         // Inject synthetic import entries for globally-registered Vue components.
@@ -121,7 +121,7 @@ impl VueResolver {
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        crate::languages::typescript::resolve::TypeScriptResolver
+        crate::languages::typescript::hooks::TypeScriptResolver
             .resolve(file_ctx, ref_ctx, lookup)
     }
 

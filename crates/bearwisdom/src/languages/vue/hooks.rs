@@ -28,7 +28,7 @@ impl LanguageEngineHooks for VueHooks {
                 }
             }
         }
-        crate::languages::typescript::resolve::infer_external_inner_with_lookup(
+        crate::languages::typescript::hooks::infer_external_inner_with_lookup(
             file_ctx, ref_ctx, project_ctx, lookup,
         )
     }

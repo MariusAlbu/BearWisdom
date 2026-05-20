@@ -1,4 +1,4 @@
-use super::resolve::*;
+use super::hooks::*;
 use crate::indexer::resolve::engine::{RefContext};
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
@@ -958,16 +958,16 @@ fn test_parse_package_json_deps() {
 fn test_project_context_external_package_lookup() {
     let ctx = make_ts_project_ctx();
 
-    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"react"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"@tanstack/react-query"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"@tanstack"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"fs"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"path"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"node:fs")); // node: protocol always external
+    assert!(super::hooks::is_manifest_ts_package(&ctx, None,"react"));
+    assert!(super::hooks::is_manifest_ts_package(&ctx, None,"@tanstack/react-query"));
+    assert!(super::hooks::is_manifest_ts_package(&ctx, None,"@tanstack"));
+    assert!(super::hooks::is_manifest_ts_package(&ctx, None,"fs"));
+    assert!(super::hooks::is_manifest_ts_package(&ctx, None,"path"));
+    assert!(super::hooks::is_manifest_ts_package(&ctx, None,"node:fs")); // node: protocol always external
 
-    assert!(!super::resolve::is_manifest_ts_package(&ctx, None,"./utils"));
-    assert!(!super::resolve::is_manifest_ts_package(&ctx, None,"../shared"));
-    assert!(!super::resolve::is_manifest_ts_package(&ctx, None,"MyInternalService"));
+    assert!(!super::hooks::is_manifest_ts_package(&ctx, None,"./utils"));
+    assert!(!super::hooks::is_manifest_ts_package(&ctx, None,"../shared"));
+    assert!(!super::hooks::is_manifest_ts_package(&ctx, None,"MyInternalService"));
 }
 
 #[test]
@@ -4277,7 +4277,7 @@ fn make_ctx_with_import(
 #[test]
 fn http_call_axios_get_emits_with_method() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -4301,7 +4301,7 @@ fn http_call_axios_get_emits_with_method() {
 #[test]
 fn http_call_axios_post_emits_post_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -4324,7 +4324,7 @@ fn http_call_axios_post_emits_post_method() {
 #[test]
 fn http_call_nestjs_axios_http_service_recognised() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     // `import { HttpService } from '@nestjs/axios'; this.httpService.get(...)` —
@@ -4350,7 +4350,7 @@ fn http_call_nestjs_axios_http_service_recognised() {
 #[test]
 fn http_call_openapi_typescript_fetch_recognised() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -4372,7 +4372,7 @@ fn http_call_openapi_typescript_fetch_recognised() {
 #[test]
 fn http_call_global_fetch_emits_without_import() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[("fetch", SegmentKind::Identifier)]);
@@ -4396,7 +4396,7 @@ fn http_call_global_fetch_emits_without_import() {
 #[test]
 fn websocket_emit_producer_on_emit() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -4418,7 +4418,7 @@ fn websocket_emit_producer_on_emit() {
 #[test]
 fn websocket_on_handler_emits_consumer_role() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -4440,7 +4440,7 @@ fn websocket_on_handler_emits_consumer_role() {
 #[test]
 fn ipc_call_tauri_invoke_emits_ipc_call() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[("invoke", SegmentKind::Identifier)]);
@@ -4457,7 +4457,7 @@ fn ipc_call_tauri_invoke_emits_ipc_call() {
 
 #[test]
 fn non_http_package_does_not_emit() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -4475,7 +4475,7 @@ fn non_http_package_does_not_emit() {
 
 #[test]
 fn gql_named_query_parses_operation_name() {
-    use super::resolve::parse_gql_operation;
+    use super::hooks::parse_gql_operation;
     let body = "\n  query GetUsers {\n    users { id name }\n  }\n";
     let result = parse_gql_operation(body);
     assert_eq!(result, Some("query:GetUsers".to_string()));
@@ -4483,7 +4483,7 @@ fn gql_named_query_parses_operation_name() {
 
 #[test]
 fn gql_named_mutation_parses_operation_name() {
-    use super::resolve::parse_gql_operation;
+    use super::hooks::parse_gql_operation;
     let body = "mutation CreatePost($input: PostInput!) { createPost(input: $input) { id } }";
     let result = parse_gql_operation(body);
     assert_eq!(result, Some("mutation:CreatePost".to_string()));
@@ -4491,7 +4491,7 @@ fn gql_named_mutation_parses_operation_name() {
 
 #[test]
 fn gql_named_subscription_parses_operation_name() {
-    use super::resolve::parse_gql_operation;
+    use super::hooks::parse_gql_operation;
     let body = "subscription OnMessageAdded { messageAdded { id body } }";
     let result = parse_gql_operation(body);
     assert_eq!(result, Some("subscription:OnMessageAdded".to_string()));
@@ -4499,7 +4499,7 @@ fn gql_named_subscription_parses_operation_name() {
 
 #[test]
 fn gql_anonymous_query_returns_anon_sentinel() {
-    use super::resolve::parse_gql_operation;
+    use super::hooks::parse_gql_operation;
     let body = "query { users { id } }";
     let result = parse_gql_operation(body);
     assert_eq!(result, Some("query:__anon__".to_string()));
@@ -4507,7 +4507,7 @@ fn gql_anonymous_query_returns_anon_sentinel() {
 
 #[test]
 fn gql_underscore_prefixed_name_parses() {
-    use super::resolve::parse_gql_operation;
+    use super::hooks::parse_gql_operation;
     let body = "query _InternalFetch { nodes { id } }";
     let result = parse_gql_operation(body);
     assert_eq!(result, Some("query:_InternalFetch".to_string()));
@@ -4515,14 +4515,14 @@ fn gql_underscore_prefixed_name_parses() {
 
 #[test]
 fn gql_empty_body_returns_none() {
-    use super::resolve::parse_gql_operation;
+    use super::hooks::parse_gql_operation;
     let result = parse_gql_operation("");
     assert_eq!(result, None);
 }
 
 #[test]
 fn gql_non_graphql_body_returns_none() {
-    use super::resolve::parse_gql_operation;
+    use super::hooks::parse_gql_operation;
     let result = parse_gql_operation("SELECT * FROM users");
     assert_eq!(result, None);
 }
@@ -4534,7 +4534,7 @@ fn gql_non_graphql_body_returns_none() {
 #[test]
 fn http_call_axios_captures_url_from_string_arg() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[
@@ -4556,7 +4556,7 @@ fn http_call_axios_captures_url_from_string_arg() {
 #[test]
 fn http_call_global_fetch_captures_url() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[("fetch", SegmentKind::Identifier)]);
@@ -4577,7 +4577,7 @@ fn http_call_global_fetch_captures_url() {
 #[test]
 fn ipc_call_tauri_invoke_captures_command_name() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[
@@ -4603,7 +4603,7 @@ fn ipc_call_tauri_invoke_captures_command_name() {
 #[test]
 fn gql_tagged_template_emits_graphql_op() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[("gql", SegmentKind::Identifier)]);
@@ -4631,7 +4631,7 @@ fn gql_tagged_template_emits_graphql_op() {
 #[test]
 fn knex_schema_create_table_emits_migration_target() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[
@@ -4654,7 +4654,7 @@ fn knex_schema_create_table_emits_migration_target() {
 #[test]
 fn sequelize_query_interface_create_table_emits_migration_target() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[
@@ -4681,7 +4681,7 @@ fn sequelize_query_interface_create_table_emits_migration_target() {
 #[test]
 fn node_cron_schedule_emits_scheduled_job() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[
@@ -4707,7 +4707,7 @@ fn node_cron_schedule_emits_scheduled_job() {
 #[test]
 fn commander_command_emits_cli_command() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[
@@ -4730,7 +4730,7 @@ fn commander_command_emits_cli_command() {
 #[test]
 fn yargs_command_emits_cli_command_yargs_framework() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[
@@ -4756,7 +4756,7 @@ fn yargs_command_emits_cli_command_yargs_framework() {
 #[test]
 fn decorator_entity_with_table_name_emits_db_entity() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Entity", Some("users"), None);
     assert!(result.is_some(), "Entity decorator should emit DbEntity");
@@ -4772,7 +4772,7 @@ fn decorator_entity_with_table_name_emits_db_entity() {
 #[test]
 fn decorator_entity_without_table_name_emits_db_entity_no_hint() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Entity", None, None);
     match result.unwrap() {
@@ -4786,7 +4786,7 @@ fn decorator_entity_without_table_name_emits_db_entity_no_hint() {
 #[test]
 fn decorator_table_emits_db_entity_with_model_base() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Table", Some("products"), None);
     match result.unwrap() {
@@ -4801,7 +4801,7 @@ fn decorator_table_emits_db_entity_with_model_base() {
 #[test]
 fn decorator_schema_emits_db_entity() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Schema", Some("post"), None);
     match result.unwrap() {
@@ -4815,7 +4815,7 @@ fn decorator_schema_emits_db_entity() {
 #[test]
 fn decorator_roles_emits_auth_guard_role_kind() {
     use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Roles", Some("admin"), None);
     assert!(result.is_some(), "Roles decorator should emit AuthGuard");
@@ -4831,7 +4831,7 @@ fn decorator_roles_emits_auth_guard_role_kind() {
 #[test]
 fn decorator_use_guards_emits_auth_guard_custom_kind() {
     use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("UseGuards", Some("JwtAuthGuard"), None);
     match result.unwrap() {
@@ -4846,7 +4846,7 @@ fn decorator_use_guards_emits_auth_guard_custom_kind() {
 #[test]
 fn decorator_permissions_emits_auth_guard_permission_kind() {
     use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Permissions", Some("read:users"), None);
     match result.unwrap() {
@@ -4858,7 +4858,7 @@ fn decorator_permissions_emits_auth_guard_permission_kind() {
 #[test]
 fn decorator_jwt_auth_guard_emits_token_kind() {
     use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("JwtAuthGuard", None, None);
     match result.unwrap() {
@@ -4874,7 +4874,7 @@ fn decorator_jwt_auth_guard_emits_token_kind() {
 #[test]
 fn decorator_policy_emits_auth_guard_policy_kind() {
     use crate::indexer::resolve::flow_emit::{AuthGuardKind, FlowEmission};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Policy", Some("IsOwner"), None);
     match result.unwrap() {
@@ -4888,7 +4888,7 @@ fn decorator_policy_emits_auth_guard_policy_kind() {
 
 #[test]
 fn unknown_decorator_does_not_emit() {
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Injectable", None, None);
     assert!(result.is_none(), "Injectable is not a flow-relevant decorator");
@@ -4896,13 +4896,13 @@ fn unknown_decorator_does_not_emit() {
 
 #[test]
 fn decorator_input_does_not_emit() {
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
     assert!(detect_decorator_flow_emission("Input", Some("name"), None).is_none());
 }
 
 #[test]
 fn decorator_controller_does_not_emit() {
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
     assert!(detect_decorator_flow_emission("Controller", Some("/api"), None).is_none());
 }
 
@@ -4913,7 +4913,7 @@ fn decorator_controller_does_not_emit() {
 #[test]
 fn decorator_entity_without_arg_falls_back_to_class_context() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Entity", None, Some("User"));
     match result.unwrap() {
@@ -4928,7 +4928,7 @@ fn decorator_entity_without_arg_falls_back_to_class_context() {
 #[test]
 fn decorator_schema_without_arg_falls_back_to_class_context() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Schema", None, Some("Post"));
     match result.unwrap() {
@@ -4942,7 +4942,7 @@ fn decorator_schema_without_arg_falls_back_to_class_context() {
 #[test]
 fn decorator_entity_explicit_arg_takes_precedence_over_class_context() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("Entity", Some("users"), Some("User"));
     match result.unwrap() {
@@ -4960,7 +4960,7 @@ fn decorator_entity_explicit_arg_takes_precedence_over_class_context() {
 #[test]
 fn test_db_query_prisma_find_unique() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -4982,7 +4982,7 @@ fn test_db_query_prisma_find_unique() {
 #[test]
 fn test_db_query_prisma_create_many_op_classified_as_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5003,7 +5003,7 @@ fn test_db_query_prisma_create_many_op_classified_as_insert() {
 #[test]
 fn test_db_query_prisma_upsert_op() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5022,7 +5022,7 @@ fn test_db_query_prisma_upsert_op() {
 
 #[test]
 fn test_db_query_prisma_pascal_model_rejected() {
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     // PascalCase second segment is NOT a Prisma model accessor — Prisma
@@ -5078,7 +5078,7 @@ fn make_chain_with_typed_root(
 #[test]
 fn test_db_query_typeorm_repository_declared_type() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
 
     let chain = make_chain_with_typed_root("userRepo", "Repository", &["User"], "findOne");
     match detect_db_query_emission(&chain).unwrap() {
@@ -5093,7 +5093,7 @@ fn test_db_query_typeorm_repository_declared_type() {
 #[test]
 fn test_db_query_typeorm_tree_repository_declared_type() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
 
     let chain = make_chain_with_typed_root("categoryTree", "TreeRepository", &["Category"], "save");
     match detect_db_query_emission(&chain).unwrap() {
@@ -5108,7 +5108,7 @@ fn test_db_query_typeorm_tree_repository_declared_type() {
 #[test]
 fn test_db_query_typeorm_repository_name_suffix() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5127,7 +5127,7 @@ fn test_db_query_typeorm_repository_name_suffix() {
 #[test]
 fn test_db_query_typeorm_repo_short_suffix() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5149,7 +5149,7 @@ fn test_db_query_typeorm_repo_short_suffix() {
 #[test]
 fn test_db_query_mongoose_find_one() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5168,7 +5168,7 @@ fn test_db_query_mongoose_find_one() {
 #[test]
 fn test_db_query_mongoose_find_by_id_and_update() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5187,7 +5187,7 @@ fn test_db_query_mongoose_find_by_id_and_update() {
 #[test]
 fn test_db_query_mongoose_chain_with_populate_still_emits() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     // User.find().populate('author') — chain has trailing populate segments
@@ -5212,7 +5212,7 @@ fn test_db_query_mongoose_chain_with_populate_still_emits() {
 #[test]
 fn test_db_query_sequelize_find_all() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5231,7 +5231,7 @@ fn test_db_query_sequelize_find_all() {
 #[test]
 fn test_db_query_sequelize_find_by_pk() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5250,7 +5250,7 @@ fn test_db_query_sequelize_find_by_pk() {
 #[test]
 fn test_db_query_sequelize_bulk_create_classified_as_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5268,7 +5268,7 @@ fn test_db_query_sequelize_bulk_create_classified_as_insert() {
 #[test]
 fn test_db_query_sequelize_destroy_classified_as_delete() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5289,7 +5289,7 @@ fn test_db_query_sequelize_destroy_classified_as_delete() {
 
 #[test]
 fn test_db_query_lowercase_root_rejected_for_mongoose_shape() {
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     // `users.find(...)` — root is lowercase, must NOT match the
@@ -5303,7 +5303,7 @@ fn test_db_query_lowercase_root_rejected_for_mongoose_shape() {
 
 #[test]
 fn test_db_query_unknown_method_does_not_emit() {
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     // `User.greet(...)` — PascalCase root but `greet` isn't in any ORM
@@ -5317,7 +5317,7 @@ fn test_db_query_unknown_method_does_not_emit() {
 
 #[test]
 fn test_db_query_object_keys_does_not_emit() {
-    use super::resolve::detect_db_query_emission;
+    use super::hooks::detect_db_query_emission;
     use crate::types::SegmentKind;
 
     // `Object.keys(...)` — `keys` isn't in any ORM method set.
@@ -5335,7 +5335,7 @@ fn test_db_query_object_keys_does_not_emit() {
 #[test]
 fn test_db_query_chain_emission_dispatch_prisma() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -5397,7 +5397,7 @@ fn test_nestjs_http_consumer_get_emits_consumer_with_get_method() {
     use crate::indexer::resolve::flow_emit::{
         ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
     };
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     let file_ctx = make_ctx_with_controller_prefix("UsersController", "users");
     let result = detect_route_decorator_flow_emission(
@@ -5420,7 +5420,7 @@ fn test_nestjs_http_consumer_get_emits_consumer_with_get_method() {
 #[test]
 fn test_nestjs_http_consumer_post_emits_post_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     let file_ctx = make_ctx_with_controller_prefix("UsersController", "users");
     let result = detect_route_decorator_flow_emission(
@@ -5441,7 +5441,7 @@ fn test_nestjs_http_consumer_post_emits_post_method() {
 #[test]
 fn test_nestjs_http_consumer_put_emits_put_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     let file_ctx = make_ctx_with_controller_prefix("AlbumsController", "/albums");
     match detect_route_decorator_flow_emission(
@@ -5463,7 +5463,7 @@ fn test_nestjs_http_consumer_put_emits_put_method() {
 #[test]
 fn test_nestjs_http_consumer_patch_emits_patch_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     let file_ctx = make_ctx_with_controller_prefix("UsersController", "users");
     match detect_route_decorator_flow_emission(
@@ -5485,7 +5485,7 @@ fn test_nestjs_http_consumer_patch_emits_patch_method() {
 #[test]
 fn test_nestjs_http_consumer_delete_emits_delete_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     let file_ctx = make_ctx_with_controller_prefix("UsersController", "users");
     match detect_route_decorator_flow_emission(
@@ -5507,7 +5507,7 @@ fn test_nestjs_http_consumer_delete_emits_delete_method() {
 #[test]
 fn test_nestjs_http_consumer_head_emits_head_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     let file_ctx = make_ctx_with_controller_prefix("FilesController", "files");
     match detect_route_decorator_flow_emission(
@@ -5528,7 +5528,7 @@ fn test_nestjs_http_consumer_head_emits_head_method() {
 #[test]
 fn test_nestjs_http_consumer_options_emits_options_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     let file_ctx = make_ctx_with_controller_prefix("CorsController", "preflight");
     match detect_route_decorator_flow_emission(
@@ -5550,7 +5550,7 @@ fn test_nestjs_http_consumer_options_emits_options_method() {
 #[test]
 fn test_nestjs_http_consumer_all_emits_any_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     let file_ctx = make_ctx_with_controller_prefix("CatchAllController", "internal");
     match detect_route_decorator_flow_emission(
@@ -5572,7 +5572,7 @@ fn test_nestjs_http_consumer_all_emits_any_method() {
 #[test]
 fn test_nestjs_http_consumer_joins_controller_prefix_with_method_path() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     // @Controller('/api/users') + @Get('/:id/details') → /api/users/{}/details
     let file_ctx = make_ctx_with_controller_prefix("UsersController", "/api/users");
@@ -5594,7 +5594,7 @@ fn test_nestjs_http_consumer_joins_controller_prefix_with_method_path() {
 #[test]
 fn test_nestjs_http_consumer_empty_prefix_falls_back_to_method_path() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     // `@Controller(RouteKey.X)` — the extractor cannot capture the enum
     // expression, so the prefix entry exists but its value is empty.
@@ -5616,7 +5616,7 @@ fn test_nestjs_http_consumer_empty_prefix_falls_back_to_method_path() {
 
 #[test]
 fn test_nestjs_http_consumer_unknown_decorator_does_not_emit() {
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
     let file_ctx = make_ctx_with_controller_prefix("UsersController", "users");
     let r = detect_route_decorator_flow_emission(
         "Injectable",
@@ -5630,7 +5630,7 @@ fn test_nestjs_http_consumer_unknown_decorator_does_not_emit() {
 #[test]
 fn test_nestjs_http_consumer_no_controller_prefix_in_context() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_route_decorator_flow_emission;
+    use super::hooks::detect_route_decorator_flow_emission;
 
     // No `__ts_controller_prefix__:` entry — the method's @Get is emitted
     // with just the path. The file still needs to import @nestjs/common so
@@ -5662,7 +5662,7 @@ fn test_nestjs_http_consumer_no_controller_prefix_in_context() {
 
 #[test]
 fn test_nestjs_http_consumer_join_route_segments_helper() {
-    use super::resolve::join_route_segments;
+    use super::hooks::join_route_segments;
     assert_eq!(join_route_segments("/api/users", ":id"), "/api/users/:id");
     assert_eq!(join_route_segments("/api/users", "/:id"), "/api/users/:id");
     assert_eq!(join_route_segments("api/users", ""), "/api/users");
@@ -5694,7 +5694,7 @@ fn test_chain_route_consumer_express_app_get() {
     use crate::indexer::resolve::flow_emit::{
         ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
     };
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("express");
@@ -5721,7 +5721,7 @@ fn test_chain_route_consumer_express_app_get() {
 #[test]
 fn test_chain_route_consumer_express_router_post() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("express");
@@ -5746,7 +5746,7 @@ fn test_chain_route_consumer_express_router_post() {
 #[test]
 fn test_chain_route_consumer_hono_app_get_normalises_colon_param() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("hono");
@@ -5773,7 +5773,7 @@ fn test_chain_route_consumer_hono_sub_path_import_accepted() {
     // `import { handle } from "hono/vercel"` — the file imports a Hono
     // sub-path; the detector still treats this file as a chain-router host.
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("hono/vercel");
@@ -5791,7 +5791,7 @@ fn test_chain_route_consumer_hono_sub_path_import_accepted() {
 #[test]
 fn test_chain_route_consumer_fastify_put() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("fastify");
@@ -5816,7 +5816,7 @@ fn test_chain_route_consumer_fastify_put() {
 #[test]
 fn test_chain_route_consumer_fastify_plugin_accepted() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("fastify-plugin");
@@ -5838,7 +5838,7 @@ fn test_chain_route_consumer_fastify_plugin_accepted() {
 fn test_chain_route_consumer_no_framework_import_skipped() {
     // Same chain shape as an Express route, but the file imports `lodash`
     // instead of `express` — must not emit.
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("lodash");
@@ -5856,7 +5856,7 @@ fn test_chain_route_consumer_no_framework_import_skipped() {
 #[test]
 fn test_chain_route_consumer_non_verb_leaf_skipped() {
     // `.use(middleware)` and `.listen(port)` are not HTTP verbs.
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("express");
@@ -5872,7 +5872,7 @@ fn test_chain_route_consumer_non_verb_leaf_skipped() {
 fn test_chain_route_consumer_handler_only_call_skipped() {
     // `router.all(handler)` with no path — first arg is the handler
     // function, not a string — emit nothing (can't be paired).
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_framework_import("express");
@@ -5907,7 +5907,7 @@ fn test_mq_producer_nats_publish() {
     use crate::indexer::resolve::flow_emit::{
         ChannelRole, FlowEmission, NamedChannelKind,
     };
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_mq_import("nats");
@@ -5932,7 +5932,7 @@ fn test_mq_producer_nats_publish() {
 #[test]
 fn test_mq_producer_redis_publish() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_mq_import("ioredis");
@@ -5957,7 +5957,7 @@ fn test_mq_producer_redis_publish() {
 #[test]
 fn test_mq_producer_amqp_publish() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_mq_import("amqplib");
@@ -5984,7 +5984,7 @@ fn test_mq_producer_amqp_publish() {
 #[test]
 fn test_mq_producer_mqtt_publish() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_mq_import("mqtt");
@@ -6009,7 +6009,7 @@ fn test_mq_producer_mqtt_publish() {
 #[test]
 fn test_mq_consumer_nats_subscribe() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_mq_import("nats");
@@ -6031,7 +6031,7 @@ fn test_mq_consumer_nats_subscribe() {
 #[test]
 fn test_mq_consumer_redis_subscribe() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_mq_import("redis");
@@ -6052,7 +6052,7 @@ fn test_mq_consumer_redis_subscribe() {
 #[test]
 fn test_mq_consumer_amqp_consume() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_mq_import("amqplib");
@@ -6076,7 +6076,7 @@ fn test_mq_consumer_amqp_consume() {
 #[test]
 fn test_mq_consumer_message_pattern_decorator() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("MessagePattern", Some("user.created"), None);
     match result.unwrap() {
@@ -6092,7 +6092,7 @@ fn test_mq_consumer_message_pattern_decorator() {
 #[test]
 fn test_mq_consumer_event_pattern_decorator() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
 
     let result = detect_decorator_flow_emission("EventPattern", Some("order.shipped"), None);
     match result.unwrap() {
@@ -6107,7 +6107,7 @@ fn test_mq_consumer_event_pattern_decorator() {
 
 #[test]
 fn test_mq_no_library_import_does_not_emit() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // File imports lodash — `_.publish('x', y)` must not be misclassified
@@ -6123,7 +6123,7 @@ fn test_mq_no_library_import_does_not_emit() {
 
 #[test]
 fn test_mq_chain_with_no_string_arg_does_not_emit() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `producer.publish(variable)` — first arg is an identifier, not a
@@ -6139,7 +6139,7 @@ fn test_mq_chain_with_no_string_arg_does_not_emit() {
 
 #[test]
 fn test_mq_unknown_verb_does_not_emit() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `nc.close()` is a connection lifecycle method, not a producer or
@@ -6203,7 +6203,7 @@ fn make_ctx_with_bgjob_binding(
 #[test]
 fn test_bgjob_producer_bullmq_add_with_queue_binding() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `const queue = new Queue('email-queue')` followed by
@@ -6231,7 +6231,7 @@ fn test_bgjob_producer_bullmq_add_with_queue_binding() {
 #[test]
 fn test_bgjob_producer_bullmq_add_no_binding_falls_back() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // No queue binding visible in this file — fall back to jobName-only key.
@@ -6257,7 +6257,7 @@ fn test_bgjob_producer_bullmq_add_no_binding_falls_back() {
 #[test]
 fn test_bgjob_producer_bull_add() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_bgjob_import("bull");
@@ -6282,7 +6282,7 @@ fn test_bgjob_producer_bull_add() {
 #[test]
 fn test_bgjob_producer_agenda_now() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_bgjob_import("agenda");
@@ -6307,7 +6307,7 @@ fn test_bgjob_producer_agenda_now() {
 #[test]
 fn test_bgjob_producer_agenda_every() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_bgjob_import("agenda");
@@ -6332,7 +6332,7 @@ fn test_bgjob_producer_agenda_every() {
 #[test]
 fn test_bgjob_consumer_bullmq_worker_ctor() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_bgjob_import("bullmq");
@@ -6358,7 +6358,7 @@ fn test_bgjob_consumer_bullmq_worker_ctor() {
 #[test]
 fn test_bgjob_consumer_bullmq_worker_on_lifecycle() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `worker.on('completed', h)` where `worker` was bound to
@@ -6385,7 +6385,7 @@ fn test_bgjob_consumer_bullmq_worker_on_lifecycle() {
 
 #[test]
 fn test_bgjob_consumer_worker_on_without_binding_does_not_emit() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // Without a queue binding for the chain root, `.on('completed', h)` could
@@ -6404,7 +6404,7 @@ fn test_bgjob_consumer_worker_on_without_binding_does_not_emit() {
 
 #[test]
 fn test_bgjob_consumer_worker_on_non_lifecycle_event_does_not_emit() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // Even with a queue binding, `.on('click', h)` is not a BullMQ lifecycle
@@ -6424,7 +6424,7 @@ fn test_bgjob_consumer_worker_on_non_lifecycle_event_does_not_emit() {
 #[test]
 fn test_bgjob_consumer_bull_process_with_binding() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_bgjob_binding("bull", "queue", "email-queue");
@@ -6449,7 +6449,7 @@ fn test_bgjob_consumer_bull_process_with_binding() {
 #[test]
 fn test_bgjob_producer_beequeue_createjob() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // bee-queue: `queue.createJob({...data}).save()` — payload is an object
@@ -6474,7 +6474,7 @@ fn test_bgjob_producer_beequeue_createjob() {
 #[test]
 fn test_bgjob_consumer_agenda_define() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_bgjob_import("agenda");
@@ -6498,7 +6498,7 @@ fn test_bgjob_consumer_agenda_define() {
 
 #[test]
 fn test_bgjob_no_emit_without_import() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // No BgJob library imported — `queue.add('x', data)` could be any
@@ -6517,7 +6517,7 @@ fn test_bgjob_no_emit_without_import() {
 
 #[test]
 fn test_bgjob_no_emit_for_unknown_ctor() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `new Queue('email-queue')` is a Producer-side declaration with no job
@@ -6531,7 +6531,7 @@ fn test_bgjob_no_emit_for_unknown_ctor() {
 
 #[test]
 fn test_bgjob_no_emit_for_unknown_verb() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `queue.close()` is a lifecycle method, not a Producer/Consumer.
@@ -6546,7 +6546,7 @@ fn test_bgjob_no_emit_for_unknown_verb() {
 
 #[test]
 fn test_bgjob_no_emit_without_string_arg() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // Without a literal job name first arg there's no pairing key.
@@ -6580,7 +6580,7 @@ fn make_ctx_with_rpc_import(pkg: &str) -> crate::indexer::resolve::engine::FileC
 #[test]
 fn test_rpc_producer_connect_chain_three_segments() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // Connect: `client.users.getUser(req)` → service=`users`, method=`getUser`.
@@ -6606,7 +6606,7 @@ fn test_rpc_producer_connect_chain_three_segments() {
 #[test]
 fn test_rpc_producer_nice_grpc_chain() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_rpc_import("nice-grpc");
@@ -6631,7 +6631,7 @@ fn test_rpc_producer_nice_grpc_chain() {
 #[test]
 fn test_rpc_producer_tsproto_two_segments() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // ts-proto client: `userServiceClient.getUser(req)` — root is the
@@ -6656,7 +6656,7 @@ fn test_rpc_producer_tsproto_two_segments() {
 #[test]
 fn test_rpc_consumer_addService_emits_wildcard() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `server.addService(UserService, { getUser: handler })` — first arg is
@@ -6684,7 +6684,7 @@ fn test_rpc_consumer_addService_emits_wildcard() {
 #[test]
 fn test_rpc_consumer_grpc_method_decorator_two_args() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_grpc_decorator_flow_emission;
+    use super::hooks::detect_grpc_decorator_flow_emission;
     use crate::types::CallArg;
 
     // `@GrpcMethod('UserService', 'getUser')` → "User/getUser".
@@ -6705,7 +6705,7 @@ fn test_rpc_consumer_grpc_method_decorator_two_args() {
 #[test]
 fn test_rpc_consumer_grpc_method_decorator_one_arg_uses_method_name() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_grpc_decorator_flow_emission;
+    use super::hooks::detect_grpc_decorator_flow_emission;
     use crate::types::CallArg;
 
     // `@GrpcMethod('UserService') async getUser(...) {}` — second arg
@@ -6724,7 +6724,7 @@ fn test_rpc_consumer_grpc_method_decorator_one_arg_uses_method_name() {
 #[test]
 fn test_rpc_consumer_grpc_stream_method_decorator() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_grpc_decorator_flow_emission;
+    use super::hooks::detect_grpc_decorator_flow_emission;
     use crate::types::CallArg;
 
     let call_args = vec![
@@ -6743,7 +6743,7 @@ fn test_rpc_consumer_grpc_stream_method_decorator() {
 
 #[test]
 fn test_rpc_no_emit_without_import() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // Without a gRPC import, `client.users.getUser(...)` could be any nested
@@ -6760,7 +6760,7 @@ fn test_rpc_no_emit_without_import() {
 
 #[test]
 fn test_rpc_no_emit_for_lifecycle_leaf() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `client.users.then(...)` is a promise chain on the result of a prior
@@ -6777,7 +6777,7 @@ fn test_rpc_no_emit_for_lifecycle_leaf() {
 
 #[test]
 fn test_rpc_no_emit_for_addService_with_non_pascal_arg() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `server.addService(serviceVar, ...)` with a lowercase identifier
@@ -6796,7 +6796,7 @@ fn test_rpc_no_emit_for_addService_with_non_pascal_arg() {
 
 #[test]
 fn test_rpc_canonical_key_pairs_camel_and_pascal() {
-    use super::resolve::canonical_rpc_key;
+    use super::hooks::canonical_rpc_key;
 
     // Producer (camelCase service from a Connect chain) and Consumer (PascalCase
     // service from a `@GrpcMethod` decorator) produce IDENTICAL canonical keys.
@@ -6808,7 +6808,7 @@ fn test_rpc_canonical_key_pairs_camel_and_pascal() {
 
 #[test]
 fn test_rpc_canonical_key_preserves_wildcard() {
-    use super::resolve::canonical_rpc_key;
+    use super::hooks::canonical_rpc_key;
 
     // The `*` wildcard must NOT be lowercased away (it's not letters anyway,
     // but the contract is explicit).
@@ -6819,7 +6819,7 @@ fn test_rpc_canonical_key_preserves_wildcard() {
 #[test]
 fn test_rpc_addservice_with_object_keys_expands_to_per_method_emissions() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_addservice_object_keys;
+    use super::hooks::detect_addservice_object_keys;
     use crate::types::{CallArg, SegmentKind};
 
     // `server.addService(UserService, { getUser: h1, listUsers: h2 })` —
@@ -6855,7 +6855,7 @@ fn test_rpc_addservice_with_object_keys_expands_to_per_method_emissions() {
 
 #[test]
 fn test_rpc_addservice_falls_back_to_wildcard_without_object_keys() {
-    use super::resolve::{detect_addservice_object_keys, detect_chain_flow_emission};
+    use super::hooks::{detect_addservice_object_keys, detect_chain_flow_emission};
     use crate::indexer::resolve::flow_emit::FlowEmission;
     use crate::types::{CallArg, SegmentKind};
 
@@ -6881,7 +6881,7 @@ fn test_rpc_addservice_falls_back_to_wildcard_without_object_keys() {
 
 #[test]
 fn test_rpc_grpc_decorator_ignored_for_non_rpc_decorator() {
-    use super::resolve::detect_grpc_decorator_flow_emission;
+    use super::hooks::detect_grpc_decorator_flow_emission;
     use crate::types::CallArg;
 
     // The gRPC decorator detector must not fire for unrelated decorators.
@@ -6898,7 +6898,7 @@ fn test_rpc_grpc_decorator_ignored_for_non_rpc_decorator() {
 #[test]
 fn test_config_lookup_process_env_member_access() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_member_access_config_emission;
+    use super::hooks::detect_member_access_config_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -6915,7 +6915,7 @@ fn test_config_lookup_process_env_member_access() {
 #[test]
 fn test_config_lookup_import_meta_env_member_access() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_member_access_config_emission;
+    use super::hooks::detect_member_access_config_emission;
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[
@@ -6933,7 +6933,7 @@ fn test_config_lookup_import_meta_env_member_access() {
 #[test]
 fn test_config_lookup_config_service_get_call() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_config_call_emission;
+    use super::hooks::detect_config_call_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let chain = make_chain_segs(&[
@@ -6949,7 +6949,7 @@ fn test_config_lookup_config_service_get_call() {
 
 #[test]
 fn test_config_lookup_rejects_unrelated_get_calls() {
-    use super::resolve::detect_config_call_emission;
+    use super::hooks::detect_config_call_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `map.get('key')` (Map data structure) — not a config service.
@@ -6982,7 +6982,7 @@ fn make_ctx_with_ff_import(pkg: &str) -> crate::indexer::resolve::engine::FileCo
 #[test]
 fn test_feature_flag_growthbook_is_on() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_feature_flag_chain_emission;
+    use super::hooks::detect_feature_flag_chain_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_ff_import("@growthbook/growthbook");
@@ -7000,7 +7000,7 @@ fn test_feature_flag_growthbook_is_on() {
 #[test]
 fn test_feature_flag_launchdarkly_variation() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_feature_flag_chain_emission;
+    use super::hooks::detect_feature_flag_chain_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_ff_import("launchdarkly-js-client-sdk");
@@ -7022,7 +7022,7 @@ fn test_feature_flag_launchdarkly_variation() {
 #[test]
 fn test_feature_flag_statsig_check_gate() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_feature_flag_chain_emission;
+    use super::hooks::detect_feature_flag_chain_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_ff_import("statsig-js");
@@ -7040,7 +7040,7 @@ fn test_feature_flag_statsig_check_gate() {
 #[test]
 fn test_feature_flag_use_feature_flag_hook_without_import() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_feature_flag_chain_emission;
+    use super::hooks::detect_feature_flag_chain_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `useFeatureFlag('x')` — generic React hook shape, fires without an
@@ -7062,7 +7062,7 @@ fn test_feature_flag_use_feature_flag_hook_without_import() {
 #[test]
 fn test_feature_flag_internal_member_access_two_segments() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_member_access_feature_flag_emission;
+    use super::hooks::detect_member_access_feature_flag_emission;
     use crate::types::SegmentKind;
 
     // `featureFlags.configFile` — direct access on a feature-flag-shaped root.
@@ -7079,7 +7079,7 @@ fn test_feature_flag_internal_member_access_two_segments() {
 #[test]
 fn test_feature_flag_internal_member_access_via_value() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_member_access_feature_flag_emission;
+    use super::hooks::detect_member_access_feature_flag_emission;
     use crate::types::SegmentKind;
 
     // `featureFlagsManager.value.someFlag` — three segments, peer through `value`.
@@ -7096,7 +7096,7 @@ fn test_feature_flag_internal_member_access_via_value() {
 
 #[test]
 fn test_feature_flag_no_emit_without_library_import() {
-    use super::resolve::detect_feature_flag_chain_emission;
+    use super::hooks::detect_feature_flag_chain_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `gb.isOn('x')` without any feature-flag SDK imported — `gb` could be
@@ -7174,8 +7174,8 @@ fn test_di_binding_inject_decorator_emits() {
         }],
         file_namespace: None,
     };
-    let resolver = super::resolve::TypeScriptResolver;
-    let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
+    let resolver = super::hooks::TypeScriptResolver;
+    let emissions = super::hooks::detect_flow_inner(&file_ctx, &ref_ctx);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::DiBinding { container, .. } => {
@@ -7234,8 +7234,8 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
         imports: vec![],
         file_namespace: None,
     };
-    let resolver = super::resolve::TypeScriptResolver;
-    let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
+    let resolver = super::hooks::TypeScriptResolver;
+    let emissions = super::hooks::detect_flow_inner(&file_ctx, &ref_ctx);
     assert!(emissions.is_empty());
 }
 
@@ -7290,8 +7290,8 @@ fn test_di_binding_inject_without_token_still_emits() {
         imports: vec![],
         file_namespace: None,
     };
-    let resolver = super::resolve::TypeScriptResolver;
-    let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
+    let resolver = super::hooks::TypeScriptResolver;
+    let emissions = super::hooks::detect_flow_inner(&file_ctx, &ref_ctx);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::DiBinding { container, .. } => {
@@ -7322,7 +7322,7 @@ fn make_ctx_with_trpc_import() -> crate::indexer::resolve::engine::FileContext {
 #[test]
 fn test_trpc_producer_use_query_emits_http_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_trpc_import();
@@ -7346,7 +7346,7 @@ fn test_trpc_producer_use_query_emits_http_call() {
 #[test]
 fn test_trpc_producer_use_mutation_emits_http_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_with_trpc_import();
@@ -7369,7 +7369,7 @@ fn test_trpc_producer_use_mutation_emits_http_call() {
 
 #[test]
 fn test_trpc_no_emit_without_trpc_import() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = crate::indexer::resolve::engine::FileContext {
@@ -7395,7 +7395,7 @@ fn test_trpc_no_emit_without_trpc_import() {
 #[test]
 fn test_ipc_ipcmain_handle_emits_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_mailer(); // Reuse — Electron detection is import-free.
@@ -7420,7 +7420,7 @@ fn test_ipc_ipcmain_handle_emits_consumer() {
 #[test]
 fn test_ipc_ipcmain_on_emits_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     let file_ctx = make_ctx_mailer();
@@ -7444,7 +7444,7 @@ fn test_ipc_ipcmain_on_emits_consumer() {
 
 #[test]
 fn test_ipc_ipcmain_no_emit_for_lifecycle_verbs() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `ipcMain.removeAllListeners(...)` is a lifecycle call, not a handler
@@ -7474,7 +7474,7 @@ fn make_ctx_mailer() -> crate::indexer::resolve::engine::FileContext {
 #[test]
 fn test_mailer_producer_nodemailer_send_mail_template() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `transport.sendMail({ template: 'welcome', subject: s })`.
@@ -7500,7 +7500,7 @@ fn test_mailer_producer_nodemailer_send_mail_template() {
 #[test]
 fn test_mailer_producer_sendgrid_send_template_id() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `sgMail.send({ to: ..., templateId: 'd-12345', ... })`.
@@ -7526,7 +7526,7 @@ fn test_mailer_producer_sendgrid_send_template_id() {
 #[test]
 fn test_mailer_producer_nestjs_mailer_service() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `mailerService.sendMail({ template: 'verify-email', context: ... })`.
@@ -7551,7 +7551,7 @@ fn test_mailer_producer_nestjs_mailer_service() {
 
 #[test]
 fn test_mailer_no_emit_without_template_field() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // No `template` / `templateId` key — no static pairing key, no emission.
@@ -7570,7 +7570,7 @@ fn test_mailer_no_emit_without_template_field() {
 
 #[test]
 fn test_mailer_no_emit_when_template_value_is_dynamic() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `template: templateName` — variable, not a string literal. No static key.
@@ -7587,7 +7587,7 @@ fn test_mailer_no_emit_when_template_value_is_dynamic() {
 
 #[test]
 fn test_mailer_no_emit_for_unknown_verb() {
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `transport.verify(...)` is a lifecycle call, not a mailer send.
@@ -7605,7 +7605,7 @@ fn test_mailer_no_emit_for_unknown_verb() {
 #[test]
 fn test_mailer_resend_emails_send_emits_without_template() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_chain_flow_emission;
+    use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
     // `resend.emails.send({from, to, react: <Welcome />})` — no template
@@ -7634,7 +7634,7 @@ fn test_mailer_resend_emails_send_emits_without_template() {
 #[test]
 fn decorator_subscribe_message_emits_ws_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
     let result = detect_decorator_flow_emission("SubscribeMessage", Some("chat.message"), None);
     match result.unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {
@@ -7649,7 +7649,7 @@ fn decorator_subscribe_message_emits_ws_consumer() {
 #[test]
 fn decorator_websocket_gateway_emits_ws_consumer_with_class_name() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_decorator_flow_emission;
+    use super::hooks::detect_decorator_flow_emission;
     let result = detect_decorator_flow_emission("WebSocketGateway", None, Some("ChatGateway"));
     match result.unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {

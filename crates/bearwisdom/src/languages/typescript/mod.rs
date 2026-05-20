@@ -36,11 +36,11 @@ pub(crate) mod predicates;
 pub mod profile;
 pub mod hooks;
 pub(crate) mod type_checker;
-pub mod resolve;
 mod aliases;
 pub(crate) mod flow_detectors;
 
 pub use hooks::TYPESCRIPT_HOOKS;
+pub use hooks::TypeScriptResolver;
 pub use profile::TYPESCRIPT_PROFILE;
 
 #[cfg(test)]
@@ -62,9 +62,6 @@ mod resolve_tests;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
-
-// Re-export the resolver for registration in default_resolvers().
-pub use resolve::TypeScriptResolver;
 
 /// TypeScript language plugin — handles "typescript", "tsx", "javascript", "jsx".
 pub struct TypeScriptPlugin;
