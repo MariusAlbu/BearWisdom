@@ -7,7 +7,6 @@ mod arguments;
 mod commands;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 
 pub use hooks::CMAKE_HOOKS;
 pub use profile::CMAKE_PROFILE;

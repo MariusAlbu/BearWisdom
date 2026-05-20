@@ -8,7 +8,7 @@
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use super::arguments::{collect_arguments, collect_raw_arguments, command_identifier, nth_argument};
 use super::extract::make_symbol;
-use super::resolve::is_cmake_builtin;
+use super::hooks::is_cmake_builtin;
 use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------

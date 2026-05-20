@@ -10,7 +10,7 @@
 // =============================================================================
 
 use super::extract;
-use super::resolve::is_cmake_builtin;
+use super::hooks::is_cmake_builtin;
 use crate::types::{EdgeKind, SymbolKind};
 
 fn lang() -> tree_sitter::Language {
