@@ -109,68 +109,6 @@ impl LanguageResolver for PascalResolver {
         engine::resolve_common("pascal", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        // Keyword check first (does not need the index).
-        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
-            return Some(ns);
-        }
-
-        // Classify bare RTL/VCL/LCL calls that resolve to the FPC runtime
-        // walker's ext:pascal: virtual paths. Pascal is case-insensitive but
-        // FPC source files use canonical mixed case (e.g. `NativeInt`, `HRESULT`)
-        // while project code may use any casing variant. by_name is an exact
-        // (case-sensitive) lookup, so we probe multiple forms:
-        //   - original casing from the project ref
-        //   - fully lowercased (finds all-lowercase defs)
-        //   - first-char-uppercased (finds TitleCase defs like `Integer`)
-        //   - fully uppercased (finds ALLCAPS defs like `HRESULT`)
-        let target = &ref_ctx.extracted_ref.target_name;
-        let target_lower = target.to_lowercase();
-        let target_upper = target.to_uppercase();
-        let target_title: String = {
-            let mut c = target.chars();
-            match c.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + &target_lower[f.len_utf8()..],
-            }
-        };
-
-        for probe in [
-            target.as_str(),
-            target_lower.as_str(),
-            target_title.as_str(),
-            target_upper.as_str(),
-        ] {
-            for sym in lookup.by_name(probe) {
-                if sym.file_path.starts_with("ext:pascal:")
-                    && sym.name.to_lowercase() == target_lower
-                {
-                    return Some("fpc-runtime".to_string());
-                }
-            }
-        }
-
-        // Delphi-exclusive namespace detection: when the source file imports
-        // units from Delphi's dotted-package namespaces (`Vcl.*`, `Winapi.*`,
-        // `FireDAC.*`, `System.*`, `Data.*`, `FMX.*`, `Xml.*`), it is a
-        // Delphi/VCL project. FPC does not use these namespace prefixes; they
-        // cannot appear in FPC source. Any ref that remains unresolved in such
-        // a file is a Delphi SDK or VCL symbol that the FPC walker cannot
-        // supply. Classify it as `delphi-vcl` so it lands in
-        // `unresolved_external` rather than `unresolved`.
-        if is_delphi_namespaced_file(file_ctx) {
-            return Some("delphi-vcl".to_string());
-        }
-
-        None
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,
