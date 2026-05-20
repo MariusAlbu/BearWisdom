@@ -11,7 +11,10 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub(crate) mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::COBOL_HOOKS;
 pub use profile::COBOL_PROFILE;
