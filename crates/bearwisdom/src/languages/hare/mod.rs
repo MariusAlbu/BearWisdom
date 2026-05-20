@@ -14,7 +14,10 @@
 //! - `@test fn ...` → Test
 
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::HARE_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -84,5 +87,11 @@ impl LanguagePlugin for HarePlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::HareResolver))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::HARE_PROFILE)
     }
 }

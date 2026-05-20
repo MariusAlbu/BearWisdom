@@ -16,8 +16,11 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
+
+pub use profile::ODIN_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -81,5 +84,11 @@ impl LanguagePlugin for OdinPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::OdinChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::ODIN_PROFILE)
     }
 }

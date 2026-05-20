@@ -2,12 +2,15 @@
 
 mod helpers;
 pub(crate) mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod keywords;
 pub mod extract;
 mod calls;
 mod imports;
 mod globals;
+
+pub use profile::JAVASCRIPT_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -99,5 +102,11 @@ impl LanguagePlugin for JavascriptPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::JavaScriptChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::JAVASCRIPT_PROFILE)
     }
 }

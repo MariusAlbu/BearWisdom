@@ -7,8 +7,11 @@ pub mod extract;
 
 mod keywords;
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
+
+pub use profile::VBA_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -71,5 +74,11 @@ impl LanguagePlugin for VbaPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::VbaChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::VBA_PROFILE)
     }
 }
