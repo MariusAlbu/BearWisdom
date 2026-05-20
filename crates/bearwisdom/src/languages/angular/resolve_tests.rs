@@ -1,6 +1,7 @@
 //! Tests for `angular::resolve::AngularResolver`.
 
-use super::hooks::paired_ts_for_template;
+use super::hooks::{paired_ts_for_template, AngularHooks};
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 
 #[test]
 fn paired_ts_for_component_template() {
@@ -165,7 +166,7 @@ fn selector_map_hit_resolves_to_class() {
         file_package_id: None,
     };
 
-    let resolution = AngularResolver.resolve(&file_ctx, &ref_ctx, &lookup);
+    let resolution = super::hooks::AngularHooks.resolve_ref(&file_ctx, &ref_ctx, &lookup);
     assert!(resolution.is_some(), "selector map hit should resolve");
     let res = resolution.unwrap();
     assert_eq!(res.target_symbol_id, 42);
@@ -223,7 +224,7 @@ fn selector_map_miss_falls_through() {
     };
 
     // Should not panic, resolution may be None (no imports to resolve against).
-    let _result = AngularResolver.resolve(&file_ctx, &ref_ctx, &lookup);
+    let _result = super::hooks::AngularHooks.resolve_ref(&file_ctx, &ref_ctx, &lookup);
     // We just verify it doesn't error — the TS resolver may return None here
     // since the lookup has no symbols and no imports are set up.
 }
