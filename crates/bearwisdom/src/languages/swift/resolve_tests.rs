@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_swift_grdb_emission, detect_swift_grpc_emission, detect_swift_http_chain, detect_swift_vapor_route};
 use crate::types::*;
 
 fn make_chain(segments: &[&str]) -> MemberChain {
