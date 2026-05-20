@@ -80,6 +80,25 @@ pub fn populate_return_type_ids(
                     }
                 }
             }
+            SymbolKind::Field
+            | SymbolKind::Property
+            | SymbolKind::Variable
+            | SymbolKind::Parameter => {
+                if sym.declared_type.is_some() {
+                    continue;
+                }
+                let Some(sig) = sym.signature.as_deref() else { continue };
+                if let Some(ty) =
+                    crate::indexer::resolve::engine::chain_walker::parse_declared_type_from_signature_for_lang(
+                        sig,
+                        lang_id,
+                    )
+                {
+                    if !ty.is_empty() {
+                        sym.declared_type = Some(arena.intern_type_str(&ty));
+                    }
+                }
+            }
             _ => {}
         }
     }

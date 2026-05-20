@@ -172,6 +172,84 @@ pub(crate) fn parse_param_types_from_signature(sig: &str) -> Option<Vec<String>>
     parse_param_types_from_signature_for_lang(sig, "")
 }
 
+/// Parse the declared type out of a field / property / variable /
+/// parameter signature. Recognised shapes:
+///   - TS / Kotlin / Swift / Scala / Python / Rust style:
+///       `name: Type` or `name: Type = default` — take what's between
+///       the first top-level `:` and the next `=` (or end of string).
+///   - Go style: `name Type` — take the last whitespace-separated token
+///     when the signature has no `:`.
+///   - C / C++ / Java / C# / VB.NET style: `Type name` — take everything
+///     before the last whitespace at top level when no `:` exists.
+///
+/// Returns `None` when no usable type can be extracted (signature is
+/// empty / has no whitespace / has only the name).
+pub(crate) fn parse_declared_type_from_signature_for_lang(
+    sig: &str,
+    lang_id: &str,
+) -> Option<String> {
+    let trimmed = sig.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // First: top-level `:` always means a TS-shaped annotation, regardless
+    // of language id. Some extractors emit `name: Type` even in Java
+    // signatures, so we honour the colon when present.
+    let mut depth: i32 = 0;
+    for (i, ch) in trimmed.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            ':' if depth == 0 => {
+                let after = trimmed[i + 1..].trim();
+                let end = after
+                    .char_indices()
+                    .find(|&(_, c)| c == '=')
+                    .map(|(j, _)| j)
+                    .unwrap_or(after.len());
+                let ty = after[..end].trim();
+                if ty.is_empty() {
+                    return None;
+                }
+                return Some(ty.to_string());
+            }
+            _ => {}
+        }
+    }
+    // No `:`. Dispatch per language for the postfix vs prefix shape.
+    match lang_id {
+        "go" => {
+            // `name Type` — last whitespace-separated token.
+            let mut depth: i32 = 0;
+            let mut last_ws: Option<usize> = None;
+            for (i, ch) in trimmed.char_indices() {
+                match ch {
+                    '<' | '[' | '(' | '{' => depth += 1,
+                    '>' | ']' | ')' | '}' => depth -= 1,
+                    c if c.is_whitespace() && depth == 0 => last_ws = Some(i),
+                    _ => {}
+                }
+            }
+            last_ws.map(|ws| trimmed[ws + 1..].trim().to_string())
+        }
+        "c" | "c_lang" | "cpp" | "java" | "csharp" | "vbnet" => {
+            // `Type name` — everything before the last whitespace.
+            let mut depth: i32 = 0;
+            let mut last_ws: Option<usize> = None;
+            for (i, ch) in trimmed.char_indices() {
+                match ch {
+                    '<' | '[' | '(' | '{' => depth += 1,
+                    '>' | ']' | ')' | '}' => depth -= 1,
+                    c if c.is_whitespace() && depth == 0 => last_ws = Some(i),
+                    _ => {}
+                }
+            }
+            last_ws.map(|ws| trimmed[..ws].trim().to_string())
+        }
+        _ => None,
+    }
+}
+
 /// Per-language parameter-type extraction. Recognized shapes:
 ///   - TS / TSX / JSX / JS / Kotlin / Swift / Scala / Python / Rust /
 ///     Dart / Haskell / OCaml / F#:

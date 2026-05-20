@@ -6,8 +6,9 @@ use crate::indexer::resolve::engine::{
     build_scope_chain, ChainMiss, LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup,
 };
 use crate::indexer::resolve::engine::chain_walker::{
-    parse_param_types_from_signature, parse_param_types_from_signature_for_lang,
-    parse_return_type_from_signature, resolve_type_name_in_scope, tuple_element,
+    parse_declared_type_from_signature_for_lang, parse_param_types_from_signature,
+    parse_param_types_from_signature_for_lang, parse_return_type_from_signature,
+    resolve_type_name_in_scope, tuple_element,
 };
 use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::type_checker::core::types::Type;
@@ -168,6 +169,55 @@ fn parse_param_types_rust_style_colon() {
         parse_param_types_from_signature_for_lang("add(a: i32, b: i32) -> i32", "rust"),
         Some(vec!["i32".to_string(), "i32".to_string()])
     );
+}
+
+#[test]
+fn parse_declared_type_typescript_colon() {
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("users: UserMap", "typescript"),
+        Some("UserMap".to_string())
+    );
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("repo: Repository<User>", "typescript"),
+        Some("Repository<User>".to_string())
+    );
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("count: number = 0", "typescript"),
+        Some("number".to_string())
+    );
+}
+
+#[test]
+fn parse_declared_type_go_postfix() {
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("count int", "go"),
+        Some("int".to_string())
+    );
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("items []int", "go"),
+        Some("[]int".to_string())
+    );
+}
+
+#[test]
+fn parse_declared_type_c_prefix() {
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("int count", "c"),
+        Some("int".to_string())
+    );
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("string name", "csharp"),
+        Some("string".to_string())
+    );
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("List<User> users", "java"),
+        Some("List<User>".to_string())
+    );
+}
+
+#[test]
+fn parse_declared_type_empty_returns_none() {
+    assert_eq!(parse_declared_type_from_signature_for_lang("", "typescript"), None);
 }
 
 #[test]
