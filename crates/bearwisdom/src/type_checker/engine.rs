@@ -277,6 +277,22 @@ impl<'a> Engine<'a> {
         hooks.classify_external(ref_ctx, file_ctx, project_ctx, lookup)
     }
 
+    /// Detect cross-tier flow-emission patterns via the per-language hook.
+    /// Returns an empty Vec when no hook is registered for the file's
+    /// language. The legacy `LanguageResolver::detect_flow_emission_with_lookup`
+    /// runs separately for languages not yet on hooks.
+    pub fn detect_flow_emissions(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        let Some(hooks) = self.hooks.get(file_ctx.language.as_str()).copied() else {
+            return Vec::new();
+        };
+        hooks.detect_flow_emissions(file_ctx, ref_ctx, lookup)
+    }
+
     pub fn arena(&self) -> &TypeArena {
         &self.arena
     }

@@ -439,7 +439,12 @@ fn resolve_iteration_body(
                 // succeeds — HTTP client calls, IPC, WebSocket emits, etc. are
                 // identifiable from import context alone, even when the chain
                 // walker can't resolve the external symbol to a DB id.
-                for emission in resolver.detect_flow_emission_with_lookup(file_ctx, &ref_ctx, index) {
+                let mut emissions =
+                    type_engine.detect_flow_emissions(file_ctx, &ref_ctx, index);
+                if emissions.is_empty() {
+                    emissions = resolver.detect_flow_emission_with_lookup(file_ctx, &ref_ctx, index);
+                }
+                for emission in emissions {
                     buf.flow_emissions.push((pf.path.clone(), r.line, emission));
                 }
 

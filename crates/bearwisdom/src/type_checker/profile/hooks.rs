@@ -151,6 +151,19 @@ pub trait LanguageEngineHooks: Send + Sync {
     ) -> Option<String> {
         None
     }
+
+    /// Detect cross-tier flow-emission patterns (HTTP client calls, IPC,
+    /// WebSocket emits, etc.) for a `Calls`-kind ref. Independent of whether
+    /// the symbol resolved — emission rules key on import context + chain
+    /// shape, not on a resolved target. Default: no emission.
+    fn detect_flow_emissions(
+        &self,
+        _file_ctx: &FileContext,
+        _ref_ctx: &ResolveRefContext<'_>,
+        _lookup: &dyn SymbolLookup,
+    ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+        Vec::new()
+    }
 }
 
 /// Concrete no-op implementation. Bound by the engine when a language
