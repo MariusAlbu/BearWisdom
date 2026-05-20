@@ -29,7 +29,10 @@ pub mod extract;
 pub mod fenced;
 pub mod host_scan;
 pub mod info_string;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::MARKDOWN_PROFILE;
 
 use std::sync::Arc;
 
@@ -86,5 +89,11 @@ impl LanguagePlugin for MarkdownPlugin {
 
     fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
         Some(Arc::new(resolve::MarkdownResolver))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::MARKDOWN_PROFILE)
     }
 }

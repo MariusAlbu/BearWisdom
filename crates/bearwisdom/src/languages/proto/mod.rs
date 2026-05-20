@@ -3,7 +3,10 @@
 pub mod connectors;
 pub mod keywords;
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::PROTO_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -75,4 +78,9 @@ impl LanguagePlugin for ProtoPlugin {
         Some(std::sync::Arc::new(resolve::ProtoResolver))
     }
 
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::PROTO_PROFILE)
+    }
 }

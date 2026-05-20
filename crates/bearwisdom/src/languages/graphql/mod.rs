@@ -3,7 +3,10 @@
 pub mod connectors;
 pub mod keywords;
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::GRAPHQL_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -76,4 +79,9 @@ impl LanguagePlugin for GraphQlPlugin {
         Some(std::sync::Arc::new(resolve::GraphQlResolver))
     }
 
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::GRAPHQL_PROFILE)
+    }
 }
