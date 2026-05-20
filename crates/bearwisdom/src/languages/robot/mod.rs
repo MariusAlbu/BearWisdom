@@ -10,7 +10,6 @@ pub mod library_map;
 pub mod dynamic_keywords;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 mod predicates;
 pub(crate) mod type_checker;
 

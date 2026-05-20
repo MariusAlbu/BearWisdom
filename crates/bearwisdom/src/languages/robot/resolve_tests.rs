@@ -10,7 +10,8 @@
 // =============================================================================
 
 use super::extract;
-use super::resolve::RobotResolver;
+use super::hooks::RobotHooks;
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     build_scope_chain, FileContext, RefContext, SymbolIndex,
@@ -164,8 +165,7 @@ fn resolve_first_ref(
     all_files: &[&ParsedFile],
 ) -> Option<crate::indexer::resolve::engine::Resolution> {
     let (index, _) = build_index(all_files);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(file, None);
+    let file_ctx = RobotHooks.build_file_context(file, None).unwrap();
     let r = file.refs.first()?;
     let src_sym = &file.symbols[r.source_symbol_index];
     let ref_ctx = RefContext {
@@ -174,13 +174,12 @@ fn resolve_first_ref(
         scope_chain: build_scope_chain(src_sym.scope_path.as_deref()),
     file_package_id: None,
     };
-    resolver.resolve(&file_ctx, &ref_ctx, &index)
+    RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
 }
 
 fn infer_ns_first_ref(file: &ParsedFile, all_files: &[&ParsedFile]) -> Option<String> {
     let (index, _) = build_index(all_files);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(file, None);
+    let file_ctx = RobotHooks.build_file_context(file, None).unwrap();
     let r = file.refs.first()?;
     let src_sym = &file.symbols[r.source_symbol_index];
     let ref_ctx = RefContext {
@@ -211,8 +210,7 @@ fn resolve_same_file_exact_name() {
         vec![make_ref_plain(0, "Click Element")],
     );
     let (index, id_map) = build_index(&[&file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = RobotHooks.build_file_context(&file, None).unwrap();
     let r = &file.refs[0];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -220,7 +218,7 @@ fn resolve_same_file_exact_name() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index).expect("should resolve");
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("should resolve");
     assert_eq!(res.strategy, "robot_same_file");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
 }
@@ -238,8 +236,7 @@ fn resolve_same_file_case_insensitive() {
         vec![make_ref_plain(0, "click element")],
     );
     let (index, id_map) = build_index(&[&file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = RobotHooks.build_file_context(&file, None).unwrap();
     let r = &file.refs[0];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -247,7 +244,7 @@ fn resolve_same_file_case_insensitive() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index).expect("case-insensitive match");
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("case-insensitive match");
     assert_eq!(res.strategy, "robot_same_file");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
 }
@@ -265,8 +262,7 @@ fn resolve_same_file_underscore_space_equivalence() {
         vec![make_ref_plain(0, "click_element")],
     );
     let (index, id_map) = build_index(&[&file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = RobotHooks.build_file_context(&file, None).unwrap();
     let r = &file.refs[0];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -274,7 +270,7 @@ fn resolve_same_file_underscore_space_equivalence() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index)
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("underscore/space normalization should match");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
 }
@@ -306,8 +302,7 @@ fn library_import_keyword_not_resolved_to_project_symbol() {
         ],
     );
     let (index, id_map) = build_index(&[&resource, &caller]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&caller, None);
+    let file_ctx = RobotHooks.build_file_context(&caller, None).unwrap();
 
     // Second ref is the `Open Browser` call.
     let r = &caller.refs[1];
@@ -319,7 +314,7 @@ fn library_import_keyword_not_resolved_to_project_symbol() {
     };
     // The qualified-library guard at step 1 fires (SeleniumLibrary is a library import)
     // and returns None without reaching the project-symbol lookup.
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
     let project_sym_id = sym_id(&id_map, "lib/keywords.robot", "Open Browser");
     let resolves_to_project = res.as_ref().map_or(false, |r| r.target_symbol_id == project_sym_id);
     assert!(
@@ -384,8 +379,7 @@ fn resolve_resource_import_exact() {
         ],
     );
     let (index, id_map) = build_index(&[&common, &caller]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&caller, None);
+    let file_ctx = RobotHooks.build_file_context(&caller, None).unwrap();
     let r = &caller.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -393,7 +387,7 @@ fn resolve_resource_import_exact() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index).expect("resource import resolution");
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("resource import resolution");
     assert_eq!(res.strategy, "robot_resource_import");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "common.robot", "Setup Database"));
 }
@@ -417,8 +411,7 @@ fn resolve_resource_import_normalized() {
         ],
     );
     let (index, id_map) = build_index(&[&common, &caller]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&caller, None);
+    let file_ctx = RobotHooks.build_file_context(&caller, None).unwrap();
     let r = &caller.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -449,8 +442,7 @@ fn resolve_variable_same_file() {
         vec![make_ref_plain(1, "${HOST}")],
     );
     let (index, id_map) = build_index(&[&file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = RobotHooks.build_file_context(&file, None).unwrap();
     let r = &file.refs[0];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -458,7 +450,7 @@ fn resolve_variable_same_file() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index).expect("variable resolution");
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("variable resolution");
     assert_eq!(res.strategy, "robot_variable_same_file");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/config.robot", "HOST"));
 }
@@ -476,8 +468,7 @@ fn resolve_variable_case_insensitive() {
         vec![make_ref_plain(1, "${host}")],
     );
     let (index, id_map) = build_index(&[&file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = RobotHooks.build_file_context(&file, None).unwrap();
     let r = &file.refs[0];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -510,8 +501,7 @@ fn resolve_variable_from_resource() {
         ],
     );
     let (index, id_map) = build_index(&[&vars_file, &caller]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&caller, None);
+    let file_ctx = RobotHooks.build_file_context(&caller, None).unwrap();
     let r = &caller.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -582,8 +572,7 @@ fn qualified_library_keyword_not_resolved() {
         ],
     );
     let (index, _) = build_index(&[&resource, &caller]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&caller, None);
+    let file_ctx = RobotHooks.build_file_context(&caller, None).unwrap();
     let r = &caller.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -591,7 +580,7 @@ fn qualified_library_keyword_not_resolved() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
     assert!(
         res.is_none(),
         "SeleniumLibrary.Click Element should not resolve to project symbol; got: {res:?}"
@@ -611,8 +600,7 @@ fn qualified_library_keyword_external_namespace() {
         ],
     );
     let (index, _) = build_index(&[&caller]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&caller, None);
+    let file_ctx = RobotHooks.build_file_context(&caller, None).unwrap();
     let r = &caller.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -716,8 +704,7 @@ fn dynamic_keyword_resolves_to_owning_class() {
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&robot_file, Some(&ctx));
+    let file_ctx = RobotHooks.build_file_context(&robot_file, Some(&ctx)).unwrap();
     let r = &robot_file.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -766,8 +753,7 @@ fn module_level_keywords_dict_falls_back_to_first_class() {
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&robot_file, Some(&ctx));
+    let file_ctx = RobotHooks.build_file_context(&robot_file, Some(&ctx)).unwrap();
     let r = &robot_file.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -821,8 +807,7 @@ fn keyword_decorator_alias_resolves_to_specific_method() {
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&robot_file, Some(&ctx));
+    let file_ctx = RobotHooks.build_file_context(&robot_file, Some(&ctx)).unwrap();
     let r = &robot_file.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -873,8 +858,7 @@ fn dynamic_keyword_normalization_matches_call_site() {
         }],
     );
     let (index, _) = build_index(&[&robot_file, &py_file]);
-    let resolver = RobotResolver;
-    let file_ctx = resolver.build_file_context(&robot_file, Some(&ctx));
+    let file_ctx = RobotHooks.build_file_context(&robot_file, Some(&ctx)).unwrap();
     let r = &robot_file.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
