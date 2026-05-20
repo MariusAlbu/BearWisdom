@@ -116,43 +116,4 @@ impl LanguageResolver for NixResolver {
         engine::resolve_common("nix", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Language-specific: Nix channel refs like <nixpkgs> are external; relative
-        // path imports are local and must NOT be marked external.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let path = ref_ctx
-                .extracted_ref
-                .module
-                .as_deref()
-                .unwrap_or(target.as_str());
-            if path.starts_with('<') && path.ends_with('>') {
-                return Some(path.to_string());
-            }
-            return None;
-        }
-
-        // Dotted platform attribute paths (lib.*, pkgs.*, config.*, builtins.*)
-        // are always external — no project source defines them. The prefix
-        // check in resolve() skips resolution for these but does NOT classify
-        // them as external; that is this function's job.
-        if target.starts_with("builtins.")
-            || target.starts_with("lib.")
-            || target.starts_with("pkgs.")
-            || target.starts_with("config.")
-        {
-            return Some("builtin".to_string());
-        }
-
-        // Bare names without a dotted prefix are classified by the engine's
-        // keywords() set via classify_external_name.
-        let _ = (file_ctx, ref_ctx, project_ctx);
-        None
-    }
 }
