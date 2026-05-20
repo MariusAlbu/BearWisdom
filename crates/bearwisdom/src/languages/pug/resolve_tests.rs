@@ -1,4 +1,5 @@
-use super::*;
+use super::hooks::PugHooks;
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::resolve::engine::{
     build_scope_chain, FileContext, RefContext, SymbolIndex,
 };
@@ -103,8 +104,7 @@ fn build_index_and_resolve(files: &[&ParsedFile], importer: &ParsedFile) -> Opti
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
-    let resolver = PugResolver;
-    let file_ctx = resolver.build_file_context(importer, None);
+    let file_ctx = PugHooks.build_file_context(importer, None).unwrap();
     let r = importer.refs.first()?;
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -112,7 +112,7 @@ fn build_index_and_resolve(files: &[&ParsedFile], importer: &ParsedFile) -> Opti
         scope_chain: build_scope_chain(importer.symbols[0].scope_path.as_deref()),
         file_package_id: None,
     };
-    resolver.resolve(&file_ctx, &ref_ctx, &index)
+    PugHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
 }
 
 #[test]

@@ -13,7 +13,10 @@ pub mod extract;
 pub mod embedded;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::PUG_HOOKS;
 pub use profile::PUG_PROFILE;
