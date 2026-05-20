@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_perl_dbi_emission, detect_perl_http_producer, detect_perl_route};
 use crate::types::*;
 
 #[test]
