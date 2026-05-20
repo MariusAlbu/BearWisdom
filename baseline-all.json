@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-05-19T00:00:00Z",
+  "captured_at": "2026-05-20T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -3014,7 +3014,7 @@
       "files": 154,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 7038,
+      "internal_edges": 7051,
       "internal_unresolved": 44,
       "languages": {
         "go": 110,
@@ -3023,9 +3023,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/go-bubbletea",
       "perf": {
-        "end_ws_mb": 376,
-        "files_per_sec": 26,
-        "index_duration_ms": 5909
+        "end_ws_mb": 57,
+        "files_per_sec": 32,
+        "index_duration_ms": 4854
       },
       "project": "go-bubbletea",
       "resolution_rate": 99.38,
@@ -4052,9 +4052,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/java-spring-petclinic",
       "perf": {
-        "end_ws_mb": 107,
+        "end_ws_mb": 72,
         "files_per_sec": 2,
-        "index_duration_ms": 41667
+        "index_duration_ms": 39648
       },
       "project": "java-spring-petclinic",
       "resolution_rate": 92.19,
@@ -7209,9 +7209,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-black",
       "perf": {
-        "end_ws_mb": 182,
+        "end_ws_mb": 146,
         "files_per_sec": 6,
-        "index_duration_ms": 67378
+        "index_duration_ms": 65136
       },
       "project": "python-black",
       "resolution_rate": 91.86,
@@ -9565,7 +9565,7 @@
         "mailer": 85
       },
       "flow_edges": 630,
-      "internal_edges": 16734,
+      "internal_edges": 16739,
       "internal_unresolved": 250,
       "languages": {
         "css": 4,
@@ -9584,9 +9584,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 190,
-        "files_per_sec": 34,
-        "index_duration_ms": 36709
+        "end_ws_mb": 168,
+        "files_per_sec": 38,
+        "index_duration_ms": 33064
       },
       "project": "ts-rallly",
       "resolution_rate": 98.53,
@@ -10152,7 +10152,7 @@
         "http_call": 5
       },
       "flow_edges": 17,
-      "internal_edges": 24447,
+      "internal_edges": 24502,
       "internal_unresolved": 173,
       "languages": {
         "css": 13,
@@ -10171,9 +10171,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 176,
-        "files_per_sec": 23,
-        "index_duration_ms": 75950
+        "end_ws_mb": 155,
+        "files_per_sec": 27,
+        "index_duration_ms": 65616
       },
       "project": "vue-vben-admin",
       "resolution_rate": 99.3,
