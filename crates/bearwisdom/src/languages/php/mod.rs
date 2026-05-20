@@ -10,9 +10,12 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod resolve;
+
+pub use profile::PHP_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -113,6 +116,12 @@ impl LanguagePlugin for PhpPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::PhpChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::PHP_PROFILE)
     }
 
     // TODO(routes-dispatch): wire `connectors::discover_laravel_routes` into

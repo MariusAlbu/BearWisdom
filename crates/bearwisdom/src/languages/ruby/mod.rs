@@ -9,9 +9,12 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod resolve;
+
+pub use profile::RUBY_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -84,6 +87,12 @@ impl LanguagePlugin for RubyPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::RubyChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::RUBY_PROFILE)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
