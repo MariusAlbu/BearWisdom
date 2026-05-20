@@ -2,6 +2,10 @@
 //! `#parse("file.vm")`, `#include("file.vm")` → Imports ref.
 //! `#macro(name)` → Field symbol.
 
+pub(crate) mod profile;
+
+pub use profile::VELOCITY_PROFILE;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{
@@ -119,6 +123,11 @@ impl LanguagePlugin for VelocityPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::VELOCITY_PROFILE)
+    }
 }
 
 fn lc(bytes: &[u8], pos: usize) -> (u32, u32) {

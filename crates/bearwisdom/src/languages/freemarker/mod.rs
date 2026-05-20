@@ -1,6 +1,10 @@
 //! FreeMarker (`.ftl`, `.ftlh`). `${expr}` → Java expression,
 //! `<#include "file">` → Imports ref, `<#macro name>` → Field symbol.
 
+pub(crate) mod profile;
+
+pub use profile::FREEMARKER_PROFILE;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{
@@ -78,6 +82,11 @@ impl LanguagePlugin for FreemarkerPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::FREEMARKER_PROFILE)
+    }
 }
 
 fn stem(p: &str) -> String {
