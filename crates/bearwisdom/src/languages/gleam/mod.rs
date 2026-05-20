@@ -15,8 +15,11 @@
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 pub(crate) mod type_checker;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::GLEAM_HOOKS;
 pub use profile::GLEAM_PROFILE;

@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_gleam_http_producer, detect_gleam_pgo_emission};
 use crate::types::*;
 
 #[test]
