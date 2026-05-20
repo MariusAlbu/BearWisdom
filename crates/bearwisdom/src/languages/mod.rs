@@ -169,6 +169,23 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// ecosystems.
     fn keywords(&self) -> &'static [&'static str] { &[] }
 
+    /// File-pairing rule: given a file path this plugin claims, return the
+    /// companion file whose imports should be merged in when resolving refs
+    /// against `file_path`.
+    ///
+    /// Angular templates (`*.component.html`) have no imports of their own
+    /// but every symbol they reference is imported by the paired
+    /// `*.component.ts` class. Ada package bodies pair with their spec.
+    /// Most plugins return `None`.
+    ///
+    /// The resolver loop consults this method directly through the plugin
+    /// registry — independent of `LanguageResolver` — so any plugin can
+    /// declare a companion regardless of whether it ships a legacy resolver
+    /// or an engine profile.
+    fn companion_file_for_imports(&self, _file_path: &str) -> Option<String> {
+        None
+    }
+
     /// (child_kind, parent_kind) pairs where a ref-producing CST node should NOT
     /// be counted in the coverage denominator when it appears as a direct child of
     /// the given parent kind.

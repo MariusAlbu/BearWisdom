@@ -34,13 +34,15 @@ fn paired_ts_returns_none_for_plain_html() {
 
 #[test]
 fn companion_file_for_imports_delegates_to_paired_ts() {
-    let r = AngularResolver;
+    use crate::languages::angular::AngularPlugin;
+    use crate::languages::LanguagePlugin;
+    let p = AngularPlugin;
     assert_eq!(
-        r.companion_file_for_imports("src/app/foo.component.html").as_deref(),
+        p.companion_file_for_imports("src/app/foo.component.html").as_deref(),
         Some("src/app/foo.component.ts")
     );
     assert_eq!(
-        r.companion_file_for_imports("src/app/unrelated.html"),
+        p.companion_file_for_imports("src/app/unrelated.html"),
         None
     );
 }

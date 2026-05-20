@@ -75,6 +75,10 @@ impl LanguagePlugin for AdaPlugin {
 
     fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
+    fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
+        resolve::spec_for_body(file_path)
+    }
+
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::AdaResolver))
     }

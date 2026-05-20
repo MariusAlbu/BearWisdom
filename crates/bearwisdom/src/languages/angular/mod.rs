@@ -75,6 +75,10 @@ impl LanguagePlugin for AngularPlugin {
         crate::languages::typescript::keywords::KEYWORDS
     }
 
+    fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
+        resolve::paired_ts_for_template(file_path)
+    }
+
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::AngularResolver))
     }

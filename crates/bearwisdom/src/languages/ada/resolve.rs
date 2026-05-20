@@ -61,15 +61,6 @@ impl LanguageResolver for AdaResolver {
         &["ada"]
     }
 
-    /// For an Ada body file (`.adb`), return the sibling spec file (`.ads`)
-    /// so the resolve driver can merge the spec's context clauses — `with` /
-    /// `use` clauses and package renames — into the body's FileContext before
-    /// any reference is resolved. Ada's visibility rule requires this: a body
-    /// inherits every context clause declared in its specification.
-    fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        spec_for_body(file_path)
-    }
-
     fn build_file_context(
         &self,
         file: &ParsedFile,

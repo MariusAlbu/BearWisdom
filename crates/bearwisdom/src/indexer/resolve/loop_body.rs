@@ -197,11 +197,12 @@ fn resolve_iteration_body(
     // not re-parsed). Keeps the inner per-file loop free of `&Connection`
     // so it can run on rayon workers.
     let companion_db_imports: HashMap<String, Vec<ImportEntry>> = {
+        let plugin_registry = crate::languages::default_registry();
         let mut needed: std::collections::HashSet<String> = std::collections::HashSet::new();
         for pf in parsed {
             if pf.path.starts_with("ext:") { continue }
-            if let Some(host_resolver) = engine.resolver_for(&pf.language) {
-                if let Some(companion_path) = host_resolver.companion_file_for_imports(&pf.path) {
+            if let Some(plugin) = plugin_registry.get_dedicated(&pf.language) {
+                if let Some(companion_path) = plugin.companion_file_for_imports(&pf.path) {
                     if !parsed_by_path.contains_key(companion_path.as_str()) {
                         needed.insert(companion_path);
                     }
@@ -306,13 +307,18 @@ fn resolve_iteration_body(
 
         // Try language-specific resolver for this file.
         let host_resolver = engine.resolver_for(&pf.language);
+        let host_plugin = crate::languages::default_registry().get_dedicated(&pf.language);
         let host_file_ctx = host_resolver.map(|r| {
             let mut ctx = r.build_file_context(pf, project_ctx);
             // Merge companion imports (e.g. Angular template inherits the
             // paired `.component.ts` imports, since the template itself has
             // no import statements but every symbol it names is imported by
-            // the component class).
-            if let Some(companion_path) = r.companion_file_for_imports(&pf.path) {
+            // the component class). Companion pairing lives on
+            // `LanguagePlugin::companion_file_for_imports` — independent of
+            // resolver wiring so any plugin can declare a paired file.
+            if let Some(companion_path) =
+                host_plugin.and_then(|p| p.companion_file_for_imports(&pf.path))
+            {
                 if let Some(comp_pf) = parsed_by_path.get(companion_path.as_str()) {
                     if let Some(comp_resolver) = engine.resolver_for(&comp_pf.language) {
                         let comp_ctx = comp_resolver.build_file_context(comp_pf, project_ctx);
