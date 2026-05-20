@@ -1,8 +1,14 @@
-use super::resolve;
+// Dockerfile language hooks. Absorbed contents of the deleted
+// `dockerfile/resolve.rs` — the resolver struct now lives here as a
+// language-private inherent impl.
+
+use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup, Resolution};
+use crate::indexer::resolve::engine::{
+    self as engine, FileContext, RefContext, Resolution, SymbolLookup,
+};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::EdgeKind;
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct DockerfileHooks;
 
@@ -14,40 +20,47 @@ impl LanguageEngineHooks for DockerfileHooks {
         _project_ctx: Option<&ProjectContext>,
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
-        // `scratch` is a special Docker pseudo-image.
         if ref_ctx.extracted_ref.target_name.eq_ignore_ascii_case("scratch") {
             return Some("docker".to_string());
         }
-
-        // `FROM <image>` emits both Imports and Inherits edges targeting the
-        // same base image. By the time we get here, multi-stage aliases have
-        // already been resolved internally, so what's left is a registry
-        // image reference.
         if matches!(
             ref_ctx.extracted_ref.kind,
             EdgeKind::Imports | EdgeKind::Inherits
         ) {
             return Some("docker".to_string());
         }
-
         None
     }
 
     fn build_file_context(
         &self,
-        file: &crate::types::ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<crate::indexer::resolve::engine::FileContext> {
-        Some(resolve::build_file_context_inner(file, project_ctx))
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        Some(FileContext {
+            file_path: file.path.clone(),
+            language: "dockerfile".to_string(),
+            imports: Vec::new(),
+            file_namespace: None,
+        })
     }
 
     fn resolve_ref(
         &self,
-        file_ctx: &crate::indexer::resolve::engine::FileContext,
-        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
-        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        super::resolve::DockerfileResolver.resolve(file_ctx, ref_ctx, lookup)
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            return None;
+        }
+        engine::resolve_common(
+            "dockerfile",
+            file_ctx,
+            ref_ctx,
+            lookup,
+            predicates::kind_compatible,
+        )
     }
 }
 

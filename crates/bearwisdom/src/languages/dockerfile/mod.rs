@@ -8,7 +8,6 @@ pub mod connectors;
 pub mod keywords;
 pub mod embedded;
 pub mod extract;
-pub mod resolve;
 
 pub use hooks::DOCKERFILE_HOOKS;
 pub use profile::DOCKERFILE_PROFILE;
