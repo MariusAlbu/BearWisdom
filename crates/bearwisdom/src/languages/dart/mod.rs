@@ -8,10 +8,12 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 pub(crate) mod type_checker;
 
+pub use hooks::DART_HOOKS;
 pub use profile::DART_PROFILE;
 
 #[cfg(test)]
@@ -94,6 +96,13 @@ impl LanguagePlugin for DartPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::DART_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::DART_HOOKS)
     }
 
     // DartRestConnector deleted — its routes-table re-read for Stop points
