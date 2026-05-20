@@ -221,6 +221,13 @@ fn infer_external_namespace_dotted_phoenix_root() {
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        use std::collections::HashMap;
+        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::heex::hooks::HeexHooks.classify_external(
+            &ref_ctx, &file_ctx, None, &empty_lookup,
+        )
+    };
     assert_eq!(ns.as_deref(), Some("Phoenix"));
 }

@@ -111,25 +111,6 @@ impl LanguageResolver for HeexResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Module-qualified component refs like `<MyApp.Components.button>` —
-        // delegate to the Elixir external-module classifier.
-        if target.contains('.') {
-            let root = target.split('.').next().unwrap_or(target);
-            if elixir::predicates::is_external_elixir_module(root) {
-                return Some(root.to_string());
-            }
-        }
-
-        None
-    }
 }
 
 #[cfg(test)]

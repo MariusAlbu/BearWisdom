@@ -9,9 +9,11 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::HEEX_HOOKS;
 pub use profile::HEEX_PROFILE;
 
 use std::sync::Arc;
@@ -44,5 +46,12 @@ impl LanguagePlugin for HeexPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::HEEX_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::HEEX_HOOKS)
     }
 }
