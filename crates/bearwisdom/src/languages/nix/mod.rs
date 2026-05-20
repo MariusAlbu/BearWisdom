@@ -4,8 +4,11 @@ pub mod keywords;
 pub mod bindings;
 pub mod calls;
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
 pub(crate) mod type_checker;
+
+pub use profile::NIX_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -75,5 +78,11 @@ impl LanguagePlugin for NixPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::NixChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::NIX_PROFILE)
     }
 }

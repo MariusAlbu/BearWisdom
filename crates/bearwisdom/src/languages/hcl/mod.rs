@@ -4,8 +4,11 @@ pub mod connectors;
 pub mod embedded;
 pub mod keywords;
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
 pub(crate) mod type_checker;
+
+pub use profile::HCL_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -84,5 +87,11 @@ impl LanguagePlugin for HclPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::HclChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::HCL_PROFILE)
     }
 }

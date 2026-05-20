@@ -5,7 +5,10 @@ pub mod keywords;
 pub mod extract;
 mod arguments;
 mod commands;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::CMAKE_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -75,5 +78,11 @@ impl LanguagePlugin for CMakePlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::CMakeResolver))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::CMAKE_PROFILE)
     }
 }
