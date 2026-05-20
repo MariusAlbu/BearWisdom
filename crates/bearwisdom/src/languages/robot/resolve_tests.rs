@@ -419,8 +419,7 @@ fn resolve_resource_import_normalized() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("normalized resource import resolution");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "common.robot", "Setup Database"));
 }
@@ -476,8 +475,7 @@ fn resolve_variable_case_insensitive() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("case-insensitive variable resolution");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/config.robot", "HOST"));
 }
@@ -509,8 +507,7 @@ fn resolve_variable_from_resource() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("variable from resource resolution");
     assert_eq!(res.strategy, "robot_variable_resource");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "vars/common.robot", "DB_URL"));
@@ -712,8 +709,7 @@ fn dynamic_keyword_resolves_to_owning_class() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("dynamic keyword should resolve to AsyncDynamicLibrary class");
     assert_eq!(res.strategy, "robot_dynamic_library");
     assert_eq!(
@@ -761,8 +757,7 @@ fn module_level_keywords_dict_falls_back_to_first_class() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("module-level dynamic keyword should fall back to first class");
     assert_eq!(res.strategy, "robot_dynamic_library_fallback");
     assert_eq!(
@@ -815,8 +810,7 @@ fn keyword_decorator_alias_resolves_to_specific_method() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("decorator alias should resolve to its method");
     assert_eq!(res.strategy, "robot_dynamic_library_method");
     assert_eq!(
@@ -866,8 +860,7 @@ fn dynamic_keyword_normalization_matches_call_site() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
         .expect("normalised keyword should match call-site spaces form");
     assert_eq!(res.strategy, "robot_dynamic_library");
 }
