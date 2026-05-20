@@ -306,6 +306,19 @@ impl<'a> Engine<'a> {
         hooks.build_file_context(file, project_ctx)
     }
 
+    /// Resolve a ref via the per-language hook. Returns `None` when no hook
+    /// is registered or the hook itself declines.
+    pub fn resolve_ref_via_hook(
+        &self,
+        language: &str,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        let hooks = self.hooks.get(language).copied()?;
+        hooks.resolve_ref(file_ctx, ref_ctx, lookup)
+    }
+
     pub fn arena(&self) -> &TypeArena {
         &self.arena
     }

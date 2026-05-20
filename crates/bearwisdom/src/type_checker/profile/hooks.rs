@@ -177,6 +177,18 @@ pub trait LanguageEngineHooks: Send + Sync {
     ) -> Option<FileContext> {
         None
     }
+
+    /// Resolve a ref via the language-specific rules. Returns `Some(Resolution)`
+    /// when the language has a deterministic answer, `None` to let the engine
+    /// fall through to other strategies. Default: no resolution.
+    fn resolve_ref(
+        &self,
+        _file_ctx: &FileContext,
+        _ref_ctx: &ResolveRefContext<'_>,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        None
+    }
 }
 
 /// Concrete no-op implementation. Bound by the engine when a language

@@ -464,13 +464,18 @@ fn resolve_iteration_body(
                     .profile_for(&pf.language)
                     .map(|p| p.engine_primary)
                     .unwrap_or(false);
+                let hook_resolve = || {
+                    type_engine
+                        .resolve_ref_via_hook(effective_lang, file_ctx, &ref_ctx, index)
+                        .map(|r| (r, false))
+                };
                 let resolution = if try_engine_first {
                     type_engine
                         .resolve(&ref_ctx, file_ctx, index)
                         .map(|r| (r, true))
-                        .or_else(|| resolver.resolve(file_ctx, &ref_ctx, index).map(|r| (r, false)))
+                        .or_else(hook_resolve)
                 } else {
-                    resolver.resolve(file_ctx, &ref_ctx, index).map(|r| (r, false))
+                    hook_resolve()
                 };
 
                 if let Some((resolution, came_from_engine)) = resolution {

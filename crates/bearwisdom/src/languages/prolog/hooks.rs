@@ -12,6 +12,16 @@ impl LanguageEngineHooks for PrologHooks {
     ) -> Option<crate::indexer::resolve::engine::FileContext> {
         Some(resolve::build_file_context_inner(file, project_ctx))
     }
+
+    fn resolve_ref(
+        &self,
+        file_ctx: &crate::indexer::resolve::engine::FileContext,
+        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
+        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
+    ) -> Option<crate::indexer::resolve::engine::Resolution> {
+        use crate::indexer::resolve::engine::LanguageResolver;
+        super::resolve::PrologResolver.resolve(file_ctx, ref_ctx, lookup)
+    }
 }
 
 pub static PROLOG_HOOKS: PrologHooks = PrologHooks;

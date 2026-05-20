@@ -37,6 +37,16 @@ impl LanguageEngineHooks for TypeScriptHooks {
     ) -> Option<FileContext> {
         Some(resolve::build_file_context_inner(file, project_ctx))
     }
+
+    fn resolve_ref(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<crate::indexer::resolve::engine::Resolution> {
+        use crate::indexer::resolve::engine::LanguageResolver;
+        resolve::TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
+    }
 }
 
 /// Static instance the language plugin returns. `'static` so the engine
