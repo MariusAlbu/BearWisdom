@@ -12,6 +12,9 @@
 //! shared with Vue/Svelte/Astro via `languages::common::extract_html_script_style_regions`.
 
 pub mod extract;
+pub(crate) mod profile;
+
+pub use profile::HTML_PROFILE;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -68,5 +71,11 @@ impl LanguagePlugin for HtmlPlugin {
 
     fn ref_node_kinds(&self) -> &[&str] {
         &["element", "self_closing_element"]
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::HTML_PROFILE)
     }
 }

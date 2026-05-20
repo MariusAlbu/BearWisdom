@@ -14,7 +14,10 @@
 pub mod ansible;
 pub mod embedded;
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::YAML_PROFILE;
 
 use std::sync::Arc;
 
@@ -43,5 +46,10 @@ impl LanguagePlugin for YamlPlugin {
     fn ref_node_kinds(&self) -> &[&str] { &[] }
     fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
         Some(Arc::new(resolve::YamlResolver))
+    }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::YAML_PROFILE)
     }
 }

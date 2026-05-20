@@ -1,12 +1,15 @@
 //! Dockerfile language plugin.
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod keywords;
 pub mod embedded;
 pub mod extract;
 pub mod resolve;
+
+pub use profile::DOCKERFILE_PROFILE;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -83,5 +86,11 @@ impl LanguagePlugin for DockerfilePlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::DockerfileChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::DOCKERFILE_PROFILE)
     }
 }

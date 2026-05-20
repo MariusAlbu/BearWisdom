@@ -2,7 +2,10 @@
 
 pub(crate) mod keywords;
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::SQL_PROFILE;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -72,5 +75,11 @@ impl LanguagePlugin for SqlPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::SqlResolver))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::SQL_PROFILE)
     }
 }
