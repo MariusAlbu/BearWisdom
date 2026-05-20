@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_fsharp_db_query, detect_fsharp_http_producer, detect_fsharp_route};
 use crate::types::*;
 
 #[test]
