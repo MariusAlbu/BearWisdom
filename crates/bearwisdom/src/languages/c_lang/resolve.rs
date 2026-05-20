@@ -31,7 +31,7 @@ use crate::types::{EdgeKind, ParsedFile};
 /// package (project has a DESCRIPTION manifest). Lets `resolve()` and
 /// `infer_external_namespace()` gate R C API classification without threading
 /// `ProjectContext` through the resolution hot-path.
-const R_PACKAGE_SENTINEL: &str = "__r_package__";
+pub(super) const R_PACKAGE_SENTINEL: &str = "__r_package__";
 
 /// C/C++ language resolver.
 pub struct CLangResolver;
@@ -299,62 +299,6 @@ impl LanguageResolver for CLangResolver {
                     },
                 );
             }
-        }
-
-        None
-    }
-
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // R C API symbols (Rinternals.h, Rdefines.h, R_ext/*.h).
-        // Only classify as external when the C file is inside an R package.
-        if file_ctx.file_namespace.as_deref() == Some(R_PACKAGE_SENTINEL)
-            && predicates::is_r_c_api_symbol(target)
-        {
-            return Some("r.c.api".to_string());
-        }
-
-        // Include directives -- classify system headers as external.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let header = target.trim_matches(|c| c == '<' || c == '>' || c == '"');
-            if predicates::is_system_header(header) {
-                return Some("stdlib".to_string());
-            }
-            // boost or other known-external headers.
-            if header.starts_with("boost/")
-                || header.starts_with("gtest/")
-                || header.starts_with("gmock/")
-            {
-                return Some("external".to_string());
-            }
-            return None;
-        }
-
-        // Template parameters get their own namespace.
-        if predicates::is_template_param(target) {
-            return Some("template_param".to_string());
-        }
-
-        // `std::` prefixed names.
-        if target.starts_with("std::") || target.starts_with("::std::") {
-            return Some("std".to_string());
-        }
-
-        // Other known-external namespace prefixes.
-        let root = target
-            .strip_prefix("::")
-            .unwrap_or(target)
-            .split("::")
-            .next()
-            .unwrap_or(target);
-        if predicates::is_external_c_namespace(root) {
-            return Some(root.to_string());
         }
 
         None

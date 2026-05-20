@@ -22,9 +22,11 @@ pub mod keywords;
 pub mod macro_catalog;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::C_HOOKS;
 pub use profile::C_LANG_PROFILE;
 
 #[cfg(test)]
@@ -143,6 +145,13 @@ impl LanguagePlugin for CLangPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::C_LANG_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::C_HOOKS)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
