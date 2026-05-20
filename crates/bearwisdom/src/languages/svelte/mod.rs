@@ -32,7 +32,7 @@ mod coverage_tests;
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -55,12 +55,9 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 // ---------------------------------------------------------------------------
 pub(crate) struct SvelteResolver;
 
-impl LanguageResolver for SvelteResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["svelte"]
-    }
+impl SvelteResolver {
 
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &crate::types::ParsedFile,
         project_ctx: Option<&ProjectContext>,
@@ -69,7 +66,7 @@ impl LanguageResolver for SvelteResolver {
             .build_file_context(file, project_ctx)
     }
 
-    fn resolve(
+    pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

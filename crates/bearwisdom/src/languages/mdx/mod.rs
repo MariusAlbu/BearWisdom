@@ -27,7 +27,6 @@ pub use profile::MDX_PROFILE;
 
 use std::sync::Arc;
 
-use crate::indexer::resolve::engine::LanguageResolver;
 use crate::languages::LanguagePlugin;
 use resolve::MdxResolver;
 use crate::parser::scope_tree::ScopeKind;

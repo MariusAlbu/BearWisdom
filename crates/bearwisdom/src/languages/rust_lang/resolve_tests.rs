@@ -2,7 +2,7 @@ use super::predicates;
 use super::resolve::RustResolver;
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, LanguageResolver, RefContext};
+use crate::indexer::resolve::engine::{build_scope_chain, RefContext};
 use crate::types::*;
 
 fn make_symbol(
@@ -598,7 +598,7 @@ fn test_rust_tonic_direct_detector_still_rejects_bare_variable() {
 
 #[test]
 fn test_rust_tonic_let_bound_client_emits_via_lookup() {
-    use crate::indexer::resolve::engine::{FileContext, LanguageResolver, RefContext, SymbolInfo, SymbolLookup};
+    use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use crate::types::{ChainSegment, ExtractedRef, ExtractedSymbol, MemberChain};
 

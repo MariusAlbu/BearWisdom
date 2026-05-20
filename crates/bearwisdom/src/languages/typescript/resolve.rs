@@ -32,7 +32,7 @@ use crate::type_checker::TypeChecker;
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::flow_emit::FlowEmission;
@@ -79,20 +79,17 @@ pub use predicates::is_bare_specifier;
 /// synthesis).
 pub struct TypeScriptResolver;
 
-impl LanguageResolver for TypeScriptResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["typescript", "javascript", "tsx", "jsx"]
-    }
+impl TypeScriptResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

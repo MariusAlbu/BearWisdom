@@ -1,6 +1,6 @@
 use super::*;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, FileContext, LanguageResolver, RefContext, SymbolIndex,
+    build_scope_chain, FileContext, RefContext, SymbolIndex,
 };
 use crate::types::*;
 use std::collections::HashMap;

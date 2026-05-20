@@ -23,7 +23,7 @@ use crate::type_checker::chain::{
     self, ChainConfig, NamespaceLookup, identity_normalize,
 };
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -31,20 +31,17 @@ use crate::types::{EdgeKind, ParsedFile};
 /// Scala language resolver.
 pub struct ScalaResolver;
 
-impl LanguageResolver for ScalaResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["scala"]
-    }
+impl ScalaResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -240,7 +237,7 @@ fn resolve(
         None
     }
 
-    fn is_visible(
+    pub(crate) fn is_visible(
         &self,
         file_ctx: &FileContext,
         _ref_ctx: &RefContext,

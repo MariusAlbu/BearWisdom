@@ -1,6 +1,6 @@
 use super::resolve::GoResolver;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, FileContext, ImportEntry, LanguageResolver, RefContext, SymbolIndex, SymbolInfo};
+use crate::indexer::resolve::engine::{build_scope_chain, FileContext, ImportEntry, RefContext, SymbolIndex, SymbolInfo};
 use crate::types::*;
 use std::collections::HashMap;
 use std::sync::Arc;

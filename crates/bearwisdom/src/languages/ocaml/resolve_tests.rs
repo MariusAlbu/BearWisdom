@@ -100,7 +100,6 @@ fn test_ocaml_caqti_no_match_when_alias_resolves_elsewhere() {
 
 #[test]
 fn build_file_context_includes_implicit_stdlib_open() {
-    use crate::indexer::resolve::engine::LanguageResolver;
     use crate::types::{FlowMeta, ParsedFile};
 
     let file = ParsedFile {

@@ -22,7 +22,7 @@ use super::{predicates, type_checker::CChecker};
 use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -36,20 +36,17 @@ pub(super) const R_PACKAGE_SENTINEL: &str = "__r_package__";
 /// C/C++ language resolver.
 pub struct CLangResolver;
 
-impl LanguageResolver for CLangResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["c", "cpp"]
-    }
+impl CLangResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

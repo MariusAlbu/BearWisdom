@@ -4,7 +4,7 @@
 
 use super::{ends_with_path_suffix, shell_path_suffix, BashResolver};
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, SymbolIndex,
+    FileContext, ImportEntry, RefContext, SymbolIndex,
 };
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,

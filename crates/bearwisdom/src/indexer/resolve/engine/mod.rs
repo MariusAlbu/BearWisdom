@@ -32,7 +32,7 @@ pub use chain_walker::infer_external_from_chain;
 pub use common::{infer_external_common, resolve_common};
 pub use index::{LocalTypeCache, SymbolIndex};
 pub use lookup::SymbolLookup;
-pub use registry::{LanguageResolver, ResolutionEngine};
+pub use registry::ResolutionEngine;
 pub use types::{
     intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution,
     SymbolInfo, TypeInfo,

@@ -23,26 +23,23 @@ use std::path::{Component, Path, PathBuf};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::types::{EdgeKind, ParsedFile};
 
 pub struct JinjaResolver;
 
-impl LanguageResolver for JinjaResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["jinja", "jinja2", "j2"]
-    }
+impl JinjaResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

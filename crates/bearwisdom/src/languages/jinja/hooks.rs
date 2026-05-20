@@ -34,7 +34,6 @@ impl LanguageEngineHooks for JinjaHooks {
         ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
         lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
     ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        use crate::indexer::resolve::engine::LanguageResolver;
         super::resolve::JinjaResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 }

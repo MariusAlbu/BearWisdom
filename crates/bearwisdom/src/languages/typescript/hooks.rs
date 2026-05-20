@@ -44,7 +44,6 @@ impl LanguageEngineHooks for TypeScriptHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        use crate::indexer::resolve::engine::LanguageResolver;
         resolve::TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 }

@@ -23,7 +23,6 @@ pub use profile::YAML_PROFILE;
 
 use std::sync::Arc;
 
-use crate::indexer::resolve::engine::LanguageResolver;
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};

@@ -1,5 +1,5 @@
 use super::*;
-use crate::indexer::resolve::engine::{FileContext, RefContext, LanguageResolver};
+use crate::indexer::resolve::engine::{FileContext, RefContext};
 use crate::types::*;
 
 fn fixture(target: &str, module: &str, args: Vec<CallArg>) -> (ExtractedRef, ExtractedSymbol, FileContext) {

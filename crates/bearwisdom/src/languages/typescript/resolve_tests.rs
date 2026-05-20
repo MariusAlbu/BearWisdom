@@ -1,5 +1,5 @@
 use super::resolve::*;
-use crate::indexer::resolve::engine::{LanguageResolver, RefContext};
+use crate::indexer::resolve::engine::{RefContext};
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
 use crate::types::*;
@@ -7174,8 +7174,6 @@ fn test_di_binding_inject_decorator_emits() {
         }],
         file_namespace: None,
     };
-
-    use crate::indexer::resolve::engine::LanguageResolver;
     let resolver = super::resolve::TypeScriptResolver;
     let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
     assert_eq!(emissions.len(), 1);
@@ -7236,8 +7234,6 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
         imports: vec![],
         file_namespace: None,
     };
-
-    use crate::indexer::resolve::engine::LanguageResolver;
     let resolver = super::resolve::TypeScriptResolver;
     let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
     assert!(emissions.is_empty());
@@ -7294,8 +7290,6 @@ fn test_di_binding_inject_without_token_still_emits() {
         imports: vec![],
         file_namespace: None,
     };
-
-    use crate::indexer::resolve::engine::LanguageResolver;
     let resolver = super::resolve::TypeScriptResolver;
     let emissions = super::resolve::detect_flow_inner(&file_ctx, &ref_ctx);
     assert_eq!(emissions.len(), 1);

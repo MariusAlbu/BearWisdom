@@ -40,7 +40,7 @@ use super::externals::infer_external_inner;
 use super::{predicates, type_checker::PythonChecker};
 use crate::type_checker::TypeChecker;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -54,20 +54,17 @@ use tracing::debug;
 /// synthetic globals) and any chain refs the engine declines.
 pub struct PythonResolver;
 
-impl LanguageResolver for PythonResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["python"]
-    }
+impl PythonResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

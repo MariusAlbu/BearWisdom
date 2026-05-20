@@ -67,7 +67,7 @@
 use super::extract::{is_dotnet_type_name, DOTNET_BINDING_SENTINEL};
 use super::predicates;
 use crate::indexer::resolve::engine::{
-    self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -75,20 +75,17 @@ use crate::types::{EdgeKind, ParsedFile};
 /// PowerShell language resolver.
 pub struct PowerShellResolver;
 
-impl LanguageResolver for PowerShellResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["powershell"]
-    }
+impl PowerShellResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

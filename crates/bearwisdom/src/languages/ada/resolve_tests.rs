@@ -1,6 +1,6 @@
 use super::{spec_for_body, AdaResolver, _test_probe_package_of_type, _test_walk_field_chain};
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use std::collections::HashMap;

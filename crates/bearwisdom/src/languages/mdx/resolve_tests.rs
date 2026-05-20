@@ -1,6 +1,6 @@
 use super::MdxResolver;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, LanguageResolver, RefContext, SymbolIndex,
+    build_scope_chain, RefContext, SymbolIndex,
 };
 use crate::types::*;
 use std::collections::HashMap;

@@ -1,6 +1,6 @@
 use super::resolve::PhpResolver;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, FileContext, LanguageResolver, RefContext, SymbolIndex, SymbolInfo};
+use crate::indexer::resolve::engine::{build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolInfo};
 use crate::types::*;
 use std::collections::HashMap;
 use super::resolve::normalize_php_ns;

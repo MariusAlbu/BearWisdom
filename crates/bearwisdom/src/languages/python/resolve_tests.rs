@@ -8,7 +8,7 @@
 
 use super::resolve::PythonResolver;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, FileContext, LanguageResolver, RefContext, SymbolIndex, SymbolLookup,
+    build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolLookup,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use std::collections::HashMap;

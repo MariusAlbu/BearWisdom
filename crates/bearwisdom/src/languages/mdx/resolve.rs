@@ -34,7 +34,7 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::languages::markdown::resolve::MarkdownResolver;
 use crate::languages::typescript::resolve::TypeScriptResolver;
@@ -42,20 +42,17 @@ use crate::types::{EdgeKind, ParsedFile};
 
 pub struct MdxResolver;
 
-impl LanguageResolver for MdxResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["mdx"]
-    }
+impl MdxResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

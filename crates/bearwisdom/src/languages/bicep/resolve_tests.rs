@@ -2,7 +2,7 @@
 
 use super::resolve::BicepResolver;
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, SymbolIndex,
+    FileContext, RefContext, SymbolIndex,
 };
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,

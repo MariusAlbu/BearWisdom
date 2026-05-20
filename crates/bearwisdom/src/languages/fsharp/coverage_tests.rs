@@ -23,7 +23,7 @@
 // =============================================================================
 
 use super::extract::extract;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, LanguageResolver, RefContext};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 // ---------------------------------------------------------------------------

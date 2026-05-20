@@ -36,13 +36,13 @@ use tracing::debug;
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::types::{EdgeKind, ParsedFile};
 
 pub struct MarkdownResolver;
 
-impl LanguageResolver for MarkdownResolver {
+impl MarkdownResolver {
     fn language_ids(&self) -> &[&str] {
         // MdxResolver wraps this one to dispatch by ref kind (Imports here,
         // JSX Calls to TypeScriptResolver). Registering MarkdownResolver
@@ -52,14 +52,14 @@ impl LanguageResolver for MarkdownResolver {
     }
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

@@ -116,7 +116,7 @@ impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
 
 #[test]
 fn selector_map_hit_resolves_to_class() {
-    use crate::indexer::resolve::engine::{FileContext, RefContext, LanguageResolver};
+    use crate::indexer::resolve::engine::{FileContext, RefContext};
     use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
     let lookup = SelectorMapLookup::new()
@@ -175,7 +175,7 @@ fn selector_map_hit_resolves_to_class() {
 
 #[test]
 fn selector_map_miss_falls_through() {
-    use crate::indexer::resolve::engine::{FileContext, RefContext, LanguageResolver};
+    use crate::indexer::resolve::engine::{FileContext, RefContext};
     use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
     // No selectors in the map — TypeScriptResolver should handle it.

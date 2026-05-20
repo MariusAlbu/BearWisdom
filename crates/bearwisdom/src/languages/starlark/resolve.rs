@@ -20,7 +20,7 @@
 
 use super::{chain, predicates};
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ExtractedRef, ParsedFile};
@@ -46,20 +46,17 @@ fn dotted_name(r: &ExtractedRef) -> String {
     }
 }
 
-impl LanguageResolver for StarlarkResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["starlark", "bzl"]
-    }
+impl StarlarkResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

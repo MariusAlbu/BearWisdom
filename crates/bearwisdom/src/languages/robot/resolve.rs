@@ -29,7 +29,7 @@
 
 use super::predicates;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    FileContext, ImportEntry, RefContext, Resolution,
     SymbolInfo, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
@@ -193,20 +193,17 @@ fn resolve_variable<'a>(
     })
 }
 
-impl LanguageResolver for RobotResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["robot"]
-    }
+impl RobotResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

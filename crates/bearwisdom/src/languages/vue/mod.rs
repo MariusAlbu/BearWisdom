@@ -30,7 +30,7 @@ mod coverage_tests;
 
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, Resolution, SymbolLookup};
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult, ParsedFile};
@@ -45,12 +45,9 @@ use crate::types::{EmbeddedRegion, ExtractionResult, ParsedFile};
 // ---------------------------------------------------------------------------
 pub(crate) struct VueResolver;
 
-impl LanguageResolver for VueResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["vue"]
-    }
+impl VueResolver {
 
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &crate::types::ParsedFile,
         project_ctx: Option<&ProjectContext>,
@@ -118,7 +115,7 @@ impl LanguageResolver for VueResolver {
         ctx
     }
 
-    fn resolve(
+    pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

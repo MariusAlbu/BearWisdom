@@ -26,7 +26,7 @@ use crate::type_checker::chain::{
     self, ChainConfig, NamespaceLookup, identity_normalize,
 };
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -34,20 +34,17 @@ use crate::types::{EdgeKind, ParsedFile};
 /// Swift language resolver.
 pub struct SwiftResolver;
 
-impl LanguageResolver for SwiftResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["swift"]
-    }
+impl SwiftResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

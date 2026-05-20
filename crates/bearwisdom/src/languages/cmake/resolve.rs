@@ -16,7 +16,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    self as engine, FileContext, ImportEntry, RefContext, Resolution,
     SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
@@ -24,20 +24,17 @@ use crate::types::{EdgeKind, ParsedFile};
 
 pub struct CMakeResolver;
 
-impl LanguageResolver for CMakeResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["cmake"]
-    }
+impl CMakeResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

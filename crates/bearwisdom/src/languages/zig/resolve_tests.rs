@@ -1,5 +1,5 @@
 use super::*;
-use crate::indexer::resolve::engine::{FileContext, RefContext, LanguageResolver};
+use crate::indexer::resolve::engine::{FileContext, RefContext};
 use crate::types::*;
 
 fn make_ref_calls(target: &str, args: Vec<CallArg>) -> ExtractedRef {

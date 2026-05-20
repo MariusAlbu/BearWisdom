@@ -188,7 +188,7 @@ fn test_sentinel_constant() {
 // infer_external_namespace — integration via FileContext
 // ---------------------------------------------------------------------------
 
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, LanguageResolver, RefContext, SymbolIndex};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolIndex};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use std::collections::HashMap;
 use super::resolve::PowerShellResolver;

@@ -13,7 +13,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -27,20 +27,17 @@ use super::predicates;
 /// `.groovy` source files when the Java bare-name step has no match.
 pub struct GroovyResolver;
 
-impl LanguageResolver for GroovyResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["groovy"]
-    }
+impl GroovyResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
@@ -91,7 +88,7 @@ fn resolve(
         None
     }
 
-    fn is_visible(
+    pub(crate) fn is_visible(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

@@ -18,7 +18,7 @@
 
 use super::predicates;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    self as engine, FileContext, ImportEntry, RefContext, Resolution,
     SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
@@ -27,20 +27,17 @@ use crate::types::{EdgeKind, ParsedFile};
 /// Haskell language resolver.
 pub struct HaskellResolver;
 
-impl LanguageResolver for HaskellResolver {
-    fn language_ids(&self) -> &[&str] {
-        &["haskell"]
-    }
+impl HaskellResolver {
 
     
-    fn build_file_context(
+    pub(crate) fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
     }
-fn resolve(
+pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,

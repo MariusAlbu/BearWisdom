@@ -22,7 +22,6 @@ pub mod common;
 pub mod registry;
 pub mod string_dsl;
 
-use crate::indexer::resolve::engine::LanguageResolver;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
