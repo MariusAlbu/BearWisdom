@@ -18,27 +18,26 @@ use tree_sitter::{Node, Parser};
 // Shared TypeId population — used by `extract_with_arena_and_demand` overrides
 // ---------------------------------------------------------------------------
 
-/// Populate `ExtractedSymbol.return_type` against the workspace `TypeArena`
-/// for the canonical "type-defining + callable" pattern shared by every
-/// typed language plugin. Plugins override
-/// `LanguagePlugin::extract_with_arena_and_demand`, call their existing
-/// extract logic, then invoke this helper.
+/// Populate `ExtractedSymbol` TypeId fields (return_type, param_types)
+/// against the workspace `TypeArena` for the canonical "type-defining +
+/// callable" pattern shared by every typed language plugin. Plugins
+/// override `LanguagePlugin::extract_with_arena_and_demand`, call their
+/// existing extract logic, then invoke this helper.
 ///
 ///   - Type-defining kinds (Class / Interface / Struct / Trait / Enum /
 ///     TypeAlias) get `return_type = arena.class(qualified_name)` —
 ///     the canonical "callable type yields itself" rule.
 ///   - Callable kinds (Method / Function / Constructor) get the return
-///     type parsed from their signature via
-///     `parse_return_type_from_signature`, interned through
+///     type and parameter types parsed from their signature via
+///     `parse_return_type_from_signature` and
+///     `parse_param_types_from_signature`, then interned through
 ///     `arena.intern_type_str` so generic applications decompose into
 ///     structural `Apply { base, args }`.
 ///
-/// Idempotent: skips symbols whose `return_type` is already populated.
+/// Idempotent: skips symbols whose `return_type` / `param_types` are
+/// already populated.
 pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena) {
     for sym in &mut result.symbols {
-        if sym.return_type.is_some() {
-            continue;
-        }
         match sym.kind {
             SymbolKind::Class
             | SymbolKind::Interface
@@ -46,10 +45,13 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
             | SymbolKind::Trait
             | SymbolKind::Enum
             | SymbolKind::TypeAlias => {
-                sym.return_type = Some(arena.class(&sym.qualified_name));
+                if sym.return_type.is_none() {
+                    sym.return_type = Some(arena.class(&sym.qualified_name));
+                }
             }
             SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
-                if let Some(sig) = sym.signature.as_deref() {
+                let Some(sig) = sym.signature.as_deref() else { continue };
+                if sym.return_type.is_none() {
                     if let Some(rt) =
                         crate::indexer::resolve::engine::chain_walker::parse_return_type_from_signature(
                             sig,
@@ -58,6 +60,18 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                         if !rt.is_empty() {
                             sym.return_type = Some(arena.intern_type_str(&rt));
                         }
+                    }
+                }
+                if sym.param_types.is_empty() {
+                    if let Some(params) =
+                        crate::indexer::resolve::engine::chain_walker::parse_param_types_from_signature(
+                            sig,
+                        )
+                    {
+                        sym.param_types = params
+                            .iter()
+                            .map(|p| arena.intern_type_str(p))
+                            .collect();
                     }
                 }
             }

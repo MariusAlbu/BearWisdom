@@ -6,7 +6,8 @@ use crate::indexer::resolve::engine::{
     build_scope_chain, ChainMiss, LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup,
 };
 use crate::indexer::resolve::engine::chain_walker::{
-    parse_return_type_from_signature, resolve_type_name_in_scope, tuple_element,
+    parse_param_types_from_signature, parse_return_type_from_signature,
+    resolve_type_name_in_scope, tuple_element,
 };
 use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::type_checker::core::types::Type;
@@ -91,6 +92,48 @@ fn scope_resolve_without_scope_returns_raw() {
     let mut map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
     map.insert("Foo".to_string(), dummy_sym("Foo"));
     assert_eq!(resolve_type_name_in_scope("Foo", None, &map), "Foo");
+}
+
+#[test]
+fn parse_param_types_dotnet_style() {
+    assert_eq!(
+        parse_param_types_from_signature("Greet(string): string"),
+        Some(vec!["string".to_string()])
+    );
+    assert_eq!(
+        parse_param_types_from_signature("Add<K, V>(K, V): Dictionary<K, V>"),
+        Some(vec!["K".to_string(), "V".to_string()])
+    );
+    assert_eq!(
+        parse_param_types_from_signature("Foo(): void"),
+        Some(Vec::<String>::new())
+    );
+}
+
+#[test]
+fn parse_param_types_typescript_style() {
+    assert_eq!(
+        parse_param_types_from_signature("(x: number, y: string): boolean"),
+        Some(vec!["number".to_string(), "string".to_string()])
+    );
+    assert_eq!(
+        parse_param_types_from_signature("get<T>(input: T): T"),
+        Some(vec!["T".to_string()])
+    );
+}
+
+#[test]
+fn parse_param_types_handles_generics_inside_args() {
+    assert_eq!(
+        parse_param_types_from_signature("Set(Map<K, V>): void"),
+        Some(vec!["Map<K, V>".to_string()])
+    );
+}
+
+#[test]
+fn parse_param_types_returns_none_on_no_parens() {
+    assert_eq!(parse_param_types_from_signature("class Foo"), None);
+    assert_eq!(parse_param_types_from_signature(""), None);
 }
 
 #[test]

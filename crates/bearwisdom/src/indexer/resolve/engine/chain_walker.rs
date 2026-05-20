@@ -166,6 +166,110 @@ pub(crate) fn resolve_type_name_in_scope(
 }
 
 
+/// Extract parameter types from a callable signature. Handles two styles
+/// found in extractor output:
+///   - TS / Kotlin / Swift: `name(arg1: Type1, arg2: Type2): Ret` — each
+///     parameter is `name: Type`; type is everything after the `:`.
+///   - .NET DLL metadata: `name(Type1, Type2): Ret` — each parameter is
+///     the bare type.
+///
+/// Returns `None` when the signature has no balanced parens or empty arg
+/// list, and an empty `Vec` for `name(): Ret` (zero parameters). Bracket-
+/// aware splitting on top-level commas so generic args don't break the
+/// parse.
+pub(crate) fn parse_param_types_from_signature(sig: &str) -> Option<Vec<String>> {
+    let bytes = sig.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+    // Locate the outermost parenthesized group: forward-scan for first `(`
+    // at depth 0 across `<` and `[` so generic / index args don't fool us.
+    let mut depth_angle: i32 = 0;
+    let mut depth_square: i32 = 0;
+    let mut open_idx: Option<usize> = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'<' => depth_angle += 1,
+            b'>' => depth_angle -= 1,
+            b'[' => depth_square += 1,
+            b']' => depth_square -= 1,
+            b'(' if depth_angle == 0 && depth_square == 0 => {
+                open_idx = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let open = open_idx?;
+    // Forward-scan from open to find the matching `)` at paren-depth 1.
+    let mut depth_paren: i32 = 0;
+    let mut depth_angle: i32 = 0;
+    let mut depth_square: i32 = 0;
+    let mut close_idx: Option<usize> = None;
+    for (i, &b) in bytes.iter().enumerate().skip(open) {
+        match b {
+            b'(' => depth_paren += 1,
+            b')' => {
+                depth_paren -= 1;
+                if depth_paren == 0 {
+                    close_idx = Some(i);
+                    break;
+                }
+            }
+            b'<' => depth_angle += 1,
+            b'>' => depth_angle -= 1,
+            b'[' => depth_square += 1,
+            b']' => depth_square -= 1,
+            _ => {}
+        }
+    }
+    let close = close_idx?;
+    let inner = &sig[open + 1..close];
+    if inner.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    // Bracket-aware split on top-level commas.
+    let mut parts: Vec<String> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0usize;
+    let ibytes = inner.as_bytes();
+    for (i, &b) in ibytes.iter().enumerate() {
+        match b {
+            b'<' | b'[' | b'(' | b'{' => depth += 1,
+            b'>' | b']' | b')' | b'}' => depth -= 1,
+            b',' if depth == 0 => {
+                parts.push(inner[start..i].to_string());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < inner.len() {
+        parts.push(inner[start..].to_string());
+    }
+    // Type is either the substring after the first top-level `:` (TS style)
+    // or the entire trimmed string (.NET style — bare type).
+    let types: Vec<String> = parts
+        .into_iter()
+        .map(|p| {
+            let mut depth: i32 = 0;
+            for (i, ch) in p.char_indices() {
+                match ch {
+                    '<' | '[' | '(' | '{' => depth += 1,
+                    '>' | ']' | ')' | '}' => depth -= 1,
+                    ':' if depth == 0 => {
+                        return p[i + 1..].trim().to_string();
+                    }
+                    _ => {}
+                }
+            }
+            p.trim().to_string()
+        })
+        .filter(|s| !s.is_empty())
+        .collect();
+    Some(types)
+}
+
 pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {
     // Find the top-level `):` separator. Scan right-to-left tracking
     // paren depth from zero upward — the FIRST `)` at depth 0 (from
