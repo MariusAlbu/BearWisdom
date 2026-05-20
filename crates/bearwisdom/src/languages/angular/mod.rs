@@ -17,7 +17,10 @@
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::ANGULAR_HOOKS;
 pub use profile::ANGULAR_PROFILE;
@@ -81,7 +84,7 @@ impl LanguagePlugin for AngularPlugin {
     }
 
     fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        resolve::paired_ts_for_template(file_path)
+        hooks::paired_ts_for_template(file_path)
     }
 
     fn profile(

@@ -1,6 +1,6 @@
 //! Tests for `angular::resolve::AngularResolver`.
 
-use super::*;
+use super::hooks::paired_ts_for_template;
 
 #[test]
 fn paired_ts_for_component_template() {
