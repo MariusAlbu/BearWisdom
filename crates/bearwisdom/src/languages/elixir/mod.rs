@@ -10,8 +10,11 @@ mod directives;
 mod type_refs;
 
 pub(crate) mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
+
+pub use profile::ELIXIR_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -89,5 +92,11 @@ impl LanguagePlugin for ElixirPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::ElixirChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::ELIXIR_PROFILE)
     }
 }

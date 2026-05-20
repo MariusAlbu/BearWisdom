@@ -11,10 +11,13 @@
 //! - `import_attribute` / `pp_include` → Imports
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
+
+pub use profile::ERLANG_PROFILE;
 mod attributes;
 mod cowboy;
 mod functions;
@@ -81,5 +84,11 @@ impl LanguagePlugin for ErlangPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::ErlangChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::ERLANG_PROFILE)
     }
 }
