@@ -18,9 +18,9 @@ pub mod hooks;
 mod predicates;
 pub mod profile;
 pub(crate) mod type_checker;
-pub mod resolve;
 
 pub use hooks::CSHARP_HOOKS;
+pub use hooks::CSharpResolver;
 pub use profile::CSHARP_PROFILE;
 
 #[cfg(test)]
@@ -38,8 +38,6 @@ mod coverage_tests;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::CSharpResolver;
 
 pub struct CSharpPlugin;
 

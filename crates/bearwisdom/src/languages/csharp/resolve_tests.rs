@@ -1,4 +1,4 @@
-use super::resolve::CSharpResolver;
+use super::hooks::CSharpResolver;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolInfo};
 use crate::types::*;
@@ -888,7 +888,7 @@ fn make_chain(segments: &[&str]) -> MemberChain {
 #[test]
 fn test_csharp_httpclient_get_async_emits_producer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_csharp_http_chain_emission;
+    use super::hooks::detect_csharp_http_chain_emission;
 
     let chain = make_chain(&["httpClient", "GetAsync"]);
     let call_args = vec![CallArg::StringLit("/api/users".to_string())];
@@ -906,7 +906,7 @@ fn test_csharp_httpclient_get_async_emits_producer() {
 #[test]
 fn test_csharp_httpclient_post_async_emits_post() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_csharp_http_chain_emission;
+    use super::hooks::detect_csharp_http_chain_emission;
 
     let chain = make_chain(&["httpClient", "PostAsJsonAsync"]);
     let call_args = vec![
@@ -925,7 +925,7 @@ fn test_csharp_httpclient_post_async_emits_post() {
 #[test]
 fn test_csharp_httpclient_normalizes_dynamic_segments() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_csharp_http_chain_emission;
+    use super::hooks::detect_csharp_http_chain_emission;
 
     let chain = make_chain(&["httpClient", "GetAsync"]);
     let call_args = vec![CallArg::StringLit("/api/users/{id}/posts".to_string())];
@@ -938,7 +938,7 @@ fn test_csharp_httpclient_normalizes_dynamic_segments() {
 #[test]
 fn test_csharp_restsharp_execute_async_emits_any_method() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_csharp_http_chain_emission;
+    use super::hooks::detect_csharp_http_chain_emission;
 
     // RestSharp dispatches internally on the request's method, so the
     // static call shape doesn't carry a verb — emit `Any`.
@@ -952,7 +952,7 @@ fn test_csharp_restsharp_execute_async_emits_any_method() {
 
 #[test]
 fn test_csharp_http_no_emit_for_unknown_verb() {
-    use super::resolve::detect_csharp_http_chain_emission;
+    use super::hooks::detect_csharp_http_chain_emission;
 
     // Generic `.Foo("/x")` — not a known HTTP method.
     let chain = make_chain(&["httpClient", "Foo"]);
@@ -962,7 +962,7 @@ fn test_csharp_http_no_emit_for_unknown_verb() {
 
 #[test]
 fn test_csharp_http_no_emit_when_url_is_variable() {
-    use super::resolve::detect_csharp_http_chain_emission;
+    use super::hooks::detect_csharp_http_chain_emission;
 
     // First arg is an identifier (URL in a variable), not a string —
     // no static pairing key recoverable.
@@ -974,7 +974,7 @@ fn test_csharp_http_no_emit_when_url_is_variable() {
 #[test]
 fn test_csharp_refit_get_attribute_emits_producer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_refit_attribute_emission;
+    use super::hooks::detect_refit_attribute_emission;
 
     match detect_refit_attribute_emission("Get", Some("/api/users/{id}")).unwrap() {
         FlowEmission::NamedChannel { kind, role, name, method, .. } => {
@@ -990,7 +990,7 @@ fn test_csharp_refit_get_attribute_emits_producer() {
 #[test]
 fn test_csharp_refit_post_attribute_emits_post() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_refit_attribute_emission;
+    use super::hooks::detect_refit_attribute_emission;
 
     match detect_refit_attribute_emission("Post", Some("/api/login")).unwrap() {
         FlowEmission::NamedChannel { method, name, .. } => {
@@ -1003,7 +1003,7 @@ fn test_csharp_refit_post_attribute_emits_post() {
 
 #[test]
 fn test_csharp_refit_attribute_no_emit_for_unrelated_attr() {
-    use super::resolve::detect_refit_attribute_emission;
+    use super::hooks::detect_refit_attribute_emission;
 
     // `Authorize`, `HttpGet` (ASP.NET — handled by ExtractedRoute adapter),
     // and other non-Refit attributes must not emit.
@@ -1019,7 +1019,7 @@ fn test_csharp_refit_attribute_no_emit_for_unrelated_attr() {
 #[test]
 fn test_csharp_efcore_dbset_where_emits_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_csharp_db_query_emission;
+    use super::hooks::detect_csharp_db_query_emission;
 
     let chain = make_chain(&["dbContext", "Users", "Where"]);
     let call_args: Vec<CallArg> = vec![];
@@ -1035,7 +1035,7 @@ fn test_csharp_efcore_dbset_where_emits_select() {
 #[test]
 fn test_csharp_efcore_dbset_add_emits_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_csharp_db_query_emission;
+    use super::hooks::detect_csharp_db_query_emission;
 
     let chain = make_chain(&["context", "Polls", "Add"]);
     let call_args: Vec<CallArg> = vec![];
@@ -1051,7 +1051,7 @@ fn test_csharp_efcore_dbset_add_emits_insert() {
 #[test]
 fn test_csharp_efcore_savechanges_emits_dbquery() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_csharp_db_query_emission;
+    use super::hooks::detect_csharp_db_query_emission;
 
     let chain = make_chain(&["dbContext", "SaveChangesAsync"]);
     let call_args: Vec<CallArg> = vec![];
@@ -1067,7 +1067,7 @@ fn test_csharp_efcore_savechanges_emits_dbquery() {
 #[test]
 fn test_csharp_dapper_query_parses_select_sql() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_csharp_db_query_emission;
+    use super::hooks::detect_csharp_db_query_emission;
 
     let chain = make_chain(&["connection", "QueryAsync"]);
     let call_args = vec![CallArg::StringLit(
@@ -1085,7 +1085,7 @@ fn test_csharp_dapper_query_parses_select_sql() {
 #[test]
 fn test_csharp_dapper_execute_parses_update_sql() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_csharp_db_query_emission;
+    use super::hooks::detect_csharp_db_query_emission;
 
     let chain = make_chain(&["connection", "ExecuteAsync"]);
     let call_args = vec![CallArg::StringLit(
@@ -1103,7 +1103,7 @@ fn test_csharp_dapper_execute_parses_update_sql() {
 #[test]
 fn test_csharp_dapper_strips_schema_qualifier() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_csharp_db_query_emission;
+    use super::hooks::detect_csharp_db_query_emission;
 
     let chain = make_chain(&["connection", "QueryAsync"]);
     let call_args = vec![CallArg::StringLit(
@@ -1117,7 +1117,7 @@ fn test_csharp_dapper_strips_schema_qualifier() {
 
 #[test]
 fn test_csharp_db_no_emit_for_unrelated_chain() {
-    use super::resolve::detect_csharp_db_query_emission;
+    use super::hooks::detect_csharp_db_query_emission;
 
     let chain = make_chain(&["logger", "LogInformation"]);
     let call_args = vec![CallArg::StringLit("hello".to_string())];
@@ -1126,7 +1126,7 @@ fn test_csharp_db_no_emit_for_unrelated_chain() {
 
 #[test]
 fn test_csharp_db_no_emit_for_camel_case_middle() {
-    use super::resolve::detect_csharp_db_query_emission;
+    use super::hooks::detect_csharp_db_query_emission;
 
     // `someService.processData.Where(...)` — middle is camelCase, not
     // a PascalCase EntitySet — must not emit.
@@ -1138,7 +1138,7 @@ fn test_csharp_db_no_emit_for_camel_case_middle() {
 #[test]
 fn test_csharp_signalr_hub_inherits_emits_ws_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_csharp_signalr_hub_emission;
+    use super::hooks::detect_csharp_signalr_hub_emission;
     match detect_csharp_signalr_hub_emission("Hub").unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
@@ -1151,20 +1151,20 @@ fn test_csharp_signalr_hub_inherits_emits_ws_consumer() {
 
 #[test]
 fn test_csharp_signalr_generic_hub_works() {
-    use super::resolve::detect_csharp_signalr_hub_emission;
+    use super::hooks::detect_csharp_signalr_hub_emission;
     assert!(detect_csharp_signalr_hub_emission("Hub<IChatClient>").is_some());
 }
 
 #[test]
 fn test_csharp_signalr_rejects_non_hub_base() {
-    use super::resolve::detect_csharp_signalr_hub_emission;
+    use super::hooks::detect_csharp_signalr_hub_emission;
     assert!(detect_csharp_signalr_hub_emission("Controller").is_none());
 }
 
 #[test]
 fn test_csharp_hotchocolate_query_type_emits_graphql_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_csharp_hotchocolate_emission;
+    use super::hooks::detect_csharp_hotchocolate_emission;
     match detect_csharp_hotchocolate_emission("QueryType").unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {
             assert!(matches!(kind, NamedChannelKind::GraphQLOp));
@@ -1177,7 +1177,7 @@ fn test_csharp_hotchocolate_query_type_emits_graphql_consumer() {
 
 #[test]
 fn test_csharp_hotchocolate_mutation_recognised() {
-    use super::resolve::detect_csharp_hotchocolate_emission;
+    use super::hooks::detect_csharp_hotchocolate_emission;
     assert!(detect_csharp_hotchocolate_emission("Mutation").is_some());
     assert!(detect_csharp_hotchocolate_emission("MutationType").is_some());
     assert!(detect_csharp_hotchocolate_emission("SubscriptionType").is_some());
@@ -1185,7 +1185,7 @@ fn test_csharp_hotchocolate_mutation_recognised() {
 
 #[test]
 fn test_csharp_hotchocolate_rejects_non_graphql_attr() {
-    use super::resolve::detect_csharp_hotchocolate_emission;
+    use super::hooks::detect_csharp_hotchocolate_emission;
     assert!(detect_csharp_hotchocolate_emission("HttpGet").is_none());
     assert!(detect_csharp_hotchocolate_emission("Authorize").is_none());
 }
