@@ -15,8 +15,11 @@ mod walk;
 pub mod fypp;
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
+
+pub use profile::FORTRAN_PROFILE;
 
 pub use resolve::FortranResolver;
 
@@ -84,5 +87,11 @@ impl LanguagePlugin for FortranPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::FortranChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::FORTRAN_PROFILE)
     }
 }

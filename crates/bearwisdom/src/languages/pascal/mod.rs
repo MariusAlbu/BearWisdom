@@ -10,8 +10,11 @@ mod normalise;
 mod error_recovery;
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
+
+pub use profile::PASCAL_PROFILE;
 
 pub use resolve::PascalResolver;
 
@@ -81,5 +84,11 @@ impl LanguagePlugin for PascalPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::PascalChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::PASCAL_PROFILE)
     }
 }

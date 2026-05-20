@@ -8,8 +8,11 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
+
+pub use profile::COBOL_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -74,5 +77,11 @@ impl LanguagePlugin for CobolPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::CobolChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::COBOL_PROFILE)
     }
 }
