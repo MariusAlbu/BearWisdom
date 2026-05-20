@@ -1,6 +1,10 @@
 //! Grails Server Pages (.gsp). `${expr}` → Groovy expression.
 //! `<g:render template="_x">` → Imports ref.
 
+pub(crate) mod profile;
+
+pub use profile::GSP_PROFILE;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{
@@ -96,6 +100,11 @@ impl LanguagePlugin for GspPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::GSP_PROFILE)
+    }
 }
 
 fn lc(bytes: &[u8], pos: usize) -> (u32, u32) {

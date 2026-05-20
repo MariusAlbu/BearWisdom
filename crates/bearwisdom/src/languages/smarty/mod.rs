@@ -6,6 +6,9 @@
 //!   * `{include file="p.tpl"}` / `{extends file="base.tpl"}` → Imports ref
 
 pub mod extract;
+pub(crate) mod profile;
+
+pub use profile::SMARTY_PROFILE;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -24,4 +27,9 @@ impl LanguagePlugin for SmartyPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::SMARTY_PROFILE)
+    }
 }

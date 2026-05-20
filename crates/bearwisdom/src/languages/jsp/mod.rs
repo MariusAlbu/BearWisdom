@@ -2,6 +2,10 @@
 //! `<% %>` / `<%= %>` → Java regions. `<%@ include file="…" %>` →
 //! Imports ref.
 
+pub(crate) mod profile;
+
+pub use profile::JSP_PROFILE;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{
@@ -100,6 +104,11 @@ impl LanguagePlugin for JspPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::JSP_PROFILE)
+    }
 }
 
 fn find_close(bytes: &[u8], from: usize) -> Option<usize> {

@@ -12,6 +12,9 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod profile;
+
+pub use profile::NUNJUCKS_PROFILE;
 
 #[cfg(test)]
 #[path = "embedded_tests.rs"]
@@ -37,4 +40,9 @@ impl LanguagePlugin for NunjucksPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::NUNJUCKS_PROFILE)
+    }
 }
