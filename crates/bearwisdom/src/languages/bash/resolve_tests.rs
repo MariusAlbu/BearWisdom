@@ -2,7 +2,8 @@
 //
 // Ported from pre-restructure commit 8dcc438 (dangling in object store).
 
-use super::{ends_with_path_suffix, shell_path_suffix, BashResolver};
+use super::hooks::{ends_with_path_suffix, shell_path_suffix, BashHooks};
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, SymbolIndex,
 };
@@ -184,7 +185,7 @@ fn shell_source_resolves_relative_path() {
         file_package_id: None,
     };
 
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = BashHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
     assert!(res.is_some(), "run_backup called in main.sh should resolve via shell source");
     let res = res.unwrap();
     assert_eq!(res.target_symbol_id, 10, "should resolve to helpers.sh:run_backup (id=10)");
@@ -234,9 +235,7 @@ fn shell_source_resolves_variable_prefixed_path() {
     );
 
     let index = SymbolIndex::build(&parsed, &id_map);
-    let resolver = BashResolver;
-
-    let file_ctx = resolver.build_file_context(&parsed[1], None);
+    let file_ctx = BashHooks.build_file_context(&parsed[1], None).unwrap();
     let calls_ref = make_calls_ref("__powerline_prompt_command");
     let source_sym = make_fn_sym("_omb_theme_PROMPT_COMMAND");
     let ref_ctx = RefContext {
@@ -246,7 +245,7 @@ fn shell_source_resolves_variable_prefixed_path() {
         file_package_id: None,
     };
 
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = BashHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
     assert!(
         res.is_some(),
         "theme.sh should resolve __powerline_prompt_command via $OSH-prefixed source"
@@ -278,8 +277,7 @@ fn shell_source_skips_absolute_source_path() {
     id_map.insert(("other.sh".to_string(), "profile_fn".to_string()), 2);
 
     let index = SymbolIndex::build(&parsed, &id_map);
-    let resolver = BashResolver;
-    let file_ctx = resolver.build_file_context(&parsed[0], None);
+    let file_ctx = BashHooks.build_file_context(&parsed[0], None).unwrap();
 
     let calls_ref = make_calls_ref("profile_fn");
     let source_sym = make_fn_sym("do_thing");
@@ -293,7 +291,7 @@ fn shell_source_skips_absolute_source_path() {
     // Shell source step must not fire (absolute path → suffix is "").
     // The ref may still resolve via P4 heuristic (name+kind), which is fine —
     // we only assert that if it resolves, strategy is NOT bash_shell_source.
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = BashHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
     if let Some(r) = res {
         assert_ne!(
             r.strategy, "bash_shell_source",
