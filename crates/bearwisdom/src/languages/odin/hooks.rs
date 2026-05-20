@@ -1,10 +1,54 @@
-use super::resolve;
+// Odin language hooks. Absorbed from the deleted `odin/resolve.rs`.
+
+use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup, Resolution};
+use crate::indexer::resolve::engine::{
+    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::EdgeKind;
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct OdinHooks;
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    if !module.contains("http") {
+        return Vec::new();
+    }
+    if !matches!(target, "get" | "post" | "request" | "send") {
+        return Vec::new();
+    }
+    let url = r.call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/')
+                || s.starts_with("http://")
+                || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    });
+    let Some(url) = url else { return Vec::new() };
+    vec![FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Producer,
+        method: Some(HttpMethod::Any),
+        streaming: None,
+    }]
+}
 
 impl LanguageEngineHooks for OdinHooks {
     fn classify_external(
@@ -29,27 +73,83 @@ impl LanguageEngineHooks for OdinHooks {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
+        _lookup: &dyn SymbolLookup,
     ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let _ = lookup;
-        resolve::detect_flow_inner(file_ctx, ref_ctx)
+        detect_flow_inner(file_ctx, ref_ctx)
     }
 
     fn build_file_context(
         &self,
-        file: &crate::types::ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<crate::indexer::resolve::engine::FileContext> {
-        Some(resolve::build_file_context_inner(file, project_ctx))
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        let mut imports = Vec::new();
+        for r in &file.refs {
+            if r.kind != EdgeKind::Imports {
+                continue;
+            }
+            let import_path = r.target_name.clone();
+            let pkg_name = import_path
+                .rsplit(':')
+                .next()
+                .and_then(|s| s.rsplit('/').next())
+                .unwrap_or(import_path.as_str())
+                .to_string();
+            imports.push(ImportEntry {
+                imported_name: pkg_name,
+                module_path: Some(import_path),
+                alias: None,
+                is_wildcard: true,
+            });
+        }
+        Some(FileContext {
+            file_path: file.path.clone(),
+            language: "odin".to_string(),
+            imports,
+            file_namespace: None,
+        })
     }
 
     fn resolve_ref(
         &self,
-        file_ctx: &crate::indexer::resolve::engine::FileContext,
-        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
-        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        super::resolve::OdinResolver.resolve(file_ctx, ref_ctx, lookup)
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if edge_kind == EdgeKind::Imports {
+            return None;
+        }
+        if let Some(res) = engine::resolve_common(
+            "odin",
+            file_ctx,
+            ref_ctx,
+            lookup,
+            predicates::kind_compatible,
+        ) {
+            return Some(res);
+        }
+        let source_normalized = file_ctx.file_path.replace('\\', "/");
+        let source_dir = source_normalized.rsplit('/').nth(1).unwrap_or("");
+        if !source_dir.is_empty() {
+            for sym in lookup.by_name(target) {
+                let sym_normalized = sym.file_path.replace('\\', "/");
+                let sym_dir = sym_normalized.rsplit('/').nth(1).unwrap_or("");
+                if sym_dir == source_dir
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.95,
+                        strategy: "odin_same_package",
+                        resolved_yield_type: None,
+                        flow_emit: None,
+                    });
+                }
+            }
+        }
+        None
     }
 }
 

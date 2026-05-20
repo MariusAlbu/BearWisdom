@@ -19,7 +19,10 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::ODIN_HOOKS;
 pub use profile::ODIN_PROFILE;

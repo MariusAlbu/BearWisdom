@@ -35,19 +35,19 @@ fn test_odin_http_emit() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
     let (r, sym, fc) = fixture("get", "vendor:http", vec![CallArg::StringLit("https://api.example.com/x".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    assert!(matches!(super::detect_flow_inner(&fc, &rc).first(), Some(FlowEmission::NamedChannel { .. })));
+    assert!(matches!(super::hooks::detect_flow_inner(&fc, &rc).first(), Some(FlowEmission::NamedChannel { .. })));
 }
 
 #[test]
 fn test_odin_no_emit_for_non_http_module() {
     let (r, sym, fc) = fixture("get", "core:fmt", vec![CallArg::StringLit("/x".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    assert!(super::detect_flow_inner(&fc, &rc).is_empty());
+    assert!(super::hooks::detect_flow_inner(&fc, &rc).is_empty());
 }
 
 #[test]
 fn test_odin_no_emit_for_non_url() {
     let (r, sym, fc) = fixture("get", "vendor:http", vec![CallArg::StringLit("notaurl".to_string())]);
     let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    assert!(super::detect_flow_inner(&fc, &rc).is_empty());
+    assert!(super::hooks::detect_flow_inner(&fc, &rc).is_empty());
 }
