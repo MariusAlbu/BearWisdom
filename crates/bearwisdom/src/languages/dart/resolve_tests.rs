@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_dart_drift_emission, detect_dart_grpc_emission, detect_dart_http_chain, detect_dart_shelf_route};
 use crate::types::*;
 
 fn make_chain(segments: &[&str]) -> MemberChain {

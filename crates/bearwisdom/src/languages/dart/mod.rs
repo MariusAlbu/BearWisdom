@@ -10,7 +10,6 @@ pub mod extract;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 pub(crate) mod type_checker;
 
 pub use hooks::DART_HOOKS;
@@ -24,11 +23,13 @@ mod extract_tests;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::DartResolver;
 
 pub struct DartPlugin;
 
