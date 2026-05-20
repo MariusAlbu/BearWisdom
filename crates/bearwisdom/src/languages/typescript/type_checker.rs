@@ -66,7 +66,7 @@ fn next_chain_type(raw_return: &str, current_type: &str, env: &TypeEnvironment) 
     if raw_return == "this" {
         return current_type.to_string();
     }
-    env.resolve(raw_return)
+    env.resolve(&raw_return)
 }
 
 fn expand_current_type(
@@ -172,11 +172,11 @@ impl TypeChecker for TypeScriptChecker {
                         let mut found = None;
                         for scope in &ref_ctx.scope_chain {
                             let field_qname = format!("{scope}.{name}");
-                            if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            if let Some(type_name) = lookup.field_type_str(&field_qname) {
                                 // Capture generic args from the field declaration.
                                 initial_generic_args = lookup
-                                    .field_type_args(&field_qname)
-                                    .unwrap_or(&[])
+                                    .field_type_arg_strs(&field_qname)
+                                    .unwrap_or_default()
                                     .to_vec();
                                 found = Some(type_name.to_string());
                                 break;
@@ -254,13 +254,13 @@ impl TypeChecker for TypeScriptChecker {
             let member_qname = format!("{current_type}.{}", seg.name);
 
             // Try field type (property access).
-            if let Some(next_type) = lookup.field_type_name(&member_qname) {
+            if let Some(next_type) = lookup.field_type_str(&member_qname) {
                 let new_args = lookup
-                    .field_type_args(&member_qname)
-                    .unwrap_or(&[])
+                    .field_type_arg_strs(&member_qname)
+                    .unwrap_or_default()
                     .to_vec();
                 // Resolve the new type through the environment (handles T → User etc).
-                let resolved_type = env.resolve(next_type);
+                let resolved_type = env.resolve(&next_type);
                 // Transition to the new type's generic context.
                 env.push_scope();
                 if !new_args.is_empty() {
@@ -281,12 +281,12 @@ impl TypeChecker for TypeScriptChecker {
             }
 
             // Try return type (method call result in a fluent chain).
-            if let Some(raw_return) = lookup.return_type_name(&member_qname) {
+            if let Some(raw_return) = lookup.return_type_str(&member_qname) {
                 // `: this` keeps current_type pinned to the receiver so
                 // fluent-API chains (DocumentBuilder, query builders)
                 // walk back into the same class on every step. Other
                 // return types go through generic substitution.
-                let resolved = next_chain_type(raw_return, &current_type, &env);
+                let resolved = next_chain_type(&raw_return, &current_type, &env);
                 // Clear current generic bindings and enter context for the new type.
                 env.push_scope();
                 current_type = resolved;
@@ -299,15 +299,15 @@ impl TypeChecker for TypeScriptChecker {
                 if sym.name != seg.name {
                     continue;
                 }
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    let resolved_type = env.resolve(ft);
+                if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
+                    let resolved_type = env.resolve(&ft);
                     env.push_scope();
                     current_type = resolved_type;
                     found = true;
                     break;
                 }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    let resolved = next_chain_type(rt, &current_type, &env);
+                if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
+                    let resolved = next_chain_type(&rt, &current_type, &env);
                     env.push_scope();
                     current_type = resolved;
                     found = true;
@@ -323,14 +323,14 @@ impl TypeChecker for TypeScriptChecker {
             // Resolve to the full external qname and retry member lookups.
             if let Some(ext_qname) = external_type_qname(&current_type, lookup) {
                 let ext_member = format!("{ext_qname}.{}", seg.name);
-                if let Some(next_type) = lookup.field_type_name(&ext_member) {
-                    let resolved = env.resolve(next_type);
+                if let Some(next_type) = lookup.field_type_str(&ext_member) {
+                    let resolved = env.resolve(&next_type);
                     env.push_scope();
                     current_type = resolved;
                     continue;
                 }
-                if let Some(next_type) = lookup.return_type_name(&ext_member) {
-                    let resolved = next_chain_type(next_type, &current_type, &env);
+                if let Some(next_type) = lookup.return_type_str(&ext_member) {
+                    let resolved = next_chain_type(&next_type, &current_type, &env);
                     env.push_scope();
                     current_type = resolved;
                     continue;
@@ -364,15 +364,15 @@ impl TypeChecker for TypeScriptChecker {
                 };
                 let parent_owned = parent.to_string();
                 let parent_member = format!("{parent_owned}.{}", seg.name);
-                if let Some(next_type) = lookup.field_type_name(&parent_member) {
+                if let Some(next_type) = lookup.field_type_str(&parent_member) {
                     let new_args = lookup
-                        .field_type_args(&parent_member)
-                        .unwrap_or(&[])
+                        .field_type_arg_strs(&parent_member)
+                        .unwrap_or_default()
                         .to_vec();
                     inherited_resolution = Some((next_type.to_string(), new_args));
                     break;
                 }
-                if let Some(next_type) = lookup.return_type_name(&parent_member) {
+                if let Some(next_type) = lookup.return_type_str(&parent_member) {
                     inherited_resolution = Some((next_type.to_string(), Vec::new()));
                     break;
                 }
@@ -381,15 +381,15 @@ impl TypeChecker for TypeScriptChecker {
                     if sym.name != seg.name {
                         continue;
                     }
-                    if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+                    if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
                         let new_args = lookup
-                            .field_type_args(&sym.qualified_name)
-                            .unwrap_or(&[])
+                            .field_type_arg_strs(&sym.qualified_name)
+                            .unwrap_or_default()
                             .to_vec();
                         members_hit = Some((ft.to_string(), new_args));
                         break;
                     }
-                    if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+                    if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
                         members_hit = Some((rt.to_string(), Vec::new()));
                         break;
                     }
@@ -563,14 +563,14 @@ fn ts_yield_type(
     env: &mut TypeEnvironment,
 ) -> Option<String> {
     let raw = lookup
-        .return_type_name(&sym.qualified_name)
-        .or_else(|| lookup.field_type_name(&sym.qualified_name))?;
+        .return_type_str(&sym.qualified_name)
+        .or_else(|| lookup.field_type_str(&sym.qualified_name))?;
     if !call_site_type_args.is_empty() {
         env.enter_generic_context(&sym.qualified_name, call_site_type_args, |name| {
             lookup.generic_params(name).map(|p| p.to_vec())
         });
     }
-    Some(env.resolve(raw))
+    Some(env.resolve(&raw))
 }
 
 /// Resolve the root type when the chain root identifier is a function call.
@@ -604,26 +604,26 @@ fn resolve_call_root_type(
         }
         // Pass 1: bare specifier (`import dayjs from 'dayjs'`).
         let candidate = format!("{module}.{name}");
-        if let Some(rt) = lookup.return_type_name(&candidate) {
+        if let Some(rt) = lookup.return_type_str(&candidate) {
             return Some(rt.to_string());
         }
-        if let Some(ft) = lookup.field_type_name(&candidate) {
+        if let Some(ft) = lookup.field_type_str(&candidate) {
             return Some(ft.to_string());
         }
         // Pass 2: tsconfig alias rewrite (`@/lib/dayjs` → `apps/web/src/lib/dayjs`).
         if let Some(rewritten) = lookup.resolve_tsconfig_alias(ref_ctx.file_package_id, module) {
             let alias_candidate = format!("{rewritten}.{name}");
-            if let Some(rt) = lookup.return_type_name(&alias_candidate) {
+            if let Some(rt) = lookup.return_type_str(&alias_candidate) {
                 return Some(rt.to_string());
             }
         }
     }
     // Pass 3: npm globals injection (jest/vitest `globals: true`).
     let globals_candidate = format!("{}.{name}", crate::ecosystem::npm::NPM_GLOBALS_MODULE);
-    if let Some(rt) = lookup.return_type_name(&globals_candidate) {
+    if let Some(rt) = lookup.return_type_str(&globals_candidate) {
         return Some(rt.to_string());
     }
-    if let Some(ft) = lookup.field_type_name(&globals_candidate) {
+    if let Some(ft) = lookup.field_type_str(&globals_candidate) {
         return Some(ft.to_string());
     }
     None

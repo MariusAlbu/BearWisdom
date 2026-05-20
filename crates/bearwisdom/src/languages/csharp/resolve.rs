@@ -208,7 +208,7 @@ impl LanguageResolver for CSharpResolver {
 
                 for scope in &ref_ctx.scope_chain {
                     let field_qname = format!("{scope}.{field_name}");
-                    if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                    if let Some(type_name) = lookup.field_type_str(&field_qname) {
                         let candidate = format!("{type_name}.{rest}");
                         if let Some(sym) = lookup.by_qualified_name(&candidate) {
                             if predicates::kind_compatible(edge_kind, &sym.kind) {

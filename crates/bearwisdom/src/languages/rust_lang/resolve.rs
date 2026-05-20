@@ -737,7 +737,7 @@ impl LanguageResolver for RustResolver {
             Some(scope) => format!("{}.{}", scope, root_seg.name),
             None => root_seg.name.clone(),
         };
-        let type_name = match lookup.field_type_name(&var_qname) {
+        let type_name = match lookup.field_type_str(&var_qname) {
             Some(t) => t.to_string(),
             None => return Vec::new(),
         };

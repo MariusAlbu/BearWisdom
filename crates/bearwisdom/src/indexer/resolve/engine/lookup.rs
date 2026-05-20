@@ -139,6 +139,34 @@ pub trait SymbolLookup {
         None
     }
 
+    /// Render the field type for `qname` from the canonical TypeArena.
+    /// Replaces `field_type_name` for consumers that want to drive their
+    /// chain walks through the TypeId surface. Falls back to the legacy
+    /// string accessor for synthetic lookups that haven't bound an arena.
+    fn field_type_str(&self, qname: &str) -> Option<String> {
+        if let (Some(id), Some(arena)) = (self.field_type_id(qname), self.type_arena()) {
+            return Some(arena.format_type(id));
+        }
+        self.field_type_name(qname).map(|s| s.to_string())
+    }
+
+    /// Render the return type for `qname` from the canonical TypeArena.
+    fn return_type_str(&self, qname: &str) -> Option<String> {
+        if let (Some(id), Some(arena)) = (self.return_type_id(qname), self.type_arena()) {
+            return Some(arena.format_type(id));
+        }
+        self.return_type_name(qname).map(|s| s.to_string())
+    }
+
+    /// Render the field type args for `qname` from the canonical TypeArena.
+    fn field_type_arg_strs(&self, qname: &str) -> Option<Vec<String>> {
+        if let (Some(ids), Some(arena)) = (self.field_type_arg_ids(qname), self.type_arena()) {
+            return Some(ids.iter().map(|id| arena.format_type(*id)).collect());
+        }
+        self.field_type_args(qname)
+            .map(|args| args.iter().cloned().collect())
+    }
+
     /// Look up the structural shape of a type alias.
     ///
     /// Returns `Some(&AliasTarget)` when `name` is a registered alias

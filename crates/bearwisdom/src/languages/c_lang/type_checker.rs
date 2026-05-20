@@ -68,12 +68,12 @@ impl TypeChecker for CChecker {
                         let mut found = None;
                         for scope in &ref_ctx.scope_chain {
                             let field_qname = format!("{scope}.{name}");
-                            if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            if let Some(type_name) = lookup.field_type_str(&field_qname) {
                                 found = Some(type_name.to_string());
                                 break;
                             }
                             let field_qname_cc = format!("{}.{name}", scope.replace("::", "."));
-                            if let Some(type_name) = lookup.field_type_name(&field_qname_cc) {
+                            if let Some(type_name) = lookup.field_type_str(&field_qname_cc) {
                                 found = Some(type_name.to_string());
                                 break;
                             }
@@ -92,14 +92,14 @@ impl TypeChecker for CChecker {
         for seg in &segments[1..segments.len() - 1] {
             let member_qname = format!("{current_type}.{}", seg.name);
 
-            if let Some(next_type) = lookup.field_type_name(&member_qname) {
-                current_type = normalize_type(next_type);
+            if let Some(next_type) = lookup.field_type_str(&member_qname) {
+                current_type = normalize_type(&next_type);
                 current_type = dereference_typedef(&current_type, lookup);
                 continue;
             }
 
-            if let Some(raw_return) = lookup.return_type_name(&member_qname) {
-                current_type = normalize_type(raw_return);
+            if let Some(raw_return) = lookup.return_type_str(&member_qname) {
+                current_type = normalize_type(&raw_return);
                 current_type = dereference_typedef(&current_type, lookup);
                 continue;
             }
@@ -109,14 +109,14 @@ impl TypeChecker for CChecker {
                 if sym.name != seg.name {
                     continue;
                 }
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    current_type = normalize_type(ft);
+                if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
+                    current_type = normalize_type(&ft);
                     current_type = dereference_typedef(&current_type, lookup);
                     found = true;
                     break;
                 }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    current_type = normalize_type(rt);
+                if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
+                    current_type = normalize_type(&rt);
                     current_type = dereference_typedef(&current_type, lookup);
                     found = true;
                     break;
@@ -226,8 +226,8 @@ fn normalize_type(name: &str) -> String {
 fn dereference_typedef(type_name: &str, lookup: &dyn SymbolLookup) -> String {
     for sym in lookup.types_by_name(type_name) {
         if sym.kind == "type_alias" {
-            if let Some(aliased) = lookup.field_type_name(&sym.qualified_name) {
-                return normalize_type(aliased);
+            if let Some(aliased) = lookup.field_type_str(&sym.qualified_name) {
+                return normalize_type(&aliased);
             }
         }
     }

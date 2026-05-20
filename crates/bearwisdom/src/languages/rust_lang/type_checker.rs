@@ -59,8 +59,8 @@ impl TypeChecker for RustChecker {
                         let mut found = None;
                         for scope in &ref_ctx.scope_chain {
                             let field_qname = format!("{scope}.{name}");
-                            if let Some(type_name) = lookup.field_type_name(&field_qname) {
-                                found = Some(normalize_path(type_name));
+                            if let Some(type_name) = lookup.field_type_str(&field_qname) {
+                                found = Some(normalize_path(&type_name));
                                 break;
                             }
                         }
@@ -79,12 +79,12 @@ impl TypeChecker for RustChecker {
         for seg in &segments[1..segments.len() - 1] {
             let member_qname = format!("{current_type}.{}", seg.name);
 
-            if let Some(next_type) = lookup.field_type_name(&member_qname) {
-                current_type = normalize_path(next_type);
+            if let Some(next_type) = lookup.field_type_str(&member_qname) {
+                current_type = normalize_path(&next_type);
                 continue;
             }
-            if let Some(next_type) = lookup.return_type_name(&member_qname) {
-                current_type = normalize_path(next_type);
+            if let Some(next_type) = lookup.return_type_str(&member_qname) {
+                current_type = normalize_path(&next_type);
                 continue;
             }
 
@@ -93,13 +93,13 @@ impl TypeChecker for RustChecker {
                 if sym.name != seg.name {
                     continue;
                 }
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    current_type = normalize_path(ft);
+                if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
+                    current_type = normalize_path(&ft);
                     found = true;
                     break;
                 }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    current_type = normalize_path(rt);
+                if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
+                    current_type = normalize_path(&rt);
                     found = true;
                     break;
                 }

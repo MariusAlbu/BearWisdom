@@ -77,7 +77,7 @@ impl TypeChecker for JavaChecker {
                         let mut found = None;
                         for scope in &ref_ctx.scope_chain {
                             let field_qname = format!("{scope}.{name}");
-                            if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            if let Some(type_name) = lookup.field_type_str(&field_qname) {
                                 found = Some(type_name.to_string());
                                 break;
                             }
@@ -95,11 +95,11 @@ impl TypeChecker for JavaChecker {
         for seg in &segments[1..segments.len() - 1] {
             let member_qname = format!("{current_type}.{}", seg.name);
 
-            if let Some(next_type) = lookup.field_type_name(&member_qname) {
+            if let Some(next_type) = lookup.field_type_str(&member_qname) {
                 current_type = next_type.to_string();
                 continue;
             }
-            if let Some(next_type) = lookup.return_type_name(&member_qname) {
+            if let Some(next_type) = lookup.return_type_str(&member_qname) {
                 current_type = next_type.to_string();
                 continue;
             }
@@ -110,12 +110,12 @@ impl TypeChecker for JavaChecker {
                 if import.is_wildcard {
                     if let Some(module) = &import.module_path {
                         let qualified_member = format!("{module}.{member_qname}");
-                        if let Some(next_type) = lookup.field_type_name(&qualified_member) {
+                        if let Some(next_type) = lookup.field_type_str(&qualified_member) {
                             current_type = next_type.to_string();
                             found = true;
                             break;
                         }
-                        if let Some(next_type) = lookup.return_type_name(&qualified_member) {
+                        if let Some(next_type) = lookup.return_type_str(&qualified_member) {
                             current_type = next_type.to_string();
                             found = true;
                             break;

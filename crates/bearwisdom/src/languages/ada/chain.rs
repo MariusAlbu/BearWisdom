@@ -145,7 +145,7 @@ pub(super) fn walk_field_chain(
         // than emitting TypeRef edges, so also read the signature as a fallback
         // when field_type_name (which queries TypeRef edges) returns None.
         let next_type = lookup
-            .field_type_name(&field_qname)
+            .field_type_str(&field_qname)
             .map(|s| s.to_string())
             .or_else(|| {
                 lookup.members_of(&current_type).iter().find_map(|m| {
@@ -159,7 +159,7 @@ pub(super) fn walk_field_chain(
                     }
                     // TypeRef-edge path.
                     lookup
-                        .field_type_name(&m.qualified_name)
+                        .field_type_str(&m.qualified_name)
                         .map(|s| s.to_string())
                         // Signature-path fallback for Ada fields (no TypeRef edges).
                         .or_else(|| {

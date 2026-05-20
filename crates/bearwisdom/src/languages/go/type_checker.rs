@@ -65,10 +65,10 @@ impl TypeChecker for GoChecker {
                         let mut found = None;
                         for scope in &ref_ctx.scope_chain {
                             let field_qname = format!("{scope}.{name}");
-                            if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            if let Some(type_name) = lookup.field_type_str(&field_qname) {
                                 initial_generic_args = lookup
-                                    .field_type_args(&field_qname)
-                                    .unwrap_or(&[])
+                                    .field_type_arg_strs(&field_qname)
+                                    .unwrap_or_default()
                                     .to_vec();
                                 found = Some(type_name.to_string());
                                 break;
@@ -94,12 +94,12 @@ impl TypeChecker for GoChecker {
         for seg in &segments[1..segments.len() - 1] {
             let member_qname = format!("{current_type}.{}", seg.name);
 
-            if let Some(next_type) = lookup.field_type_name(&member_qname) {
+            if let Some(next_type) = lookup.field_type_str(&member_qname) {
                 let new_args = lookup
-                    .field_type_args(&member_qname)
-                    .unwrap_or(&[])
+                    .field_type_arg_strs(&member_qname)
+                    .unwrap_or_default()
                     .to_vec();
-                let resolved_type = env.resolve(next_type);
+                let resolved_type = env.resolve(&next_type);
                 env.push_scope();
                 if !new_args.is_empty() {
                     env.enter_generic_context(&resolved_type, &new_args, |name| {
@@ -116,8 +116,8 @@ impl TypeChecker for GoChecker {
                 });
             }
 
-            if let Some(raw_return) = lookup.return_type_name(&member_qname) {
-                let resolved = env.resolve(raw_return);
+            if let Some(raw_return) = lookup.return_type_str(&member_qname) {
+                let resolved = env.resolve(&raw_return);
                 env.push_scope();
                 current_type = resolved;
                 continue;
@@ -128,15 +128,15 @@ impl TypeChecker for GoChecker {
                 if sym.name != seg.name {
                     continue;
                 }
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    let resolved_type = env.resolve(ft);
+                if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
+                    let resolved_type = env.resolve(&ft);
                     env.push_scope();
                     current_type = resolved_type;
                     found = true;
                     break;
                 }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    let resolved = env.resolve(rt);
+                if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
+                    let resolved = env.resolve(&rt);
                     env.push_scope();
                     current_type = resolved;
                     found = true;
@@ -205,12 +205,12 @@ fn generic_yield_type(
     env: &mut TypeEnvironment,
 ) -> Option<String> {
     let raw = lookup
-        .return_type_name(&sym.qualified_name)
-        .or_else(|| lookup.field_type_name(&sym.qualified_name))?;
+        .return_type_str(&sym.qualified_name)
+        .or_else(|| lookup.field_type_str(&sym.qualified_name))?;
     if !call_site_type_args.is_empty() {
         env.enter_generic_context(&sym.qualified_name, call_site_type_args, |name| {
             lookup.generic_params(name).map(|p| p.to_vec())
         });
     }
-    Some(env.resolve(raw))
+    Some(env.resolve(&raw))
 }

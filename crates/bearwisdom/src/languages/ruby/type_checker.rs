@@ -55,7 +55,7 @@ impl TypeChecker for RubyChecker {
                         let mut found = None;
                         for scope in &ref_ctx.scope_chain {
                             let field_qname = format!("{scope}.{name}");
-                            if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            if let Some(type_name) = lookup.field_type_str(&field_qname) {
                                 found = Some(type_name.to_string());
                                 break;
                             }
@@ -73,11 +73,11 @@ impl TypeChecker for RubyChecker {
         for seg in &segments[1..segments.len() - 1] {
             let member_qname = format!("{current_type}.{}", seg.name);
 
-            if let Some(next_type) = lookup.field_type_name(&member_qname) {
+            if let Some(next_type) = lookup.field_type_str(&member_qname) {
                 current_type = next_type.to_string();
                 continue;
             }
-            if let Some(next_type) = lookup.return_type_name(&member_qname) {
+            if let Some(next_type) = lookup.return_type_str(&member_qname) {
                 current_type = next_type.to_string();
                 continue;
             }
@@ -87,12 +87,12 @@ impl TypeChecker for RubyChecker {
                 if sym.name != seg.name {
                     continue;
                 }
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+                if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
                     current_type = ft.to_string();
                     found = true;
                     break;
                 }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+                if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
                     current_type = rt.to_string();
                     found = true;
                     break;

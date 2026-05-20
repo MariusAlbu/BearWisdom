@@ -637,7 +637,7 @@ impl LanguageResolver for TypeScriptResolver {
             // Try to find the field as a property on enclosing scopes.
             for scope in &ref_ctx.scope_chain {
                 let field_qname = format!("{scope}.{field_name}");
-                if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                if let Some(type_name) = lookup.field_type_str(&field_qname) {
                     // Found field type. Try {TypeName}.{rest} in the index.
                     let candidate = format!("{type_name}.{rest}");
                     if let Some(sym) = lookup.by_qualified_name(&candidate) {
@@ -655,7 +655,7 @@ impl LanguageResolver for TypeScriptResolver {
                     // Also try: the type might be in a namespace, search by name.
                     let method_name = rest.split('.').next().unwrap_or(rest);
                     for sym in lookup.by_name(method_name) {
-                        if sym.qualified_name.starts_with(type_name)
+                        if sym.qualified_name.starts_with(type_name.as_str())
                             && predicates::kind_compatible(edge_kind, &sym.kind)
                         {
                             return Some(Resolution {
