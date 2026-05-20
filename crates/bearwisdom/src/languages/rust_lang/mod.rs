@@ -18,9 +18,9 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub mod resolve;
 
 pub use hooks::RUST_HOOKS;
+pub use hooks::RustResolver;
 pub use profile::RUST_PROFILE;
 
 #[cfg(test)]
@@ -38,8 +38,6 @@ mod resolve_tests;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::RustResolver;
 
 pub struct RustLangPlugin;
 

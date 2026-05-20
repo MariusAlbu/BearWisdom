@@ -1,5 +1,5 @@
 use super::predicates;
-use super::resolve::RustResolver;
+use super::hooks::RustResolver;
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, RefContext};
@@ -274,7 +274,7 @@ fn make_chain(segments: &[(&str, SegmentKind)]) -> MemberChain {
 #[test]
 fn test_rust_axum_router_route_emits_consumer_http() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_rust_axum_route_emission;
+    use super::hooks::detect_rust_axum_route_emission;
 
     let chain = make_chain(&[
         ("Router", SegmentKind::Identifier),
@@ -295,7 +295,7 @@ fn test_rust_axum_router_route_emits_consumer_http() {
 #[test]
 fn test_rust_axum_route_reads_verb_from_second_arg() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
-    use super::resolve::detect_rust_axum_route_emission;
+    use super::hooks::detect_rust_axum_route_emission;
 
     let chain = make_chain(&[
         ("Router", SegmentKind::Identifier),
@@ -315,7 +315,7 @@ fn test_rust_axum_route_reads_verb_from_second_arg() {
 
 #[test]
 fn test_rust_axum_nest_emits_consumer_http() {
-    use super::resolve::detect_rust_axum_route_emission;
+    use super::hooks::detect_rust_axum_route_emission;
 
     let chain = make_chain(&[
         ("Router", SegmentKind::Identifier),
@@ -328,7 +328,7 @@ fn test_rust_axum_nest_emits_consumer_http() {
 
 #[test]
 fn test_rust_axum_route_rejects_non_router_root() {
-    use super::resolve::detect_rust_axum_route_emission;
+    use super::hooks::detect_rust_axum_route_emission;
 
     let chain = make_chain(&[
         ("client", SegmentKind::Identifier),
@@ -343,7 +343,7 @@ fn test_rust_axum_route_rejects_non_router_root() {
 #[test]
 fn test_rust_route_attribute_emits_consumer_http() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_rust_route_attribute_emission;
+    use super::hooks::detect_rust_route_attribute_emission;
 
     let em = detect_rust_route_attribute_emission("get", Some("/api/users")).unwrap();
     match em {
@@ -359,7 +359,7 @@ fn test_rust_route_attribute_emits_consumer_http() {
 
 #[test]
 fn test_rust_route_attribute_rejects_non_url_arg() {
-    use super::resolve::detect_rust_route_attribute_emission;
+    use super::hooks::detect_rust_route_attribute_emission;
 
     assert!(detect_rust_route_attribute_emission("get", None).is_none());
     assert!(detect_rust_route_attribute_emission("get", Some("")).is_none());
@@ -369,7 +369,7 @@ fn test_rust_route_attribute_rejects_non_url_arg() {
 
 #[test]
 fn test_rust_actix_web_resource_emits_consumer() {
-    use super::resolve::detect_rust_actix_resource_emission;
+    use super::hooks::detect_rust_actix_resource_emission;
 
     let chain = make_chain(&[
         ("web", SegmentKind::Identifier),
@@ -384,7 +384,7 @@ fn test_rust_actix_web_resource_emits_consumer() {
 #[test]
 fn test_rust_reqwest_client_get_emits_producer_http() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
-    use super::resolve::detect_rust_reqwest_emission;
+    use super::hooks::detect_rust_reqwest_emission;
 
     let chain = make_chain(&[
         ("client", SegmentKind::Identifier),
@@ -405,7 +405,7 @@ fn test_rust_reqwest_client_get_emits_producer_http() {
 #[test]
 fn test_rust_reqwest_post_with_absolute_url() {
     use crate::indexer::resolve::flow_emit::HttpMethod;
-    use super::resolve::detect_rust_reqwest_emission;
+    use super::hooks::detect_rust_reqwest_emission;
 
     let chain = make_chain(&[
         ("client", SegmentKind::Identifier),
@@ -422,7 +422,7 @@ fn test_rust_reqwest_post_with_absolute_url() {
 
 #[test]
 fn test_rust_reqwest_rejects_router_root() {
-    use super::resolve::detect_rust_reqwest_emission;
+    use super::hooks::detect_rust_reqwest_emission;
 
     // `Router::new().get(...)` — Router prefix is reserved for axum.
     let chain = make_chain(&[
@@ -439,7 +439,7 @@ fn test_rust_reqwest_rejects_router_root() {
 #[test]
 fn test_rust_sqlx_query_select_emits_db_query() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_rust_sqlx_macro_emission;
+    use super::hooks::detect_rust_sqlx_macro_emission;
 
     let args = vec![CallArg::StringLit("SELECT * FROM users WHERE id = $1".to_string())];
     match detect_rust_sqlx_macro_emission("query", Some("sqlx"), &args).unwrap() {
@@ -454,7 +454,7 @@ fn test_rust_sqlx_query_select_emits_db_query() {
 #[test]
 fn test_rust_sqlx_query_as_uses_entity_arg() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_rust_sqlx_macro_emission;
+    use super::hooks::detect_rust_sqlx_macro_emission;
 
     // `sqlx::query_as!(User, "SELECT * FROM users")`.
     let args = vec![
@@ -473,7 +473,7 @@ fn test_rust_sqlx_query_as_uses_entity_arg() {
 #[test]
 fn test_rust_sqlx_query_insert_op() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_rust_sqlx_macro_emission;
+    use super::hooks::detect_rust_sqlx_macro_emission;
 
     let args = vec![CallArg::StringLit("INSERT INTO items (a) VALUES ($1)".to_string())];
     match detect_rust_sqlx_macro_emission("query", Some("sqlx"), &args).unwrap() {
@@ -490,7 +490,7 @@ fn test_rust_sqlx_query_insert_op() {
 #[test]
 fn test_rust_diesel_table_first_emits_db_query() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_rust_diesel_emission;
+    use super::hooks::detect_rust_diesel_emission;
 
     // `users::table.filter(...).first(&conn)`.
     let chain = make_chain(&[
@@ -510,7 +510,7 @@ fn test_rust_diesel_table_first_emits_db_query() {
 
 #[test]
 fn test_rust_diesel_load_emits_db_query() {
-    use super::resolve::detect_rust_diesel_emission;
+    use super::hooks::detect_rust_diesel_emission;
 
     let chain = make_chain(&[
         ("posts", SegmentKind::Identifier),
@@ -522,7 +522,7 @@ fn test_rust_diesel_load_emits_db_query() {
 
 #[test]
 fn test_rust_diesel_no_table_segment_returns_none() {
-    use super::resolve::detect_rust_diesel_emission;
+    use super::hooks::detect_rust_diesel_emission;
 
     // No `table` segment — not Diesel.
     let chain = make_chain(&[
@@ -538,7 +538,7 @@ fn test_rust_diesel_no_table_segment_returns_none() {
 #[test]
 fn test_rust_tonic_client_method_emits_rpc_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_rust_tonic_emission;
+    use super::hooks::detect_rust_tonic_emission;
 
     let chain = make_chain(&[
         ("HelloServiceClient", SegmentKind::Identifier),
@@ -557,7 +557,7 @@ fn test_rust_tonic_client_method_emits_rpc_call() {
 
 #[test]
 fn test_rust_tonic_connect_constructor_works() {
-    use super::resolve::detect_rust_tonic_emission;
+    use super::hooks::detect_rust_tonic_emission;
 
     let chain = make_chain(&[
         ("UserServiceClient", SegmentKind::Identifier),
@@ -569,7 +569,7 @@ fn test_rust_tonic_connect_constructor_works() {
 
 #[test]
 fn test_rust_tonic_rejects_non_client_root() {
-    use super::resolve::detect_rust_tonic_emission;
+    use super::hooks::detect_rust_tonic_emission;
 
     // Root doesn't end in "Client".
     let chain = make_chain(&[
@@ -586,7 +586,7 @@ fn test_rust_tonic_rejects_non_client_root() {
 
 #[test]
 fn test_rust_tonic_direct_detector_still_rejects_bare_variable() {
-    use super::resolve::detect_rust_tonic_emission;
+    use super::hooks::detect_rust_tonic_emission;
     // Direct detector still can't recover the type — only the
     // lookup-aware `detect_flow_emission_with_lookup` path does.
     let chain = make_chain(&[
@@ -666,7 +666,7 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
         imports: vec![],
         file_namespace: None,
     };
-    let emissions = super::resolve::detect_flow_inner_with_lookup(&file_ctx, &ref_ctx, &VarLookup);
+    let emissions = super::hooks::detect_flow_inner_with_lookup(&file_ctx, &ref_ctx, &VarLookup);
     assert!(
         matches!(emissions.first(), Some(FlowEmission::NamedChannel { kind: NamedChannelKind::RpcCall, .. })),
         "expected RpcCall via let-binding propagation, got {emissions:?}"
@@ -679,7 +679,7 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
 
 #[test]
 fn test_rust_axum_route_no_emit_for_relative_url() {
-    use super::resolve::detect_rust_axum_route_emission;
+    use super::hooks::detect_rust_axum_route_emission;
     let chain = make_chain(&[
         ("Router", SegmentKind::Identifier),
         ("new", SegmentKind::Property),
@@ -691,7 +691,7 @@ fn test_rust_axum_route_no_emit_for_relative_url() {
 
 #[test]
 fn test_rust_diesel_no_emit_without_table_segment() {
-    use super::resolve::detect_rust_diesel_emission;
+    use super::hooks::detect_rust_diesel_emission;
     let chain = make_chain(&[
         ("users", SegmentKind::Identifier),
         ("filter", SegmentKind::Property),
@@ -702,7 +702,7 @@ fn test_rust_diesel_no_emit_without_table_segment() {
 
 #[test]
 fn test_rust_reqwest_no_emit_for_server_root() {
-    use super::resolve::detect_rust_reqwest_emission;
+    use super::hooks::detect_rust_reqwest_emission;
     let chain = make_chain(&[
         ("Server", SegmentKind::Identifier),
         ("new", SegmentKind::Property),
@@ -717,7 +717,7 @@ fn test_rust_reqwest_no_emit_for_server_root() {
 #[test]
 fn test_rust_apalis_storage_push_emits_bgjob() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_rust_apalis_bgjob;
+    use super::hooks::detect_rust_apalis_bgjob;
     let chain = make_chain(&[
         ("MemoryStorage", SegmentKind::Identifier),
         ("push", SegmentKind::Property),
@@ -735,7 +735,7 @@ fn test_rust_apalis_storage_push_emits_bgjob() {
 #[test]
 fn test_rust_rdkafka_producer_send_emits_mq() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_rust_rdkafka_mq;
+    use super::hooks::detect_rust_rdkafka_mq;
     let chain = make_chain(&[
         ("producer", SegmentKind::Identifier),
         ("send", SegmentKind::Property),
@@ -752,7 +752,7 @@ fn test_rust_rdkafka_producer_send_emits_mq() {
 #[test]
 fn test_rust_lapin_basic_publish_emits_mq() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
-    use super::resolve::detect_rust_rdkafka_mq;
+    use super::hooks::detect_rust_rdkafka_mq;
     let chain = make_chain(&[
         ("channel", SegmentKind::Identifier),
         ("basic_publish", SegmentKind::Property),
@@ -769,7 +769,7 @@ fn test_rust_lapin_basic_publish_emits_mq() {
 #[test]
 fn test_rust_redis_get_emits_config_lookup() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_rust_redis_config_lookup;
+    use super::hooks::detect_rust_redis_config_lookup;
     let chain = make_chain(&[
         ("con", SegmentKind::Identifier),
         ("get", SegmentKind::Property),
@@ -784,7 +784,7 @@ fn test_rust_redis_get_emits_config_lookup() {
 #[test]
 fn test_rust_uds_listener_bind_emits_ipc_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_rust_uds_emission;
+    use super::hooks::detect_rust_uds_emission;
     let chain = make_chain(&[
         ("UnixListener", SegmentKind::Identifier),
         ("bind", SegmentKind::Property),
@@ -803,7 +803,7 @@ fn test_rust_uds_listener_bind_emits_ipc_consumer() {
 #[test]
 fn test_rust_uds_stream_connect_emits_ipc_producer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
-    use super::resolve::detect_rust_uds_emission;
+    use super::hooks::detect_rust_uds_emission;
     let chain = make_chain(&[
         ("UnixStream", SegmentKind::Identifier),
         ("connect", SegmentKind::Property),
@@ -818,7 +818,7 @@ fn test_rust_uds_stream_connect_emits_ipc_producer() {
 #[test]
 fn test_rust_axum_ws_on_upgrade_emits_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_rust_axum_ws_consumer;
+    use super::hooks::detect_rust_axum_ws_consumer;
     let chain = make_chain(&[
         ("ws", SegmentKind::Identifier),
         ("on_upgrade", SegmentKind::Property),
@@ -835,7 +835,7 @@ fn test_rust_axum_ws_on_upgrade_emits_consumer() {
 #[test]
 fn test_rust_async_graphql_object_emits_graphql_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_rust_async_graphql_attribute;
+    use super::hooks::detect_rust_async_graphql_attribute;
     match detect_rust_async_graphql_attribute("Object").unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {
             assert!(matches!(kind, NamedChannelKind::GraphQLOp));
@@ -849,7 +849,7 @@ fn test_rust_async_graphql_object_emits_graphql_consumer() {
 #[test]
 fn test_rust_async_graphql_subscription_emits_subscription() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    use super::resolve::detect_rust_async_graphql_attribute;
+    use super::hooks::detect_rust_async_graphql_attribute;
     match detect_rust_async_graphql_attribute("Subscription").unwrap() {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "rs.graphql.subscription"),
         _ => panic!("expected NamedChannel"),
@@ -858,13 +858,13 @@ fn test_rust_async_graphql_subscription_emits_subscription() {
 
 #[test]
 fn test_rust_juniper_graphql_object_recognised() {
-    use super::resolve::detect_rust_async_graphql_attribute;
+    use super::hooks::detect_rust_async_graphql_attribute;
     assert!(detect_rust_async_graphql_attribute("graphql_object").is_some());
 }
 
 #[test]
 fn test_rust_async_graphql_rejects_unrelated() {
-    use super::resolve::detect_rust_async_graphql_attribute;
+    use super::hooks::detect_rust_async_graphql_attribute;
     assert!(detect_rust_async_graphql_attribute("derive").is_none());
     assert!(detect_rust_async_graphql_attribute("test").is_none());
 }
