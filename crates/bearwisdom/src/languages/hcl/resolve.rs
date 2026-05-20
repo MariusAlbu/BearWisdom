@@ -166,54 +166,6 @@ impl LanguageResolver for HclResolver {
         engine::resolve_common("hcl", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import edges (module source attribute) are always external.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return Some("terraform".to_string());
-        }
-
-        // Terraform meta-references (each.*, count.*, self.*, path.*, terraform.*).
-        if is_terraform_meta_ref(target) {
-            return Some("terraform".to_string());
-        }
-
-        // HCL dynamic-block iterators: `dynamic "ingress" { for_each = ... ; content { ... ingress.value.cidr ... } }`
-        // emits refs like `ingress.value` / `ingress.key` where the prefix is the
-        // iterator name (typically the singular of the resource attribute block).
-        if is_dynamic_block_iterator(target) {
-            return Some("terraform".to_string());
-        }
-
-        // data.* that refer to provider data sources (not locally-defined data blocks).
-        if target.starts_with("data.") {
-            let parts: Vec<&str> = target.splitn(3, '.').collect();
-            if parts.len() >= 2 && is_provider_resource_type(parts[1]) {
-                return Some("terraform".to_string());
-            }
-        }
-
-        // Resource-type references where the prefix is a known provider type
-        // (e.g. "aws_instance.web" — provider already handled the symbol, but if
-        // the resource wasn't indexed this classifies the ref as external).
-        if let Some(dot) = target.find('.') {
-            let prefix = &target[..dot];
-            if is_provider_resource_type(prefix) {
-                return Some("terraform".to_string());
-            }
-        }
-
-        // HCL/Terraform built-in functions are classified by the engine's
-        // keywords() set populated from hcl/keywords.rs.
-        let _ = (file_ctx, ref_ctx, project_ctx);
-        None
-    }
 }
 
 /// Strip the `var.` or `local.` prefix to get the bare Variable name.
@@ -233,7 +185,7 @@ fn strip_hcl_prefix(name: &str) -> &str {
 
 /// Returns true for Terraform meta-references that never resolve to a project
 /// symbol: `each.*`, `count.*`, `self.*`, `path.*`, `terraform.*`.
-fn is_terraform_meta_ref(name: &str) -> bool {
+pub(super) fn is_terraform_meta_ref(name: &str) -> bool {
     matches!(
         name.splitn(2, '.').next().unwrap_or(name),
         "each" | "count" | "self" | "path" | "terraform"
@@ -246,7 +198,7 @@ fn is_terraform_meta_ref(name: &str) -> bool {
 ///
 /// We classify any `<snake>.value` / `<snake>.key` as a dynamic-block ref
 /// when the prefix isn't already a provider resource type (handled earlier).
-fn is_dynamic_block_iterator(name: &str) -> bool {
+pub(super) fn is_dynamic_block_iterator(name: &str) -> bool {
     let mut parts = name.split('.');
     let head = match parts.next() {
         Some(h) if !h.is_empty() => h,
@@ -266,7 +218,7 @@ fn is_dynamic_block_iterator(name: &str) -> bool {
 
 /// Check if a name looks like a Terraform provider resource type.
 /// Provider resource types follow a `provider_resourcetype` pattern.
-fn is_provider_resource_type(name: &str) -> bool {
+pub(super) fn is_provider_resource_type(name: &str) -> bool {
     // Provider resource types contain an underscore and match patterns like
     // "aws_instance", "azurerm_resource_group", "google_compute_instance".
     name.contains('_')
