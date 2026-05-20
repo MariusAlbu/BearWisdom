@@ -5,6 +5,10 @@
 //! `render` resolve through the same include/extends Imports ref
 //! path.
 
+pub(crate) mod profile;
+
+pub use profile::LIQUID_PROFILE;
+
 pub struct LiquidPlugin;
 
 use crate::languages::LanguagePlugin;
@@ -25,4 +29,9 @@ impl LanguagePlugin for LiquidPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::LIQUID_PROFILE)
+    }
 }

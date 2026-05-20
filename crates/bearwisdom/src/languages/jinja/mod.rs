@@ -21,7 +21,10 @@
 
 pub mod expr;
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::JINJA_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -53,5 +56,10 @@ impl LanguagePlugin for JinjaPlugin {
     fn ref_node_kinds(&self) -> &[&str] { &[] }
     fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
         Some(Arc::new(resolve::JinjaResolver))
+    }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::JINJA_PROFILE)
     }
 }

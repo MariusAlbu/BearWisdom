@@ -13,7 +13,10 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::EJS_PROFILE;
 
 use std::sync::Arc;
 
@@ -40,5 +43,10 @@ impl LanguagePlugin for EjsPlugin {
     fn ref_node_kinds(&self) -> &[&str] { &[] }
     fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
         Some(Arc::new(resolve::EjsResolver))
+    }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::EJS_PROFILE)
     }
 }
