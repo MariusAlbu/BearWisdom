@@ -68,36 +68,5 @@ impl LanguageResolver for DockerfileResolver {
         )
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // Scratch is a special Docker pseudo-image — classify before common handler.
-        if ref_ctx.extracted_ref.target_name.eq_ignore_ascii_case("scratch") {
-            return Some("docker".to_string());
-        }
-
-        // `FROM <image>` emits both Imports and Inherits edges targeting the
-        // same base image. Classify both as external when they fall through
-        // to this function — by this point, `resolve()` has already caught
-        // the multi-stage `FROM builder AS final` case where the target
-        // names a same-file stage alias (internal edge), so whatever's left
-        // is a registry image reference. Without this, Inherits edges
-        // silently pile up in `unresolved_refs` — e.g. `dotnet-abp` had 8
-        // of them pointing at `mcr.microsoft.com/dotnet/sdk:…`.
-        if matches!(
-            ref_ctx.extracted_ref.kind,
-            crate::types::EdgeKind::Imports | crate::types::EdgeKind::Inherits
-        ) {
-            return Some("docker".to_string());
-        }
-
-        // Dockerfile instructions / shell built-ins classify via the
-        // engine's keywords() set populated from dockerfile/keywords.rs.
-        let _ = (file_ctx, ref_ctx, project_ctx);
-        None
-    }
 }
 

@@ -1,6 +1,7 @@
 //! Dockerfile language plugin.
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
@@ -9,6 +10,7 @@ pub mod embedded;
 pub mod extract;
 pub mod resolve;
 
+pub use hooks::DOCKERFILE_HOOKS;
 pub use profile::DOCKERFILE_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -92,5 +94,12 @@ impl LanguagePlugin for DockerfilePlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::DOCKERFILE_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::DOCKERFILE_HOOKS)
     }
 }
