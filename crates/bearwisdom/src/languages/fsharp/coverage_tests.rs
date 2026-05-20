@@ -420,10 +420,7 @@ fn hash_r_directive_emits_imports_ref() {
 /// same file to be classified as external by `infer_external_namespace`.
 #[test]
 fn infer_external_namespace_from_hash_r_import() {
-    use super::resolve::FSharpResolver;
     use crate::types::ExtractedRef;
-
-    let resolver = FSharpResolver;
 
     // Simulate a ParsedFile that has a #r-derived Imports ref for Fornax.Core.
     // build_file_context converts this to a FileContext with one import entry.
@@ -497,7 +494,6 @@ fn infer_external_namespace_from_hash_r_import() {
             &ref_ctx, &file_ctx, None, &empty_lookup,
         )
     };
-    let _ = resolver;
     assert!(
         ns.is_some(),
         "expected Some namespace for 'div' with Fornax.Core import; got None"
