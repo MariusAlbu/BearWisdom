@@ -14,12 +14,14 @@
 //! the indexer processes the embedded text as a separate extraction target.
 
 pub(crate) mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod extract;
 pub mod global_registry;
 
+pub use hooks::VUE_HOOKS;
 pub use profile::VUE_PROFILE;
 
 #[cfg(test)]
@@ -126,41 +128,6 @@ impl LanguageResolver for VueResolver {
             .resolve(file_ctx, ref_ctx, lookup)
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // If this component is globally registered (explicitly via app.component),
-        // suppress external classification so the heuristic resolver can find
-        // it by name in the project index.
-        if let Some(ctx_ref) = project_ctx {
-            if let Some(registry) = ctx_ref.plugin_state.get::<global_registry::VueGlobalRegistry>() {
-                let name = &ref_ctx.extracted_ref.target_name;
-                if name.chars().next().map_or(false, |c| c.is_uppercase()) {
-                    if let Some(global_registry::VueComponentSource::ExplicitRegistration { .. }) =
-                        registry.components.get(name.as_str())
-                    {
-                        return None;
-                    }
-                }
-            }
-        }
-        crate::languages::typescript::resolve::TypeScriptResolver
-            .infer_external_namespace(file_ctx, ref_ctx, project_ctx)
-    }
-
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        crate::languages::typescript::resolve::TypeScriptResolver
-            .infer_external_namespace_with_lookup(file_ctx, ref_ctx, project_ctx, lookup)
-    }
 }
 
 pub struct VuePlugin;
@@ -232,7 +199,14 @@ impl LanguagePlugin for VuePlugin {
         Some(&profile::VUE_PROFILE)
     }
 
-    fn populate_project_state(
+    
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::VUE_HOOKS)
+    }
+fn populate_project_state(
         &self,
         state: &mut PluginStateBag,
         parsed: &[ParsedFile],
