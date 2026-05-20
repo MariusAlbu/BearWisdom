@@ -1,10 +1,141 @@
+// Clojure language hooks. Absorbed from the deleted `clojure/resolve.rs`.
+
 use super::predicates;
-use super::resolve;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup, Resolution};
+use crate::indexer::resolve::engine::{
+    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct ClojureHooks;
+
+pub(crate) fn detect_clj_compojure_route(
+    target_name: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let method = match target_name {
+        "GET" => HttpMethod::Get,
+        "POST" => HttpMethod::Post,
+        "PUT" => HttpMethod::Put,
+        "PATCH" => HttpMethod::Patch,
+        "DELETE" => HttpMethod::Delete,
+        "HEAD" => HttpMethod::Head,
+        "OPTIONS" => HttpMethod::Options,
+        "ANY" => HttpMethod::Any,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s) if s.starts_with('/') => Some(s.as_str()),
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Consumer,
+        method: Some(method),
+        streaming: None,
+    })
+}
+
+pub(crate) fn detect_clj_http_producer(
+    module: &str,
+    target: &str,
+    call_args: &[crate::types::CallArg],
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    use crate::types::CallArg;
+    let m_last = module.rsplit('.').next().unwrap_or(module);
+    if !matches!(m_last, "client" | "http")
+        || !(module.contains("clj-http")
+            || module.contains("http-kit")
+            || module.contains("org.httpkit"))
+    {
+        if !matches!(
+            module,
+            "clj-http.client" | "org.httpkit.client" | "hato.client"
+        ) {
+            return None;
+        }
+    }
+    let method = match target {
+        "get" => HttpMethod::Get,
+        "post" => HttpMethod::Post,
+        "put" => HttpMethod::Put,
+        "patch" => HttpMethod::Patch,
+        "delete" => HttpMethod::Delete,
+        "head" => HttpMethod::Head,
+        _ => return None,
+    };
+    let url = call_args.iter().find_map(|a| match a {
+        CallArg::StringLit(s)
+            if s.starts_with('/')
+                || s.starts_with("http://")
+                || s.starts_with("https://") =>
+        {
+            Some(s.as_str())
+        }
+        _ => None,
+    })?;
+    Some(FlowEmission::NamedChannel {
+        kind: NamedChannelKind::HttpCall,
+        name: crate::connectors::url_pattern::normalize(url),
+        role: ChannelRole::Producer,
+        method: Some(method),
+        streaming: None,
+    })
+}
+
+pub(crate) fn detect_clj_jdbc_db_query(
+    module: &str,
+    target: &str,
+) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
+    if !module.contains("jdbc") && !module.contains("honeysql") {
+        return None;
+    }
+    let op = match target {
+        "execute!" | "execute-one!" | "query" | "find-by-keys" | "get-by-id" => {
+            DbQueryOp::Select
+        }
+        "insert!" | "insert-multi!" => DbQueryOp::Insert,
+        "update!" => DbQueryOp::Update,
+        "delete!" => DbQueryOp::Delete,
+        _ => return None,
+    };
+    Some(FlowEmission::DbQuery {
+        entity_name: "clj.*".to_string(),
+        operation: op,
+    })
+}
+
+pub(crate) fn detect_flow_inner(
+    _file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
+    let r = &ref_ctx.extracted_ref;
+    if r.kind != EdgeKind::Calls {
+        return Vec::new();
+    }
+    let module = r.module.as_deref().unwrap_or("");
+    let target = r.target_name.as_str();
+    if let Some(em) = detect_clj_compojure_route(target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_clj_http_producer(module, target, &r.call_args) {
+        return vec![em];
+    }
+    if let Some(em) = detect_clj_jdbc_db_query(module, target) {
+        return vec![em];
+    }
+    Vec::new()
+}
 
 impl LanguageEngineHooks for ClojureHooks {
     fn classify_external(
@@ -15,19 +146,12 @@ impl LanguageEngineHooks for ClojureHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
-
-        // Java interop — method calls start with `.`, constructor calls end with `.`.
         if predicates::is_java_interop(target) {
             return Some("java".to_string());
         }
-
-        // Fully-qualified Java class references.
         if predicates::is_java_class_ref(target) {
             return Some("java".to_string());
         }
-
-        // Bare CamelCase names imported via :import — classify as Java external
-        // when any Java package import is present.
         let is_camel = target.starts_with(|c: char| c.is_uppercase())
             && !target.contains('-')
             && !target.contains('/');
@@ -42,18 +166,15 @@ impl LanguageEngineHooks for ClojureHooks {
                 return Some("java".to_string());
             }
         }
-
-        // Per-:refer named imports — match target against the alias.
-        if let Some(import) = file_ctx.imports.iter().find(|i| {
-            i.alias.as_deref() == Some(target.as_str()) && i.module_path.is_some()
-        }) {
+        if let Some(import) = file_ctx
+            .imports
+            .iter()
+            .find(|i| i.alias.as_deref() == Some(target.as_str()) && i.module_path.is_some())
+        {
             if let Some(ns) = import.module_path.as_deref() {
                 return Some(ns.to_string());
             }
         }
-
-        // Side-effect-only `(:require [ns])` reclassification — only when no
-        // internal project symbol exists by this name.
         if target.is_empty() || target.contains('/') || target.starts_with(':') {
             return None;
         }
@@ -80,27 +201,59 @@ impl LanguageEngineHooks for ClojureHooks {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
+        _lookup: &dyn SymbolLookup,
     ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let _ = lookup;
-        resolve::detect_flow_inner(file_ctx, ref_ctx)
+        detect_flow_inner(file_ctx, ref_ctx)
     }
 
     fn build_file_context(
         &self,
-        file: &crate::types::ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<crate::indexer::resolve::engine::FileContext> {
-        Some(resolve::build_file_context_inner(file, project_ctx))
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        let mut imports = Vec::new();
+        for r in &file.refs {
+            if r.kind != EdgeKind::Imports {
+                continue;
+            }
+            let ns = r.module.as_deref().unwrap_or(&r.target_name);
+            let alias = if r.module.is_some() && r.target_name != ns {
+                Some(r.target_name.clone())
+            } else {
+                None
+            };
+            let is_wildcard = alias.is_none();
+            imports.push(ImportEntry {
+                imported_name: ns.to_string(),
+                module_path: Some(ns.to_string()),
+                alias,
+                is_wildcard,
+            });
+        }
+        Some(FileContext {
+            file_path: file.path.clone(),
+            language: "clojure".to_string(),
+            imports,
+            file_namespace: None,
+        })
     }
 
     fn resolve_ref(
         &self,
-        file_ctx: &crate::indexer::resolve::engine::FileContext,
-        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
-        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        super::resolve::ClojureResolver.resolve(file_ctx, ref_ctx, lookup)
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            return None;
+        }
+        engine::resolve_common(
+            "clojure",
+            file_ctx,
+            ref_ctx,
+            lookup,
+            predicates::kind_compatible,
+        )
     }
 }
 
