@@ -162,17 +162,6 @@ impl LanguageResolver for OcamlResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // OCaml Stdlib classifies via the engine's keywords() set
-        // populated from ocaml/mod.rs::keywords(); opam walker emits
-        // real symbols for declared deps.
-        None
-    }
 
     fn detect_flow_emission(
         &self,

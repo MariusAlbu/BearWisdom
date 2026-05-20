@@ -94,14 +94,6 @@ impl LanguageResolver for YamlResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        None
-    }
 }
 
 /// Generate candidate file paths for a GitHub Actions `uses:` reference.

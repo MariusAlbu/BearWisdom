@@ -89,14 +89,6 @@ impl LanguageResolver for PugResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        None
-    }
 }
 
 /// Generate candidate file paths for a Pug `include` / `extends` target.

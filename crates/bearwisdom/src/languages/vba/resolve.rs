@@ -100,15 +100,4 @@ impl LanguageResolver for VbaResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // VBA primitives are classified by the engine's keywords() set;
-        // Office object model + Win32 declared APIs come from the
-        // vba_typelibs walker (Windows-only OLE typelib introspection).
-        None
-    }
 }

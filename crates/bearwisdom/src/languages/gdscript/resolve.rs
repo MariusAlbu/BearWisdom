@@ -123,16 +123,4 @@ impl LanguageResolver for GDScriptResolver {
         engine::resolve_common("gdscript", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // No predicate-driven classification — godot_api walker emits real
-        // symbols and resolve() above binds them. Bare names that reach this
-        // point exhausted same-file, scope, and walker lookups; leave
-        // unresolved rather than blanket-classifying as `builtin`.
-        None
-    }
 }

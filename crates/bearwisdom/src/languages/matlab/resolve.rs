@@ -73,14 +73,6 @@ impl LanguageResolver for MatlabResolver {
         engine::resolve_common("matlab", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        None
-    }
 
     fn infer_external_namespace_with_lookup(
         &self,

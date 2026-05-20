@@ -97,18 +97,6 @@ impl LanguageResolver for PerlResolver {
         engine::resolve_common("perl", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // perl_stdlib walker emits real symbols; interpreter built-ins
-        // are handled by the engine's keywords() primitive set. Names
-        // that exhaust resolve() stay unresolved rather than being
-        // blanket-classified.
-        None
-    }
 
     fn detect_flow_emission(
         &self,

@@ -100,14 +100,6 @@ impl LanguageResolver for EjsResolver {
         engine::resolve_common("ejs", file_ctx, ref_ctx, lookup, kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        None
-    }
 }
 
 /// Generate candidate file paths for an EJS include reference.

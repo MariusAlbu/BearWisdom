@@ -136,16 +136,6 @@ impl LanguageResolver for LuaResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // Walkers + keywords() handle classification. Names that exhaust
-        // resolve() stay unresolved rather than being blanket-classified.
-        None
-    }
 
     fn detect_flow_emission(
         &self,

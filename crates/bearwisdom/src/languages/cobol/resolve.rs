@@ -77,17 +77,6 @@ impl LanguageResolver for CobolResolver {
         engine::resolve_common("cobol", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // COBOL verbs and intrinsics are classified by the engine's
-        // keywords() set populated from cobol/keywords.rs. Names that
-        // exhaust resolve() stay unresolved.
-        None
-    }
 
     fn detect_flow_emission(
         &self,

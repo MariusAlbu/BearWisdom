@@ -106,17 +106,6 @@ impl LanguageResolver for HaskellResolver {
         engine::resolve_common("haskell", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // cabal walker emits real symbols and resolve() above binds them;
-        // names that exhaust resolve() stay unresolved rather than blanket-
-        // classified as `builtin`.
-        None
-    }
 
     fn detect_flow_emission(
         &self,
