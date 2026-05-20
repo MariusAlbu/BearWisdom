@@ -221,264 +221,6 @@ impl LanguageResolver for ElixirResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import / alias / use / require directives.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            let root = module.split('.').next().unwrap_or(module);
-
-            // Manifest-driven: check mix.exs dependencies first.
-            // Mix dep atoms are snake_case (e.g., "phoenix", "ecto_sql").
-            // Elixir module roots are CamelCase (e.g., "Phoenix", "Ecto").
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
-                    if is_mix_dep_match(root, &manifest.dependencies) {
-                        return Some(root.to_string());
-                    }
-                }
-            }
-
-            if predicates::is_external_elixir_module(module) {
-                return Some(root.to_string());
-            }
-            return None;
-        }
-
-        // Check the ref's own module field (e.g., module="Ecto.Changeset"
-        // on a type_ref to "Changeset" — the module IS the external package).
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            let root = module.split('.').next().unwrap_or(module);
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
-                    if is_mix_dep_match(root, &manifest.dependencies) {
-                        return Some(root.to_string());
-                    }
-                }
-            }
-            if predicates::is_external_elixir_module(module) {
-                return Some(root.to_string());
-            }
-        }
-
-        // Check whether the target matches a known-external alias in this file.
-        for import in &file_ctx.imports {
-            if import.imported_name != *target {
-                continue;
-            }
-            let module = import.module_path.as_deref().unwrap_or("");
-            let root = module.split('.').next().unwrap_or(module);
-
-            // Manifest-driven check for alias targets.
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
-                    if is_mix_dep_match(root, &manifest.dependencies) {
-                        return Some(root.to_string());
-                    }
-                }
-            }
-
-            if predicates::is_external_elixir_module(module) {
-                return Some(root.to_string());
-            }
-        }
-
-        // Fully-qualified external module reference.
-        if target.contains('.') {
-            let root = target.split('.').next().unwrap_or(target);
-
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
-                    if is_mix_dep_match(root, &manifest.dependencies) {
-                        return Some(root.to_string());
-                    }
-                }
-            }
-
-            if predicates::is_external_elixir_module(root) {
-                return Some(root.to_string());
-            }
-        } else {
-            // Plain module name (single segment, uppercase = Elixir module).
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
-                    if is_mix_dep_match(target, &manifest.dependencies) {
-                        return Some(target.clone());
-                    }
-                }
-            }
-
-            if predicates::is_external_elixir_module(target) {
-                return Some(target.clone());
-            }
-        }
-
-        // `Routes` is the conventional alias for `<App>.Router.Helpers` — a
-        // Phoenix compile-time module that never appears as a source-defined
-        // symbol. It can reach files via multiple injection paths:
-        //
-        //   1. Direct alias: `alias MyApp.Router.Helpers, as: Routes` in source.
-        //   2. ConnCase injection: handled by `is_phoenix_test_case_wrapper` below.
-        //   3. Web wrapper injection: `use MyAppWeb, :controller` or `:view`
-        //      — the web module's quote block injects the alias invisibly.
-        //   4. Project-internal macro injection: `use MyApp.SomeResource` whose
-        //      `defmacro __using__` quote block contains
-        //      `alias PlausibleWeb.Router.Helpers, as: Routes`. The aliased
-        //      `Routes` only takes effect in the using file, but its source
-        //      `quote do` is invisible to BearWisdom.
-        //
-        // For case 1 we check for Router.Helpers in imports. For case 3 we
-        // detect `use <AppWeb>, :<controller|view|...>` and apply externalization.
-        // For case 4 we fall back to manifest evidence: if Phoenix is a declared
-        // Mix dep AND the file has any `use ProjectInternal.Module` directive,
-        // externalize. `Routes` is a universal Phoenix convention; an unresolved
-        // single-segment `Routes` in a Phoenix project is essentially never a
-        // user-defined non-Phoenix symbol.
-        if target == "Routes" {
-            for import in &file_ctx.imports {
-                let mp = import.module_path.as_deref().unwrap_or("");
-                // Case 1: explicit alias present in this file's own source.
-                if mp.ends_with("Router.Helpers") {
-                    return Some("Phoenix".to_string());
-                }
-                // Case 3: web wrapper module — `Routes` is injected by the
-                // web module's `quote do` block. Detected by the
-                // conventional `*Web` module-name suffix (Phoenix's
-                // standard project layout).
-                let last = mp.split('.').last().unwrap_or(mp);
-                if last.ends_with("Web") && !last.is_empty() {
-                    return Some("Phoenix".to_string());
-                }
-            }
-            // Case 4: manifest-evidence fallback. Activate only when the
-            // project's mix.exs lists phoenix as a dependency AND the file
-            // does at least one `use SomeProjectInternal.Module` (which is
-            // the macro-injection vehicle). Files that don't `use` anything
-            // can't have invisible aliases.
-            let phoenix_in_mix = project_ctx
-                .and_then(|ctx| {
-                    ctx.manifests_for(ref_ctx.file_package_id)
-                        .get(&ManifestKind::Mix)
-                        .map(|m| is_mix_dep_match("phoenix", &m.dependencies))
-                })
-                .unwrap_or(false);
-            let has_internal_use = file_ctx.imports.iter().any(|imp| {
-                imp.module_path
-                    .as_deref()
-                    .map(|m| !m.is_empty()
-                        && m.chars().next().map(|c| c.is_uppercase()).unwrap_or(false))
-                    .unwrap_or(false)
-            });
-            if phoenix_in_mix && has_internal_use {
-                return Some("Phoenix".to_string());
-            }
-        }
-
-        // Use-macro injection inference: if the file has `use ExternalModule`
-        // and that module is known to inject functions, any unresolved bare name
-        // that matches the injection set is external. This is type inference
-        // from the `use` statement — the `use` tells us what's available.
-        for import in &file_ctx.imports {
-            let module = import.module_path.as_deref().unwrap_or("");
-            if module.is_empty() {
-                continue;
-            }
-
-            // Project-internal `defmacro __using__` blocks inject helper
-            // names that aren't visible as top-level symbols. Macro
-            // expansion is the architectural fix — until that lands,
-            // names injected by project-internal Schema / AppWeb wrapper
-            // modules go to unresolved rather than being matched against
-            // a hardcoded observation list per project. Removed
-            // is_schema_using_injected, is_internal_schema_module,
-            // is_web_controller_injected, is_internal_web_module
-            // predicates which encoded names from the Changelog test
-            // fixture and a handful of other Phoenix projects.
-            //
-            // The `Routes` alias case above (case 3 web-wrapper) was
-            // narrower in scope and used `is_internal_web_module` as a
-            // generic suffix matcher (`*Web`) — replaced inline.
-
-            // Only check modules confirmed as external dependencies.
-            let root = module.split('.').next().unwrap_or(module);
-            let is_external_module = if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
-                    is_mix_dep_match(root, &manifest.dependencies)
-                } else {
-                    predicates::is_external_elixir_module(module)
-                }
-            } else {
-                predicates::is_external_elixir_module(module)
-            };
-            if !is_external_module {
-                continue;
-            }
-            // Use-macro injection inference happens in
-            // `infer_external_namespace_with_lookup`, where the SymbolLookup
-            // can confirm the external module declares `target` as a public
-            // def/defmacro. The Hex locator walks deps/<dep>/lib and the
-            // Elixir extractor surfaces every defmacro/def as a callable
-            // symbol — no hardcoded list needed.
-        }
-
-        // Bare-import wildcard fallback. `import Bamboo.Test` brings every
-        // public function from Bamboo.Test into scope — `assert_email_delivered_with`,
-        // `assert_no_emails_delivered`, etc. — without those names appearing
-        // anywhere in the user's source. The extractor emits one Imports ref
-        // per directive but doesn't distinguish `import` from `alias`/`use`,
-        // so the resolver can't tell directly.
-        //
-        // Heuristic: when the bare unresolved Calls target has a function-name
-        // shape (lowercase first letter, not a module name) AND the file has
-        // an Imports ref where `imported_name == last_segment(module_path)`
-        // (no `as:` rename — characteristic of `import X.Y` more than
-        // `alias X.Y, as: Z`) AND that module is in the project's Mix deps,
-        // attribute the bare call to that external dep.
-        //
-        // Pure `alias X.Y` without `as:` would also match, but in idiomatic
-        // Elixir code aliasing an external module is done specifically to
-        // call it as `Y.foo()` (which would emit a qualified ref, not a
-        // bare one) — so the false-positive rate is low.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Calls
-            && ref_ctx.extracted_ref.module.is_none()
-            && !target.contains('.')
-            && target
-                .chars()
-                .next()
-                .map(|c| c.is_lowercase() || c == '_')
-                .unwrap_or(false)
-        {
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) =
-                    ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix)
-                {
-                    for import in &file_ctx.imports {
-                        let Some(module_path) = import.module_path.as_deref() else { continue };
-                        let last_segment = module_path.split('.').last().unwrap_or(module_path);
-                        // Skip alias-with-as: imported_name differs from
-                        // last_segment when `as: X` was used, signalling an
-                        // alias not a wildcard import.
-                        if import.imported_name != last_segment {
-                            continue;
-                        }
-                        let root = module_path.split('.').next().unwrap_or(module_path);
-                        if is_mix_dep_match(root, &manifest.dependencies) {
-                            return Some(root.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
     /// Resolve bare calls to definitions injected by `use ExternalModule`
     /// statements. Phoenix.Controller, Ecto.Schema, GenServer, etc. work
     /// by injecting public `defmacro` / `def` declarations into the using
@@ -491,57 +233,6 @@ impl LanguageResolver for ElixirResolver {
     /// Falls back to `infer_external_namespace` when no `use` injection
     /// matches, so other resolution paths (manifest deps, internal-schema
     /// modules, etc.) still apply.
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
-            return Some(ns);
-        }
-
-        // Use-injection inference: bare Calls only.
-        if ref_ctx.extracted_ref.kind != EdgeKind::Calls {
-            return None;
-        }
-        let target = &ref_ctx.extracted_ref.target_name;
-        if target.is_empty() {
-            return None;
-        }
-
-        for import in &file_ctx.imports {
-            let module = import.module_path.as_deref().unwrap_or("");
-            if module.is_empty() {
-                continue;
-            }
-            let root = module.split('.').next().unwrap_or(module);
-            let is_external_module = if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx
-                    .manifests_for(ref_ctx.file_package_id)
-                    .get(&ManifestKind::Mix)
-                {
-                    is_mix_dep_match(root, &manifest.dependencies)
-                } else {
-                    predicates::is_external_elixir_module(module)
-                }
-            } else {
-                predicates::is_external_elixir_module(module)
-            };
-            if !is_external_module {
-                continue;
-            }
-
-            let member_qname = format!("{module}.{target}");
-            if lookup.by_qualified_name(&member_qname).is_some() {
-                return Some(root.to_string());
-            }
-        }
-
-        None
-    }
-
     fn detect_flow_emission(
         &self,
         _file_ctx: &FileContext,
@@ -803,4 +494,311 @@ fn is_mix_dep_match(
         }
     }
     false
+}
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    // Import / alias / use / require directives.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+        let root = module.split('.').next().unwrap_or(module);
+
+        // Manifest-driven: check mix.exs dependencies first.
+        // Mix dep atoms are snake_case (e.g., "phoenix", "ecto_sql").
+        // Elixir module roots are CamelCase (e.g., "Phoenix", "Ecto").
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+                if is_mix_dep_match(root, &manifest.dependencies) {
+                    return Some(root.to_string());
+                }
+            }
+        }
+
+        if predicates::is_external_elixir_module(module) {
+            return Some(root.to_string());
+        }
+        return None;
+    }
+
+    // Check the ref's own module field (e.g., module="Ecto.Changeset"
+    // on a type_ref to "Changeset" — the module IS the external package).
+    if let Some(module) = &ref_ctx.extracted_ref.module {
+        let root = module.split('.').next().unwrap_or(module);
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+                if is_mix_dep_match(root, &manifest.dependencies) {
+                    return Some(root.to_string());
+                }
+            }
+        }
+        if predicates::is_external_elixir_module(module) {
+            return Some(root.to_string());
+        }
+    }
+
+    // Check whether the target matches a known-external alias in this file.
+    for import in &file_ctx.imports {
+        if import.imported_name != *target {
+            continue;
+        }
+        let module = import.module_path.as_deref().unwrap_or("");
+        let root = module.split('.').next().unwrap_or(module);
+
+        // Manifest-driven check for alias targets.
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+                if is_mix_dep_match(root, &manifest.dependencies) {
+                    return Some(root.to_string());
+                }
+            }
+        }
+
+        if predicates::is_external_elixir_module(module) {
+            return Some(root.to_string());
+        }
+    }
+
+    // Fully-qualified external module reference.
+    if target.contains('.') {
+        let root = target.split('.').next().unwrap_or(target);
+
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+                if is_mix_dep_match(root, &manifest.dependencies) {
+                    return Some(root.to_string());
+                }
+            }
+        }
+
+        if predicates::is_external_elixir_module(root) {
+            return Some(root.to_string());
+        }
+    } else {
+        // Plain module name (single segment, uppercase = Elixir module).
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+                if is_mix_dep_match(target, &manifest.dependencies) {
+                    return Some(target.clone());
+                }
+            }
+        }
+
+        if predicates::is_external_elixir_module(target) {
+            return Some(target.clone());
+        }
+    }
+
+    // `Routes` is the conventional alias for `<App>.Router.Helpers` — a
+    // Phoenix compile-time module that never appears as a source-defined
+    // symbol. It can reach files via multiple injection paths:
+    //
+    //   1. Direct alias: `alias MyApp.Router.Helpers, as: Routes` in source.
+    //   2. ConnCase injection: handled by `is_phoenix_test_case_wrapper` below.
+    //   3. Web wrapper injection: `use MyAppWeb, :controller` or `:view`
+    //      — the web module's quote block injects the alias invisibly.
+    //   4. Project-internal macro injection: `use MyApp.SomeResource` whose
+    //      `defmacro __using__` quote block contains
+    //      `alias PlausibleWeb.Router.Helpers, as: Routes`. The aliased
+    //      `Routes` only takes effect in the using file, but its source
+    //      `quote do` is invisible to BearWisdom.
+    //
+    // For case 1 we check for Router.Helpers in imports. For case 3 we
+    // detect `use <AppWeb>, :<controller|view|...>` and apply externalization.
+    // For case 4 we fall back to manifest evidence: if Phoenix is a declared
+    // Mix dep AND the file has any `use ProjectInternal.Module` directive,
+    // externalize. `Routes` is a universal Phoenix convention; an unresolved
+    // single-segment `Routes` in a Phoenix project is essentially never a
+    // user-defined non-Phoenix symbol.
+    if target == "Routes" {
+        for import in &file_ctx.imports {
+            let mp = import.module_path.as_deref().unwrap_or("");
+            // Case 1: explicit alias present in this file's own source.
+            if mp.ends_with("Router.Helpers") {
+                return Some("Phoenix".to_string());
+            }
+            // Case 3: web wrapper module — `Routes` is injected by the
+            // web module's `quote do` block. Detected by the
+            // conventional `*Web` module-name suffix (Phoenix's
+            // standard project layout).
+            let last = mp.split('.').last().unwrap_or(mp);
+            if last.ends_with("Web") && !last.is_empty() {
+                return Some("Phoenix".to_string());
+            }
+        }
+        // Case 4: manifest-evidence fallback. Activate only when the
+        // project's mix.exs lists phoenix as a dependency AND the file
+        // does at least one `use SomeProjectInternal.Module` (which is
+        // the macro-injection vehicle). Files that don't `use` anything
+        // can't have invisible aliases.
+        let phoenix_in_mix = project_ctx
+            .and_then(|ctx| {
+                ctx.manifests_for(ref_ctx.file_package_id)
+                    .get(&ManifestKind::Mix)
+                    .map(|m| is_mix_dep_match("phoenix", &m.dependencies))
+            })
+            .unwrap_or(false);
+        let has_internal_use = file_ctx.imports.iter().any(|imp| {
+            imp.module_path
+                .as_deref()
+                .map(|m| !m.is_empty()
+                    && m.chars().next().map(|c| c.is_uppercase()).unwrap_or(false))
+                .unwrap_or(false)
+        });
+        if phoenix_in_mix && has_internal_use {
+            return Some("Phoenix".to_string());
+        }
+    }
+
+    // Use-macro injection inference: if the file has `use ExternalModule`
+    // and that module is known to inject functions, any unresolved bare name
+    // that matches the injection set is external. This is type inference
+    // from the `use` statement — the `use` tells us what's available.
+    for import in &file_ctx.imports {
+        let module = import.module_path.as_deref().unwrap_or("");
+        if module.is_empty() {
+            continue;
+        }
+
+        // Project-internal `defmacro __using__` blocks inject helper
+        // names that aren't visible as top-level symbols. Macro
+        // expansion is the architectural fix — until that lands,
+        // names injected by project-internal Schema / AppWeb wrapper
+        // modules go to unresolved rather than being matched against
+        // a hardcoded observation list per project. Removed
+        // is_schema_using_injected, is_internal_schema_module,
+        // is_web_controller_injected, is_internal_web_module
+        // predicates which encoded names from the Changelog test
+        // fixture and a handful of other Phoenix projects.
+        //
+        // The `Routes` alias case above (case 3 web-wrapper) was
+        // narrower in scope and used `is_internal_web_module` as a
+        // generic suffix matcher (`*Web`) — replaced inline.
+
+        // Only check modules confirmed as external dependencies.
+        let root = module.split('.').next().unwrap_or(module);
+        let is_external_module = if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+                is_mix_dep_match(root, &manifest.dependencies)
+            } else {
+                predicates::is_external_elixir_module(module)
+            }
+        } else {
+            predicates::is_external_elixir_module(module)
+        };
+        if !is_external_module {
+            continue;
+        }
+        // Use-macro injection inference happens in
+        // `infer_external_namespace_with_lookup`, where the SymbolLookup
+        // can confirm the external module declares `target` as a public
+        // def/defmacro. The Hex locator walks deps/<dep>/lib and the
+        // Elixir extractor surfaces every defmacro/def as a callable
+        // symbol — no hardcoded list needed.
+    }
+
+    // Bare-import wildcard fallback. `import Bamboo.Test` brings every
+    // public function from Bamboo.Test into scope — `assert_email_delivered_with`,
+    // `assert_no_emails_delivered`, etc. — without those names appearing
+    // anywhere in the user's source. The extractor emits one Imports ref
+    // per directive but doesn't distinguish `import` from `alias`/`use`,
+    // so the resolver can't tell directly.
+    //
+    // Heuristic: when the bare unresolved Calls target has a function-name
+    // shape (lowercase first letter, not a module name) AND the file has
+    // an Imports ref where `imported_name == last_segment(module_path)`
+    // (no `as:` rename — characteristic of `import X.Y` more than
+    // `alias X.Y, as: Z`) AND that module is in the project's Mix deps,
+    // attribute the bare call to that external dep.
+    //
+    // Pure `alias X.Y` without `as:` would also match, but in idiomatic
+    // Elixir code aliasing an external module is done specifically to
+    // call it as `Y.foo()` (which would emit a qualified ref, not a
+    // bare one) — so the false-positive rate is low.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Calls
+        && ref_ctx.extracted_ref.module.is_none()
+        && !target.contains('.')
+        && target
+            .chars()
+            .next()
+            .map(|c| c.is_lowercase() || c == '_')
+            .unwrap_or(false)
+    {
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) =
+                ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix)
+            {
+                for import in &file_ctx.imports {
+                    let Some(module_path) = import.module_path.as_deref() else { continue };
+                    let last_segment = module_path.split('.').last().unwrap_or(module_path);
+                    // Skip alias-with-as: imported_name differs from
+                    // last_segment when `as: X` was used, signalling an
+                    // alias not a wildcard import.
+                    if import.imported_name != last_segment {
+                        continue;
+                    }
+                    let root = module_path.split('.').next().unwrap_or(module_path);
+                    if is_mix_dep_match(root, &manifest.dependencies) {
+                        return Some(root.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+pub(super) fn infer_external_inner_with_lookup(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    if let Some(ns) = infer_external_inner(file_ctx, ref_ctx, project_ctx) {
+        return Some(ns);
+    }
+
+    // Use-injection inference: bare Calls only.
+    if ref_ctx.extracted_ref.kind != EdgeKind::Calls {
+        return None;
+    }
+    let target = &ref_ctx.extracted_ref.target_name;
+    if target.is_empty() {
+        return None;
+    }
+
+    for import in &file_ctx.imports {
+        let module = import.module_path.as_deref().unwrap_or("");
+        if module.is_empty() {
+            continue;
+        }
+        let root = module.split('.').next().unwrap_or(module);
+        let is_external_module = if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Mix)
+            {
+                is_mix_dep_match(root, &manifest.dependencies)
+            } else {
+                predicates::is_external_elixir_module(module)
+            }
+        } else {
+            predicates::is_external_elixir_module(module)
+        };
+        if !is_external_module {
+            continue;
+        }
+
+        let member_qname = format!("{module}.{target}");
+        if lookup.by_qualified_name(&member_qname).is_some() {
+            return Some(root.to_string());
+        }
+    }
+
+    None
 }

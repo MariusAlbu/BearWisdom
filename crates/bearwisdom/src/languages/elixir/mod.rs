@@ -9,11 +9,13 @@ mod calls;
 mod directives;
 mod type_refs;
 
+pub(crate) mod hooks;
 pub(crate) mod predicates;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
 
+pub use hooks::ELIXIR_HOOKS;
 pub use profile::ELIXIR_PROFILE;
 
 #[cfg(test)]
@@ -98,5 +100,12 @@ impl LanguagePlugin for ElixirPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ELIXIR_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::ELIXIR_HOOKS)
     }
 }
