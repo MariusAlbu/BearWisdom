@@ -486,7 +486,13 @@ pub(crate) fn infer_type_from_chain(
             }
         }
 
-        let member_qname = format!("{current_type}.{}", seg.name);
+        // Strip the structural generic args off the current type before
+        // building the member qname — type_info is keyed by the BASE
+        // class qname (e.g. "Repository.findOne"), not the applied form
+        // ("Repository<User>.findOne"). The args are already in `env`
+        // from the previous iteration's enter_generic_context.
+        let base_type = strip_generic_args(&current_type);
+        let member_qname = format!("{base_type}.{}", seg.name);
 
         if let Some(ti) = type_info.get(&member_qname) {
             if let Some(ft) = &ti.field_type {
@@ -687,15 +693,22 @@ pub fn infer_external_from_chain(
     };
 
     for seg in &segments[1..] {
+        // Strip the structural generic args from current_type for the
+        // is-it-in-the-index probe AND the member-qname lookup. The
+        // index keys store the base class name; the args are tracked
+        // implicitly via TypeArena Apply decomposition for callers that
+        // need them.
+        let base_type = strip_generic_args(&current_type);
+
         // If the current type isn't in the index → it's external.
         // Use types_by_name (pre-filtered type-kind pool) so common external
         // type names like "Context"/"Request"/"Error" don't drag in tens of
         // thousands of non-type candidates on every ref.
         let type_in_index = lookup
-            .by_qualified_name(&current_type)
+            .by_qualified_name(&base_type)
             .filter(|s| is_internal(s))
             .is_some()
-            || lookup.types_by_name(&current_type).iter().filter(|s| is_internal(s)).any(|s| {
+            || lookup.types_by_name(&base_type).iter().filter(|s| is_internal(s)).any(|s| {
                 matches!(
                     s.kind.as_str(),
                     "class" | "struct" | "interface" | "enum" | "type_alias"
@@ -711,7 +724,7 @@ pub fn infer_external_from_chain(
         // path so any structural information (Apply decomposition) is
         // surfaced through arena.format_type; fall back to the legacy
         // string accessor when no arena is bound.
-        let member_qname = format!("{current_type}.{}", seg.name);
+        let member_qname = format!("{base_type}.{}", seg.name);
         let arena = lookup.type_arena();
         if let Some(id) = lookup.field_type_id(&member_qname) {
             if let Some(a) = arena {
