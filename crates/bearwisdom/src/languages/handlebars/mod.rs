@@ -11,7 +11,10 @@ pub mod extract;
 pub mod embedded;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::HANDLEBARS_HOOKS;
 pub use profile::HANDLEBARS_PROFILE;
