@@ -3,6 +3,9 @@
 //! to plain file-stem symbol.
 
 pub mod extract;
+pub(crate) mod profile;
+
+pub use profile::EEX_PROFILE;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -25,4 +28,9 @@ impl LanguagePlugin for EexPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::EEX_PROFILE)
+    }
 }

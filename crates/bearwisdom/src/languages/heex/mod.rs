@@ -9,7 +9,10 @@
 
 pub mod extract;
 pub mod embedded;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::HEEX_PROFILE;
 
 use std::sync::Arc;
 
@@ -36,5 +39,10 @@ impl LanguagePlugin for HeexPlugin {
     fn ref_node_kinds(&self) -> &[&str] { &[] }
     fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
         Some(Arc::new(resolve::HeexResolver))
+    }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::HEEX_PROFILE)
     }
 }

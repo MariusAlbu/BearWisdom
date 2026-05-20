@@ -18,7 +18,10 @@
 
 pub mod embedded;
 pub mod extract;
+pub(crate) mod profile;
 pub mod resolve;
+
+pub use profile::MDX_PROFILE;
 
 use std::sync::Arc;
 
@@ -80,5 +83,11 @@ impl LanguagePlugin for MdxPlugin {
         // same pattern Vue/Svelte use to bridge template tags onto the
         // `<script>` block's TypeScript imports.
         Some(Arc::new(MdxResolver))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::MDX_PROFILE)
     }
 }
