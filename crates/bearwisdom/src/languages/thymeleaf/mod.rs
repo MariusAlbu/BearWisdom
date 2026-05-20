@@ -5,6 +5,10 @@
 //! are handled by the HTML plugin today — path-based routing to
 //! Thymeleaf is a future enhancement.
 
+pub(crate) mod profile;
+
+pub use profile::THYMELEAF_PROFILE;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedOrigin, EmbeddedRegion, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
@@ -77,6 +81,11 @@ impl LanguagePlugin for ThymeleafPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::THYMELEAF_PROFILE)
+    }
 }
 
 fn lc(bytes: &[u8], pos: usize) -> (u32, u32) {

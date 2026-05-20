@@ -3,6 +3,10 @@
 //! dispatching its body as JavaScript (a reasonable approximation
 //! since Julius is essentially JS with `#{}` interpolation).
 
+pub(crate) mod profile;
+
+pub use profile::{CASSIUS_PROFILE, HAMLET_PROFILE, JULIUS_PROFILE, LUCIUS_PROFILE};
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedOrigin, EmbeddedRegion, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
@@ -38,6 +42,7 @@ impl LanguagePlugin for HamletPlugin {
     fn extract(&self, _s: &str, p: &str, _l: &str) -> ExtractionResult { host_symbol(p) }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(&self) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> { Some(&profile::HAMLET_PROFILE) }
 }
 
 pub struct CassiusPlugin;
@@ -50,6 +55,7 @@ impl LanguagePlugin for CassiusPlugin {
     fn extract(&self, _s: &str, p: &str, _l: &str) -> ExtractionResult { host_symbol(p) }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(&self) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> { Some(&profile::CASSIUS_PROFILE) }
 }
 
 pub struct LuciusPlugin;
@@ -71,6 +77,7 @@ impl LanguagePlugin for LuciusPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(&self) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> { Some(&profile::LUCIUS_PROFILE) }
 }
 
 pub struct JuliusPlugin;
@@ -97,4 +104,5 @@ impl LanguagePlugin for JuliusPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn profile(&self) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> { Some(&profile::JULIUS_PROFILE) }
 }
