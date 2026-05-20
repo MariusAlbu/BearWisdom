@@ -178,11 +178,11 @@ impl<'a> Engine<'a> {
         self.hooks.get(language).copied()
     }
 
-    /// Resolve a single ref. Routes through the unified chain walker when
-    /// the ref carries a `MemberChain`; otherwise returns `None` (bare-name
-    /// resolution stays in the legacy per-language resolver for now —
-    /// Phase 5 migrates chain-bearing refs first, bare names follow as
-    /// per-language hooks land).
+    /// Resolve a single ref. Chain-bearing refs route through the unified
+    /// chain walker; chain-less refs route through the bare-name resolver
+    /// (`crate::type_checker::bare::resolve_bare`). Returns `None` when
+    /// the language has no registered profile so the resolver loop falls
+    /// back to its legacy path.
     pub fn resolve(
         &self,
         ref_ctx: &RefContext,
@@ -190,24 +190,23 @@ impl<'a> Engine<'a> {
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
         let profile = self.profiles.get(file_ctx.language.as_str()).copied()?;
-        let chain = ref_ctx.extracted_ref.chain.as_ref()?;
 
-        let mut walker = ChainWalker::new(
-            &self.arena,
-            &self.members,
-            &self.supertypes,
-            &self.symbol_types,
-            &self.aliases,
-            profile,
-            lookup,
-        );
-        let resolution = walker.walk_with_root(chain, ref_ctx, file_ctx, &DefaultRootResolver)?;
+        if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
+            let mut walker = ChainWalker::new(
+                &self.arena,
+                &self.members,
+                &self.supertypes,
+                &self.symbol_types,
+                &self.aliases,
+                profile,
+                lookup,
+            );
+            let resolution =
+                walker.walk_with_root(chain, ref_ctx, file_ctx, &DefaultRootResolver)?;
+            return Some(adapt_resolution(resolution, &self.arena));
+        }
 
-        // Adapt ChainResolution -> legacy Resolution. The yield TypeId is
-        // converted back to a qname string for legacy callers consuming
-        // `resolved_yield_type: Option<String>`. Phase 9 swaps Resolution
-        // to TypeId-native and this conversion drops out.
-        Some(adapt_resolution(resolution, &self.arena))
+        crate::type_checker::bare::resolve_bare(ref_ctx, file_ctx, lookup, profile)
     }
 
     /// Same as `resolve` but exposes a caller-supplied `RootResolver` so

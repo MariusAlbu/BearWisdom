@@ -33,6 +33,7 @@
 // =============================================================================
 
 pub mod alias;
+pub mod bare;
 pub mod chain;
 pub mod core;
 pub mod engine;
@@ -41,6 +42,7 @@ pub mod profile;
 pub mod subtype;
 pub mod type_env;
 
+pub use bare::resolve_bare;
 pub use engine::Engine;
 pub use type_env::TypeEnvironment;
 
