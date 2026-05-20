@@ -8,7 +8,6 @@ pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 pub(crate) mod chain;
 mod predicates;
 pub(crate) mod type_checker;
