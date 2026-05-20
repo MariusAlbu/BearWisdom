@@ -9,11 +9,13 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod resolve;
 
+pub use hooks::RUBY_HOOKS;
 pub use profile::RUBY_PROFILE;
 
 #[cfg(test)]
@@ -95,7 +97,14 @@ impl LanguagePlugin for RubyPlugin {
         Some(&profile::RUBY_PROFILE)
     }
 
-    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+    
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::RUBY_HOOKS)
+    }
+fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::RUBY_FLOW_CONFIG)
     }
 }

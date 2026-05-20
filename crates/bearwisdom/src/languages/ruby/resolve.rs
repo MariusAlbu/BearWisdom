@@ -359,68 +359,6 @@ impl LanguageResolver for RubyResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import refs (require statements) — classify the require itself if external.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let require_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-
-            // Manifest-driven: check Gemfile dependencies first.
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Gemfile) {
-                    let gem_root = require_path.split('/').next().unwrap_or(require_path);
-                    if manifest.dependencies.contains(gem_root)
-                        || manifest.dependencies.contains(require_path)
-                    {
-                        return Some(require_path.to_string());
-                    }
-                }
-            }
-
-            if predicates::is_external_ruby_require(require_path, project_ctx) {
-                return Some(require_path.to_string());
-            }
-            return None;
-        }
-
-        // Check file's require list for matching external gems.
-        // If the name was brought in by a gem require, it's external.
-        for import in &file_ctx.imports {
-            let Some(module_path) = &import.module_path else {
-                continue;
-            };
-
-            // Only bare (non-relative) requires can be gems.
-            if module_path.starts_with('.') {
-                continue;
-            }
-
-            // Manifest-driven check.
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Gemfile) {
-                    let gem_root = module_path.split('/').next().unwrap_or(module_path);
-                    if manifest.dependencies.contains(gem_root)
-                        || manifest.dependencies.contains(module_path.as_str())
-                    {
-                        return Some(module_path.clone());
-                    }
-                }
-            }
-
-            if predicates::is_external_ruby_require(module_path, project_ctx) {
-                return Some(module_path.clone());
-            }
-        }
-
-        None
-    }
-
     // is_visible: default (always true) is correct for Ruby.
     // Ruby access control (private/protected) is enforced at runtime, not
     // at the call site — all indexed symbols are accessible for our purposes.
@@ -690,3 +628,64 @@ fn is_pascal_case_first_rb(name: &str) -> bool {
 // Tests
 // ---------------------------------------------------------------------------
 
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    // Import refs (require statements) — classify the require itself if external.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let require_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+
+        // Manifest-driven: check Gemfile dependencies first.
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Gemfile) {
+                let gem_root = require_path.split('/').next().unwrap_or(require_path);
+                if manifest.dependencies.contains(gem_root)
+                    || manifest.dependencies.contains(require_path)
+                {
+                    return Some(require_path.to_string());
+                }
+            }
+        }
+
+        if predicates::is_external_ruby_require(require_path, project_ctx) {
+            return Some(require_path.to_string());
+        }
+        return None;
+    }
+
+    // Check file's require list for matching external gems.
+    // If the name was brought in by a gem require, it's external.
+    for import in &file_ctx.imports {
+        let Some(module_path) = &import.module_path else {
+            continue;
+        };
+
+        // Only bare (non-relative) requires can be gems.
+        if module_path.starts_with('.') {
+            continue;
+        }
+
+        // Manifest-driven check.
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Gemfile) {
+                let gem_root = module_path.split('/').next().unwrap_or(module_path);
+                if manifest.dependencies.contains(gem_root)
+                    || manifest.dependencies.contains(module_path.as_str())
+                {
+                    return Some(module_path.clone());
+                }
+            }
+        }
+
+        if predicates::is_external_ruby_require(module_path, project_ctx) {
+            return Some(module_path.clone());
+        }
+    }
+
+    None
+}

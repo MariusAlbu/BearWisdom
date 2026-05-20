@@ -337,141 +337,6 @@ impl LanguageResolver for KotlinResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import refs — classify the import path itself.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-
-            // Manifest-driven: check Maven and Gradle group IDs first.
-            if let Some(ctx) = project_ctx {
-                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
-                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
-                        if manifest.dependencies.iter().any(|group_id| {
-                            import_path == group_id
-                                || import_path.starts_with(group_id.as_str())
-                                    && import_path.as_bytes().get(group_id.len())
-                                        == Some(&b'.')
-                        }) {
-                            return Some(import_path.to_string());
-                        }
-                    }
-                }
-            }
-
-            if predicates::is_external_kotlin_namespace(import_path, project_ctx) {
-                return Some(import_path.to_string());
-            }
-            return None;
-        }
-
-        // Gradle version catalog accessors: `libs`, `versions`, `plugins`, and
-        // any custom catalog names defined in `gradle/*.versions.toml`.
-        // These are DSL properties injected by Gradle — not real Kotlin symbols.
-        {
-            let root = target.split('.').next().unwrap_or(target);
-            if let Some(ctx) = project_ctx {
-                let catalog_names = ctx
-                    .plugin_state
-                    .get::<crate::ecosystem::manifest::gradle::GradleCatalogNames>()
-                    .map(|c| c.0.as_slice())
-                    .unwrap_or_default();
-                if catalog_names.iter().any(|n| n == root) {
-                    return Some(format!("gradle.catalog.{root}"));
-                }
-            }
-            // `plugins` in a `plugins { }` block and `versions` are always
-            // Gradle build-script concepts — classify as external regardless
-            // of whether we found a catalog file.
-            if matches!(root, "plugins" | "versions" | "dev" | "buildSrc") {
-                return Some(format!("gradle.catalog.{root}"));
-            }
-        }
-
-        // Android SDK bare names: Activity, Context, View, Fragment, etc.
-        // These are imported from android.* / androidx.* which is already in
-        // ALWAYS_EXTERNAL, but they appear as bare names after a wildcard import
-        // (e.g. `import android.app.*`). Classify them via the import walk below.
-
-        // Walk imports for a match on this target name.
-        for import in &file_ctx.imports {
-            let ns = import.module_path.as_deref().unwrap_or("");
-            if ns.is_empty() {
-                continue;
-            }
-            if !import.is_wildcard && import.imported_name != *target
-                && import.alias.as_deref() != Some(target.as_str())
-            {
-                continue;
-            }
-
-            // Manifest-driven check on import namespace.
-            if let Some(ctx) = project_ctx {
-                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
-                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
-                        if manifest.dependencies.iter().any(|group_id| {
-                            ns == group_id
-                                || ns.starts_with(group_id.as_str())
-                                    && ns.as_bytes().get(group_id.len()) == Some(&b'.')
-                        }) {
-                            return Some(ns.to_string());
-                        }
-                    }
-                }
-            }
-
-            if predicates::is_external_kotlin_namespace(ns, project_ctx) {
-                return Some(ns.to_string());
-            }
-        }
-
-        // Fully-qualified target.
-        if predicates::effective_target_is_external(target, project_ctx) {
-            return Some(target.clone());
-        }
-
-        None
-    }
-
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
-            return Some(ns);
-        }
-        // Structural fallback: imported namespace with no internal symbols
-        // → external. Catches transitive Maven / Gradle deps and platform
-        // SDKs (Apple Foundation on Native, Servlet on JVM, etc.) that
-        // aren't on the manifest's group-id prefix list.
-        let target = &ref_ctx.extracted_ref.target_name;
-        for import in &file_ctx.imports {
-            let Some(ns) = import.module_path.as_deref() else { continue };
-            if ns.is_empty() {
-                continue;
-            }
-            if !import.is_wildcard
-                && import.imported_name != *target
-                && import.alias.as_deref() != Some(target.as_str())
-            {
-                continue;
-            }
-            if !lookup.has_in_namespace(ns) {
-                return Some(ns.to_string());
-            }
-        }
-        None
-    }
-
     fn is_visible(
         &self,
         file_ctx: &FileContext,
@@ -740,3 +605,136 @@ pub(crate) fn detect_kotlin_grpc_stub_emission(
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    // Import refs — classify the import path itself.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+
+        // Manifest-driven: check Maven and Gradle group IDs first.
+        if let Some(ctx) = project_ctx {
+            for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
+                    if manifest.dependencies.iter().any(|group_id| {
+                        import_path == group_id
+                            || import_path.starts_with(group_id.as_str())
+                                && import_path.as_bytes().get(group_id.len())
+                                    == Some(&b'.')
+                    }) {
+                        return Some(import_path.to_string());
+                    }
+                }
+            }
+        }
+
+        if predicates::is_external_kotlin_namespace(import_path, project_ctx) {
+            return Some(import_path.to_string());
+        }
+        return None;
+    }
+
+    // Gradle version catalog accessors: `libs`, `versions`, `plugins`, and
+    // any custom catalog names defined in `gradle/*.versions.toml`.
+    // These are DSL properties injected by Gradle — not real Kotlin symbols.
+    {
+        let root = target.split('.').next().unwrap_or(target);
+        if let Some(ctx) = project_ctx {
+            let catalog_names = ctx
+                .plugin_state
+                .get::<crate::ecosystem::manifest::gradle::GradleCatalogNames>()
+                .map(|c| c.0.as_slice())
+                .unwrap_or_default();
+            if catalog_names.iter().any(|n| n == root) {
+                return Some(format!("gradle.catalog.{root}"));
+            }
+        }
+        // `plugins` in a `plugins { }` block and `versions` are always
+        // Gradle build-script concepts — classify as external regardless
+        // of whether we found a catalog file.
+        if matches!(root, "plugins" | "versions" | "dev" | "buildSrc") {
+            return Some(format!("gradle.catalog.{root}"));
+        }
+    }
+
+    // Android SDK bare names: Activity, Context, View, Fragment, etc.
+    // These are imported from android.* / androidx.* which is already in
+    // ALWAYS_EXTERNAL, but they appear as bare names after a wildcard import
+    // (e.g. `import android.app.*`). Classify them via the import walk below.
+
+    // Walk imports for a match on this target name.
+    for import in &file_ctx.imports {
+        let ns = import.module_path.as_deref().unwrap_or("");
+        if ns.is_empty() {
+            continue;
+        }
+        if !import.is_wildcard && import.imported_name != *target
+            && import.alias.as_deref() != Some(target.as_str())
+        {
+            continue;
+        }
+
+        // Manifest-driven check on import namespace.
+        if let Some(ctx) = project_ctx {
+            for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
+                    if manifest.dependencies.iter().any(|group_id| {
+                        ns == group_id
+                            || ns.starts_with(group_id.as_str())
+                                && ns.as_bytes().get(group_id.len()) == Some(&b'.')
+                    }) {
+                        return Some(ns.to_string());
+                    }
+                }
+            }
+        }
+
+        if predicates::is_external_kotlin_namespace(ns, project_ctx) {
+            return Some(ns.to_string());
+        }
+    }
+
+    // Fully-qualified target.
+    if predicates::effective_target_is_external(target, project_ctx) {
+        return Some(target.clone());
+    }
+
+    None
+}
+
+pub(super) fn infer_external_inner_with_lookup(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    if let Some(ns) = infer_external_inner(file_ctx, ref_ctx, project_ctx) {
+        return Some(ns);
+    }
+    // Structural fallback: imported namespace with no internal symbols
+    // → external. Catches transitive Maven / Gradle deps and platform
+    // SDKs (Apple Foundation on Native, Servlet on JVM, etc.) that
+    // aren't on the manifest's group-id prefix list.
+    let target = &ref_ctx.extracted_ref.target_name;
+    for import in &file_ctx.imports {
+        let Some(ns) = import.module_path.as_deref() else { continue };
+        if ns.is_empty() {
+            continue;
+        }
+        if !import.is_wildcard
+            && import.imported_name != *target
+            && import.alias.as_deref() != Some(target.as_str())
+        {
+            continue;
+        }
+        if !lookup.has_in_namespace(ns) {
+            return Some(ns.to_string());
+        }
+    }
+    None
+}

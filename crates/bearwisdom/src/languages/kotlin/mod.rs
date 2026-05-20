@@ -10,10 +10,12 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 pub(crate) mod type_checker;
 
+pub use hooks::KOTLIN_HOOKS;
 pub use profile::KOTLIN_PROFILE;
 
 #[cfg(test)]
@@ -114,7 +116,14 @@ impl LanguagePlugin for KotlinPlugin {
         Some(&profile::KOTLIN_PROFILE)
     }
 
-    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+    
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::KOTLIN_HOOKS)
+    }
+fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::KOTLIN_FLOW_CONFIG)
     }
 

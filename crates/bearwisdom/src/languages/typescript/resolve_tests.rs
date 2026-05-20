@@ -663,7 +663,13 @@ fn test_infer_external_react_import() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "useState from 'react' should be inferred as external");
     assert_eq!(ns.unwrap(), "react");
 }
@@ -694,7 +700,13 @@ fn test_infer_external_scoped_package() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "useQuery should be inferred as external");
     assert_eq!(ns.unwrap(), "@tanstack/react-query");
 }
@@ -725,7 +737,13 @@ fn test_infer_external_node_builtin() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "readFile from 'fs' should be inferred as external");
     assert_eq!(ns.unwrap(), "fs");
 }
@@ -756,7 +774,13 @@ fn test_infer_external_node_protocol() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "readFile from 'node:fs' should be external");
     assert_eq!(ns.unwrap(), "node:fs");
 }
@@ -787,7 +811,13 @@ fn test_no_external_inference_for_relative_import() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_none(), "Relative import should not be inferred as external");
 }
 
@@ -816,7 +846,13 @@ fn test_infer_external_without_project_context() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, None, &empty_lookup,
+        )
+    };
     assert!(
         ns.is_some(),
         "Bare specifier should be external without project context"
@@ -856,7 +892,13 @@ fn test_infer_external_via_file_ctx_imports() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &usage_ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &usage_ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(
         ns.is_some(),
         "useState usage should be inferred external via file_ctx imports"
@@ -977,7 +1019,13 @@ fn test_namespace_import_binding_not_external() {
     };
 
     // The import binding itself is classified as external.
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "React namespace import should be classified as external");
     assert_eq!(ns.unwrap(), "react");
 
@@ -1500,7 +1548,13 @@ fn workspace_package_import_not_classified_as_external() {
         file_package_id: Some(9),
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(
         ns.is_none(),
         "workspace package must not be classified as external, got {ns:?}"
@@ -2022,12 +2076,12 @@ fn passthrough_alias_barrel_classifies_as_external() {
         file_package_id: Some(7),
     };
 
-    let ns = resolver.infer_external_namespace_with_lookup(
-        &file_ctx,
-        &ref_ctx,
-        Some(&ctx),
-        &index,
-    );
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        crate::languages::typescript::hooks::TypeScriptHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &index,
+        )
+    };
     assert_eq!(
         ns.as_deref(),
         Some("react-i18next"),

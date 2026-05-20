@@ -319,7 +319,13 @@ fn test_stdlib_require_is_external() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::ruby::hooks::RubyHooks.classify_external(
+            &ref_ctx, &file_ctx, None, &empty_lookup,
+        )
+    };
     assert_eq!(ns, Some("json".to_string()), "json stdlib require should be external");
 }
 

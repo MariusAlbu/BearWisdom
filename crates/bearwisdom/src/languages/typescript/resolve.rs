@@ -876,64 +876,176 @@ impl LanguageResolver for TypeScriptResolver {
             .unwrap_or_default()
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
+    // is_visible: default implementation (always true) is correct for TS.
+    // TypeScript's `export` keyword controls visibility, but for resolution
+    // purposes we treat all indexed symbols as accessible.
 
-        // DOM interface types (HTML*/SVG*/ARIA*/IDB*/XPath*/MathML*) — global
-        // in lib.dom.d.ts and always external. Pattern-based rather than a
-        // hardcoded list: lib.dom.d.ts ships hundreds of these and new ones
-        // land with each Chrome/Firefox release, so enumerating them by hand
-        // is a losing game.
-        if predicates::is_dom_interface_type(target) {
-            return Some("runtime".to_string());
-        }
-        // React namespace types (`React.FC`, `React.ReactNode`) — available
-        // globally under the JSX runtime without an explicit import in files
-        // that use `jsx: react-jsx`.
-        if predicates::is_react_namespace_type(target) {
-            return Some("runtime".to_string());
-        }
+}
 
-        // If the ref itself carries a module path, check it directly.
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            if predicates::is_bare_specifier(module) {
-                // Workspace package: not external. The resolver's main path
-                // already handles this at confidence 1.0 — here we just
-                // prevent the fallback from reclassifying it as external
-                // when the specific symbol wasn't found in the package.
-                if let Some(ctx) = project_ctx {
-                    if ctx.workspace_package_id(module).is_some() {
-                        return None;
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    // DOM interface types (HTML*/SVG*/ARIA*/IDB*/XPath*/MathML*) — global
+    // in lib.dom.d.ts and always external. Pattern-based rather than a
+    // hardcoded list: lib.dom.d.ts ships hundreds of these and new ones
+    // land with each Chrome/Firefox release, so enumerating them by hand
+    // is a losing game.
+    if predicates::is_dom_interface_type(target) {
+        return Some("runtime".to_string());
+    }
+    // React namespace types (`React.FC`, `React.ReactNode`) — available
+    // globally under the JSX runtime without an explicit import in files
+    // that use `jsx: react-jsx`.
+    if predicates::is_react_namespace_type(target) {
+        return Some("runtime".to_string());
+    }
+
+    // If the ref itself carries a module path, check it directly.
+    if let Some(module) = &ref_ctx.extracted_ref.module {
+        if predicates::is_bare_specifier(module) {
+            // Workspace package: not external. The resolver's main path
+            // already handles this at confidence 1.0 — here we just
+            // prevent the fallback from reclassifying it as external
+            // when the specific symbol wasn't found in the package.
+            if let Some(ctx) = project_ctx {
+                if ctx.workspace_package_id(module).is_some() {
+                    return None;
+                }
+            }
+            // Manifest-driven: check package.json dependencies first.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
+                    if is_npm_package_match(module, &manifest.dependencies) {
+                        return Some(module.clone());
                     }
                 }
-                // Manifest-driven: check package.json dependencies first.
-                if let Some(ctx) = project_ctx {
-                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
-                        if is_npm_package_match(module, &manifest.dependencies) {
-                            return Some(module.clone());
+            }
+            let is_external = match project_ctx {
+                Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module),
+                // Without ProjectContext, treat all bare specifiers as external.
+                None => true,
+            };
+            if is_external {
+                return Some(module.clone());
+            }
+        }
+        // Relative import with a module — not external.
+        return None;
+    }
+
+    // No module on the ref — check the file's import list for this target.
+    // If the name was imported from a bare specifier, it's external.
+    for import in &file_ctx.imports {
+        if import.imported_name != *target {
+            continue;
+        }
+        let Some(module_path) = &import.module_path else {
+            continue;
+        };
+        if !predicates::is_bare_specifier(module_path) {
+            continue;
+        }
+        // Workspace package — not external; let the main resolver path own it.
+        if let Some(ctx) = project_ctx {
+            if ctx.workspace_package_id(module_path).is_some() {
+                return None;
+            }
+        }
+        // Manifest-driven: check package.json dependencies first.
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
+                if is_npm_package_match(module_path, &manifest.dependencies) {
+                    return Some(module_path.clone());
+                }
+            }
+        }
+        let is_external = match project_ctx {
+            Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path),
+            None => true,
+        };
+        if is_external {
+            return Some(module_path.clone());
+        }
+    }
+
+    // Builder chain propagation: if the ref has a chain and the root segment
+    // was imported from an external package, classify the whole chain external.
+    if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
+        if chain_ref.segments.len() >= 2 {
+            let root = &chain_ref.segments[0].name;
+            // Check if root was imported from a bare (external) specifier.
+            for import in &file_ctx.imports {
+                if import.imported_name != *root {
+                    continue;
+                }
+                if let Some(module_path) = &import.module_path {
+                    if predicates::is_bare_specifier(module_path) {
+                        if let Some(ctx) = project_ctx {
+                            if ctx.workspace_package_id(module_path).is_some() {
+                                return None;
+                            }
+                        }
+                        let is_external = match project_ctx {
+                            Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path),
+                            None => true,
+                        };
+                        if is_external {
+                            return Some(format!("{}.*", module_path));
                         }
                     }
                 }
-                let is_external = match project_ctx {
-                    Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module),
-                    // Without ProjectContext, treat all bare specifiers as external.
-                    None => true,
-                };
-                if is_external {
-                    return Some(module.clone());
-                }
             }
-            // Relative import with a module — not external.
-            return None;
         }
+    }
 
-        // No module on the ref — check the file's import list for this target.
-        // If the name was imported from a bare specifier, it's external.
+    // No hardcoded "looks like a common DOM/Array/Promise method" fallback
+    // here — that's a guess, not a fact. Bare method calls whose receiver
+    // type we couldn't infer (or whose receiver resolves internally by
+    // coincidence of name) fall through to the heuristic tier so the
+    // symbol index answers honestly instead. When lib.dom.d.ts and
+    // lib.es5.d.ts are indexed through the externals pipeline, their
+    // symbols (`Array.prototype.map`, `Event.composedPath`, etc.) are
+    // reachable through the normal by-name lookup.
+    None
+}
+
+pub(super) fn infer_external_inner_with_lookup(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    // Try the lookup-free path first — covers the common cases.
+    if let Some(ns) =
+        infer_external_inner(file_ctx, ref_ctx, project_ctx)
+    {
+        return Some(ns);
+    }
+    // R2: alias → barrel → external. When `@/foo/bar` resolves through
+    // tsconfig paths to a workspace file that ONLY re-exports from a
+    // bare external specifier, classify the consumer ref as external
+    // using that bare specifier as the namespace. Without this, the
+    // ref would fall through to the heuristic and pick a wrong
+    // same-named symbol elsewhere in the project.
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    // Check the ref's own module first.
+    if let Some(module) = &ref_ctx.extracted_ref.module {
+        if let Some(ns) = classify_passthrough_alias(
+            module,
+            target,
+            ref_ctx.file_package_id,
+            project_ctx,
+            lookup,
+        ) {
+            return Some(ns);
+        }
+    } else {
+        // No module on the ref — check file imports.
         for import in &file_ctx.imports {
             if import.imported_name != *target {
                 continue;
@@ -941,102 +1053,8 @@ impl LanguageResolver for TypeScriptResolver {
             let Some(module_path) = &import.module_path else {
                 continue;
             };
-            if !predicates::is_bare_specifier(module_path) {
-                continue;
-            }
-            // Workspace package — not external; let the main resolver path own it.
-            if let Some(ctx) = project_ctx {
-                if ctx.workspace_package_id(module_path).is_some() {
-                    return None;
-                }
-            }
-            // Manifest-driven: check package.json dependencies first.
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
-                    if is_npm_package_match(module_path, &manifest.dependencies) {
-                        return Some(module_path.clone());
-                    }
-                }
-            }
-            let is_external = match project_ctx {
-                Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path),
-                None => true,
-            };
-            if is_external {
-                return Some(module_path.clone());
-            }
-        }
-
-        // Builder chain propagation: if the ref has a chain and the root segment
-        // was imported from an external package, classify the whole chain external.
-        if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if chain_ref.segments.len() >= 2 {
-                let root = &chain_ref.segments[0].name;
-                // Check if root was imported from a bare (external) specifier.
-                for import in &file_ctx.imports {
-                    if import.imported_name != *root {
-                        continue;
-                    }
-                    if let Some(module_path) = &import.module_path {
-                        if predicates::is_bare_specifier(module_path) {
-                            if let Some(ctx) = project_ctx {
-                                if ctx.workspace_package_id(module_path).is_some() {
-                                    return None;
-                                }
-                            }
-                            let is_external = match project_ctx {
-                                Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path),
-                                None => true,
-                            };
-                            if is_external {
-                                return Some(format!("{}.*", module_path));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // No hardcoded "looks like a common DOM/Array/Promise method" fallback
-        // here — that's a guess, not a fact. Bare method calls whose receiver
-        // type we couldn't infer (or whose receiver resolves internally by
-        // coincidence of name) fall through to the heuristic tier so the
-        // symbol index answers honestly instead. When lib.dom.d.ts and
-        // lib.es5.d.ts are indexed through the externals pipeline, their
-        // symbols (`Array.prototype.map`, `Event.composedPath`, etc.) are
-        // reachable through the normal by-name lookup.
-        None
-    }
-
-    // is_visible: default implementation (always true) is correct for TS.
-    // TypeScript's `export` keyword controls visibility, but for resolution
-    // purposes we treat all indexed symbols as accessible.
-
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        // Try the lookup-free path first — covers the common cases.
-        if let Some(ns) =
-            self.infer_external_namespace(file_ctx, ref_ctx, project_ctx)
-        {
-            return Some(ns);
-        }
-        // R2: alias → barrel → external. When `@/foo/bar` resolves through
-        // tsconfig paths to a workspace file that ONLY re-exports from a
-        // bare external specifier, classify the consumer ref as external
-        // using that bare specifier as the namespace. Without this, the
-        // ref would fall through to the heuristic and pick a wrong
-        // same-named symbol elsewhere in the project.
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Check the ref's own module first.
-        if let Some(module) = &ref_ctx.extracted_ref.module {
             if let Some(ns) = classify_passthrough_alias(
-                module,
+                module_path,
                 target,
                 ref_ctx.file_package_id,
                 project_ctx,
@@ -1044,61 +1062,42 @@ impl LanguageResolver for TypeScriptResolver {
             ) {
                 return Some(ns);
             }
-        } else {
-            // No module on the ref — check file imports.
-            for import in &file_ctx.imports {
-                if import.imported_name != *target {
-                    continue;
-                }
-                let Some(module_path) = &import.module_path else {
-                    continue;
-                };
-                if let Some(ns) = classify_passthrough_alias(
-                    module_path,
-                    target,
-                    ref_ctx.file_package_id,
-                    project_ctx,
-                    lookup,
-                ) {
-                    return Some(ns);
-                }
-            }
         }
-
-        // Last resort: ambient-global method classification. If the bare
-        // target (simple name, no dotted prefix) is a method/property
-        // declared in an ambient-global lib file (`lib.dom.d.ts`,
-        // `lib.es5.d.ts`, `lib.webworker.d.ts`, `@types/node/*`), the call
-        // is a DOM/ES runtime API. Replaces the hardcoded
-        // `is_common_builtin_method` list — index-backed, adapts to the
-        // project's own TypeScript version.
-        //
-        // Two triggers, each gated on "ambient name exists":
-        //   1. Ref carries a chain — the chain walker already tried and
-        //      bailed (we're in Tier 1.5). The receiver is untyped or
-        //      resolved to an internal type with no matching member, and
-        //      the method name is a known DOM/ES surface. Classify.
-        //      Covers `this.theme.set(x)` where `theme = signal<T>()`
-        //      can't be typed — `set` only lives on WritableSignal / Map /
-        //      Set in lib.*.d.ts, so external is honest.
-        //   2. Ref has no chain AND no internal same-name candidate. Bare
-        //      call to an ambient name — `setTimeout(...)`, `fetch(...)`
-        //      at file scope. Classify when no user-code function
-        //      competes.
-        if !target.contains('.') && lookup.is_ambient_global_method(target) {
-            let has_chain = ref_ctx.extracted_ref.chain.is_some();
-            if has_chain {
-                return Some("runtime".to_string());
-            }
-            let has_internal = lookup
-                .by_name(target)
-                .iter()
-                .any(|s| !lookup.is_external_file(&s.file_path));
-            if !has_internal {
-                return Some("runtime".to_string());
-            }
-        }
-
-        None
     }
+
+    // Last resort: ambient-global method classification. If the bare
+    // target (simple name, no dotted prefix) is a method/property
+    // declared in an ambient-global lib file (`lib.dom.d.ts`,
+    // `lib.es5.d.ts`, `lib.webworker.d.ts`, `@types/node/*`), the call
+    // is a DOM/ES runtime API. Replaces the hardcoded
+    // `is_common_builtin_method` list — index-backed, adapts to the
+    // project's own TypeScript version.
+    //
+    // Two triggers, each gated on "ambient name exists":
+    //   1. Ref carries a chain — the chain walker already tried and
+    //      bailed (we're in Tier 1.5). The receiver is untyped or
+    //      resolved to an internal type with no matching member, and
+    //      the method name is a known DOM/ES surface. Classify.
+    //      Covers `this.theme.set(x)` where `theme = signal<T>()`
+    //      can't be typed — `set` only lives on WritableSignal / Map /
+    //      Set in lib.*.d.ts, so external is honest.
+    //   2. Ref has no chain AND no internal same-name candidate. Bare
+    //      call to an ambient name — `setTimeout(...)`, `fetch(...)`
+    //      at file scope. Classify when no user-code function
+    //      competes.
+    if !target.contains('.') && lookup.is_ambient_global_method(target) {
+        let has_chain = ref_ctx.extracted_ref.chain.is_some();
+        if has_chain {
+            return Some("runtime".to_string());
+        }
+        let has_internal = lookup
+            .by_name(target)
+            .iter()
+            .any(|s| !lookup.is_external_file(&s.file_path));
+        if !has_internal {
+            return Some("runtime".to_string());
+        }
+    }
+
+    None
 }

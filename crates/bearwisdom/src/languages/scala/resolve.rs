@@ -281,81 +281,6 @@ impl LanguageResolver for ScalaResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import refs.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-
-            // Manifest-driven: check Maven and Gradle group IDs first.
-            if let Some(ctx) = project_ctx {
-                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
-                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
-                        if manifest.dependencies.iter().any(|group_id| {
-                            import_path == group_id
-                                || import_path.starts_with(group_id.as_str())
-                                    && import_path.as_bytes().get(group_id.len())
-                                        == Some(&b'.')
-                        }) {
-                            return Some(import_path.to_string());
-                        }
-                    }
-                }
-            }
-
-            if predicates::is_external_scala_namespace(import_path, project_ctx) {
-                return Some(import_path.to_string());
-            }
-            return None;
-        }
-
-        // Walk imports for a match.
-        for import in &file_ctx.imports {
-            let ns = import.module_path.as_deref().unwrap_or("");
-            if ns.is_empty() {
-                continue;
-            }
-            if !import.is_wildcard
-                && import.imported_name != *target
-                && import.alias.as_deref() != Some(target.as_str())
-            {
-                continue;
-            }
-
-            // Manifest-driven check on import namespace.
-            if let Some(ctx) = project_ctx {
-                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
-                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
-                        if manifest.dependencies.iter().any(|group_id| {
-                            ns == group_id
-                                || ns.starts_with(group_id.as_str())
-                                    && ns.as_bytes().get(group_id.len()) == Some(&b'.')
-                        }) {
-                            return Some(ns.to_string());
-                        }
-                    }
-                }
-            }
-
-            if predicates::is_external_scala_namespace(ns, project_ctx) {
-                return Some(ns.to_string());
-            }
-        }
-
-        // Fully-qualified target.
-        if predicates::effective_target_is_external(target, project_ctx) {
-            return Some(target.clone());
-        }
-
-        None
-    }
-
     fn is_visible(
         &self,
         file_ctx: &FileContext,
@@ -638,3 +563,77 @@ pub(crate) fn detect_scala_grpc_emission(
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;
+
+pub(super) fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    // Import refs.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+
+        // Manifest-driven: check Maven and Gradle group IDs first.
+        if let Some(ctx) = project_ctx {
+            for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
+                    if manifest.dependencies.iter().any(|group_id| {
+                        import_path == group_id
+                            || import_path.starts_with(group_id.as_str())
+                                && import_path.as_bytes().get(group_id.len())
+                                    == Some(&b'.')
+                    }) {
+                        return Some(import_path.to_string());
+                    }
+                }
+            }
+        }
+
+        if predicates::is_external_scala_namespace(import_path, project_ctx) {
+            return Some(import_path.to_string());
+        }
+        return None;
+    }
+
+    // Walk imports for a match.
+    for import in &file_ctx.imports {
+        let ns = import.module_path.as_deref().unwrap_or("");
+        if ns.is_empty() {
+            continue;
+        }
+        if !import.is_wildcard
+            && import.imported_name != *target
+            && import.alias.as_deref() != Some(target.as_str())
+        {
+            continue;
+        }
+
+        // Manifest-driven check on import namespace.
+        if let Some(ctx) = project_ctx {
+            for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
+                    if manifest.dependencies.iter().any(|group_id| {
+                        ns == group_id
+                            || ns.starts_with(group_id.as_str())
+                                && ns.as_bytes().get(group_id.len()) == Some(&b'.')
+                    }) {
+                        return Some(ns.to_string());
+                    }
+                }
+            }
+        }
+
+        if predicates::is_external_scala_namespace(ns, project_ctx) {
+            return Some(ns.to_string());
+        }
+    }
+
+    // Fully-qualified target.
+    if predicates::effective_target_is_external(target, project_ctx) {
+        return Some(target.clone());
+    }
+
+    None
+}
