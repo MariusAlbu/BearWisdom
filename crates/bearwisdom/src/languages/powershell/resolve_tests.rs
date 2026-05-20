@@ -191,7 +191,8 @@ fn test_sentinel_constant() {
 use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolIndex};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use std::collections::HashMap;
-use super::resolve::PowerShellResolver;
+use super::hooks::PowerShellHooks;
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 
 fn make_file_ctx_with_binding(var_name: &str) -> FileContext {
     FileContext {

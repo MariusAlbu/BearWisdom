@@ -20,7 +20,6 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub(crate) mod resolve;
 
 pub use hooks::POWERSHELL_HOOKS;
 pub use profile::POWERSHELL_PROFILE;
