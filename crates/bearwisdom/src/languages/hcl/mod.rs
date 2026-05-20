@@ -6,7 +6,6 @@ pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::HCL_HOOKS;
 pub use profile::HCL_PROFILE;

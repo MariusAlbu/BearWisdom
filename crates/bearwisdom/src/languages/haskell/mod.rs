@@ -7,7 +7,6 @@
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 pub mod keywords;
 pub mod extract;
 

@@ -16,7 +16,6 @@ mod chain;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::ADA_HOOKS;
 pub use hooks::AdaResolver;

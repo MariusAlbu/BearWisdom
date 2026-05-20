@@ -7,7 +7,6 @@ pub mod refs;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 mod predicates;
-pub(crate) mod type_checker;
 
 pub use hooks::PUPPET_HOOKS;
 pub use profile::PUPPET_PROFILE;

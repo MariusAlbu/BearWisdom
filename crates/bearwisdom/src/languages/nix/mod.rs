@@ -6,7 +6,6 @@ pub mod calls;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::NIX_HOOKS;
 pub use profile::NIX_PROFILE;

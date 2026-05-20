@@ -16,7 +16,6 @@
 pub(crate) mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 pub mod connectors;
 pub mod extract;
 pub mod global_registry;

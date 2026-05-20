@@ -17,7 +17,6 @@ pub mod fypp;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::FORTRAN_HOOKS;
 pub use profile::FORTRAN_PROFILE;

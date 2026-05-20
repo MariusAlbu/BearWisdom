@@ -15,7 +15,6 @@ pub mod extract;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]

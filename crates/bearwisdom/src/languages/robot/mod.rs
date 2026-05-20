@@ -11,7 +11,6 @@ pub mod dynamic_keywords;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 mod predicates;
-pub(crate) mod type_checker;
 
 pub use hooks::ROBOT_HOOKS;
 pub use profile::ROBOT_PROFILE;

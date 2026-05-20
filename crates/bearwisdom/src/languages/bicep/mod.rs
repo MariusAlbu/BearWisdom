@@ -3,7 +3,6 @@
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 pub mod embedded;
 pub mod extract;
 

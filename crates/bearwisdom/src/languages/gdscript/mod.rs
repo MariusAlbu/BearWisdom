@@ -17,7 +17,6 @@ pub mod extract;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::GDSCRIPT_HOOKS;
 pub use profile::GDSCRIPT_PROFILE;

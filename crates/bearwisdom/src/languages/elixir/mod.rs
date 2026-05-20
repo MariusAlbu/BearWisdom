@@ -12,7 +12,6 @@ mod type_refs;
 pub(crate) mod hooks;
 pub(crate) mod predicates;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::ELIXIR_HOOKS;
 pub use hooks::ElixirResolver;

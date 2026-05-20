@@ -9,7 +9,6 @@ pub mod keywords;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::PROLOG_HOOKS;
 pub use profile::PROLOG_PROFILE;

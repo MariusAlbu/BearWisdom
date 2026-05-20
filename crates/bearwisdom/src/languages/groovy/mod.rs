@@ -21,7 +21,6 @@ mod node_helpers;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 
 pub use hooks::GROOVY_HOOKS;
 pub use profile::GROOVY_PROFILE;
