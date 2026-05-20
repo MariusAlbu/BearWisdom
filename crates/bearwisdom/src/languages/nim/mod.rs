@@ -22,7 +22,10 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub(crate) mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::NIM_HOOKS;
 pub use profile::NIM_PROFILE;

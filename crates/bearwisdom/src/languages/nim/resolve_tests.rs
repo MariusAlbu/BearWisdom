@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_nim_db_emission, detect_nim_http_producer, detect_nim_jester_route};
 use crate::types::*;
 
 #[test]
