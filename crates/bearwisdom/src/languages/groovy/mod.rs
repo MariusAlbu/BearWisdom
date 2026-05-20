@@ -19,8 +19,11 @@ mod flow;
 mod node_helpers;
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
+
+pub use profile::GROOVY_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -87,6 +90,12 @@ impl LanguagePlugin for GroovyPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::GroovyChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::GROOVY_PROFILE)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
