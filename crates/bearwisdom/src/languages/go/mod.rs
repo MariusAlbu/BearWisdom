@@ -21,9 +21,9 @@ mod predicates;
 pub mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
-pub mod resolve;
 
 pub use hooks::GO_HOOKS;
+pub use hooks::GoResolver;
 pub use profile::GO_PROFILE;
 
 #[cfg(test)]
@@ -41,8 +41,6 @@ mod coverage_tests;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::GoResolver;
 
 pub struct GoPlugin;
 
