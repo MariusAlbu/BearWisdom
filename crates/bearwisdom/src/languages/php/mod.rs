@@ -14,9 +14,9 @@ pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
-pub mod resolve;
 
 pub use hooks::PHP_HOOKS;
+pub use hooks::PhpResolver;
 pub use profile::PHP_PROFILE;
 
 #[cfg(test)]
@@ -38,8 +38,6 @@ mod predicates_tests;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::PhpResolver;
 
 pub struct PhpPlugin;
 

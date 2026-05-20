@@ -1,9 +1,9 @@
-use super::resolve::PhpResolver;
+use super::hooks::PhpResolver;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolInfo};
 use crate::types::*;
 use std::collections::HashMap;
-use super::resolve::normalize_php_ns;
+use super::hooks::normalize_php_ns;
 
 fn make_symbol(
     name: &str,
@@ -863,7 +863,7 @@ fn make_instance_chain(segments: &[&str]) -> MemberChain {
 #[test]
 fn test_php_eloquent_where_emits_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     let chain = make_static_chain(&["User", "where"]);
     match detect_php_db_query_emission(&chain, &[]).unwrap() {
@@ -878,7 +878,7 @@ fn test_php_eloquent_where_emits_select() {
 #[test]
 fn test_php_eloquent_find_emits_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     let chain = make_static_chain(&["Post", "find"]);
     match detect_php_db_query_emission(&chain, &[]).unwrap() {
@@ -893,7 +893,7 @@ fn test_php_eloquent_find_emits_select() {
 #[test]
 fn test_php_eloquent_create_emits_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     let chain = make_static_chain(&["Article", "create"]);
     match detect_php_db_query_emission(&chain, &[]).unwrap() {
@@ -908,7 +908,7 @@ fn test_php_eloquent_create_emits_insert() {
 #[test]
 fn test_php_eloquent_destroy_emits_delete() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     let chain = make_static_chain(&["Comment", "destroy"]);
     match detect_php_db_query_emission(&chain, &[]).unwrap() {
@@ -923,7 +923,7 @@ fn test_php_eloquent_destroy_emits_delete() {
 #[test]
 fn test_php_eloquent_chained_first_emits_on_leaf() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     // `User::where(...)->orderBy(...)->first()` — chain root TypeAccess(User),
     // intermediate Property segments, leaf is `first` (Select).
@@ -940,7 +940,7 @@ fn test_php_eloquent_chained_first_emits_on_leaf() {
 #[test]
 fn test_php_eloquent_firstorcreate_emits_upsert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     let chain = make_static_chain(&["User", "firstOrCreate"]);
     match detect_php_db_query_emission(&chain, &[]).unwrap() {
@@ -955,7 +955,7 @@ fn test_php_eloquent_firstorcreate_emits_upsert() {
 #[test]
 fn test_php_doctrine_em_find_with_class_ident_arg() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
     use crate::types::CallArg;
 
     // `$em->find(User::class, $id)` — chain is em.find, entity from arg.
@@ -973,7 +973,7 @@ fn test_php_doctrine_em_find_with_class_ident_arg() {
 #[test]
 fn test_php_doctrine_repository_chain_emits() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
     use crate::types::CallArg;
 
     // `$em->getRepository(User::class)->findBy(...)` — chain is em.getRepository.findBy.
@@ -996,7 +996,7 @@ fn test_php_doctrine_repository_chain_emits() {
 #[test]
 fn test_php_em_flush_emits_other() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     let chain = make_instance_chain(&["em", "flush"]);
     match detect_php_db_query_emission(&chain, &[]).unwrap() {
@@ -1010,7 +1010,7 @@ fn test_php_em_flush_emits_other() {
 
 #[test]
 fn test_php_facade_static_call_not_emitted() {
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     // `Route::get(...)` — Route is a Laravel facade, not an Eloquent model.
     let chain = make_static_chain(&["Route", "get"]);
@@ -1023,7 +1023,7 @@ fn test_php_facade_static_call_not_emitted() {
 
 #[test]
 fn test_php_lowercase_root_not_emitted() {
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     // `$user->where(...)` — chain root is an Identifier, not a class.
     let chain = make_instance_chain(&["user", "where"]);
@@ -1032,7 +1032,7 @@ fn test_php_lowercase_root_not_emitted() {
 
 #[test]
 fn test_php_unknown_leaf_not_emitted() {
-    use super::resolve::detect_php_db_query_emission;
+    use super::hooks::detect_php_db_query_emission;
 
     // `User::someRandomMethod()` — leaf isn't a known Eloquent op.
     let chain = make_static_chain(&["User", "logBackground"]);
@@ -1046,7 +1046,7 @@ fn test_php_unknown_leaf_not_emitted() {
 #[test]
 fn test_php_symfony_route_attribute_emits_consumer_httpcall() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_symfony_route_attribute_emission;
+    use super::hooks::detect_symfony_route_attribute_emission;
 
     let em = detect_symfony_route_attribute_emission("Route", Some("/api/users")).unwrap();
     match em {
@@ -1061,7 +1061,7 @@ fn test_php_symfony_route_attribute_emits_consumer_httpcall() {
 
 #[test]
 fn test_php_symfony_route_no_url_returns_none() {
-    use super::resolve::detect_symfony_route_attribute_emission;
+    use super::hooks::detect_symfony_route_attribute_emission;
 
     // No URL arg.
     assert!(detect_symfony_route_attribute_emission("Route", None).is_none());
@@ -1076,7 +1076,7 @@ fn test_php_symfony_route_no_url_returns_none() {
 #[test]
 fn test_php_ratchet_message_component_emits_ws_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_php_ratchet_emission;
+    use super::hooks::detect_php_ratchet_emission;
     match detect_php_ratchet_emission("Ratchet\\MessageComponentInterface").unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
@@ -1089,6 +1089,6 @@ fn test_php_ratchet_message_component_emits_ws_consumer() {
 
 #[test]
 fn test_php_ratchet_rejects_non_ws_interface() {
-    use super::resolve::detect_php_ratchet_emission;
+    use super::hooks::detect_php_ratchet_emission;
     assert!(detect_php_ratchet_emission("SomeInterface").is_none());
 }
