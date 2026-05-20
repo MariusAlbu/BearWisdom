@@ -8,8 +8,11 @@ pub mod extract;
 pub mod flow;
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
+
+pub use profile::LUA_PROFILE;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -65,6 +68,12 @@ impl LanguagePlugin for LuaPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::LuaChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::LUA_PROFILE)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

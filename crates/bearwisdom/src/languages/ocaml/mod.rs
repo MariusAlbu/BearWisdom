@@ -10,10 +10,13 @@
 //! - `open_module` → Imports edge
 
 mod predicates;
+pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
+
+pub use profile::OCAML_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -110,5 +113,11 @@ impl LanguagePlugin for OcamlPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::OCamlChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::OCAML_PROFILE)
     }
 }
