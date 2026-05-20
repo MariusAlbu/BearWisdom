@@ -479,11 +479,10 @@ fn resolve_iteration_body(
                                 .find(|s| s.id == target_id)
                                 .and_then(|s| {
                                     index
-                                        .return_type_name(&s.qualified_name)
+                                        .return_type_str(&s.qualified_name)
                                         .or_else(|| {
-                                            index.field_type_name(&s.qualified_name)
+                                            index.field_type_str(&s.qualified_name)
                                         })
-                                        .map(|t| t.to_string())
                                 })
                         });
                         if let Some(yield_type) = yield_type {

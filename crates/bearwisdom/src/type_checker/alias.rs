@@ -81,9 +81,8 @@ pub fn expand_alias(
             // an alias.
             AliasTarget::Typeof(value_name) => {
                 let resolved = lookup
-                    .field_type_name(value_name)
-                    .or_else(|| lookup.return_type_name(value_name))
-                    .map(|s| s.to_string());
+                    .field_type_str(value_name)
+                    .or_else(|| lookup.return_type_str(value_name));
                 let Some(new_head) = resolved else {
                     // Value not indexed or has no recorded type — leave
                     // the chain walker with what it had before so it can
