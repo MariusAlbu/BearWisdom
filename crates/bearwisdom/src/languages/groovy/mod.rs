@@ -19,10 +19,12 @@ mod flow;
 mod node_helpers;
 
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod resolve;
 
+pub use hooks::GROOVY_HOOKS;
 pub use profile::GROOVY_PROFILE;
 
 #[cfg(test)]
@@ -96,6 +98,13 @@ impl LanguagePlugin for GroovyPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::GROOVY_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::GROOVY_HOOKS)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

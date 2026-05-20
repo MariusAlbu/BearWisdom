@@ -91,20 +91,6 @@ impl LanguageResolver for GroovyResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        // DGM / GDK Object-mixin methods (each, collect, with, tap, ...) are
-        // classified by the engine's keywords() set populated from
-        // groovy/keywords.rs. Java/JVM types come via JavaResolver below.
-        // Delegate remaining classification to the Java resolver (import
-        // namespace checks, ALWAYS_EXTERNAL prefixes, manifest deps, etc.).
-        JavaResolver.infer_external_namespace(file_ctx, ref_ctx, project_ctx)
-    }
-
     fn is_visible(
         &self,
         file_ctx: &FileContext,

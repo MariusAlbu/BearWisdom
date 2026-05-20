@@ -440,7 +440,7 @@ impl LanguageResolver for JavaResolver {
     }
 }
 
-pub(super) fn infer_external_inner(
+pub(crate) fn infer_external_inner(
     file_ctx: &FileContext,
     ref_ctx: &RefContext,
     project_ctx: Option<&ProjectContext>,
