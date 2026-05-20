@@ -183,7 +183,17 @@ pub struct SymbolIndex {
     /// arena's internal RwLock — safe to share via `&self`. Shared via
     /// `Arc` so the same arena flows from the indexer entry point through
     /// extractors and into `SymbolIndex` without per-stage rebuilds.
-    pub(super) type_arena: Arc<TypeArena>,
+    pub(crate) type_arena: Arc<TypeArena>,
+}
+
+impl SymbolIndex {
+    /// Hand out a fresh `Arc` to the workspace TypeArena so consumers (the
+    /// resolver's type-checker Engine, language plugins that opt into
+    /// arena-aware extraction during augmentation, etc.) can share the
+    /// same canonical arena as the index itself.
+    pub fn type_arena_arc(&self) -> Arc<TypeArena> {
+        Arc::clone(&self.type_arena)
+    }
 }
 
 // Per-worker forward-inference cache for local variables (R5). Each rayon

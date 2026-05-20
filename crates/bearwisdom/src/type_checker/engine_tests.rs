@@ -275,7 +275,12 @@ fn engine_build_from_registry_collects_typescript_hooks() {
     let sym_ids = deterministic_ids(&pf);
     let lookup = EmptyLookup::from(&pf, &sym_ids);
 
-    let engine = Engine::build_from_registry(std::slice::from_ref(&pf), &sym_ids, &lookup);
+    let engine = Engine::build_from_registry(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &lookup,
+        std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()),
+    );
     assert!(
         engine.hooks_for("typescript").is_some(),
         "TypeScriptPlugin::language_hooks() should be collected into the engine"

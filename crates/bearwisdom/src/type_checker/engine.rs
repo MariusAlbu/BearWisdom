@@ -27,11 +27,11 @@ use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::ParsedFile;
 
 /// Per-workspace engine state. Built once per indexing pass; `resolve` is
-/// called per ref. Cheap to clone references out for parallel resolution
-/// passes (`Engine` itself is not `Send` because `TypeArena` mutates on
-/// resolve — the resolver loop wraps it in a per-worker handle).
+/// called per ref. The arena is shared via `Arc` with the
+/// resolver's `SymbolIndex`, so TypeIds flowing from extractor →
+/// SymbolIndex → Engine all reference the same canonical table.
 pub struct Engine<'a> {
-    arena: TypeArena,
+    arena: std::sync::Arc<TypeArena>,
     members: MembersIndex,
     supertypes: SupertypeGraph,
     symbol_types: SymbolTypeMap,
@@ -56,6 +56,7 @@ impl<'a> Engine<'a> {
         parsed: &[ParsedFile],
         sym_id_map: &SymbolIdMap,
         lookup: &dyn SymbolLookup,
+        arena: std::sync::Arc<TypeArena>,
     ) -> Engine<'static> {
         let mut profiles: FxHashMap<&'static str, &'static LanguageProfile> = FxHashMap::default();
         let mut hooks: FxHashMap<&'static str, &'static dyn LanguageEngineHooks> =
@@ -76,7 +77,7 @@ impl<'a> Engine<'a> {
                 }
             }
         }
-        Engine::build_with_hooks(parsed, sym_id_map, profiles, hooks, lookup)
+        Engine::build_with_hooks(parsed, sym_id_map, profiles, hooks, lookup, arena)
     }
 
     pub fn build(
@@ -85,7 +86,14 @@ impl<'a> Engine<'a> {
         profiles: FxHashMap<&'static str, &'a LanguageProfile>,
         lookup: &dyn SymbolLookup,
     ) -> Self {
-        Self::build_with_hooks(parsed, sym_id_map, profiles, FxHashMap::default(), lookup)
+        Self::build_with_hooks(
+            parsed,
+            sym_id_map,
+            profiles,
+            FxHashMap::default(),
+            lookup,
+            std::sync::Arc::new(TypeArena::new()),
+        )
     }
 
     /// Build with explicit per-language hooks. Same as `build` but takes a
@@ -100,8 +108,8 @@ impl<'a> Engine<'a> {
         profiles: FxHashMap<&'static str, &'a LanguageProfile>,
         hooks: FxHashMap<&'static str, &'static dyn LanguageEngineHooks>,
         lookup: &dyn SymbolLookup,
+        arena: std::sync::Arc<TypeArena>,
     ) -> Self {
-        let arena = TypeArena::new();
 
         let members =
             MembersIndex::build_from_parsed_files(parsed, sym_id_map, &arena);

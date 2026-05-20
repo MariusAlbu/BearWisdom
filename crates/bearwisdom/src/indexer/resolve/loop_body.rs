@@ -178,6 +178,7 @@ fn resolve_iteration_body(
         parsed,
         &engine_sym_id_map,
         index,
+        index.type_arena_arc(),
     );
 
     // Fast companion lookup: HashMap<path, &ParsedFile> replaces the
