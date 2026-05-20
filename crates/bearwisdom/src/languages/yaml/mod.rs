@@ -16,7 +16,10 @@ pub mod embedded;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::YAML_HOOKS;
 pub use profile::YAML_PROFILE;

@@ -1,4 +1,5 @@
-use super::*;
+use super::hooks::{lexical_normalize, path_candidates};
+use std::path::Path;
 
 #[test]
 fn lexical_normalize_strips_dot_segments() {
