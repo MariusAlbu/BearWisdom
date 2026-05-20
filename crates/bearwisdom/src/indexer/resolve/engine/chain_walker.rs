@@ -166,18 +166,30 @@ pub(crate) fn resolve_type_name_in_scope(
 }
 
 
-/// Extract parameter types from a callable signature. Handles two styles
-/// found in extractor output:
-///   - TS / Kotlin / Swift: `name(arg1: Type1, arg2: Type2): Ret` — each
-///     parameter is `name: Type`; type is everything after the `:`.
-///   - .NET DLL metadata: `name(Type1, Type2): Ret` — each parameter is
-///     the bare type.
-///
-/// Returns `None` when the signature has no balanced parens or empty arg
-/// list, and an empty `Vec` for `name(): Ret` (zero parameters). Bracket-
-/// aware splitting on top-level commas so generic args don't break the
-/// parse.
+/// Convenience wrapper: TS/.NET-shaped signature parsing. Kept for sites
+/// that don't have a language id handy.
 pub(crate) fn parse_param_types_from_signature(sig: &str) -> Option<Vec<String>> {
+    parse_param_types_from_signature_for_lang(sig, "")
+}
+
+/// Per-language parameter-type extraction. Recognized shapes:
+///   - TS / TSX / JSX / JS / Kotlin / Swift / Scala / Python / Rust /
+///     Dart / Haskell / OCaml / F#:
+///       `name(arg: Type, …): Ret` — type lives after the `:` in each arg.
+///   - Go: `name(a Type, b Type) Ret` — type lives after a whitespace
+///     in each arg (postfix, no `:`).
+///   - C / C++ / Java / C#: `name(Type a, Type b)` — type lives before
+///     the variable name (prefix). For these we take all-but-last token.
+///   - Empty `lang_id` or unknown languages: fall back to the bare-type
+///     reading (.NET DLL metadata style).
+///
+/// Returns `None` when the signature has no balanced parens, `Some(vec![])`
+/// for zero-arg calls. Bracket-aware top-level comma split so generic
+/// args don't fragment.
+pub(crate) fn parse_param_types_from_signature_for_lang(
+    sig: &str,
+    lang_id: &str,
+) -> Option<Vec<String>> {
     let bytes = sig.as_bytes();
     if bytes.is_empty() {
         return None;
@@ -247,27 +259,83 @@ pub(crate) fn parse_param_types_from_signature(sig: &str) -> Option<Vec<String>>
     if start < inner.len() {
         parts.push(inner[start..].to_string());
     }
-    // Type is either the substring after the first top-level `:` (TS style)
-    // or the entire trimmed string (.NET style — bare type).
+    // Dispatch per language. Each strategy extracts the TYPE portion of
+    // one parameter slot, after the comma split above.
+    let extract = match lang_id {
+        "go" => extract_param_type_postfix_no_colon,
+        "c" | "c_lang" | "cpp" | "java" | "csharp" | "vbnet" => extract_param_type_prefix,
+        _ => extract_param_type_colon_separated,
+    };
     let types: Vec<String> = parts
         .into_iter()
-        .map(|p| {
-            let mut depth: i32 = 0;
-            for (i, ch) in p.char_indices() {
-                match ch {
-                    '<' | '[' | '(' | '{' => depth += 1,
-                    '>' | ']' | ')' | '}' => depth -= 1,
-                    ':' if depth == 0 => {
-                        return p[i + 1..].trim().to_string();
-                    }
-                    _ => {}
-                }
-            }
-            p.trim().to_string()
-        })
+        .map(|p| extract(&p))
         .filter(|s| !s.is_empty())
         .collect();
     Some(types)
+}
+
+/// TS / Rust / Python / Kotlin / Swift / Scala / Dart / Haskell / OCaml
+/// / F# style: arg looks like `name: Type` (or sometimes `Type` when
+/// destructured / unnamed). The type sits after the first top-level `:`.
+fn extract_param_type_colon_separated(part: &str) -> String {
+    let mut depth: i32 = 0;
+    for (i, ch) in part.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            ':' if depth == 0 => return part[i + 1..].trim().to_string(),
+            _ => {}
+        }
+    }
+    part.trim().to_string()
+}
+
+/// Go style: arg looks like `name Type` (postfix type, no colon). Take
+/// the substring after the last whitespace at top-level — the trailing
+/// token is the type, possibly with generic brackets.
+fn extract_param_type_postfix_no_colon(part: &str) -> String {
+    let trimmed = part.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut depth: i32 = 0;
+    let mut last_ws: Option<usize> = None;
+    for (i, ch) in trimmed.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            c if c.is_whitespace() && depth == 0 => last_ws = Some(i),
+            _ => {}
+        }
+    }
+    match last_ws {
+        Some(ws) => trimmed[ws + 1..].trim().to_string(),
+        None => trimmed.to_string(),
+    }
+}
+
+/// C / C++ / Java / C# style: arg looks like `Type name` (prefix type).
+/// Take everything up to the last whitespace at top-level — that's the
+/// type expression, possibly with pointer/reference markers.
+fn extract_param_type_prefix(part: &str) -> String {
+    let trimmed = part.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut depth: i32 = 0;
+    let mut last_ws: Option<usize> = None;
+    for (i, ch) in trimmed.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            c if c.is_whitespace() && depth == 0 => last_ws = Some(i),
+            _ => {}
+        }
+    }
+    match last_ws {
+        Some(ws) => trimmed[..ws].trim().to_string(),
+        None => trimmed.to_string(),
+    }
 }
 
 pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {

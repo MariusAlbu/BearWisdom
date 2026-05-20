@@ -124,7 +124,7 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         arena: &crate::type_checker::core::types::TypeArena,
     ) -> ExtractionResult {
         let mut result = self.extract_with_demand(source, file_path, lang_id, demand);
-        crate::languages::common::populate_return_type_ids(&mut result, arena);
+        crate::languages::common::populate_return_type_ids(&mut result, arena, lang_id);
         result
     }
 

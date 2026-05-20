@@ -22,21 +22,25 @@ use tree_sitter::{Node, Parser};
 /// against the workspace `TypeArena` for the canonical "type-defining +
 /// callable" pattern shared by every typed language plugin. Plugins
 /// override `LanguagePlugin::extract_with_arena_and_demand`, call their
-/// existing extract logic, then invoke this helper.
+/// existing extract logic, then invoke this helper with their `lang_id`.
 ///
 ///   - Type-defining kinds (Class / Interface / Struct / Trait / Enum /
 ///     TypeAlias) get `return_type = arena.class(qualified_name)` —
 ///     the canonical "callable type yields itself" rule.
 ///   - Callable kinds (Method / Function / Constructor) get the return
 ///     type and parameter types parsed from their signature via
-///     `parse_return_type_from_signature` and
-///     `parse_param_types_from_signature`, then interned through
-///     `arena.intern_type_str` so generic applications decompose into
-///     structural `Apply { base, args }`.
+///     `parse_return_type_from_signature` and the language-aware
+///     `parse_param_types_from_signature_for_lang`, then interned
+///     through `arena.intern_type_str` so generic applications decompose
+///     into structural `Apply { base, args }`.
 ///
 /// Idempotent: skips symbols whose `return_type` / `param_types` are
 /// already populated.
-pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena) {
+pub fn populate_return_type_ids(
+    result: &mut ExtractionResult,
+    arena: &TypeArena,
+    lang_id: &str,
+) {
     for sym in &mut result.symbols {
         match sym.kind {
             SymbolKind::Class
@@ -64,8 +68,9 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                 }
                 if sym.param_types.is_empty() {
                     if let Some(params) =
-                        crate::indexer::resolve::engine::chain_walker::parse_param_types_from_signature(
+                        crate::indexer::resolve::engine::chain_walker::parse_param_types_from_signature_for_lang(
                             sig,
+                            lang_id,
                         )
                     {
                         sym.param_types = params

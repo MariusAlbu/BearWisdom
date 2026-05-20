@@ -6,8 +6,8 @@ use crate::indexer::resolve::engine::{
     build_scope_chain, ChainMiss, LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup,
 };
 use crate::indexer::resolve::engine::chain_walker::{
-    parse_param_types_from_signature, parse_return_type_from_signature,
-    resolve_type_name_in_scope, tuple_element,
+    parse_param_types_from_signature, parse_param_types_from_signature_for_lang,
+    parse_return_type_from_signature, resolve_type_name_in_scope, tuple_element,
 };
 use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::type_checker::core::types::Type;
@@ -127,6 +127,46 @@ fn parse_param_types_handles_generics_inside_args() {
     assert_eq!(
         parse_param_types_from_signature("Set(Map<K, V>): void"),
         Some(vec!["Map<K, V>".to_string()])
+    );
+}
+
+#[test]
+fn parse_param_types_go_style_postfix() {
+    // Go: `name(a Type, b Type) Ret` — type is the last whitespace-
+    // separated token in each arg.
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("Add(a int, b int) int", "go"),
+        Some(vec!["int".to_string(), "int".to_string()])
+    );
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("Set(items []int) bool", "go"),
+        Some(vec!["[]int".to_string()])
+    );
+}
+
+#[test]
+fn parse_param_types_c_style_prefix() {
+    // C / C++ / Java / C#: `name(Type a, Type b)` — type is everything
+    // before the last whitespace per arg.
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("add(int a, int b)", "c"),
+        Some(vec!["int".to_string(), "int".to_string()])
+    );
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("add(int a, int b)", "java"),
+        Some(vec!["int".to_string(), "int".to_string()])
+    );
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("Send(string message)", "csharp"),
+        Some(vec!["string".to_string()])
+    );
+}
+
+#[test]
+fn parse_param_types_rust_style_colon() {
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("add(a: i32, b: i32) -> i32", "rust"),
+        Some(vec!["i32".to_string(), "i32".to_string()])
     );
 }
 
