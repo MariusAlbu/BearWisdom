@@ -1,4 +1,4 @@
-use super::resolve::RubyResolver;
+use super::hooks::RubyResolver;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolInfo};
 use crate::types::*;
@@ -356,7 +356,7 @@ fn make_chain(segments: &[&str]) -> MemberChain {
 #[test]
 fn test_ruby_activerecord_where_emits_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_ruby_activerecord_emission;
+    use super::hooks::detect_ruby_activerecord_emission;
 
     let chain = make_chain(&["User", "where"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
@@ -371,7 +371,7 @@ fn test_ruby_activerecord_where_emits_select() {
 #[test]
 fn test_ruby_activerecord_find_by_emits_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_ruby_activerecord_emission;
+    use super::hooks::detect_ruby_activerecord_emission;
 
     let chain = make_chain(&["Post", "find_by"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
@@ -386,7 +386,7 @@ fn test_ruby_activerecord_find_by_emits_select() {
 #[test]
 fn test_ruby_activerecord_create_emits_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_ruby_activerecord_emission;
+    use super::hooks::detect_ruby_activerecord_emission;
 
     let chain = make_chain(&["Article", "create"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
@@ -401,7 +401,7 @@ fn test_ruby_activerecord_create_emits_insert() {
 #[test]
 fn test_ruby_activerecord_destroy_all_emits_delete() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_ruby_activerecord_emission;
+    use super::hooks::detect_ruby_activerecord_emission;
 
     let chain = make_chain(&["Comment", "destroy_all"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
@@ -416,7 +416,7 @@ fn test_ruby_activerecord_destroy_all_emits_delete() {
 #[test]
 fn test_ruby_activerecord_chained_includes_emits_on_leaf() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_ruby_activerecord_emission;
+    use super::hooks::detect_ruby_activerecord_emission;
 
     let chain = make_chain(&["Poll", "includes", "where", "first"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
@@ -431,7 +431,7 @@ fn test_ruby_activerecord_chained_includes_emits_on_leaf() {
 #[test]
 fn test_ruby_activerecord_find_or_create_emits_upsert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use super::resolve::detect_ruby_activerecord_emission;
+    use super::hooks::detect_ruby_activerecord_emission;
 
     let chain = make_chain(&["User", "find_or_create_by"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
@@ -445,7 +445,7 @@ fn test_ruby_activerecord_find_or_create_emits_upsert() {
 
 #[test]
 fn test_ruby_activerecord_no_emit_for_lowercase_root() {
-    use super::resolve::detect_ruby_activerecord_emission;
+    use super::hooks::detect_ruby_activerecord_emission;
 
     let chain = make_chain(&["user", "where"]);
     assert!(detect_ruby_activerecord_emission(&chain).is_none());
@@ -453,7 +453,7 @@ fn test_ruby_activerecord_no_emit_for_lowercase_root() {
 
 #[test]
 fn test_ruby_activerecord_no_emit_for_unknown_leaf() {
-    use super::resolve::detect_ruby_activerecord_emission;
+    use super::hooks::detect_ruby_activerecord_emission;
 
     let chain = make_chain(&["Logger", "info"]);
     assert!(detect_ruby_activerecord_emission(&chain).is_none());
@@ -462,7 +462,7 @@ fn test_ruby_activerecord_no_emit_for_unknown_leaf() {
 #[test]
 fn test_ruby_actioncable_channel_inheritance_emits_ws_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
-    use super::resolve::detect_ruby_actioncable_emission;
+    use super::hooks::detect_ruby_actioncable_emission;
     match detect_ruby_actioncable_emission("ApplicationCable::Channel").unwrap() {
         FlowEmission::NamedChannel { kind, role, name, .. } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
@@ -475,6 +475,6 @@ fn test_ruby_actioncable_channel_inheritance_emits_ws_consumer() {
 
 #[test]
 fn test_ruby_actioncable_rejects_non_channel() {
-    use super::resolve::detect_ruby_actioncable_emission;
+    use super::hooks::detect_ruby_actioncable_emission;
     assert!(detect_ruby_actioncable_emission("ApplicationRecord").is_none());
 }

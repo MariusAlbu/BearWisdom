@@ -13,9 +13,9 @@ pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub mod connectors;
-pub mod resolve;
 
 pub use hooks::RUBY_HOOKS;
+pub use hooks::RubyResolver;
 pub use profile::RUBY_PROFILE;
 
 #[cfg(test)]
@@ -37,8 +37,6 @@ mod predicates_tests;
 use crate::languages::LanguagePlugin;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
-
-pub use resolve::RubyResolver;
 
 pub struct RubyPlugin;
 
