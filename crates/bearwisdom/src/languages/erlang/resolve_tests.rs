@@ -1,4 +1,4 @@
-use super::*;
+use super::hooks::{detect_erlang_db_emission, detect_erlang_http_emission};
 use crate::types::*;
 
 #[test]
