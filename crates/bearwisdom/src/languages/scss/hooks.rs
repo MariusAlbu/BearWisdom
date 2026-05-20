@@ -1,9 +1,12 @@
-use super::resolve;
+// SCSS language hooks. Absorbed from the deleted `scss/resolve.rs`.
+
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup, Resolution};
+use crate::indexer::resolve::engine::{
+    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::EdgeKind;
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct ScssHooks;
 
@@ -16,17 +19,11 @@ impl LanguageEngineHooks for ScssHooks {
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
-
-        // Property-value `call_expression` tagged by the extractor — CSS/SCSS
-        // built-in function evaluation. Always external.
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if module == super::extract::SCSS_CSS_FN_HINT {
                 return Some("css".to_string());
             }
         }
-
-        // @use / @forward of a Sass built-in module — path is the namespace
-        // (e.g. "sass:math", "sass:color").
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let path = ref_ctx
                 .extracted_ref
@@ -37,10 +34,6 @@ impl LanguageEngineHooks for ScssHooks {
                 return Some(path.to_string());
             }
         }
-
-        // `@use 'npm-package/path' as alias` — match the alias/imported_name
-        // against this file's imports, classify the non-relative module path
-        // as an external npm package.
         for import in &file_ctx.imports {
             let alias_matches = import.alias.as_deref() == Some(target.as_str())
                 || import.imported_name == *target;
@@ -54,25 +47,106 @@ impl LanguageEngineHooks for ScssHooks {
                 }
             }
         }
-
         None
     }
 
     fn build_file_context(
         &self,
-        file: &crate::types::ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<crate::indexer::resolve::engine::FileContext> {
-        Some(resolve::build_file_context_inner(file, project_ctx))
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        let mut imports = Vec::new();
+        for r in &file.refs {
+            if r.kind != EdgeKind::Imports {
+                continue;
+            }
+            let module_path = r.module.clone().unwrap_or_else(|| r.target_name.clone());
+            let bare_segment = module_path
+                .rsplit('/')
+                .next()
+                .unwrap_or(module_path.as_str())
+                .trim_start_matches('_')
+                .trim_end_matches(".scss")
+                .trim_end_matches(".sass")
+                .trim_end_matches(".css");
+            let alias = if r.target_name != bare_segment {
+                Some(r.target_name.clone())
+            } else {
+                None
+            };
+            imports.push(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: Some(module_path),
+                alias,
+                is_wildcard: false,
+            });
+        }
+        Some(FileContext {
+            file_path: file.path.clone(),
+            language: "scss".to_string(),
+            imports,
+            file_namespace: None,
+        })
     }
 
     fn resolve_ref(
         &self,
-        file_ctx: &crate::indexer::resolve::engine::FileContext,
-        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
-        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        super::resolve::ScssResolver.resolve(file_ctx, ref_ctx, lookup)
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if edge_kind == EdgeKind::Imports {
+            return None;
+        }
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if module == super::extract::SCSS_CSS_FN_HINT {
+                return None;
+            }
+        }
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if predicates::is_sass_builtin_module(module) {
+                return None;
+            }
+        }
+        if let Some(res) = engine::resolve_common(
+            "scss",
+            file_ctx,
+            ref_ctx,
+            lookup,
+            predicates::kind_compatible,
+        ) {
+            return Some(res);
+        }
+        if ref_ctx.extracted_ref.module.is_some() {
+            return None;
+        }
+        let is_alias = file_ctx.imports.iter().any(|imp| {
+            imp.alias.as_deref() == Some(target.as_str()) || imp.imported_name == *target
+        });
+        if is_alias {
+            return None;
+        }
+        for sym in lookup.by_name(target) {
+            if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                continue;
+            }
+            if !sym.file_path.ends_with(".scss")
+                && !sym.file_path.ends_with(".sass")
+                && !sym.file_path.ends_with(".css")
+            {
+                continue;
+            }
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.85,
+                strategy: "scss_bare_name",
+                resolved_yield_type: None,
+                flow_emit: None,
+            });
+        }
+        None
     }
 }
 

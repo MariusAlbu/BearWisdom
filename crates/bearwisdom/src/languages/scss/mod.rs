@@ -11,7 +11,6 @@ pub mod keywords;
 pub mod extract;
 mod handlers;
 mod recovery;
-pub mod resolve;
 
 pub use hooks::SCSS_HOOKS;
 pub use profile::SCSS_PROFILE;
