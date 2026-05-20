@@ -11,21 +11,17 @@ use crate::indexer::resolve::engine::{
     intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::chain::simple_yield_type;
-use crate::type_checker::TypeChecker;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
 pub struct RustChecker;
 
-impl TypeChecker for RustChecker {
-    fn language_id(&self) -> &str {
-        "rust"
-    }
+impl RustChecker {
 
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    pub(crate) fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
         predicates::kind_compatible(edge_kind, sym_kind)
     }
 
-    fn resolve_chain(
+    pub(crate) fn resolve_chain(
         &self,
         chain_ref: &MemberChain,
         edge_kind: EdgeKind,

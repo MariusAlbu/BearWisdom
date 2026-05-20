@@ -8,14 +8,10 @@
 // the engine's checker registry is dense.
 // =============================================================================
 
-use crate::type_checker::TypeChecker;
 use crate::types::EdgeKind;
 
 pub struct HclChecker;
 
-impl TypeChecker for HclChecker {
-    fn language_id(&self) -> &str {
-        "hcl"
-    }
+impl HclChecker {
 
 }

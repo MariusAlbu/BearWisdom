@@ -28,8 +28,6 @@
 // =============================================================================
 
 use super::{predicates, type_checker::TypeScriptChecker};
-use crate::type_checker::TypeChecker;
-
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,

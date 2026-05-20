@@ -12,7 +12,6 @@ use crate::indexer::resolve::engine::{
     intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::chain::simple_yield_type;
-use crate::type_checker::TypeChecker;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
 /// Java type checker.
@@ -23,12 +22,9 @@ use crate::types::{EdgeKind, MemberChain, SegmentKind};
 /// unified walker doesn't yet handle.
 pub struct JavaChecker;
 
-impl TypeChecker for JavaChecker {
-    fn language_id(&self) -> &str {
-        "java"
-    }
+impl JavaChecker {
 
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    pub(crate) fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
         predicates::kind_compatible(edge_kind, sym_kind)
     }
 
@@ -39,7 +35,7 @@ impl TypeChecker for JavaChecker {
     /// 1. `this` → find enclosing class (e.g., "com.example.OrderService")
     /// 2. `repo` → look up "com.example.OrderService.repo" field → "OrderRepo"
     /// 3. `findById` → look up "com.example.OrderRepo.findById" → resolved!
-    fn resolve_chain(
+    pub(crate) fn resolve_chain(
         &self,
         chain_ref: &MemberChain,
         edge_kind: EdgeKind,

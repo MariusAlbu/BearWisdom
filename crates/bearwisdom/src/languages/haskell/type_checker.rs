@@ -9,17 +9,13 @@
 // =============================================================================
 
 use super::predicates;
-use crate::type_checker::TypeChecker;
 use crate::types::EdgeKind;
 
 pub struct HaskellChecker;
 
-impl TypeChecker for HaskellChecker {
-    fn language_id(&self) -> &str {
-        "haskell"
-    }
+impl HaskellChecker {
 
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    pub(crate) fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
         predicates::kind_compatible(edge_kind, sym_kind)
     }
 }

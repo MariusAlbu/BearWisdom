@@ -9,17 +9,13 @@
 // =============================================================================
 
 use super::predicates;
-use crate::type_checker::TypeChecker;
 use crate::types::EdgeKind;
 
 pub struct RChecker;
 
-impl TypeChecker for RChecker {
-    fn language_id(&self) -> &str {
-        "r"
-    }
+impl RChecker {
 
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    pub(crate) fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
         predicates::kind_compatible(edge_kind, sym_kind)
     }
 }

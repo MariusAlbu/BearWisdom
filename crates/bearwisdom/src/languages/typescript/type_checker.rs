@@ -28,7 +28,6 @@ use crate::indexer::resolve::engine::{
 use crate::type_checker::alias::expand_alias;
 use crate::type_checker::chain::external_type_qname;
 use crate::type_checker::type_env::TypeEnvironment;
-use crate::type_checker::TypeChecker;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
 
@@ -103,12 +102,9 @@ fn expand_current_type(
 /// full TS / Python / Java / C# / Go matrix.
 pub struct TypeScriptChecker;
 
-impl TypeChecker for TypeScriptChecker {
-    fn language_id(&self) -> &str {
-        "typescript"
-    }
+impl TypeScriptChecker {
 
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    pub(crate) fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
         // Delegates to the per-language predicate fn. The fn predates the
         // TypeChecker seam and is still consumed by JS-only paths that
         // don't go through this trait yet, so it stays public in the
@@ -129,7 +125,7 @@ impl TypeChecker for TypeScriptChecker {
     /// Repository's type params to concrete args in a new scope. When the
     /// resolved return type is a bound param (e.g., "T"), `env.resolve("T")`
     /// returns the concrete type ("User").
-    fn resolve_chain(
+    pub(crate) fn resolve_chain(
         &self,
         chain_ref: &MemberChain,
         edge_kind: EdgeKind,

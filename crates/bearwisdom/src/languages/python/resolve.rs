@@ -38,7 +38,6 @@ use super::flow_detectors::{
 };
 use super::externals::infer_external_inner;
 use super::{predicates, type_checker::PythonChecker};
-use crate::type_checker::TypeChecker;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };

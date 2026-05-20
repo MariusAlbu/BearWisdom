@@ -14,7 +14,6 @@ use crate::indexer::resolve::engine::{
     SymbolLookup,
 };
 use crate::type_checker::type_env::TypeEnvironment;
-use crate::type_checker::TypeChecker;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
 /// C# type checker.
@@ -25,12 +24,9 @@ use crate::types::{EdgeKind, MemberChain, SegmentKind};
 /// unified walker doesn't yet handle.
 pub struct CSharpChecker;
 
-impl TypeChecker for CSharpChecker {
-    fn language_id(&self) -> &str {
-        "csharp"
-    }
+impl CSharpChecker {
 
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    pub(crate) fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
         predicates::kind_compatible(edge_kind, sym_kind)
     }
 
@@ -44,7 +40,7 @@ impl TypeChecker for CSharpChecker {
     ///
     /// Also tries `{using_namespace}.{type}.{method}` for types resolved
     /// via using directives. Generic substitution via `TypeEnvironment`.
-    fn resolve_chain(
+    pub(crate) fn resolve_chain(
         &self,
         chain_ref: &MemberChain,
         edge_kind: EdgeKind,

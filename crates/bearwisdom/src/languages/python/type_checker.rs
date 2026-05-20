@@ -11,7 +11,6 @@ use crate::indexer::resolve::engine::{
     intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::chain::simple_yield_type;
-use crate::type_checker::TypeChecker;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
 
@@ -23,12 +22,9 @@ use tracing::debug;
 /// unified walker doesn't yet handle.
 pub struct PythonChecker;
 
-impl TypeChecker for PythonChecker {
-    fn language_id(&self) -> &str {
-        "python"
-    }
+impl PythonChecker {
 
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    pub(crate) fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
         predicates::kind_compatible(edge_kind, sym_kind)
     }
 
@@ -38,7 +34,7 @@ impl TypeChecker for PythonChecker {
     /// 1. `self` → enclosing class from scope_chain
     /// 2. `db`   → look up "ClassName.db" field → "DatabaseSession"
     /// 3. `query` → look up "DatabaseSession.query" → resolved
-    fn resolve_chain(
+    pub(crate) fn resolve_chain(
         &self,
         chain_ref: &MemberChain,
         edge_kind: EdgeKind,

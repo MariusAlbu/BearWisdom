@@ -9,17 +9,13 @@
 // =============================================================================
 
 use super::predicates;
-use crate::type_checker::TypeChecker;
 use crate::types::EdgeKind;
 
 pub struct PerlChecker;
 
-impl TypeChecker for PerlChecker {
-    fn language_id(&self) -> &str {
-        "perl"
-    }
+impl PerlChecker {
 
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    pub(crate) fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
         predicates::kind_compatible(edge_kind, sym_kind)
     }
 }

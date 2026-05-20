@@ -83,10 +83,6 @@ impl LanguagePlugin for AdaPlugin {
         resolve::spec_for_body(file_path)
     }
 
-    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
-        Some(std::sync::Arc::new(type_checker::AdaChecker))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

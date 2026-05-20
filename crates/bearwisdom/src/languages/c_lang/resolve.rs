@@ -19,7 +19,6 @@
 // =============================================================================
 
 use super::{predicates, type_checker::CChecker};
-use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,

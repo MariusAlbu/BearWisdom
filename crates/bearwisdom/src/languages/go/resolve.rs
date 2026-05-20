@@ -44,7 +44,6 @@ pub(crate) use super::flow_detectors::{
     detect_go_mq_emission, detect_go_redis_config_lookup, detect_go_uds_emission,
 };
 use super::{predicates, type_checker::GoChecker};
-use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,

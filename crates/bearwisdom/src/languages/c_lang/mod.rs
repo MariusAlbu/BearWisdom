@@ -133,10 +133,6 @@ impl LanguagePlugin for CLangPlugin {
         &["int", "char", "void", "float", "double", "short", "long", "unsigned", "signed", "size_t", "bool", "auto"]
     }
 
-    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
-        Some(std::sync::Arc::new(type_checker::CChecker))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

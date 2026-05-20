@@ -30,7 +30,6 @@
 pub(crate) use super::predicates::normalize_php_ns;
 
 use super::{predicates, type_checker::PhpChecker};
-use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,

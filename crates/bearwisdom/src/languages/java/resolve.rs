@@ -34,7 +34,6 @@ pub(crate) use super::flow_detectors::{
     detect_retrofit_attribute_emission, detect_spring_stereotype_emission,
 };
 use super::{predicates, type_checker::JavaChecker};
-use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,

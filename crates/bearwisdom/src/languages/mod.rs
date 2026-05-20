@@ -197,17 +197,6 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// an apply.
     fn nested_ref_skip_pairs(&self) -> &[(&'static str, &'static str)] { &[] }
 
-    /// Return the language type checker for this plugin, if one exists.
-    ///
-    /// One impl per typed language (TypeScript, C#, Rust, etc.). Untyped /
-    /// dynamically-typed languages return `None` and the engine treats them
-    /// as having no type-level capabilities. Aggregated by
-    /// `crate::type_checker::default_type_checkers()`.
-    ///
-    /// PR 1 of the type-checker consolidation — see decision-2026-04-27-e75.
-    /// Trait surface stays minimal until subsequent PRs port behavior in.
-    fn type_checker(&self) -> Option<Arc<dyn crate::type_checker::TypeChecker>> { None }
-
     /// Return the language profile for this plugin, if one is defined.
     ///
     /// The engine collects profiles from every registered plugin and routes

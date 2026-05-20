@@ -43,7 +43,6 @@ pub(crate) use super::flow_detectors::{
     detect_rust_tauri_command_attribute, detect_rust_tonic_emission, detect_rust_uds_emission,
 };
 use super::{keywords, predicates, type_checker::RustChecker};
-use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,

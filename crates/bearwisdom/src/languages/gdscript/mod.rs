@@ -75,10 +75,6 @@ impl LanguagePlugin for GDScriptPlugin {
         keywords::KEYWORDS
     }
 
-    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
-        Some(std::sync::Arc::new(type_checker::GDScriptChecker))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

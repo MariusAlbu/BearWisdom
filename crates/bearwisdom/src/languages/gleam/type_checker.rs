@@ -8,14 +8,10 @@
 // the engine's checker registry is dense.
 // =============================================================================
 
-use crate::type_checker::TypeChecker;
 use crate::types::EdgeKind;
 
 pub struct GleamChecker;
 
-impl TypeChecker for GleamChecker {
-    fn language_id(&self) -> &str {
-        "gleam"
-    }
+impl GleamChecker {
 
 }

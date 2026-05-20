@@ -34,7 +34,6 @@
 
 
 use super::{predicates, type_checker::RubyChecker};
-use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,

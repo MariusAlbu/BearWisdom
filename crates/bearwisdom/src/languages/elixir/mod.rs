@@ -88,10 +88,6 @@ impl LanguagePlugin for ElixirPlugin {
     // `resolve_connection_points` override was removed because the ConnectionPoint
     // Stop emission was redundant with that bridge.
 
-    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
-        Some(std::sync::Arc::new(type_checker::ElixirChecker))
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
