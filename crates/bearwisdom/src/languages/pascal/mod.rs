@@ -13,12 +13,13 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
-pub(crate) mod resolve;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::PASCAL_HOOKS;
 pub use profile::PASCAL_PROFILE;
-
-pub use resolve::PascalResolver;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]

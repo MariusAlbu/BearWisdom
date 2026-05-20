@@ -2,7 +2,7 @@
 // pascal/resolve_tests.rs — unit tests for pascal/resolve.rs
 // =============================================================================
 
-use super::{is_delphi_namespaced_file, pascal_stem_matches, resolve_pascal_wildcard};
+use super::hooks::{is_delphi_namespaced_file, pascal_stem_matches, resolve_pascal_wildcard};
 use crate::indexer::resolve::engine::{FileContext, ImportEntry, SymbolInfo, SymbolLookup};
 use crate::types::EdgeKind;
 use std::sync::Arc;
@@ -316,7 +316,7 @@ fn wildcard_resolves_titlecase_symbol_when_stem_matches() {
 // Goal 39 — Pascal flow emission tests
 // ---------------------------------------------------------------------------
 
-use super::{detect_pascal_http_producer, detect_pascal_db_query};
+use super::hooks::{detect_pascal_http_producer, detect_pascal_db_query};
 
 #[test]
 fn test_pascal_idhttp_get_emits_producer() {
