@@ -2,9 +2,11 @@
 
 pub mod keywords;
 pub mod extract;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod resolve;
 
+pub use hooks::MAKE_HOOKS;
 pub use profile::MAKE_PROFILE;
 
 #[cfg(test)]
@@ -81,5 +83,12 @@ impl LanguagePlugin for MakePlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::MAKE_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::MAKE_HOOKS)
     }
 }

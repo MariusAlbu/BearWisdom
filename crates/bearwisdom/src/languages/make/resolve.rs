@@ -79,21 +79,10 @@ impl LanguageResolver for MakeResolver {
         engine::resolve_common("make", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
-    fn infer_external_namespace(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        if is_make_builtin(&ref_ctx.extracted_ref.target_name) {
-            return Some("make".to_string());
-        }
-        None
-    }
 }
 
 /// Make built-in functions and special/automatic variables.
-fn is_make_builtin(name: &str) -> bool {
+pub(super) fn is_make_builtin(name: &str) -> bool {
     matches!(
         name,
         // Text functions
