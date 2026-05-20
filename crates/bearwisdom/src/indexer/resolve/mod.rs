@@ -117,6 +117,27 @@ pub fn resolve_and_write_incremental(
     Ok(stats)
 }
 
+/// Same as `resolve_and_write_incremental` but threads a workspace
+/// `TypeArena` through to `SymbolIndex::build_with_context_and_arena`.
+pub fn resolve_and_write_incremental_and_arena(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
+) -> Result<ResolutionStats> {
+    let stats = loop_body::resolve_iteration_inner_with_arena(
+        db,
+        parsed,
+        symbol_id_map,
+        project_ctx,
+        true,
+        type_arena,
+    )?;
+    finalize_resolution(db)?;
+    Ok(stats)
+}
+
 /// One resolution pass without post-processing. Writes edges / external_refs /
 /// unresolved_refs the same way as `resolve_and_write` but leaves the
 /// `incoming_edge_count` materialization to a later `finalize_resolution`

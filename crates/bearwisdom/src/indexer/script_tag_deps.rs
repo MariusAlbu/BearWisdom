@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::{debug, warn};
 
-use crate::indexer::full::parse_file;
+use crate::indexer::full::parse_file_with_arena_and_demand;
 use crate::languages::registry::LanguageRegistry;
 use crate::types::{EdgeKind, ParsedFile};
 use crate::walker::{detect_language, WalkedFile};
@@ -47,6 +47,7 @@ pub fn parse_script_tag_deps(
     project_root: &Path,
     parsed: &[ParsedFile],
     registry: &LanguageRegistry,
+    type_arena: &crate::type_checker::core::types::TypeArena,
 ) -> Vec<ParsedFile> {
     let mut refs: Vec<(&str, &str)> = Vec::new();
     let existing_paths: HashSet<&str> =
@@ -99,7 +100,7 @@ pub fn parse_script_tag_deps(
             absolute_path: abs.clone(),
             language: lang,
         };
-        match parse_file(&walked, registry) {
+        match parse_file_with_arena_and_demand(&walked, registry, None, type_arena) {
             Ok(pf) => {
                 debug!("script-tag dep: parsed {} as {}", rel, lang);
                 out.push(pf);

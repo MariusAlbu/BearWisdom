@@ -66,6 +66,7 @@ pub(crate) fn parse_external_sources(
     ctx: &ProjectContext,
     packages: &[PackageInfo],
     demand: &DemandSet,
+    type_arena: &crate::type_checker::core::types::TypeArena,
 ) -> ExternalParsingResult {
     // Resolve every active ecosystem to its legacy locator adapter. The
     // legacy trait still carries the per-package attribution overrides
@@ -339,7 +340,7 @@ pub(crate) fn parse_external_sources(
                 demand,
                 &ambient_globals_packages,
             );
-            super::full::parse_file_with_demand(w, registry, per_file_demand)
+            super::full::parse_file_with_arena_and_demand(w, registry, per_file_demand, type_arena)
         })
         .collect();
 
@@ -396,6 +397,7 @@ pub(crate) fn seed_demand_from_user_refs(
     parsed: &[ParsedFile],
     symbol_index: &SymbolLocationIndex,
     registry: &LanguageRegistry,
+    type_arena: &crate::type_checker::core::types::TypeArena,
 ) -> Vec<ParsedFile> {
     // Run the BFS on a 32 MiB-stack worker. Tree-sitter extractors walking
     // deeply-nested external .d.ts files exhaust smaller budgets — 8 MiB
@@ -409,7 +411,7 @@ pub(crate) fn seed_demand_from_user_refs(
             .name("bw-demand-seed".to_string())
             .stack_size(32 * 1024 * 1024)
             .spawn_scoped(s, move || {
-                seed_demand_from_user_refs_inner(parsed, symbol_index, registry)
+                seed_demand_from_user_refs_inner(parsed, symbol_index, registry, type_arena)
             })
             .expect("failed to spawn bw-demand-seed thread");
         handle.join().unwrap_or_else(|_| {
@@ -423,6 +425,7 @@ fn seed_demand_from_user_refs_inner(
     parsed: &[ParsedFile],
     symbol_index: &SymbolLocationIndex,
     registry: &LanguageRegistry,
+    type_arena: &crate::type_checker::core::types::TypeArena,
 ) -> Vec<ParsedFile> {
     // Safety cap against pathological cases (mutual cycles not caught by
     // the `seen` set because of symlink-like aliasing, etc.).
@@ -503,7 +506,7 @@ fn seed_demand_from_user_refs_inner(
         // single lib.dom.d.ts gets extracted with ~12k symbols even though
         // the user only references ~200 types from it — hundreds of MiB of
         // extra ParsedFile state retained until phase 13.
-        let mut pf = match super::full::parse_file_with_demand(&walked, registry, Some(&wanted_names)) {
+        let mut pf = match super::full::parse_file_with_arena_and_demand(&walked, registry, Some(&wanted_names), type_arena) {
             Ok(pf) => pf,
             Err(e) => {
                 debug!("seed: parse failed for {}: {e}", walked.relative_path);

@@ -50,6 +50,24 @@ pub(super) fn resolve_iteration_inner(
     project_ctx: Option<&ProjectContext>,
     augment_from_db: bool,
 ) -> Result<ResolutionStats> {
+    resolve_iteration_inner_with_arena(
+        db,
+        parsed,
+        symbol_id_map,
+        project_ctx,
+        augment_from_db,
+        std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()),
+    )
+}
+
+pub(super) fn resolve_iteration_inner_with_arena(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    augment_from_db: bool,
+    type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
+) -> Result<ResolutionStats> {
     // Ext-origin files without an `ext:` path prefix — specifically,
     // script-tag-parsed vendored JS like `wwwroot/lib/jquery.min.js` — live
     // under regular project-relative paths in the DB but carry
@@ -58,7 +76,12 @@ pub(super) fn resolve_iteration_inner(
     // user JS classify correctly instead of matching against those vendor
     // symbols as if they were project code.
     let external_paths = read_external_file_paths(db.conn());
-    let mut index = SymbolIndex::build_with_context(parsed, symbol_id_map, project_ctx);
+    let mut index = SymbolIndex::build_with_context_and_arena(
+        parsed,
+        symbol_id_map,
+        project_ctx,
+        type_arena,
+    );
     if !external_paths.is_empty() {
         index.set_external_paths(external_paths);
     }

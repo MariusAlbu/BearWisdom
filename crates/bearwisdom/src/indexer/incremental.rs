@@ -267,9 +267,15 @@ fn run_incremental_pipeline(
     // --- Step 5: Parse changed files (parallel) ---
     let files_to_parse: Vec<_> = cs.added.into_iter().chain(cs.modified).collect();
     let registry = languages::default_registry();
+    // Workspace TypeArena shared across the parse phase and the resolve
+    // pass so extractor-populated TypeIds remain valid through to
+    // SymbolIndex::build_with_context_and_arena.
+    let workspace_arena = std::sync::Arc::new(
+        crate::type_checker::core::types::TypeArena::new(),
+    );
     let parse_results: Vec<Result<ParsedFile>> = files_to_parse
         .par_iter()
-        .map(|w| full::parse_file(w, registry))
+        .map(|w| full::parse_file_with_arena_and_demand(w, registry, None, workspace_arena.as_ref()))
         .collect();
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files_to_parse.len());
@@ -362,7 +368,7 @@ fn run_incremental_pipeline(
 
         let affected_results: Vec<Result<ParsedFile>> = affected_walked
             .par_iter()
-            .map(|w| full::parse_file(w, registry))
+            .map(|w| full::parse_file_with_arena_and_demand(w, registry, None, workspace_arena.as_ref()))
             .collect();
 
         let mut affected_parsed: Vec<ParsedFile> = Vec::new();
@@ -450,8 +456,14 @@ fn run_incremental_pipeline(
         project_ctx.plugin_state = plugin_state;
     }
 
-    let rstats = resolve::resolve_and_write_incremental(db, &parsed, &symbol_id_map, Some(&project_ctx))
-        .context("Failed to resolve references")?;
+    let rstats = resolve::resolve_and_write_incremental_and_arena(
+        db,
+        &parsed,
+        &symbol_id_map,
+        Some(&project_ctx),
+        std::sync::Arc::clone(&workspace_arena),
+    )
+    .context("Failed to resolve references")?;
     stats.edges_written = rstats.resolved as u32;
     info!("Resolved {} edges for changed files", rstats.resolved);
 

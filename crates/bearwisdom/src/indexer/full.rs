@@ -585,6 +585,7 @@ pub fn full_index(
         demand_driven_ecosystems,
     } = parse_external_sources(
         project_root, registry, &project_ctx, &written_packages, &demand,
+        workspace_arena.as_ref(),
     );
     mem_probe::probe("07_external_parsed");
     if !external_parsed.is_empty() {
@@ -620,7 +621,7 @@ pub fn full_index(
     // actually references. Replaces per-library synthetics like
     // `ecosystem/jquery_synthetics.rs` with generic reference following.
     let mut script_tag_parsed = super::script_tag_deps::parse_script_tag_deps(
-        project_root, &parsed, registry,
+        project_root, &parsed, registry, workspace_arena.as_ref(),
     );
     if !script_tag_parsed.is_empty() {
         info!(
@@ -673,7 +674,7 @@ pub fn full_index(
     // still drives the loop below for deeper hops.
     if !symbol_index.is_empty() {
         let mut seeded = seed_demand_from_user_refs(
-            &parsed, &symbol_index, registry,
+            &parsed, &symbol_index, registry, workspace_arena.as_ref(),
         );
         if !seeded.is_empty() {
             info!(

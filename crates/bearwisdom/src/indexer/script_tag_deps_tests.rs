@@ -69,7 +69,8 @@ fn tilde_prefixed_url_resolves_to_wwwroot() {
 });
 
     let registry = crate::languages::default_registry();
-    let out = parse_script_tag_deps(root, &[host], registry);
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let out = parse_script_tag_deps(root, &[host], registry, &arena);
     assert_eq!(out.len(), 1, "expected jquery.js to be pulled in");
     assert_eq!(out[0].language, "javascript");
     assert!(out[0].path.ends_with("wwwroot/lib/jquery/jquery.js"));
@@ -106,7 +107,8 @@ fn cdn_and_absolute_urls_filtered_at_extraction() {
     }
 
     let registry = crate::languages::default_registry();
-    let out = parse_script_tag_deps(root, &[host], registry);
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let out = parse_script_tag_deps(root, &[host], registry, &arena);
     assert!(out.is_empty());
 }
 
@@ -137,7 +139,8 @@ fn relative_url_resolves_against_host_dir() {
 });
 
     let registry = crate::languages::default_registry();
-    let out = parse_script_tag_deps(root, &[host], registry);
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let out = parse_script_tag_deps(root, &[host], registry, &arena);
     assert_eq!(out.len(), 1);
     assert!(out[0].path.ends_with("pages/app.js"));
 }
@@ -173,6 +176,7 @@ fn already_parsed_file_not_duplicated() {
     let already_parsed = empty_parsed("js/app.js", "javascript");
 
     let registry = crate::languages::default_registry();
-    let out = parse_script_tag_deps(root, &[host, already_parsed], registry);
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let out = parse_script_tag_deps(root, &[host, already_parsed], registry, &arena);
     assert!(out.is_empty(), "already-parsed file must not be re-parsed");
 }
