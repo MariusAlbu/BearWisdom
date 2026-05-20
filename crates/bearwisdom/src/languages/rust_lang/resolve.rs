@@ -666,25 +666,6 @@ impl LanguageResolver for RustResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        infer_external_inner(file_ctx, ref_ctx, project_ctx, None)
-    }
-
-    fn infer_external_namespace_with_lookup(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<String> {
-        infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
-    }
-
     fn is_visible(
         &self,
         file_ctx: &FileContext,
@@ -871,7 +852,7 @@ impl LanguageResolver for RustResolver {
     }
 }
 
-fn infer_external_inner(
+pub(super) fn infer_external_inner(
     file_ctx: &FileContext,
     ref_ctx: &RefContext,
     project_ctx: Option<&ProjectContext>,

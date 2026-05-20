@@ -111,7 +111,14 @@ fn bare_anyhow_path_attributed_to_anyhow_not_std() {
         file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup =
+            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        crate::languages::rust_lang::hooks::RustHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert_eq!(ns.as_deref(), Some("anyhow"));
 }
 
@@ -135,7 +142,14 @@ fn bare_hyphenated_crate_normalized_to_underscore() {
         file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup =
+            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        crate::languages::rust_lang::hooks::RustHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert_eq!(ns.as_deref(), Some("serde_json"));
 }
 
@@ -157,7 +171,14 @@ fn bare_stdlib_path_still_routes_to_std() {
         file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup =
+            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        crate::languages::rust_lang::hooks::RustHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert_eq!(ns.as_deref(), Some("std"));
 }
 
@@ -179,7 +200,14 @@ fn bare_crate_path_internal_not_attributed_external() {
         file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup =
+            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        crate::languages::rust_lang::hooks::RustHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_none(), "crate:: paths should not be classified external");
 }
 
@@ -204,7 +232,14 @@ fn unknown_bare_path_not_attributed_when_not_in_manifest() {
         file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup =
+            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        crate::languages::rust_lang::hooks::RustHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(
         ns.is_none(),
         "anyhow::* without a manifest declaration must not auto-classify"
