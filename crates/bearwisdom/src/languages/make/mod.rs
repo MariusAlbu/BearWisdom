@@ -4,7 +4,6 @@ pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 
 pub use hooks::MAKE_HOOKS;
 pub use profile::MAKE_PROFILE;

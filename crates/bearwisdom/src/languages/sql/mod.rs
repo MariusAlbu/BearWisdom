@@ -4,7 +4,6 @@ pub(crate) mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub mod resolve;
 
 pub use hooks::SQL_HOOKS;
 pub use profile::SQL_PROFILE;
