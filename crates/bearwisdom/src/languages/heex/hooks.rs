@@ -1,8 +1,12 @@
-use super::resolve;
+// HEEx language hooks. Absorbed from the deleted `heex/resolve.rs`.
+
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup, Resolution};
+use crate::indexer::resolve::engine::{
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+};
 use crate::languages::elixir;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct HeexHooks;
 
@@ -15,8 +19,6 @@ impl LanguageEngineHooks for HeexHooks {
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
-        // Module-qualified component refs like `<MyApp.Components.button>` —
-        // delegate to the Elixir external-module classifier.
         if target.contains('.') {
             let root = target.split('.').next().unwrap_or(target);
             if elixir::predicates::is_external_elixir_module(root) {
@@ -28,19 +30,62 @@ impl LanguageEngineHooks for HeexHooks {
 
     fn build_file_context(
         &self,
-        file: &crate::types::ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<crate::indexer::resolve::engine::FileContext> {
-        Some(resolve::build_file_context_inner(file, project_ctx))
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        Some(FileContext {
+            file_path: file.path.clone(),
+            language: "heex".to_string(),
+            imports: Vec::<ImportEntry>::new(),
+            file_namespace: None,
+        })
     }
 
     fn resolve_ref(
         &self,
-        file_ctx: &crate::indexer::resolve::engine::FileContext,
-        ref_ctx: &crate::indexer::resolve::engine::RefContext<'_>,
-        lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
-        super::resolve::HeexResolver.resolve(file_ctx, ref_ctx, lookup)
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if edge_kind != EdgeKind::Calls {
+            return None;
+        }
+        if target.contains('.') {
+            return None;
+        }
+        for sym in lookup.by_name(target) {
+            if !sym.file_path.starts_with("ext:") {
+                continue;
+            }
+            if !elixir::predicates::kind_compatible(edge_kind, &sym.kind) {
+                continue;
+            }
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.90,
+                strategy: "heex_ext_component",
+                resolved_yield_type: None,
+                flow_emit: None,
+            });
+        }
+        for sym in lookup.by_name(target) {
+            if sym.file_path.starts_with("ext:") {
+                continue;
+            }
+            if !elixir::predicates::kind_compatible(edge_kind, &sym.kind) {
+                continue;
+            }
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.80,
+                strategy: "heex_internal_component",
+                resolved_yield_type: None,
+                flow_emit: None,
+            });
+        }
+        None
     }
 }
 

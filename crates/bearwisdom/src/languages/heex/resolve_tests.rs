@@ -1,4 +1,6 @@
-use super::*;
+use super::hooks::HeexHooks;
+use crate::indexer::resolve::engine::FileContext;
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::resolve::engine::{build_scope_chain, RefContext, SymbolIndex};
 use crate::types::*;
 use std::collections::HashMap;
@@ -130,15 +132,14 @@ fn ext_component_resolves_via_bare_name() {
         vec![make_calls_ref("form")],
     );
     let (index, id_map) = build_env(&[&ext_file, &heex_file]);
-    let resolver = HeexResolver;
-    let file_ctx = resolver.build_file_context(&heex_file, None);
-    let ref_ctx = RefContext {
+    let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
+        let ref_ctx = RefContext {
         extracted_ref: &heex_file.refs[0],
         source_symbol: &heex_file.symbols[0],
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
     assert!(res.is_some(), "<.form> should resolve to external Phoenix.Component.form");
     let res = res.unwrap();
     assert_eq!(res.strategy, "heex_ext_component");
@@ -169,15 +170,14 @@ fn internal_component_resolves_when_no_ext_match() {
         vec![make_calls_ref("button")],
     );
     let (index, id_map) = build_env(&[&comp_file, &heex_file]);
-    let resolver = HeexResolver;
-    let file_ctx = resolver.build_file_context(&heex_file, None);
-    let ref_ctx = RefContext {
+    let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
+        let ref_ctx = RefContext {
         extracted_ref: &heex_file.refs[0],
         source_symbol: &heex_file.symbols[0],
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
     assert!(res.is_some(), "<.button> should resolve to internal component");
     assert_eq!(res.unwrap().strategy, "heex_internal_component");
     let _ = id_map; // ensure id_map used
@@ -192,15 +192,14 @@ fn dotted_target_skipped_by_resolver() {
         vec![make_calls_ref("Phoenix.Component.form")],
     );
     let (index, _id_map) = build_env(&[&heex_file]);
-    let resolver = HeexResolver;
-    let file_ctx = resolver.build_file_context(&heex_file, None);
-    let ref_ctx = RefContext {
+    let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
+        let ref_ctx = RefContext {
         extracted_ref: &heex_file.refs[0],
         source_symbol: &heex_file.symbols[0],
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
     assert!(res.is_none(), "dotted refs should pass through to heuristic");
 }
 
@@ -213,9 +212,8 @@ fn infer_external_namespace_dotted_phoenix_root() {
         vec![make_calls_ref("Phoenix.Component.form")],
     );
     let (_, _) = build_env(&[&heex_file]);
-    let resolver = HeexResolver;
-    let file_ctx = resolver.build_file_context(&heex_file, None);
-    let ref_ctx = RefContext {
+    let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
+        let ref_ctx = RefContext {
         extracted_ref: &heex_file.refs[0],
         source_symbol: &heex_file.symbols[0],
         scope_chain: build_scope_chain(None),
