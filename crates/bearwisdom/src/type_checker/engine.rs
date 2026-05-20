@@ -189,43 +189,59 @@ impl<'a> Engine<'a> {
         file_ctx: &FileContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        let profile = self.profiles.get(file_ctx.language.as_str()).copied()?;
+        let lang = file_ctx.language.as_str();
+        let profile = self.profiles.get(lang).copied();
+        let hooks = self.hooks.get(lang).copied();
 
-        if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
-            let mut walker = ChainWalker::new(
-                &self.arena,
-                &self.members,
-                &self.supertypes,
-                &self.symbol_types,
-                &self.aliases,
-                profile,
-                lookup,
-            );
-            let cr = walker.walk_with_root(chain, ref_ctx, file_ctx, &DefaultRootResolver)?;
-            return Some(Resolution {
-                target_symbol_id: cr.target_symbol_id,
-                confidence: 1.0,
-                strategy: cr.strategy,
-                resolved_yield_type: Some(cr.resolved_yield_type),
-                flow_emit: None,
-            });
-        }
-
-        let hooks = self.hooks.get(file_ctx.language.as_str()).copied();
-        if let Some(hooks) = hooks {
-            if let Some(r) = hooks.resolve_bare_pre(ref_ctx, file_ctx, lookup) {
-                return Some(r);
+        // Chain-bearing refs route through the unified chain walker when
+        // a profile is registered (chain walker contract — gating on
+        // engine_primary happens at the dispatcher level, not here).
+        if let Some(profile) = profile {
+            if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
+                let mut walker = ChainWalker::new(
+                    &self.arena,
+                    &self.members,
+                    &self.supertypes,
+                    &self.symbol_types,
+                    &self.aliases,
+                    profile,
+                    lookup,
+                );
+                if let Some(cr) =
+                    walker.walk_with_root(chain, ref_ctx, file_ctx, &DefaultRootResolver)
+                {
+                    return Some(Resolution {
+                        target_symbol_id: cr.target_symbol_id,
+                        confidence: 1.0,
+                        strategy: cr.strategy,
+                        resolved_yield_type: Some(cr.resolved_yield_type),
+                        flow_emit: None,
+                    });
+                }
+            } else {
+                // Chain-less ref: bare-name path.
+                if let Some(h) = hooks {
+                    if let Some(r) = h.resolve_bare_pre(ref_ctx, file_ctx, lookup) {
+                        return Some(r);
+                    }
+                }
+                if let Some(r) =
+                    crate::type_checker::bare::resolve_bare(ref_ctx, file_ctx, lookup, profile)
+                {
+                    return Some(r);
+                }
+                if let Some(h) = hooks {
+                    if let Some(r) = h.resolve_bare_post(ref_ctx, file_ctx, lookup) {
+                        return Some(r);
+                    }
+                }
             }
         }
-        if let Some(r) =
-            crate::type_checker::bare::resolve_bare(ref_ctx, file_ctx, lookup, profile)
-        {
-            return Some(r);
-        }
-        if let Some(hooks) = hooks {
-            return hooks.resolve_bare_post(ref_ctx, file_ctx, lookup);
-        }
-        None
+
+        // Hook fallback. Carries the full per-language resolver (workspace
+        // packages, tsconfig alias, DefinitelyTyped, barrel re-exports,
+        // inheritance walks) for languages whose hook owns dispatch.
+        hooks.and_then(|h| h.resolve_ref(file_ctx, ref_ctx, lookup))
     }
 
     /// Same as `resolve` but exposes a caller-supplied `RootResolver` so

@@ -6,6 +6,7 @@ use super::*;
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
 use crate::languages::typescript::extract;
 use crate::type_checker::core::{SymbolIdMap, TypeArena};
+use crate::languages::typescript::TYPESCRIPT_PROFILE;
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{
     AliasTarget, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, ParsedFile,
@@ -293,13 +294,15 @@ fn engine_build_from_registry_collects_typescript_hooks() {
 fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
     // The TS extractor emits a Class for `export class User {}`; engine.build
     // populates SymbolTypeMap's self-yield reverse index; engine.resolve on a
-    // bare TypeAccess chain to User returns the class's sym id.
+    // bare TypeAccess chain to User returns the class's sym id. Uses the
+    // real TYPESCRIPT_PROFILE (engine_primary=true) so engine.resolve runs
+    // the chain walker.
     let pf = ts_parsed_file("src/u.ts", "export class User {}");
     let sym_ids = deterministic_ids(&pf);
     let lookup = EmptyLookup::from(&pf, &sym_ids);
 
     let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
-    profiles.insert("typescript", &DEFAULT_PROFILE);
+    profiles.insert("typescript", &TYPESCRIPT_PROFILE);
 
     let mut engine = Engine::build(std::slice::from_ref(&pf), &sym_ids, profiles, &lookup);
 

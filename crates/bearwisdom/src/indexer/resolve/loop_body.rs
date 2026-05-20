@@ -431,32 +431,16 @@ fn resolve_iteration_body(
                     buf.flow_emissions.push((pf.path.clone(), r.line, emission));
                 }
 
-                // Languages with a registered profile AND opted-in via
-                // `LanguageProfile::engine_primary` route through the engine
-                // first for every ref shape. Chain-bearing refs walk the
-                // engine's unified chain walker; chain-less refs run the
-                // engine's bare-name resolver. The legacy `LanguageResolver`
-                // still runs as fallback when the engine declines (`None`),
-                // covering language-specific behaviors the engine hasn't
-                // adopted yet (TS workspace packages, tsconfig path aliases,
-                // DefinitelyTyped fallback, barrel re-exports).
-                let try_engine_first = type_engine
-                    .profile_for(&pf.language)
-                    .map(|p| p.engine_primary)
-                    .unwrap_or(false);
-                let hook_resolve = || {
-                    type_engine
-                        .resolve_ref_via_hook(effective_lang, file_ctx, &ref_ctx, index)
-                        .map(|r| (r, false))
-                };
-                let resolution = if try_engine_first {
-                    type_engine
-                        .resolve(&ref_ctx, file_ctx, index)
-                        .map(|r| (r, true))
-                        .or_else(hook_resolve)
-                } else {
-                    hook_resolve()
-                };
+                // Resolution dispatches through `type_engine.resolve`. The
+                // engine routes chain-bearing refs through the unified
+                // chain walker (when a profile is registered), chain-less
+                // refs through the bare-name resolver, and falls back to
+                // the language hook's `resolve_ref` (the absorbed legacy
+                // resolver body) for everything the engine declines.
+                let _ = effective_lang;
+                let resolution = type_engine
+                    .resolve(&ref_ctx, file_ctx, index)
+                    .map(|r| (r, true));
 
                 if let Some((resolution, came_from_engine)) = resolution {
                     // R5 forward-inference cache write. Engine yields are
