@@ -10,8 +10,11 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod profile;
 pub mod resolve;
 pub(crate) mod type_checker;
+
+pub use profile::KOTLIN_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -103,6 +106,12 @@ impl LanguagePlugin for KotlinPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::KotlinChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::KOTLIN_PROFILE)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

@@ -9,8 +9,11 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod profile;
 pub mod resolve;
 pub(crate) mod type_checker;
+
+pub use profile::SCALA_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -98,6 +101,12 @@ impl LanguagePlugin for ScalaPlugin {
 
     fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
         Some(std::sync::Arc::new(type_checker::ScalaChecker))
+    }
+
+    fn profile(
+        &self,
+    ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
+        Some(&profile::SCALA_PROFILE)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
