@@ -510,7 +510,13 @@ fn test_infer_bcl_type_via_sdk_usings() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     // The inference picks the longest external namespace from the file's imports.
     // The specific namespace doesn't matter — what matters is that it IS external.
     assert!(ns.is_some(), "Guid should be inferred as external");
@@ -534,7 +540,13 @@ fn test_infer_cancellation_token_via_sdk_usings() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "CancellationToken should be inferred as external");
 }
 
@@ -556,7 +568,13 @@ fn test_infer_linq_via_sdk_usings() {
     file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "Select should be inferred as external");
 }
 
@@ -581,7 +599,13 @@ fn test_infer_ilogger_via_sdk_usings() {
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
     file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx_type, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx_type, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "ILogger should be inferred as external");
     assert!(
         ns.as_ref().unwrap().starts_with("Microsoft."),
@@ -594,7 +618,13 @@ fn test_infer_ilogger_via_sdk_usings() {
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
     file_package_id: None,
     };
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx_call, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx_call, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(ns.is_some(), "LogInformation should be inferred as external");
 }
 
@@ -653,7 +683,13 @@ fn test_infer_no_false_positive_on_project_ref() {
     // This is actually correct: we can't tell if MyService is project or external,
     // but it IS covered by the file's imports which include external namespaces.
     // The inference is "best guess" — it picks the most specific external using.
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     // With global usings injected, there are external namespaces present,
     // so inference will pick one. This is expected — the purpose is to
     // separate "has external usings" from "no usings at all".
@@ -695,7 +731,13 @@ fn test_infer_without_project_context_fallback() {
     };
 
     // No ProjectContext, no external usings → should return None
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx, &file_ctx, None, &empty_lookup,
+        )
+    };
     assert!(ns.is_none(), "Without external usings, should not infer external");
 }
 
@@ -745,7 +787,13 @@ fn workspace_project_namespace_not_classified_as_external() {
         file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(
         ns.is_none(),
         "sibling workspace project namespace must not be external, got {ns:?}"
@@ -799,7 +847,13 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
         file_package_id: None,
     };
 
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    let ns = {
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
+        crate::languages::csharp::hooks::CSharpHooks.classify_external(
+            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+        )
+    };
     assert!(
         ns.is_none(),
         "workspace guard must beat NuGet root-prefix match, got {ns:?}"

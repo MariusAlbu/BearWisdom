@@ -279,79 +279,6 @@ impl LanguageResolver for CSharpResolver {
         None
     }
 
-    fn infer_external_namespace(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
-    ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        // Import refs (e.g., `using System.Linq;`) — classify the using directive
-        // itself as external if the namespace is known-external.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            // Sibling workspace project — never external. The target namespace
-            // (or its root segment) matches another project's declared_name.
-            if let Some(ctx) = project_ctx {
-                if matches_workspace_project(ctx, target) {
-                    return None;
-                }
-            }
-            let external = match project_ctx {
-                Some(ctx) => is_manifest_external_namespace(ctx, target),
-                None => predicates::is_external_namespace_fallback(target),
-            };
-            if external {
-                return Some(target.clone());
-            }
-            return None;
-        }
-
-        // Check file's using directives (includes global usings from ProjectContext)
-        // for external namespaces. Return the most specific match.
-        let mut best: Option<&str> = None;
-
-        for import in &file_ctx.imports {
-            if !import.is_wildcard {
-                continue;
-            }
-            let ns = import.module_path.as_deref().unwrap_or("");
-            if ns.is_empty() {
-                continue;
-            }
-
-            // Sibling workspace projects are not external — skip before
-            // the NuGet/system classifier to avoid root-prefix false
-            // positives (e.g. `Shared.*` namespace vs. a `Shared.*`
-            // NuGet package on the same prefix).
-            if let Some(ctx) = project_ctx {
-                if matches_workspace_project(ctx, ns) {
-                    continue;
-                }
-            }
-
-            let external = match project_ctx {
-                Some(ctx) => is_manifest_external_namespace(ctx, ns),
-                None => predicates::is_external_namespace_fallback(ns),
-            };
-
-            if external {
-                if best.is_none() || ns.len() > best.unwrap().len() {
-                    best = Some(ns);
-                }
-            }
-        }
-
-        if best.is_some() {
-            return best.map(|s| s.to_string());
-        }
-
-        // .NET built-ins classify via the engine's keywords() set
-        // populated from csharp/keywords.rs; dotnet_stdlib + nuget walkers
-        // emit real symbols for the BCL + declared deps.
-        None
-    }
-
     fn is_visible(
         &self,
         file_ctx: &FileContext,
@@ -836,7 +763,7 @@ pub(crate) fn detect_refit_attribute_emission(
 /// dot-walking from right to left. (`workspace_package_id` on ProjectContext
 /// walks `/` separators for TypeScript-style deep imports — .NET namespaces
 /// use `.` so we reimplement the walk locally.)
-fn matches_workspace_project(ctx: &ProjectContext, namespace: &str) -> bool {
+pub(super) fn matches_workspace_project(ctx: &ProjectContext, namespace: &str) -> bool {
     if ctx.workspace_pkg_by_declared_name.contains_key(namespace) {
         return true;
     }
@@ -855,7 +782,7 @@ fn matches_workspace_project(ctx: &ProjectContext, namespace: &str) -> bool {
 /// Always-external base prefixes (`System`, `Microsoft`) are checked first.
 /// NuGet package names are then checked as namespace prefixes and via root-segment
 /// matching (e.g., a "Newtonsoft.Json" dep makes any "Newtonsoft.*" namespace external).
-fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> bool {
+pub(super) fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> bool {
     let root = ns.split('.').next().unwrap_or(ns);
     if matches!(root, "System" | "Microsoft") {
         return true;
