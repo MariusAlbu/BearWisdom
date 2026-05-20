@@ -319,6 +319,129 @@ fn imports_edge_kind_short_circuits() {
 }
 
 #[test]
+fn this_prefix_strips_to_enclosing_method_typescript() {
+    use crate::type_checker::profile::language_profile::{
+        DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    };
+    static TS_LIKE_PROFILE: LanguageProfile = LanguageProfile {
+        id: "typescript",
+        qname_separator: ".",
+        self_keywords: &["this"],
+        supertype_discovery: SupertypeDiscovery::Both,
+        members_can_be_external: true,
+        dispatch_axis: DispatchAxis::Receiver,
+        has_generics: true,
+        has_sum_types: true,
+        look_through_optional: true,
+        literal_narrowing: true,
+        async_wrappers: &[],
+        iterator_method: None,
+        primitive_mapping: &[],
+        kind_compatible_table: PERMISSIVE_KIND_TABLE,
+        engine_primary: true,
+        constructor_patterns: &[],
+        class_builder_specs: &[],
+        decorator_syntax: None,
+        doc_comment_kinds: &[],
+        visibility_keywords: &[],
+    };
+
+    let mut lookup = StubLookup::default();
+    lookup.push_sym(
+        88,
+        "buildUserRO",
+        "UserService.buildUserRO",
+        "method",
+        "src/user/user.service.ts",
+        BucketTarget::Qname,
+    );
+
+    let source_sym = mk_source_symbol("UserService.findOne");
+    let extracted = mk_ref("this.buildUserRO", EdgeKind::Calls);
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: vec![
+            "UserService.findOne".to_string(),
+            "UserService".to_string(),
+        ],
+        file_package_id: None,
+    };
+    let file_ctx = FileContext {
+        file_path: "src/user/user.service.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    };
+
+    let res = resolve_bare(&ref_ctx, &file_ctx, &lookup, &TS_LIKE_PROFILE)
+        .expect("this. prefix strips to bare member lookup");
+    assert_eq!(res.target_symbol_id, 88);
+    assert_eq!(res.strategy, "engine_bare_scope");
+}
+
+#[test]
+fn self_prefix_strips_for_python() {
+    use crate::type_checker::profile::language_profile::{
+        DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    };
+    static PY_LIKE_PROFILE: LanguageProfile = LanguageProfile {
+        id: "python",
+        qname_separator: ".",
+        self_keywords: &["self", "cls"],
+        supertype_discovery: SupertypeDiscovery::Explicit,
+        members_can_be_external: false,
+        dispatch_axis: DispatchAxis::Receiver,
+        has_generics: true,
+        has_sum_types: false,
+        look_through_optional: true,
+        literal_narrowing: false,
+        async_wrappers: &[],
+        iterator_method: None,
+        primitive_mapping: &[],
+        kind_compatible_table: PERMISSIVE_KIND_TABLE,
+        engine_primary: true,
+        constructor_patterns: &[],
+        class_builder_specs: &[],
+        decorator_syntax: None,
+        doc_comment_kinds: &[],
+        visibility_keywords: &[],
+    };
+
+    let mut lookup = StubLookup::default();
+    lookup.push_sym(
+        9001,
+        "validate",
+        "UserService.validate",
+        "method",
+        "src/user_service.py",
+        BucketTarget::Qname,
+    );
+
+    let source_sym = mk_source_symbol("UserService.create");
+    let extracted = mk_ref("self.validate", EdgeKind::Calls);
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: vec![
+            "UserService.create".to_string(),
+            "UserService".to_string(),
+        ],
+        file_package_id: None,
+    };
+    let file_ctx = FileContext {
+        file_path: "src/user_service.py".to_string(),
+        language: "python".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    };
+
+    let res = resolve_bare(&ref_ctx, &file_ctx, &lookup, &PY_LIKE_PROFILE)
+        .expect("self. prefix strips for Python");
+    assert_eq!(res.target_symbol_id, 9001);
+}
+
+#[test]
 fn miss_returns_none_so_legacy_fallback_runs() {
     let lookup = StubLookup::default();
     let source_sym = mk_source_symbol("AppShell.render");

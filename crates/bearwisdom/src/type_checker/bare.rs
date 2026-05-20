@@ -39,12 +39,19 @@ pub fn resolve_bare(
     lookup: &dyn SymbolLookup,
     profile: &LanguageProfile,
 ) -> Option<Resolution> {
-    let target = ref_ctx.extracted_ref.target_name.as_str();
+    let raw_target = ref_ctx.extracted_ref.target_name.as_str();
     let edge_kind = ref_ctx.extracted_ref.kind;
 
     if edge_kind == EdgeKind::Imports {
         return None;
     }
+
+    // Strip a leading receiver keyword (`this.X`, `self.X`, `base.X`, etc.)
+    // so the scope-chain walk lands the lookup on the enclosing type's
+    // member. The profile lists the keywords this language treats as the
+    // self-receiver; languages without any leave self_keywords empty and
+    // the input passes through unchanged.
+    let target = strip_self_prefix(raw_target, profile.self_keywords);
 
     // 1. Scope-chain walk: innermost → outermost.
     for scope in &ref_ctx.scope_chain {
@@ -127,6 +134,21 @@ fn kind_ok(profile: &LanguageProfile, edge: EdgeKind, sym_kind: &str) -> bool {
         return true;
     };
     KindCompatibility::check(profile.kind_compatible_table, edge, parsed)
+}
+
+/// Strip a `{keyword}.` prefix matching any entry in `self_keywords`. When
+/// the target is exactly a self keyword (no trailing member), pass it
+/// through unchanged so a downstream rule can decide how to handle the
+/// bare receiver.
+fn strip_self_prefix<'a>(target: &'a str, self_keywords: &[&'static str]) -> &'a str {
+    for kw in self_keywords {
+        if let Some(rest) = target.strip_prefix(kw) {
+            if let Some(stripped) = rest.strip_prefix('.') {
+                return stripped;
+            }
+        }
+    }
+    target
 }
 
 #[cfg(test)]
