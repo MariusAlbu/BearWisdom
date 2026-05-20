@@ -14,10 +14,12 @@ pub mod extract;
 
 mod chain;
 mod predicates;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
+pub use hooks::ADA_HOOKS;
 pub use profile::ADA_PROFILE;
 pub use resolve::AdaResolver;
 
@@ -93,5 +95,12 @@ impl LanguagePlugin for AdaPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ADA_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::ADA_HOOKS)
     }
 }
