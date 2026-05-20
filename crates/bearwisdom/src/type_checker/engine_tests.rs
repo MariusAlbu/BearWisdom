@@ -341,7 +341,8 @@ fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
 
     let resolution = engine.resolve(&rc, &fc, &lookup).expect("engine resolves User");
     assert_eq!(resolution.target_symbol_id, user_id);
-    assert_eq!(resolution.resolved_yield_type.as_deref(), Some("User"));
+    let user_ty = engine.arena().class("User");
+    assert_eq!(resolution.resolved_yield_type, Some(user_ty));
     assert_eq!(resolution.strategy, "engine_chain_root");
 }
 

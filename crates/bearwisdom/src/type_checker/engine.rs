@@ -21,7 +21,7 @@ use crate::type_checker::core::inference::infer_expression_type;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::{SymbolIdMap, SymbolTypeMap};
-use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::ParsedFile;
@@ -287,31 +287,15 @@ impl<'a> Engine<'a> {
     }
 }
 
-/// Convert a TypeId-native ChainResolution into the legacy Resolution
-/// shape the resolver loop still consumes. The yield type drops from
-/// `TypeId` to `Option<String>` (the underlying qname) at the boundary.
-fn adapt_resolution(cr: ChainResolution, arena: &TypeArena) -> Resolution {
-    let yield_name = match arena.get(cr.resolved_yield_type) {
-        Type::Class(q) => Some(q),
-        Type::Apply { base, .. } => match arena.get(base) {
-            Type::Class(q) => Some(q),
-            _ => None,
-        },
-        Type::Optional(inner) => match arena.get(inner) {
-            Type::Class(q) => Some(q),
-            _ => None,
-        },
-        Type::AsyncWrapper(inner) => match arena.get(inner) {
-            Type::Class(q) => Some(q),
-            _ => None,
-        },
-        _ => None,
-    };
+/// Build a Resolution from a TypeId-native ChainResolution. With Resolution
+/// itself now TypeId-keyed, this is a thin field-rename — no string
+/// conversion at the engine boundary.
+fn adapt_resolution(cr: ChainResolution, _arena: &TypeArena) -> Resolution {
     Resolution {
         target_symbol_id: cr.target_symbol_id,
         confidence: 1.0,
         strategy: cr.strategy,
-        resolved_yield_type: yield_name,
+        resolved_yield_type: Some(cr.resolved_yield_type),
         flow_emit: None,
     }
 }

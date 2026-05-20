@@ -16,7 +16,7 @@
 
 use super::predicates;
 use crate::indexer::resolve::engine::{
-    ChainMiss, FileContext, RefContext, Resolution, SymbolLookup,
+    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::chain::simple_yield_type;
 use crate::type_checker::TypeChecker;
@@ -151,7 +151,7 @@ impl TypeChecker for CChecker {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "c_chain_resolution",
-                    resolved_yield_type: simple_yield_type(sym, lookup).map(|t| normalize_type(&t)),
+                    resolved_yield_type: intern_yield_type(simple_yield_type(sym, lookup).map(|t| normalize_type(&t)), lookup),
                     flow_emit: None,
                 });
             }
@@ -176,14 +176,14 @@ impl TypeChecker for CChecker {
                 target_symbol_id: matches[0].id,
                 confidence: 1.0,
                 strategy: "c_chain_resolution_unique",
-                resolved_yield_type: simple_yield_type(&matches[0], lookup).map(|t| normalize_type(&t)),
+                resolved_yield_type: intern_yield_type(simple_yield_type(&matches[0], lookup).map(|t| normalize_type(&t)), lookup),
                 flow_emit: None,
             }),
             _ => Some(Resolution {
                 target_symbol_id: matches[0].id,
                 confidence: 0.95,
                 strategy: "c_chain_resolution",
-                resolved_yield_type: simple_yield_type(&matches[0], lookup).map(|t| normalize_type(&t)),
+                resolved_yield_type: intern_yield_type(simple_yield_type(&matches[0], lookup).map(|t| normalize_type(&t)), lookup),
                 flow_emit: None,
             }),
         }

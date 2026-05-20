@@ -474,25 +474,30 @@ fn resolve_iteration_body(
                     // they can — letting both feed the cache keeps yield
                     // inference uniform across resolution sources.
                     if let Some(lhs_idx) = pf.flow.flow_binding_lhs.get(&ref_idx).copied() {
-                        let yield_type = resolution.resolved_yield_type.clone().or_else(|| {
-                            let target_id = resolution.target_symbol_id;
-                            index
-                                .by_name(&r.target_name)
-                                .iter()
-                                .find(|s| s.id == target_id)
-                                .and_then(|s| {
-                                    index
-                                        .return_type_str(&s.qualified_name)
-                                        .or_else(|| {
-                                            index.field_type_str(&s.qualified_name)
-                                        })
-                                })
-                        });
-                        if let Some(yield_type) = yield_type {
+                        let yield_str = resolution
+                            .resolved_yield_type
+                            .and_then(|id| {
+                                index.type_arena().map(|arena| arena.format_type(id))
+                            })
+                            .or_else(|| {
+                                let target_id = resolution.target_symbol_id;
+                                index
+                                    .by_name(&r.target_name)
+                                    .iter()
+                                    .find(|s| s.id == target_id)
+                                    .and_then(|s| {
+                                        index
+                                            .return_type_str(&s.qualified_name)
+                                            .or_else(|| {
+                                                index.field_type_str(&s.qualified_name)
+                                            })
+                                    })
+                            });
+                        if let Some(yield_str) = yield_str {
                             if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
                                 index.record_local_type(
                                     lhs_sym.name.clone(),
-                                    yield_type,
+                                    yield_str,
                                 );
                             }
                         }

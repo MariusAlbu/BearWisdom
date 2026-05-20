@@ -7,8 +7,11 @@
 // ResolutionEngine registry all stay in engine.rs.
 // =============================================================================
 
+use crate::type_checker::core::types::TypeId;
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use std::sync::Arc;
+
+use super::SymbolLookup;
 
 // ---------------------------------------------------------------------------
 // ChainMiss — chain walker failure context for R3 lazy reload
@@ -90,11 +93,12 @@ pub struct Resolution {
     /// Which strategy produced this resolution (for diagnostics).
     pub strategy: &'static str,
     /// For chain refs and call refs: the type the resolved target *yields*
-    /// (return type for methods, declared type for fields/variables). `None`
-    /// when not applicable. Consumed by the resolver loop to populate the
-    /// per-file local-type cache for forward flow inference — see
-    /// `LocalTypeCache` and `SymbolLookup::record_local_type`.
-    pub resolved_yield_type: Option<String>,
+    /// (return type for methods, declared type for fields/variables) as a
+    /// canonical TypeId in the workspace arena. `None` when not applicable
+    /// or when the producer can't intern. Consumed by the resolver loop
+    /// to populate the per-file local-type cache for forward flow
+    /// inference — see `LocalTypeCache` and `SymbolLookup::record_local_type`.
+    pub resolved_yield_type: Option<TypeId>,
     /// Optionally emitted when the resolved ref's shape matches a cross-tier
     /// flow-edge pattern. Accumulated by the resolve loop and bulk-written to
     /// `flow_edges` after the main edge transaction commits.
@@ -126,11 +130,24 @@ pub struct SymbolInfo {
     pub signature: Option<String>,
 }
 
+/// Intern a yield-type qname into the lookup's TypeArena. Returns `None`
+/// when either the input qname or the arena is absent. Provides the
+/// migration path for legacy `LanguageResolver`/`TypeChecker` impls that
+/// still produce yield types as strings — they wrap their string output
+/// in this helper to populate `Resolution::resolved_yield_type` with a
+/// canonical TypeId until they're rewritten to produce TypeId directly.
+pub fn intern_yield_type(
+    qname: Option<String>,
+    lookup: &dyn SymbolLookup,
+) -> Option<TypeId> {
+    let qname = qname?;
+    let arena = lookup.type_arena()?;
+    Some(arena.class(&qname))
+}
+
 // ---------------------------------------------------------------------------
 // TypeInfo — unified per-symbol type metadata
 // ---------------------------------------------------------------------------
-
-use crate::type_checker::core::types::TypeId;
 
 /// All type metadata for a single symbol, stored in a single map keyed by
 /// the symbol's qualified name (or simple name for generic_params).

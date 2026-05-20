@@ -8,7 +8,7 @@
 
 use super::predicates;
 use crate::indexer::resolve::engine::{
-    ChainMiss, FileContext, RefContext, Resolution, SymbolLookup,
+    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::chain::simple_yield_type;
 use crate::type_checker::TypeChecker;
@@ -143,7 +143,7 @@ impl TypeChecker for PythonChecker {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "python_chain_resolution",
-                    resolved_yield_type: simple_yield_type(sym, lookup),
+                    resolved_yield_type: intern_yield_type(simple_yield_type(sym, lookup), lookup),
                     flow_emit: None,
                 });
             }
@@ -155,7 +155,7 @@ impl TypeChecker for PythonChecker {
                     target_symbol_id: sym.id,
                     confidence: 0.95,
                     strategy: "python_chain_resolution",
-                    resolved_yield_type: simple_yield_type(sym, lookup),
+                    resolved_yield_type: intern_yield_type(simple_yield_type(sym, lookup), lookup),
                     flow_emit: None,
                 });
             }

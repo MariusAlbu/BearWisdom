@@ -29,12 +29,12 @@ fn ref_with_args(kind: EdgeKind, target: &str, args: Vec<CallArg>) -> ExtractedR
     r
 }
 
-fn resolution_with_yield_name(name: &str) -> Resolution {
+fn resolution_with_yield_name(name: &str, arena: &TypeArena) -> Resolution {
     Resolution {
         target_symbol_id: 1,
         confidence: 1.0,
         strategy: "test",
-        resolved_yield_type: Some(name.to_string()),
+        resolved_yield_type: Some(arena.class(name)),
         flow_emit: None,
     }
 }
@@ -52,11 +52,11 @@ fn resolution_without_yield() -> Resolution {
 #[test]
 fn infer_returns_resolution_yield_type_when_present() {
     let mut arena = TypeArena::new();
-    let res = resolution_with_yield_name("User");
+    let res = resolution_with_yield_name("User", &arena);
     let r = bare_ref(EdgeKind::Calls, "doStuff");
 
     let out = infer_expression_type(&r, Some(&res), &mut arena, &DEFAULT_PROFILE)
-        .expect("yield interned");
+        .expect("yield passes through");
     let user = arena.class("User");
     assert_eq!(out, user);
 }

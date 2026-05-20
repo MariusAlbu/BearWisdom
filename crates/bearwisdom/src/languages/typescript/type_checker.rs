@@ -22,7 +22,8 @@
 
 use super::predicates;
 use crate::indexer::resolve::engine::{
-    ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo,
+    SymbolLookup,
 };
 use crate::type_checker::alias::expand_alias;
 use crate::type_checker::chain::external_type_qname;
@@ -474,7 +475,7 @@ impl TypeChecker for TypeScriptChecker {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "ts_chain_resolution",
-                    resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                    resolved_yield_type: intern_yield_type(ts_yield_type(sym, &last.type_args, lookup, &mut env), lookup),
                     flow_emit: None,
                 });
             }
@@ -487,7 +488,7 @@ impl TypeChecker for TypeScriptChecker {
                     target_symbol_id: sym.id,
                     confidence: 0.95,
                     strategy: "ts_chain_resolution",
-                    resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                    resolved_yield_type: intern_yield_type(ts_yield_type(sym, &last.type_args, lookup, &mut env), lookup),
                     flow_emit: None,
                 });
             }
@@ -518,7 +519,7 @@ impl TypeChecker for TypeScriptChecker {
                         target_symbol_id: sym.id,
                         confidence: 0.9,
                         strategy: "ts_chain_inheritance",
-                        resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                        resolved_yield_type: intern_yield_type(ts_yield_type(sym, &last.type_args, lookup, &mut env), lookup),
                         flow_emit: None,
                     });
                 }
@@ -529,7 +530,7 @@ impl TypeChecker for TypeScriptChecker {
                         target_symbol_id: sym.id,
                         confidence: 0.85,
                         strategy: "ts_chain_inheritance",
-                        resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                        resolved_yield_type: intern_yield_type(ts_yield_type(sym, &last.type_args, lookup, &mut env), lookup),
                         flow_emit: None,
                     });
                 }

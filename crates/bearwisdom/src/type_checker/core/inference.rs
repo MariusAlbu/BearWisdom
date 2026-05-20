@@ -35,15 +35,12 @@ pub fn infer_expression_type(
     arena: &TypeArena,
     profile: &LanguageProfile,
 ) -> Option<TypeId> {
-    // Legacy Resolution still carries the yield type as a string qname; the
-    // engine-side type graph is keyed by TypeId, so intern at the boundary.
-    // Phase 5 swaps Resolution.resolved_yield_type to Option<TypeId>; the
-    // conversion drops out then.
+    // Resolution.resolved_yield_type is now TypeId-native — engine produces
+    // the TypeId directly via the chain walker / bare-name resolver and the
+    // consumer reads it without re-interning.
     if let Some(res) = resolution {
-        if let Some(yield_name) = res.resolved_yield_type.as_deref() {
-            if !yield_name.is_empty() {
-                return Some(arena.class(yield_name));
-            }
+        if let Some(id) = res.resolved_yield_type {
+            return Some(id);
         }
     }
 

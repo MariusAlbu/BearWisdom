@@ -34,7 +34,8 @@ pub use index::{LocalTypeCache, SymbolIndex};
 pub use lookup::SymbolLookup;
 pub use registry::{LanguageResolver, ResolutionEngine};
 pub use types::{
-    ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, TypeInfo,
+    intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution,
+    SymbolInfo, TypeInfo,
 };
 pub use util::build_scope_chain;
 

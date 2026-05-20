@@ -17,7 +17,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo,
+    SymbolLookup,
 };
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
@@ -322,7 +323,7 @@ pub fn resolve_via_chain(
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: chain_strategy(strategy),
-                resolved_yield_type: yield_type,
+                resolved_yield_type: intern_yield_type(yield_type, lookup),
                 flow_emit: None,
             });
         }
@@ -366,7 +367,7 @@ pub fn resolve_via_chain(
                 target_symbol_id: matches[0].id,
                 confidence: 1.0,
                 strategy: chain_strategy_unique(strategy),
-                resolved_yield_type: yield_type,
+                resolved_yield_type: intern_yield_type(yield_type, lookup),
                 flow_emit: None,
             });
         }

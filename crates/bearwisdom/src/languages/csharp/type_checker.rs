@@ -10,7 +10,8 @@
 
 use super::predicates;
 use crate::indexer::resolve::engine::{
-    ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo,
+    SymbolLookup,
 };
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::type_checker::TypeChecker;
@@ -178,7 +179,7 @@ impl TypeChecker for CSharpChecker {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "csharp_chain_resolution",
-                    resolved_yield_type: csharp_yield_type(sym, &last.type_args, lookup, &mut env),
+                    resolved_yield_type: intern_yield_type(csharp_yield_type(sym, &last.type_args, lookup, &mut env), lookup),
                     flow_emit: None,
                 });
             }
@@ -194,8 +195,9 @@ impl TypeChecker for CSharpChecker {
                                 target_symbol_id: sym.id,
                                 confidence: 0.95,
                                 strategy: "csharp_chain_resolution",
-                                resolved_yield_type: csharp_yield_type(
-                                    sym, &last.type_args, lookup, &mut env,
+                                resolved_yield_type: intern_yield_type(
+                                    csharp_yield_type(sym, &last.type_args, lookup, &mut env),
+                                    lookup,
                                 ),
                                 flow_emit: None,
                             });
@@ -211,7 +213,7 @@ impl TypeChecker for CSharpChecker {
                     target_symbol_id: sym.id,
                     confidence: 0.90,
                     strategy: "csharp_chain_resolution",
-                    resolved_yield_type: csharp_yield_type(sym, &last.type_args, lookup, &mut env),
+                    resolved_yield_type: intern_yield_type(csharp_yield_type(sym, &last.type_args, lookup, &mut env), lookup),
                     flow_emit: None,
                 });
             }

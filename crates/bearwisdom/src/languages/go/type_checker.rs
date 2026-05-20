@@ -8,7 +8,8 @@
 
 use super::predicates;
 use crate::indexer::resolve::engine::{
-    ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo,
+    SymbolLookup,
 };
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::type_checker::TypeChecker;
@@ -171,7 +172,7 @@ impl TypeChecker for GoChecker {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "go_chain_resolution",
-                    resolved_yield_type: generic_yield_type(sym, &last.type_args, lookup, &mut env),
+                    resolved_yield_type: intern_yield_type(generic_yield_type(sym, &last.type_args, lookup, &mut env), lookup),
                     flow_emit: None,
                 });
             }
@@ -183,7 +184,7 @@ impl TypeChecker for GoChecker {
                     target_symbol_id: sym.id,
                     confidence: 0.95,
                     strategy: "go_chain_resolution",
-                    resolved_yield_type: generic_yield_type(sym, &last.type_args, lookup, &mut env),
+                    resolved_yield_type: intern_yield_type(generic_yield_type(sym, &last.type_args, lookup, &mut env), lookup),
                     flow_emit: None,
                 });
             }
