@@ -34,17 +34,25 @@ impl LanguageEngineHooks for AngularHooks {
         ) {
             return Some(ns);
         }
-        // Angular-template-only fallback: PascalCase component-selector
-        // synthesized from a kebab-case HTML tag classifies against an
-        // imported bare-specifier (`@org/foo` or `angular`-named) package.
+        // Angular-template fallback: a template ref produced by the
+        // template extractor (component tag or attribute directive)
+        // classifies against an imported bare-specifier package when no
+        // project-level @Component/@Directive matched. Both shapes count:
+        //   * PascalCase component refs derived from kebab tags
+        //     (`<app-card>` -> `AppCard`).
+        //   * camelCase attribute-directive refs (`cButton`, `routerLink`,
+        //     `ngFor`) — the @coreui/angular and @angular/router worlds
+        //     use these heavily and they were previously dropped because
+        //     the first-char-uppercase guard skipped them.
         let target = &ref_ctx.extracted_ref.target_name;
-        let is_component_selector_ref = ref_ctx.extracted_ref.kind == EdgeKind::Calls
-            && target
-                .chars()
-                .next()
-                .map_or(false, |c| c.is_ascii_uppercase())
+        let first_ch = target.chars().next();
+        let starts_alpha = first_ch.map_or(false, |c| c.is_ascii_alphabetic());
+        let has_upper = target.chars().any(|c| c.is_ascii_uppercase());
+        let is_template_selector_ref = ref_ctx.extracted_ref.kind == EdgeKind::Calls
+            && starts_alpha
+            && (first_ch.map_or(false, |c| c.is_ascii_uppercase()) || has_upper)
             && !target.contains('.');
-        if !is_component_selector_ref {
+        if !is_template_selector_ref {
             return None;
         }
         let mut fallback: Option<String> = None;
@@ -81,24 +89,20 @@ impl LanguageEngineHooks for AngularHooks {
     ) -> Option<Resolution> {
         if ref_ctx.extracted_ref.kind == EdgeKind::Calls {
             let target = &ref_ctx.extracted_ref.target_name;
-            // Derive the raw kebab selector from the PascalCase target_name
-            // produced by the template extractor (e.g. "AppAvatar" →
-            // "app-avatar"). Matches @Component({selector:'...'}) entries
-            // collected from the workspace's TS files.
-            let raw_selector = pascal_to_kebab(target);
-            if let Some(class_qname) = lookup.angular_selector(&raw_selector) {
-                if let Some(sym) = lookup.by_qualified_name(class_qname) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "angular_selector_map",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-                let short = class_qname.rsplit('.').next().unwrap_or(class_qname);
-                for sym in lookup.by_name(short) {
-                    if sym.qualified_name == class_qname {
+            // The angular_selector map is keyed on the literal string from
+            // @Component({selector:'...'}) / @Directive({selector:'...'}).
+            // Two shapes need to match:
+            //   * kebab-case component tags — `<app-user-card>` becomes
+            //     target_name="AppUserCard" in the extractor; the map key
+            //     is "app-user-card". Try the kebab-derived form.
+            //   * camelCase attribute directives — `[appHighlight]` keeps
+            //     target_name="appHighlight"; the map key is "appHighlight"
+            //     (or its bracketed form, but the directive registry
+            //     unbrackets it). Try the literal target first.
+            let kebab = pascal_to_kebab(target);
+            for candidate in [target.as_str(), kebab.as_str()] {
+                if let Some(class_qname) = lookup.angular_selector(candidate) {
+                    if let Some(sym) = lookup.by_qualified_name(class_qname) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -107,6 +111,18 @@ impl LanguageEngineHooks for AngularHooks {
                             flow_emit: None,
                         });
                     }
+                    let short = class_qname.rsplit('.').next().unwrap_or(class_qname);
+                    for sym in lookup.by_name(short) {
+                        if sym.qualified_name == class_qname {
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 1.0,
+                                strategy: "angular_selector_map",
+                                resolved_yield_type: None,
+                                flow_emit: None,
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -114,7 +130,7 @@ impl LanguageEngineHooks for AngularHooks {
     }
 }
 
-/// "AppAvatar" → "app-avatar". Splits on every uppercase boundary and
+/// "AppAvatar" -> "app-avatar". Splits on every uppercase boundary and
 /// lowercases segments. Single-segment inputs (already lowercase or
 /// camelCase with no uppercase boundary) return unchanged.
 fn pascal_to_kebab(name: &str) -> String {

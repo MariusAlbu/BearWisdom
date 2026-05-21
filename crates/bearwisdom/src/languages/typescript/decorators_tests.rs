@@ -147,27 +147,28 @@ export class UserCardComponent {}
 }
 
 #[test]
-fn component_attribute_selector() {
+fn directive_attribute_selector_normalized() {
     let src = r#"
 @Directive({
     selector: '[appHighlight]',
 })
 export class HighlightDirective {}
 "#;
-    // `@Directive` — not `@Component`, so no selector emitted.
+    // @Directive contributes to the selector map just like @Component;
+    // brackets are stripped so the angular_selectors lookup keys match
+    // the attribute-binding form emitted by the template extractor.
     let selectors = selectors_from_first_class(src);
-    assert!(selectors.is_empty(), "Directive should not match Component selector extraction");
+    assert_eq!(selectors, vec!["appHighlight"]);
 }
 
 #[test]
-fn component_at_component_only() {
-    // @Directive should NOT be picked up — only @Component.
+fn directive_bracketed_selector_captured() {
     let src = r#"
 @Directive({ selector: '[myDir]' })
 export class MyDirective {}
 "#;
     let selectors = selectors_from_first_class(src);
-    assert!(selectors.is_empty());
+    assert_eq!(selectors, vec!["myDir"]);
 }
 
 #[test]

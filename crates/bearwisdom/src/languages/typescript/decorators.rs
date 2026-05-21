@@ -228,7 +228,11 @@ fn try_extract_selector_from_decorator(dec: &Node, src: &[u8]) -> Option<Vec<Str
             "identifier" => node_text(func, src),
             _ => continue,
         };
-        if dec_name != "Component" {
+        // Both @Component and @Directive contribute to the Angular selector
+        // map. Skipping @Directive missed attribute directives like
+        // `@Directive({selector: '[appHighlight]'})` so `[appHighlight]`
+        // references in templates landed in unresolved_refs.
+        if dec_name != "Component" && dec_name != "Directive" {
             continue;
         }
         // Walk the arguments list for an object expression.

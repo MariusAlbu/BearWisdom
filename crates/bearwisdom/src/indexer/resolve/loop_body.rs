@@ -612,14 +612,6 @@ fn resolve_iteration_body(
                     if is_module_in_project(module_path, &module_to_files, index) {
                         continue;
                     }
-                    // Relative specifiers are project-local by definition;
-                    // when the target file isn't indexed (generated stub,
-                    // typo, missing source) the ref is unresolved, not
-                    // external. Skip and let the normal unresolved path
-                    // record it.
-                    if module_path.starts_with("./") || module_path.starts_with("../") {
-                        continue;
-                    }
                     return Some(format!("ext:{module_path}"));
                 }
                 None
