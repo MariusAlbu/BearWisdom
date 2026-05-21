@@ -445,6 +445,15 @@ fn incremental_rewrites_packages_when_manifest_added() {
     )
     .unwrap();
     fs::create_dir_all(dir.path().join("packages/web/src")).unwrap();
+    // packages/web needs its own manifest so it counts as a workspace
+    // member. Without it, the initial state has zero real members and
+    // the root manifest (a workspace controller, not a member) is no
+    // longer counted under it.
+    fs::write(
+        dir.path().join("packages/web/package.json"),
+        r#"{"name":"@org/web","version":"0.1.0"}"#,
+    )
+    .unwrap();
     fs::write(dir.path().join("packages/web/src/index.ts"), "export const x = 1;").unwrap();
 
     let mut db = Database::open_in_memory().unwrap();

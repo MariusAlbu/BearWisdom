@@ -52,12 +52,15 @@ fn ng_container_ignored_as_builtin() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn kebab_tag_module_stores_raw_selector() {
+fn kebab_tag_module_is_none() {
     let src = "<app-user-card></app-user-card>";
     let r = extract(src, "parent.component.html");
     let ref0 = r.refs.iter().find(|r| r.target_name == "AppUserCard").unwrap();
-    // Raw kebab stored for resolver lookup.
-    assert_eq!(ref0.module.as_deref(), Some("app-user-card"));
+    // The raw selector is re-derived from PascalCase target_name at
+    // resolve time. Leaving module None keeps the engine's generic
+    // module-based external classifier from mis-treating the kebab tag
+    // as an npm package.
+    assert_eq!(ref0.module, None);
 }
 
 #[test]
@@ -133,12 +136,14 @@ fn camel_case_attr_directive_emitted() {
 }
 
 #[test]
-fn attribute_directive_module_stores_selector() {
+fn attribute_directive_module_is_none() {
     let src = r#"<div [appHighlight]="color"></div>"#;
     let r = extract(src, "parent.component.html");
     let ref0 = r.refs.iter().find(|r| r.target_name == "appHighlight");
     assert!(ref0.is_some(), "expected appHighlight ref");
-    assert_eq!(ref0.unwrap().module.as_deref(), Some("appHighlight"));
+    // The selector lives in target_name; module stays None so the engine
+    // doesn't classify the ref against a non-existent module path.
+    assert_eq!(ref0.unwrap().module, None);
 }
 
 // ---------------------------------------------------------------------------

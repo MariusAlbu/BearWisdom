@@ -612,6 +612,14 @@ fn resolve_iteration_body(
                     if is_module_in_project(module_path, &module_to_files, index) {
                         continue;
                     }
+                    // Relative specifiers are project-local by definition;
+                    // when the target file isn't indexed (generated stub,
+                    // typo, missing source) the ref is unresolved, not
+                    // external. Skip and let the normal unresolved path
+                    // record it.
+                    if module_path.starts_with("./") || module_path.starts_with("../") {
+                        continue;
+                    }
                     return Some(format!("ext:{module_path}"));
                 }
                 None
@@ -751,13 +759,36 @@ fn resolve_iteration_body(
                                 .iter()
                                 .any(|s| s.file_path.starts_with("ext:"));
                             if any_external {
+                                buf.externals.push((
+                                    source_id,
+                                    r.target_name.clone(),
+                                    r.kind.as_str(),
+                                    r.line,
+                                    format!("ext:{probe}"),
+                                    pf.package_id,
+                                ));
                                 local_stats.external += 1;
                                 continue;
                             }
                         }
-                        // Uninstalled / unwalked third-party dep. The
-                        // import is real, the source just isn't on disk.
-                        local_stats.external += 1;
+                        // Import we can't trace — write as unresolved so
+                        // the ref stays visible to investigation queries
+                        // rather than silently dropping it on the floor.
+                        let from_snippet = pf
+                            .symbol_from_snippet
+                            .get(r.source_symbol_index)
+                            .copied()
+                            .unwrap_or(false);
+                        buf.unresolved.push((
+                            source_id,
+                            r.target_name.clone(),
+                            r.kind.as_str(),
+                            r.line,
+                            r.module.as_deref().map(|s| s.to_string()),
+                            pf.package_id,
+                            from_snippet,
+                        ));
+                        local_stats.unresolved += 1;
                         continue;
                     }
                     let module_value = r.module.as_deref().map(|s| s.to_string());

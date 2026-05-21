@@ -141,9 +141,11 @@ impl crate::ecosystem::manifest::ManifestReader for ModuleBazelManifest {
 
     fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
         let mut data = crate::ecosystem::manifest::ManifestData::default();
+        let mut manifest_present = false;
 
         let module_bazel = project_root.join("MODULE.bazel");
         if module_bazel.is_file() {
+            manifest_present = true;
             if let Ok(content) = std::fs::read_to_string(&module_bazel) {
                 for dep in extract_bzlmod_deps(&content) {
                     data.dependencies.insert(dep);
@@ -154,6 +156,7 @@ impl crate::ecosystem::manifest::ManifestReader for ModuleBazelManifest {
         for ws in ["WORKSPACE", "WORKSPACE.bazel"] {
             let path = project_root.join(ws);
             if path.is_file() {
+                manifest_present = true;
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     for dep in extract_workspace_deps(&content) {
                         data.dependencies.insert(dep);
@@ -162,7 +165,7 @@ impl crate::ecosystem::manifest::ManifestReader for ModuleBazelManifest {
             }
         }
 
-        if data.dependencies.is_empty() { None } else { Some(data) }
+        if manifest_present { Some(data) } else { None }
     }
 }
 

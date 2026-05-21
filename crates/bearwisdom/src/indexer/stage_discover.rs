@@ -248,7 +248,17 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
     // 2. Always run a recursive manifest scan. Picks up sibling ecosystems
     //    that workspace manifests never name (Dart subprojects, iOS, etc.)
     //    plus filling in when no workspace system is detected at all.
+    //
+    //    When a workspace was detected in step 1, skip the root manifest:
+    //    the root `package.json` of an npm/pnpm/yarn workspace is the
+    //    workspace controller (declares `"workspaces": [...]`), not a
+    //    member package. Including it would inflate the package table
+    //    with a synthetic "monorepo" sibling that no consumer imports.
+    let in_workspace = workspace_kind.is_some();
     for pkg in scan_all_manifests(project_root) {
+        if in_workspace && (pkg.path.is_empty() || pkg.path == ".") {
+            continue;
+        }
         let key = (pkg.path.clone(), pkg.kind.clone().unwrap_or_default());
         if seen.insert(key) { packages.push(pkg); }
     }

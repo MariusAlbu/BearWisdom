@@ -114,25 +114,19 @@ fn collect_component_refs(
                         tag.clone()
                     };
 
-                    // For kebab-case tags store the raw tag in `module` so the
-                    // `AngularResolver` can look it up in the project-wide selector
-                    // map built from `@Component({selector:'...'})` metadata.
-                    // When the resolver finds a match it replaces `target_name`
-                    // with the real class qname. When no match is found the existing
-                    // `kebab_to_pascal` fallback in `target_name` is still used.
-                    let raw_selector = if tag.contains('-') || !tag.chars().next().map_or(false, |c| c.is_uppercase()) {
-                        Some(tag.clone())
-                    } else {
-                        None
-                    };
-
+                    // `module` is reserved for resolved import paths (see
+                    // ExtractedRef docs). The resolver re-derives the raw
+                    // kebab selector from the PascalCase target_name at
+                    // lookup time, so leaving it None here keeps the
+                    // engine's generic module-based external classifier
+                    // from mis-treating "app-avatar" as an npm package.
                     refs.push(ExtractedRef {
                         source_symbol_index: host_index,
                         target_name: normalized,
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
                         col: 0,
-                        module: raw_selector,
+                        module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
@@ -196,12 +190,11 @@ fn collect_attribute_directive_refs(
             if let Some(selector) = normalize_attribute_as_directive(raw_attr) {
                 refs.push(ExtractedRef {
                     source_symbol_index: host_index,
-                    target_name: selector.clone(),
+                    target_name: selector,
                     kind: EdgeKind::Calls,
                     line: attr.start_position().row as u32,
                     col: 0,
-                    // Raw selector stored in `module` for resolver lookup.
-                    module: Some(selector),
+                    module: None,
                     chain: None,
                     byte_offset: attr.start_byte() as u32,
                     namespace_segments: Vec::new(),

@@ -539,7 +539,11 @@ pub fn full_index(
     // declare axios?" answer without re-reading every manifest. One row per
     // (package_id, ecosystem, dep_name). The table is dropped + recreated
     // by the full-reindex path above, so we can blindly insert.
-    if !written_packages.is_empty() {
+    //
+    // Only meaningful when more than one package is present — single-project
+    // layouts have no cross-package question to ask, so we skip the writes
+    // and keep the table empty.
+    if written_packages.len() > 1 {
         let dep_rows = collect_package_dep_rows(&project_ctx);
         if !dep_rows.is_empty() {
             match write::write_package_deps(db, &dep_rows) {

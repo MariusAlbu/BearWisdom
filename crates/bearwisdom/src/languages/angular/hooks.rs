@@ -80,9 +80,25 @@ impl LanguageEngineHooks for AngularHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
         if ref_ctx.extracted_ref.kind == EdgeKind::Calls {
-            if let Some(raw_selector) = &ref_ctx.extracted_ref.module {
-                if let Some(class_qname) = lookup.angular_selector(raw_selector) {
-                    if let Some(sym) = lookup.by_qualified_name(class_qname) {
+            let target = &ref_ctx.extracted_ref.target_name;
+            // Derive the raw kebab selector from the PascalCase target_name
+            // produced by the template extractor (e.g. "AppAvatar" →
+            // "app-avatar"). Matches @Component({selector:'...'}) entries
+            // collected from the workspace's TS files.
+            let raw_selector = pascal_to_kebab(target);
+            if let Some(class_qname) = lookup.angular_selector(&raw_selector) {
+                if let Some(sym) = lookup.by_qualified_name(class_qname) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: "angular_selector_map",
+                        resolved_yield_type: None,
+                        flow_emit: None,
+                    });
+                }
+                let short = class_qname.rsplit('.').next().unwrap_or(class_qname);
+                for sym in lookup.by_name(short) {
+                    if sym.qualified_name == class_qname {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -91,23 +107,25 @@ impl LanguageEngineHooks for AngularHooks {
                             flow_emit: None,
                         });
                     }
-                    let short = class_qname.rsplit('.').next().unwrap_or(class_qname);
-                    for sym in lookup.by_name(short) {
-                        if sym.qualified_name == class_qname {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 1.0,
-                                strategy: "angular_selector_map",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
                 }
             }
         }
         TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
     }
+}
+
+/// "AppAvatar" → "app-avatar". Splits on every uppercase boundary and
+/// lowercases segments. Single-segment inputs (already lowercase or
+/// camelCase with no uppercase boundary) return unchanged.
+fn pascal_to_kebab(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() && i > 0 {
+            out.push('-');
+        }
+        out.extend(ch.to_lowercase());
+    }
+    out
 }
 
 pub static ANGULAR_HOOKS: AngularHooks = AngularHooks;

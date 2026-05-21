@@ -78,7 +78,22 @@ impl GoChecker {
             _ => None,
         };
 
-        let mut current_type = root_type?;
+        let mut current_type = match root_type {
+            Some(t) => t,
+            None => {
+                // Package-qualified shape `pkg.Symbol(...)` — root is the
+                // package alias, not a known type or variable. Record a
+                // chain miss so demand-driven expand can pull the file
+                // containing `Symbol` via the bare-name fallback.
+                if let Some(last) = segments.last() {
+                    lookup.record_chain_miss(ChainMiss {
+                        current_type: segments[0].name.clone(),
+                        target_name: last.name.clone(),
+                    });
+                }
+                return None;
+            }
+        };
         let mut env = TypeEnvironment::new();
 
         if !initial_generic_args.is_empty() {
