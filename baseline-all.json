@@ -9977,9 +9977,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "perf": {
-        "end_ws_mb": 70,
-        "files_per_sec": 79,
-        "index_duration_ms": 3717
+        "end_ws_mb": 72,
+        "files_per_sec": 75,
+        "index_duration_ms": 3903
       },
       "project": "vue-element-admin",
       "resolution_rate": 83.03,

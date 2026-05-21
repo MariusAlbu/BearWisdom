@@ -6,12 +6,14 @@ pub(crate) mod profile;
 pub(crate) mod keywords;
 pub mod extract;
 mod calls;
-pub(crate) mod hooks;
 mod imports;
 mod globals;
 
-pub use hooks::JAVASCRIPT_HOOKS;
 pub use profile::JAVASCRIPT_PROFILE;
+
+#[cfg(test)]
+#[path = "hooks_tests.rs"]
+mod hooks_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -102,10 +104,21 @@ impl LanguagePlugin for JavascriptPlugin {
         Some(&profile::JAVASCRIPT_PROFILE)
     }
 
+    /// JS and TS share the engine surface. Resolution is content-driven
+    /// (imports, scope chain, qualified names, lib globals); JS has no
+    /// resolver semantics distinct from TS — the only difference between
+    /// the two plugins is parsing/extraction (different tree-sitter
+    /// grammars + node kinds). Register the same hook instance the TS
+    /// plugin registers so embedded-JS refs in Vue 2 SFCs (default
+    /// `<script>` block, origin_language = "javascript") and plain `.js`
+    /// files reach the same `ts_lib_globals` / `ts_npm_globals` fallbacks
+    /// that resolve `parseInt`, `setTimeout`, `XMLHttpRequest`,
+    /// `Array.prototype.splice` and friends against the eagerly-walked
+    /// `lib.es5.d.ts` / `lib.dom.d.ts`.
     fn language_hooks(
         &self,
     ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
     {
-        Some(&hooks::JAVASCRIPT_HOOKS)
+        Some(&crate::languages::typescript::TYPESCRIPT_HOOKS)
     }
 }
