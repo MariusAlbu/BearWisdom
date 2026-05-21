@@ -1,7 +1,9 @@
 use super::global_registry;
+use super::VueResolver;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
+use crate::types::ParsedFile;
 
 pub struct VueHooks;
 
@@ -31,6 +33,23 @@ impl LanguageEngineHooks for VueHooks {
         crate::languages::typescript::hooks::infer_external_inner_with_lookup(
             file_ctx, ref_ctx, project_ctx, lookup,
         )
+    }
+
+    fn build_file_context(
+        &self,
+        file: &ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<FileContext> {
+        Some(VueResolver.build_file_context(file, project_ctx))
+    }
+
+    fn resolve_ref(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext<'_>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        VueResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 }
 
