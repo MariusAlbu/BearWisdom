@@ -9,8 +9,11 @@
 // Strategy order, all kind-filtered via the language profile:
 //   1. Scope-chain walk: innermost scope first, probe `{scope}.{target}`.
 //   2. Same-file: any symbol in the source file named `target`.
-//   3. Fully-qualified target: `target` already contains dots — probe directly.
-//   4. Import-qualified: for each import naming `target`, probe `{module}.{target}`.
+//   3. File-namespace prefix: when the file declares an outer namespace
+//      (Go package, Java/C# namespace, Ruby module), probe
+//      `{file_namespace}.{target}` and direct members of that namespace.
+//   4. Fully-qualified target: `target` already contains dots — probe directly.
+//   5. Import-qualified: for each import naming `target`, probe `{module}.{target}`.
 //
 // Language-specific behaviors (TS workspace packages, tsconfig path aliases,
 // DefinitelyTyped fallback, barrel re-exports, self/this/base stripping)
@@ -82,7 +85,40 @@ pub fn resolve_bare(
         }
     }
 
-    // 3. Fully-qualified target (contains dots).
+    // 3. File-namespace prefix. When the source file declares an outer
+    //    package / module / namespace (Go `package x`, Java `package x.y`,
+    //    Ruby `module X`, C# `namespace X.Y`), refs in that file can name
+    //    siblings without qualification. Probe `{file_namespace}.{target}`
+    //    directly, then fall back to scanning members of that namespace
+    //    by simple name — covers extractors that only emit the short name
+    //    on members without the namespace prefix.
+    if let Some(ns) = &file_ctx.file_namespace {
+        let candidate = format!("{ns}.{target}");
+        if let Some(sym) = lookup.by_qualified_name(&candidate) {
+            if kind_ok(profile, edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "engine_bare_file_namespace",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
+            }
+        }
+        for sym in lookup.members_of(ns) {
+            if sym.name == target && kind_ok(profile, edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "engine_bare_file_namespace",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
+            }
+        }
+    }
+
+    // 4. Fully-qualified target (contains dots).
     if target.contains('.') {
         if let Some(sym) = lookup.by_qualified_name(target) {
             if kind_ok(profile, edge_kind, &sym.kind) {
