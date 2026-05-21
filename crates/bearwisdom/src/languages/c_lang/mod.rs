@@ -1,7 +1,6 @@
 //! c_lang language plugin.
 
 mod calls;
-pub(crate) mod type_checker;
 mod declarations;
 mod flow;
 mod helpers;

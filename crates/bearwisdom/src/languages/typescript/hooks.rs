@@ -14,7 +14,7 @@
 // build_file_context with NestJS controller-prefix pre-pass + bgjob queue
 // binding refs all live in this file.
 // =============================================================================
-use super::{predicates, type_checker::TypeScriptChecker};
+use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -91,8 +91,8 @@ pub(crate) fn resolve(
         // Chain-aware resolution: if we have a structured MemberChain, walk it
         // step-by-step following field types. Dispatch to the TypeChecker.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = TypeScriptChecker.resolve_chain(
-                chain_ref, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            if let Some(res) = super::chain_walker::walk_typescript_chain(
+                chain_ref, edge_kind, file_ctx, ref_ctx, lookup,
             ) {
                 return Some(res);
             }

@@ -19,7 +19,6 @@ pub mod extract;
 pub mod hooks;
 mod predicates;
 pub mod profile;
-pub(crate) mod type_checker;
 pub mod connectors;
 
 pub use hooks::GO_HOOKS;

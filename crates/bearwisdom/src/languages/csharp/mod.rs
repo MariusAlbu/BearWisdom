@@ -17,8 +17,6 @@ pub mod extract;
 pub mod hooks;
 mod predicates;
 pub mod profile;
-pub(crate) mod type_checker;
-
 pub use hooks::CSHARP_HOOKS;
 pub use hooks::CSharpResolver;
 pub use profile::CSHARP_PROFILE;

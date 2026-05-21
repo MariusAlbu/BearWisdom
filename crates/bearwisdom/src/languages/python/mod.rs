@@ -16,7 +16,6 @@ pub mod extract;
 pub mod hooks;
 mod predicates;
 pub mod profile;
-pub(crate) mod type_checker;
 mod externals;
 mod flow_detectors;
 

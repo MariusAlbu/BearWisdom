@@ -12,7 +12,6 @@ pub mod extract;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod type_checker;
 pub mod connectors;
 
 pub use hooks::PHP_HOOKS;

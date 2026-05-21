@@ -13,14 +13,15 @@
 // requires as wildcard imports).
 // =============================================================================
 
-use super::{predicates, type_checker::RubyChecker};
+use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::chain::simple_yield_type;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::{EdgeKind, MemberChain, ParsedFile, SegmentKind};
 
 pub struct RubyResolver;
 
@@ -67,9 +68,7 @@ impl RubyResolver {
         }
 
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = RubyChecker.resolve_chain(
-                chain_val, edge_kind, None, ref_ctx, lookup,
-            ) {
+            if let Some(res) = walk_ruby_chain(chain_val, edge_kind, ref_ctx, lookup) {
                 return Some(res);
             }
         }
@@ -587,6 +586,142 @@ pub(crate) fn build_file_context_inner(
         imports,
         file_namespace,
     }
+}
+
+// Ruby chain-walker. Absorbed from the deleted `ruby/type_checker.rs`.
+fn walk_ruby_chain(
+    chain_ref: &MemberChain,
+    edge_kind: EdgeKind,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    let segments = &chain_ref.segments;
+    if segments.len() < 2 {
+        return None;
+    }
+
+    // Phase 1: root type.
+    let root_type = match segments[0].kind {
+        SegmentKind::SelfRef => find_enclosing_class(&ref_ctx.scope_chain, lookup),
+        SegmentKind::Identifier => {
+            let name = &segments[0].name;
+            if let Some(local_type) = lookup.local_type(name) {
+                Some(local_type)
+            } else {
+                let is_type = lookup.types_by_name(name).iter().any(|s| {
+                    matches!(s.kind.as_str(), "class" | "namespace" | "interface" | "type_alias")
+                });
+                if is_type {
+                    Some(name.clone())
+                } else {
+                    let mut found = None;
+                    for scope in &ref_ctx.scope_chain {
+                        let field_qname = format!("{scope}.{name}");
+                        if let Some(type_name) = lookup.field_type_str(&field_qname) {
+                            found = Some(type_name.to_string());
+                            break;
+                        }
+                    }
+                    found.or_else(|| segments[0].declared_type.clone())
+                }
+            }
+        }
+        _ => None,
+    };
+
+    let mut current_type = root_type?;
+
+    // Phase 2: intermediate segments.
+    for seg in &segments[1..segments.len() - 1] {
+        let member_qname = format!("{current_type}.{}", seg.name);
+
+        if let Some(next_type) = lookup.field_type_str(&member_qname) {
+            current_type = next_type.to_string();
+            continue;
+        }
+        if let Some(next_type) = lookup.return_type_str(&member_qname) {
+            current_type = next_type.to_string();
+            continue;
+        }
+
+        let mut found = false;
+        for sym in lookup.members_of(&current_type) {
+            if sym.name != seg.name {
+                continue;
+            }
+            if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
+                current_type = ft.to_string();
+                found = true;
+                break;
+            }
+            if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
+                current_type = rt.to_string();
+                found = true;
+                break;
+            }
+        }
+        if found {
+            continue;
+        }
+
+        lookup.record_chain_miss(ChainMiss {
+            current_type: current_type.clone(),
+            target_name: seg.name.clone(),
+        });
+        return None;
+    }
+
+    // Phase 3: final segment.
+    let last = &segments[segments.len() - 1];
+    let candidate = format!("{current_type}.{}", last.name);
+
+    if let Some(sym) = lookup.by_qualified_name(&candidate) {
+        if predicates::kind_compatible(edge_kind, &sym.kind) {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 1.0,
+                strategy: "ruby_chain_resolution",
+                resolved_yield_type: intern_yield_type(simple_yield_type(sym, lookup), lookup),
+                flow_emit: None,
+            });
+        }
+    }
+
+    for sym in lookup.members_of(&current_type) {
+        if sym.name == last.name && predicates::kind_compatible(edge_kind, &sym.kind) {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.90,
+                strategy: "ruby_chain_resolution",
+                resolved_yield_type: intern_yield_type(simple_yield_type(sym, lookup), lookup),
+                flow_emit: None,
+            });
+        }
+    }
+
+    lookup.record_chain_miss(ChainMiss {
+        current_type: current_type.clone(),
+        target_name: last.name.clone(),
+    });
+    None
+}
+
+/// Find the enclosing class/namespace. Ruby modules are stored as `namespace`.
+fn find_enclosing_class(
+    scope_chain: &[String],
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    for scope in scope_chain {
+        if let Some(sym) = lookup.by_qualified_name(scope) {
+            if matches!(sym.kind.as_str(), "class" | "namespace" | "interface") {
+                return Some(scope.clone());
+            }
+        }
+    }
+    if scope_chain.len() >= 2 {
+        return Some(scope_chain[scope_chain.len() - 2].clone());
+    }
+    scope_chain.last().cloned()
 }
 
 pub struct RubyHooks;

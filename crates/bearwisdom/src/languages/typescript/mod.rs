@@ -35,7 +35,7 @@ pub(crate) mod selectors;
 pub(crate) mod predicates;
 pub mod profile;
 pub mod hooks;
-pub(crate) mod type_checker;
+pub(crate) mod chain_walker;
 mod aliases;
 pub(crate) mod flow_detectors;
 

@@ -18,13 +18,16 @@ pub(crate) use super::flow_detectors::{
     detect_rust_reqwest_emission, detect_rust_route_attribute_emission, detect_rust_sqlx_macro_emission,
     detect_rust_tauri_command_attribute, detect_rust_tonic_emission, detect_rust_uds_emission,
 };
-use super::{keywords, predicates, type_checker::RustChecker};
+use super::{keywords, predicates};
+use super::predicates::normalize_path;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::type_checker::chain::simple_yield_type;
+use crate::types::{EdgeKind, MemberChain, ParsedFile, SegmentKind};
 
 /// Rust language resolver.
 pub struct RustResolver;
@@ -55,7 +58,7 @@ pub(crate) fn resolve(
 
         // `Self` → resolve to the enclosing struct/enum/trait.
         if target == "Self" {
-            let enclosing = super::type_checker::find_enclosing_type(&ref_ctx.scope_chain, lookup)?;
+            let enclosing = find_enclosing_type(&ref_ctx.scope_chain, lookup)?;
             let sym = lookup.by_qualified_name(&enclosing)?;
             if predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
@@ -102,7 +105,7 @@ pub(crate) fn resolve(
         // emits a chain-less ref.
         if ref_ctx.extracted_ref.module.as_deref() == Some("Self") {
             if let Some(enclosing) =
-                super::type_checker::find_enclosing_type(&ref_ctx.scope_chain, lookup)
+                find_enclosing_type(&ref_ctx.scope_chain, lookup)
             {
                 let candidate = format!("{enclosing}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
@@ -145,11 +148,9 @@ pub(crate) fn resolve(
             }
         }
 
-        // Chain-aware resolution: dispatch to RustChecker.
+        // Chain-aware resolution.
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = RustChecker.resolve_chain(
-                chain_val, edge_kind, None, ref_ctx, lookup,
-            ) {
+            if let Some(res) = walk_rust_lang_chain(chain_val, edge_kind, ref_ctx, lookup) {
                 return Some(res);
             }
         }
@@ -603,6 +604,161 @@ pub(crate) fn resolve(
         }
     }
 
+}
+
+/// Rust chain walker.
+pub(crate) fn walk_rust_lang_chain(
+    chain_ref: &MemberChain,
+    edge_kind: EdgeKind,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    let segments = &chain_ref.segments;
+    if segments.len() < 2 {
+        return None;
+    }
+
+    // Phase 1: root type.
+    let root_type = match segments[0].kind {
+        SegmentKind::SelfRef => find_enclosing_type(&ref_ctx.scope_chain, lookup),
+        SegmentKind::Identifier => {
+            let name = &segments[0].name;
+
+            if let Some(local_type) = lookup.local_type(name) {
+                Some(normalize_path(&local_type))
+            } else {
+                let is_type = lookup.types_by_name(name).iter().any(|s| {
+                    matches!(
+                        s.kind.as_str(),
+                        "struct" | "enum" | "trait" | "type_alias" | "class"
+                    )
+                });
+                if is_type {
+                    Some(normalize_path(name))
+                } else {
+                    let mut found = None;
+                    for scope in &ref_ctx.scope_chain {
+                        let field_qname = format!("{scope}.{name}");
+                        if let Some(type_name) = lookup.field_type_str(&field_qname) {
+                            found = Some(normalize_path(&type_name));
+                            break;
+                        }
+                    }
+                    found.or_else(|| {
+                        segments[0].declared_type.as_ref().map(|t| normalize_path(t))
+                    })
+                }
+            }
+        }
+        _ => None,
+    };
+
+    let mut current_type = root_type?;
+
+    // Phase 2: intermediate segments.
+    for seg in &segments[1..segments.len() - 1] {
+        let member_qname = format!("{current_type}.{}", seg.name);
+
+        if let Some(next_type) = lookup.field_type_str(&member_qname) {
+            current_type = normalize_path(&next_type);
+            continue;
+        }
+        if let Some(next_type) = lookup.return_type_str(&member_qname) {
+            current_type = normalize_path(&next_type);
+            continue;
+        }
+
+        let mut found = false;
+        for sym in lookup.members_of(&current_type) {
+            if sym.name != seg.name {
+                continue;
+            }
+            if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
+                current_type = normalize_path(&ft);
+                found = true;
+                break;
+            }
+            if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
+                current_type = normalize_path(&rt);
+                found = true;
+                break;
+            }
+        }
+        if found {
+            continue;
+        }
+
+        lookup.record_chain_miss(ChainMiss {
+            current_type: current_type.clone(),
+            target_name: seg.name.clone(),
+        });
+        return None;
+    }
+
+    // Phase 3: final segment.
+    let last = &segments[segments.len() - 1];
+    let candidate = format!("{current_type}.{}", last.name);
+
+    if let Some(sym) = lookup.by_qualified_name(&candidate) {
+        if predicates::kind_compatible(edge_kind, &sym.kind) {
+            tracing::debug!(
+                strategy = "rust_chain_resolution",
+                chain_len = segments.len(),
+                resolved_type = %current_type,
+                target = %last.name,
+                "resolved"
+            );
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 1.0,
+                strategy: "rust_chain_resolution",
+                resolved_yield_type: intern_yield_type(
+                    simple_yield_type(sym, lookup).map(|t| normalize_path(&t)),
+                    lookup,
+                ),
+                flow_emit: None,
+            });
+        }
+    }
+
+    for sym in lookup.members_of(&current_type) {
+        if sym.name == last.name && predicates::kind_compatible(edge_kind, &sym.kind) {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.95,
+                strategy: "rust_chain_resolution",
+                resolved_yield_type: intern_yield_type(
+                    simple_yield_type(sym, lookup).map(|t| normalize_path(&t)),
+                    lookup,
+                ),
+                flow_emit: None,
+            });
+        }
+    }
+
+    lookup.record_chain_miss(ChainMiss {
+        current_type: current_type.clone(),
+        target_name: last.name.clone(),
+    });
+    None
+}
+
+/// Find the enclosing struct/impl/trait name from the scope chain.
+fn find_enclosing_type(
+    scope_chain: &[String],
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    for scope in scope_chain {
+        if let Some(sym) = lookup.by_qualified_name(scope) {
+            if matches!(sym.kind.as_str(), "struct" | "enum" | "trait" | "class") {
+                return Some(scope.clone());
+            }
+        }
+    }
+    if scope_chain.len() >= 2 {
+        return Some(scope_chain[scope_chain.len() - 2].clone());
+    }
+    scope_chain.last().cloned()
 }
 
 pub(super) fn infer_external_inner(
