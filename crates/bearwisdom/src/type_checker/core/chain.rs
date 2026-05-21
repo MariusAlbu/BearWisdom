@@ -91,8 +91,70 @@ impl RootResolver for DefaultRootResolver {
     ) -> Option<TypeId> {
         match seg.kind {
             SegmentKind::SelfRef => {
-                let scope = ref_ctx.source_symbol.scope_path.as_ref()?;
-                Some(arena.class(scope))
+                if let Some(scope) = ref_ctx.source_symbol.scope_path.as_ref() {
+                    return Some(arena.class(scope));
+                }
+                // Fallback when the source symbol carries no scope_path.
+                // Common in extractors that emit a per-file class symbol
+                // for the unit's primary type (Vue SFC, Astro page) but
+                // do not reparent sibling helpers / Options-API
+                // methods under it — `methods: { foo() {} }` lands `foo`
+                // at file scope, and `this` in its body has no
+                // class scope to attach to.
+                //
+                // Rule: when the source symbol's file declares exactly
+                // one top-level type symbol (class/interface/struct/
+                // namespace, scope_path empty or absent), treat `this`
+                // as referring to that type. The "single top-level"
+                // condition keeps the fallback from over-matching in
+                // ordinary files that happen to declare several
+                // unrelated classes.
+                // Two-pass: prefer the type symbol whose simple name
+                // matches the file stem (the SFC / page-class convention
+                // — `EditorImage.vue` → `EditorImage`, `index.vue` →
+                // `index`). Only when no stem match exists do we accept
+                // a single-candidate fallback. Identifier-shape filtering
+                // rejects CSS-selector noise from `<style>` blocks that
+                // the SCSS extractor emits with `SymbolKind::Class`
+                // (`editor-slide-upload`, `vue-image-crop-upload`,
+                // `&:hover`).
+                let stem = file_stem_of(&file_ctx.file_path);
+                let mut stem_match: Option<&str> = None;
+                let mut single_match: Option<&str> = None;
+                let mut single_ambiguous = false;
+                for sym in lookup.in_file(&file_ctx.file_path) {
+                    let is_top_level = sym
+                        .scope_path
+                        .as_deref()
+                        .map(|s| s.is_empty())
+                        .unwrap_or(true);
+                    if !is_top_level {
+                        continue;
+                    }
+                    if !matches!(
+                        sym.kind.as_str(),
+                        "class" | "interface" | "struct" | "namespace"
+                    ) {
+                        continue;
+                    }
+                    if !is_identifier_like(&sym.name) {
+                        continue;
+                    }
+                    if let Some(s) = stem.as_deref() {
+                        if sym.name == s {
+                            stem_match = Some(&sym.qualified_name);
+                            break;
+                        }
+                    }
+                    if single_match.is_some() {
+                        single_ambiguous = true;
+                    } else {
+                        single_match = Some(&sym.qualified_name);
+                    }
+                }
+                stem_match
+                    .or(if single_ambiguous { None } else { single_match })
+                    .map(|qname| arena.class(qname))
             }
             SegmentKind::TypeAccess
             | SegmentKind::NamespaceAccess
@@ -529,6 +591,47 @@ impl<'a> ChainWalker<'a> {
             return;
         }
         env.bind_positional(&data.generic_params, &args);
+    }
+}
+
+/// True when `name` is composed only of characters that may appear in a
+/// legitimate type identifier across the languages this resolver serves
+/// (JS/TS/Vue/Python/Java/C#/Rust/Go/Ruby/PHP/Scala/Kotlin/Swift/Ada/...).
+/// All accept `[A-Za-z0-9_]` and JS/TS additionally accepts `$`.
+///
+/// Used by the SelfRef fallback to reject `SymbolKind::Class` rows whose
+/// `name` is actually a CSS class selector (`editor-slide-upload`,
+/// `vue-image-crop-upload`, multi-line descendant chains). Those leak in
+/// from the SCSS extractor inside Vue/Svelte/Astro `<style>` blocks and
+/// would otherwise be treated as the file's primary type.
+fn is_identifier_like(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// File stem (basename without extension) of `file_path`. Returns `None`
+/// for empty / extension-less paths so the caller falls back to the
+/// single-candidate rule. Path may use either separator and may be a
+/// virtual `ext:...` URI — splitting on both `/` and `\` and stripping
+/// the trailing extension handles every shape the indexer produces.
+fn file_stem_of(file_path: &str) -> Option<String> {
+    let basename = file_path
+        .rsplit(|c| c == '/' || c == '\\')
+        .next()
+        .unwrap_or(file_path);
+    if basename.is_empty() {
+        return None;
+    }
+    let stem = match basename.rfind('.') {
+        Some(dot) if dot > 0 => &basename[..dot],
+        _ => basename,
+    };
+    if stem.is_empty() {
+        None
+    } else {
+        Some(stem.to_string())
     }
 }
 

@@ -72,11 +72,76 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         generic_params: Vec::new(),
 });
 
+    // Bridge the SFC's component class to the framework's instance type so
+    // the chain walker can resolve `this.$emit` / `this.$nextTick` /
+    // `this.$store` / `this.$refs.x` and other `this.X` receiver calls
+    // against the walked `.d.ts`. Without this edge, `find_enclosing_type`
+    // lands on the per-file class symbol whose body declares none of those
+    // members, and Phase 2 of the chain walk fails.
+    //
+    // Target shape: `target_name = "Vue"`, `module = "vue"`. The externals
+    // post-processor rewrites the qname into `vue.Vue` (Vue 2 ships
+    // `vue/types/vue.d.ts` declaring `interface Vue { $emit, $nextTick, ... }`).
+    // In Vue 3 projects, `vue.Vue` does not exist; the resolver fails to
+    // map the inherits target, and `infer_external_inner` classifies the
+    // ref as external because `module = "vue"` is a manifest dep. So the
+    // edge is a win for Vue 2 SFCs and a no-op for Vue 3 SFCs at rate-cost
+    // zero.
+    //
+    // Skipped when the file uses `<script setup>` (Vue 3 Composition API:
+    // no `this`, no receiver chain) — emitting an inherits edge would
+    // still be classified external, but pointlessly inflates the
+    // external-ref count.
+    if !uses_script_setup(source) {
+        refs.push(ExtractedRef {
+            source_symbol_index: 0,
+            target_name: "Vue".to_string(),
+            kind: EdgeKind::Inherits,
+            line: 0,
+            col: 0,
+            module: Some("vue".to_string()),
+            namespace_segments: Vec::new(),
+            chain: None,
+            byte_offset: 0,
+            call_args: Vec::new(),
+        });
+    }
+
     // Walk the document to find template elements and extract component usages.
     let root = tree.root_node();
     visit_document(&root, source, &mut refs);
 
     super::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// True when the SFC declares `<script setup>` — the Vue 3 Composition API
+/// shorthand whose script body has no `this` context. Such files never need
+/// a base-instance inheritance edge because no `this.X` chain ever forms in
+/// user code.
+///
+/// Substring check, deliberately tolerant. `<script setup lang="ts">` and
+/// any whitespace / attribute ordering count. False positives are bounded
+/// to `<script>...const x = "<script setup>";...</script>` style code,
+/// which is exceptionally rare in real SFCs and would only suppress the
+/// inheritance edge (the file presumably doesn't use `this.X` anyway).
+fn uses_script_setup(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while let Some(p) = source[i..].find("<script") {
+        let abs = i + p;
+        let tail = &source[abs + "<script".len()..];
+        let end = tail.find('>').unwrap_or(tail.len());
+        let attrs = &tail[..end];
+        if attrs
+            .split_ascii_whitespace()
+            .any(|tok| tok == "setup" || tok.starts_with("setup="))
+        {
+            return true;
+        }
+        i = abs + "<script".len();
+        let _ = bytes; // silence unused — kept for symmetry with future tokenization
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------

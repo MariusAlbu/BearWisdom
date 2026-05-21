@@ -172,3 +172,61 @@ fn cov_nested_pascal_component_in_template_body_produces_calls() {
         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// SFC class inherits from vue.Vue — required for this.$emit / $nextTick /
+// $store / $refs chain walking to find members declared in vue/types/vue.d.ts.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_sfc_class_emits_inherits_ref_to_vue() {
+    let r = extract::extract(
+        "<template><div/></template>\n<script>\nexport default { methods: { send() { this.$emit('ok') } } }\n</script>",
+        "ThemePicker.vue",
+    );
+    let inherits: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Vue")
+        .collect();
+    assert_eq!(
+        inherits.len(),
+        1,
+        "Options-API SFC must emit exactly one Inherits → Vue ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+    let edge = inherits[0];
+    assert_eq!(edge.module.as_deref(), Some("vue"));
+    assert_eq!(edge.source_symbol_index, 0, "must originate from the SFC class symbol");
+}
+
+#[test]
+fn cov_script_setup_does_not_emit_inherits_ref() {
+    // <script setup> has no `this`; the inheritance edge would be a pointless
+    // external classification — confirm it's suppressed.
+    let r = extract::extract(
+        "<template><div/></template>\n<script setup lang=\"ts\">\nimport { ref } from 'vue'\nconst x = ref(0)\n</script>",
+        "Counter.vue",
+    );
+    assert!(
+        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Vue"),
+        "<script setup> file must NOT emit Inherits → Vue; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_template_only_sfc_still_emits_inherits_ref() {
+    // Template-only SFC: no script block. The component is still a class
+    // that other files import — and any future script addition wants the
+    // inherits edge already there for `this.X` chains to work.
+    let r = extract::extract(
+        "<template><div>Hello</div></template>",
+        "Hello.vue",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Vue"),
+        "template-only SFC must emit Inherits → Vue; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
