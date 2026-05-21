@@ -9203,11 +9203,12 @@
         "di_binding": 652,
         "feature_flag": 2,
         "graphql_op": 194,
-        "http_call": 36
+        "http_call": 36,
+        "service_dependency": 5
       },
-      "flow_edges": 1115,
-      "internal_edges": 85579,
-      "internal_unresolved": 2031,
+      "flow_edges": 1120,
+      "internal_edges": 85563,
+      "internal_unresolved": 2036,
       "languages": {
         "angular_template": 276,
         "c": 1,
@@ -9231,9 +9232,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-ever-demand",
       "perf": {
-        "end_ws_mb": 148,
-        "files_per_sec": 18,
-        "index_duration_ms": 204682
+        "end_ws_mb": 135,
+        "files_per_sec": 22,
+        "index_duration_ms": 160851
       },
       "project": "ts-ever-demand",
       "resolution_rate": 97.68,
@@ -9249,8 +9250,9 @@
         "markdown.calls": 2,
         "scss.calls": 2,
         "typescript.calls": 660,
+        "typescript.implements": 3,
         "typescript.instantiates": 315,
-        "typescript.type_ref": 822
+        "typescript.type_ref": 824
       }
     },
     {
@@ -10203,14 +10205,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 92
+        "min_resolution_rate": 98
       },
       "code_chunks": 5154,
       "files": 297,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2031,
-      "internal_unresolved": 159,
+      "internal_edges": 2765,
+      "internal_unresolved": 31,
       "languages": {
         "html": 1,
         "javascript": 4,
@@ -10224,19 +10226,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin",
       "perf": {
-        "end_ws_mb": 156,
-        "files_per_sec": 52,
-        "index_duration_ms": 5717
+        "end_ws_mb": 82,
+        "files_per_sec": 49,
+        "index_duration_ms": 6008
       },
       "project": "vue-vuestic-admin",
-      "resolution_rate": 92.74,
+      "resolution_rate": 98.89,
       "routes": 0,
       "symbols": 2087,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 93,
+        "typescript.calls": 10,
         "typescript.instantiates": 3,
-        "typescript.type_ref": 47,
-        "vue.calls": 16
+        "typescript.type_ref": 4,
+        "vue.calls": 14
       }
     },
     {

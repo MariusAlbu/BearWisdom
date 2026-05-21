@@ -249,14 +249,25 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
     //    that workspace manifests never name (Dart subprojects, iOS, etc.)
     //    plus filling in when no workspace system is detected at all.
     //
-    //    When a workspace was detected in step 1, skip the root manifest:
-    //    the root `package.json` of an npm/pnpm/yarn workspace is the
-    //    workspace controller (declares `"workspaces": [...]`), not a
-    //    member package. Including it would inflate the package table
-    //    with a synthetic "monorepo" sibling that no consumer imports.
+    //    When a workspace was detected in step 1, the root manifest is
+    //    normally the workspace controller (`package.json` declaring
+    //    `"workspaces": [...]`, root `Cargo.toml` with `[workspace]` and no
+    //    `[package]`, etc.), not a member package — including it would
+    //    inflate the package table with a synthetic monorepo sibling that
+    //    no consumer imports.
+    //
+    //    Exception: a hybrid root-as-app declares its own runtime
+    //    dependencies alongside the workspace field. Common in small
+    //    projects that keep the main app at the root and use
+    //    `"workspaces": ["e2e"]` (or similar) for a tiny side workspace.
+    //    Those roots ARE the real package; skipping them strands their
+    //    deps from externals discovery.
     let in_workspace = workspace_kind.is_some();
     for pkg in scan_all_manifests(project_root) {
-        if in_workspace && (pkg.path.is_empty() || pkg.path == ".") {
+        let is_root_manifest = pkg.path.is_empty() || pkg.path == ".";
+        if in_workspace && is_root_manifest
+            && !workspace_root_has_own_deps(project_root, pkg.kind.as_deref())
+        {
             continue;
         }
         let key = (pkg.path.clone(), pkg.kind.clone().unwrap_or_default());
@@ -551,6 +562,43 @@ pub(crate) fn read_package_manifest(dir: &Path, kind: &str) -> (Option<String>, 
         "dotnet" => (read_dotnet_manifest(dir), true),
         _ => (None, true),
     }
+}
+
+/// True when the project-root manifest declares runtime dependencies of
+/// its own — the signal that a workspace root is hybrid (workspace
+/// controller + real package).
+///
+/// `kind` is the ecosystem hint propagated by `scan_all_manifests`. Only
+/// npm is decided positively today: that's the ecosystem where `package.json`
+/// at the root commonly mixes `"workspaces": [...]` with the app's own
+/// `dependencies`. Other ecosystems return `false` so they keep the
+/// pre-existing pure-controller behaviour until a concrete hybrid case
+/// surfaces and gets tested.
+fn workspace_root_has_own_deps(project_root: &Path, kind: Option<&str>) -> bool {
+    match kind {
+        Some("npm") => npm_root_has_own_runtime_deps(project_root),
+        _ => false,
+    }
+}
+
+/// `dependencies` or `peerDependencies` non-empty means the root installs
+/// real runtime libraries — `devDependencies` alone is the tooling-only
+/// signature of a pure workspace controller (monorepo build tooling,
+/// linters, formatters, changesets) and stays skipped.
+fn npm_root_has_own_runtime_deps(project_root: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(project_root.join("package.json")) else {
+        return false;
+    };
+    let Ok(v): Result<serde_json::Value, _> = serde_json::from_str(&content) else {
+        return false;
+    };
+    let nonempty = |field: &str| -> bool {
+        v.get(field)
+            .and_then(|x| x.as_object())
+            .map(|m| !m.is_empty())
+            .unwrap_or(false)
+    };
+    nonempty("dependencies") || nonempty("peerDependencies")
 }
 
 fn read_npm_manifest(dir: &Path) -> (Option<String>, bool) {

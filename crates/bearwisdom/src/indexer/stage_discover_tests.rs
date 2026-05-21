@@ -203,3 +203,101 @@ fn unknown_kind_defaults_publishable() {
     assert!(name.is_none());
     assert!(publishable);
 }
+
+// ---------------------------------------------------------------------------
+// Workspace root: pure-controller vs hybrid root-as-app
+// ---------------------------------------------------------------------------
+
+#[test]
+fn workspace_root_hybrid_with_runtime_deps_is_registered() {
+    let tmp = TempDir::new().unwrap();
+    write(
+        tmp.path(),
+        "package.json",
+        r#"{
+            "name": "vuestic-admin",
+            "private": true,
+            "workspaces": ["e2e"],
+            "dependencies": { "vue": "^3.5.0", "pinia": "^2.0.0" },
+            "devDependencies": { "vite": "^5.0.0" }
+        }"#,
+    );
+    fs::create_dir_all(tmp.path().join("e2e")).unwrap();
+    write(
+        &tmp.path().join("e2e"),
+        "package.json",
+        r#"{"name":"e2e","private":true,"devDependencies":{"@playwright/test":"^1.54.2"}}"#,
+    );
+
+    let (packages, kind) = detect_packages(tmp.path());
+    assert_eq!(kind.as_deref(), Some("npm-workspaces"));
+    let paths: std::collections::HashSet<_> =
+        packages.iter().map(|p| p.path.as_str()).collect();
+    assert!(
+        paths.contains("") || paths.contains("."),
+        "hybrid root with own runtime deps must register as a package — saw {paths:?}"
+    );
+    assert!(paths.contains("e2e"), "workspace member e2e must also register");
+}
+
+#[test]
+fn workspace_root_pure_controller_with_dev_only_deps_skipped() {
+    let tmp = TempDir::new().unwrap();
+    write(
+        tmp.path(),
+        "package.json",
+        r#"{
+            "name": "monorepo-controller",
+            "private": true,
+            "workspaces": ["packages/*"],
+            "devDependencies": { "turbo": "^2.0.0", "@changesets/cli": "^2.0.0" }
+        }"#,
+    );
+    fs::create_dir_all(tmp.path().join("packages").join("app")).unwrap();
+    write(
+        &tmp.path().join("packages").join("app"),
+        "package.json",
+        r#"{"name":"app","dependencies":{"react":"^18.0.0"}}"#,
+    );
+
+    let (packages, kind) = detect_packages(tmp.path());
+    assert_eq!(kind.as_deref(), Some("npm-workspaces"));
+    let paths: std::collections::HashSet<_> =
+        packages.iter().map(|p| p.path.as_str()).collect();
+    assert!(
+        !paths.contains("") && !paths.contains("."),
+        "pure controller (devDeps only) must NOT register as a package — saw {paths:?}"
+    );
+    assert!(paths.contains("packages/app"));
+}
+
+#[test]
+fn workspace_root_with_peer_deps_is_registered() {
+    // peerDependencies signals a library root that's also a workspace
+    // controller — still a real package whose deps must reach externals.
+    let tmp = TempDir::new().unwrap();
+    write(
+        tmp.path(),
+        "package.json",
+        r#"{
+            "name": "lib-monorepo",
+            "private": true,
+            "workspaces": ["examples/*"],
+            "peerDependencies": { "react": "^18.0.0" }
+        }"#,
+    );
+    fs::create_dir_all(tmp.path().join("examples").join("demo")).unwrap();
+    write(
+        &tmp.path().join("examples").join("demo"),
+        "package.json",
+        r#"{"name":"demo"}"#,
+    );
+
+    let (packages, _) = detect_packages(tmp.path());
+    let paths: std::collections::HashSet<_> =
+        packages.iter().map(|p| p.path.as_str()).collect();
+    assert!(
+        paths.contains("") || paths.contains("."),
+        "root with peerDependencies must register — saw {paths:?}"
+    );
+}
