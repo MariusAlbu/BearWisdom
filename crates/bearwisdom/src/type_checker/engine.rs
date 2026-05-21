@@ -207,9 +207,16 @@ impl<'a> Engine<'a> {
                     profile,
                     lookup,
                 );
-                if let Some(cr) =
-                    walker.walk_with_root(chain, ref_ctx, file_ctx, &DefaultRootResolver)
-                {
+                // Per-language root resolver wins over the default when the
+                // language hook ships one. Used for frameworks where the
+                // `this` receiver has an implicit, framework-declared type
+                // (Vue component instance, Vuex action context, ...) that
+                // the extractor can't capture as a scope_path.
+                let default_root = DefaultRootResolver;
+                let root: &dyn RootResolver = hooks
+                    .and_then(|h| h.root_resolver())
+                    .unwrap_or(&default_root);
+                if let Some(cr) = walker.walk_with_root(chain, ref_ctx, file_ctx, root) {
                     return Some(Resolution {
                         target_symbol_id: cr.target_symbol_id,
                         confidence: 1.0,

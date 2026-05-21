@@ -51,6 +51,12 @@ impl LanguageEngineHooks for VueHooks {
     ) -> Option<Resolution> {
         VueResolver.resolve(file_ctx, ref_ctx, lookup)
     }
+
+    fn root_resolver(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::core::chain::RootResolver> {
+        Some(&super::root_resolver::VUE_ROOT_RESOLVER)
+    }
 }
 
 pub static VUE_HOOKS: VueHooks = VueHooks;

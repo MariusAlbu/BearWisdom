@@ -185,9 +185,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/angular-coreui",
       "perf": {
-        "end_ws_mb": 86,
-        "files_per_sec": 42,
-        "index_duration_ms": 6154
+        "end_ws_mb": 88,
+        "files_per_sec": 38,
+        "index_duration_ms": 6928
       },
       "project": "angular-coreui",
       "resolution_rate": 98.93,
@@ -7498,7 +7498,7 @@
         "http_call": 137
       },
       "flow_edges": 242,
-      "internal_edges": 64721,
+      "internal_edges": 64734,
       "internal_unresolved": 233,
       "languages": {
         "angular_template": 17,
@@ -7516,9 +7516,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "perf": {
-        "end_ws_mb": 143,
-        "files_per_sec": 49,
-        "index_duration_ms": 44634
+        "end_ws_mb": 141,
+        "files_per_sec": 36,
+        "index_duration_ms": 60927
       },
       "project": "react-tanstack-query",
       "resolution_rate": 99.64,
@@ -9470,9 +9470,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "perf": {
-        "end_ws_mb": 293,
+        "end_ws_mb": 226,
         "files_per_sec": 11,
-        "index_duration_ms": 5116
+        "index_duration_ms": 4897
       },
       "project": "ts-nestjs-realworld",
       "resolution_rate": 100.0,
@@ -9573,7 +9573,7 @@
         "mailer": 85
       },
       "flow_edges": 630,
-      "internal_edges": 16650,
+      "internal_edges": 16644,
       "internal_unresolved": 208,
       "languages": {
         "css": 4,
@@ -9592,9 +9592,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 198,
-        "files_per_sec": 36,
-        "index_duration_ms": 35161
+        "end_ws_mb": 159,
+        "files_per_sec": 39,
+        "index_duration_ms": 32318
       },
       "project": "ts-rallly",
       "resolution_rate": 98.77,
@@ -9620,7 +9620,7 @@
         "http_call": 3700
       },
       "flow_edges": 3916,
-      "internal_edges": 65090,
+      "internal_edges": 65112,
       "internal_unresolved": 309,
       "languages": {
         "css": 8,
@@ -9639,9 +9639,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-trpc",
       "perf": {
-        "end_ws_mb": 275,
-        "files_per_sec": 27,
-        "index_duration_ms": 62527
+        "end_ws_mb": 230,
+        "files_per_sec": 31,
+        "index_duration_ms": 55526
       },
       "project": "ts-trpc",
       "resolution_rate": 99.53,
@@ -9955,13 +9955,13 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 90
+        "min_resolution_rate": 89
       },
       "code_chunks": 4346,
       "files": 294,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1559,
+      "internal_edges": 1428,
       "internal_unresolved": 169,
       "languages": {
         "css": 2,
@@ -9978,11 +9978,11 @@
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "perf": {
         "end_ws_mb": 74,
-        "files_per_sec": 81,
-        "index_duration_ms": 3619
+        "files_per_sec": 68,
+        "index_duration_ms": 4319
       },
       "project": "vue-element-admin",
-      "resolution_rate": 90.22,
+      "resolution_rate": 89.42,
       "routes": 0,
       "symbols": 2366,
       "unresolved_by_lang_kind": {
@@ -10114,8 +10114,8 @@
         "http_call": 1
       },
       "flow_edges": 13,
-      "internal_edges": 25869,
-      "internal_unresolved": 172,
+      "internal_edges": 25862,
+      "internal_unresolved": 171,
       "languages": {
         "css": 14,
         "dockerfile": 1,
@@ -10133,9 +10133,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-naive-admin",
       "perf": {
-        "end_ws_mb": 195,
-        "files_per_sec": 24,
-        "index_duration_ms": 75338
+        "end_ws_mb": 148,
+        "files_per_sec": 27,
+        "index_duration_ms": 66022
       },
       "project": "vue-naive-admin",
       "resolution_rate": 99.34,
@@ -10147,8 +10147,7 @@
         "typescript.calls": 49,
         "typescript.instantiates": 16,
         "typescript.type_ref": 66,
-        "vue.calls": 36,
-        "vue.inherits": 1
+        "vue.calls": 36
       }
     },
     {
@@ -10163,8 +10162,8 @@
         "http_call": 1
       },
       "flow_edges": 13,
-      "internal_edges": 24894,
-      "internal_unresolved": 170,
+      "internal_edges": 24903,
+      "internal_unresolved": 169,
       "languages": {
         "css": 13,
         "dockerfile": 1,
@@ -10182,12 +10181,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 187,
-        "files_per_sec": 29,
-        "index_duration_ms": 60237
+        "end_ws_mb": 149,
+        "files_per_sec": 28,
+        "index_duration_ms": 63921
       },
       "project": "vue-vben-admin",
-      "resolution_rate": 99.32,
+      "resolution_rate": 99.33,
       "routes": 0,
       "symbols": 17306,
       "unresolved_by_lang_kind": {
@@ -10196,8 +10195,7 @@
         "typescript.calls": 49,
         "typescript.instantiates": 16,
         "typescript.type_ref": 64,
-        "vue.calls": 36,
-        "vue.inherits": 1
+        "vue.calls": 36
       }
     },
     {
@@ -10223,9 +10221,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin",
       "perf": {
-        "end_ws_mb": 170,
-        "files_per_sec": 37,
-        "index_duration_ms": 8096
+        "end_ws_mb": 128,
+        "files_per_sec": 43,
+        "index_duration_ms": 6845
       },
       "project": "vue-vuestic-admin",
       "resolution_rate": 98.9,

@@ -189,6 +189,28 @@ pub trait LanguageEngineHooks: Send + Sync {
     ) -> Option<Resolution> {
         None
     }
+
+    /// Override the chain walker's root-segment type resolution. Returns a
+    /// `&dyn RootResolver` the engine threads through `walk_with_root`;
+    /// `None` keeps the engine's `DefaultRootResolver`.
+    ///
+    /// This is the hook for frameworks where `this` (or another self
+    /// keyword) has an *implicit* type set by the framework — Vue 2/3
+    /// component instances, Vuex action contexts, MDX page contexts —
+    /// rather than by user-source declarations the extractor already
+    /// captured.
+    ///
+    /// The resolver impl should discover the implicit type structurally
+    /// from the symbol index (looking for the canonical member set the
+    /// framework declares in its `.d.ts`) so version changes that rename
+    /// the type do not require code changes here. Hardcoding qnames or
+    /// branching on package versions is a smell — let the framework's
+    /// own type declarations drive the answer.
+    fn root_resolver(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::core::chain::RootResolver> {
+        None
+    }
 }
 
 /// Concrete no-op implementation. Bound by the engine when a language
