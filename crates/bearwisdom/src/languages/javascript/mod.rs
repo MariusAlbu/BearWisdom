@@ -6,9 +6,11 @@ pub(crate) mod profile;
 pub(crate) mod keywords;
 pub mod extract;
 mod calls;
+pub(crate) mod hooks;
 mod imports;
 mod globals;
 
+pub use hooks::JAVASCRIPT_HOOKS;
 pub use profile::JAVASCRIPT_PROFILE;
 
 #[cfg(test)]
@@ -98,5 +100,12 @@ impl LanguagePlugin for JavascriptPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::JAVASCRIPT_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::JAVASCRIPT_HOOKS)
     }
 }
