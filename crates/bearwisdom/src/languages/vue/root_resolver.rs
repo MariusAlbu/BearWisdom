@@ -23,7 +23,9 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
-use crate::type_checker::core::chain::{DefaultRootResolver, RootResolver};
+use crate::type_checker::core::chain::{
+    discover_type_by_canonical_members, DefaultRootResolver, RootResolver,
+};
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::{ChainSegment, SegmentKind};
 
@@ -71,51 +73,22 @@ impl RootResolver for VueRootResolver {
 
 pub static VUE_ROOT_RESOLVER: VueRootResolver = VueRootResolver;
 
-/// Canonical members of a Vue component instance interface. A type that
-/// declares ALL three is the framework's component instance type for the
-/// project, regardless of which package or version exports it. The set
-/// is small enough that the discovery cost is two extra qname probes
-/// per `$emit`-named symbol — typically one or two index entries.
-const VUE_INSTANCE_CANONICAL_METHODS: &[&str] = &["$nextTick", "$forceUpdate"];
-
 /// Find the qualified name of the project's Vue component instance type.
 ///
-/// Strategy:
-///   1. Enumerate every symbol named `$emit` in the index.
-///   2. For each, strip the trailing `.$emit` to recover the parent
-///      qname (the candidate instance interface).
-///   3. Require the parent to also declare `$nextTick` AND
-///      `$forceUpdate` — the canonical Vue instance signature shared
-///      by every major version.
-///   4. Return the first parent that satisfies the check. (Both Vue 2
-///      and Vue 3 declare exactly one interface that does — the
-///      framework's primary instance type. Other libraries that happen
-///      to declare a method named `$emit` won't also declare the rest
-///      of the set.)
+/// Thin wrapper around `discover_type_by_canonical_members` that pins
+/// Vue's canonical instance signature: `$emit` (seed) plus `$nextTick`
+/// and `$forceUpdate` (siblings). Every Vue version since 2.x ships
+/// these three on the component instance type, so the discovery picks
+/// up `vue.Vue` (Vue 2) and would pick up a future renamed instance
+/// interface without any code change here.
 ///
-/// Returns `None` when no `$emit`-bearing interface in the index
-/// matches — the project has no Vue install, or the install is too old
-/// / too new to expose the canonical signature.
+/// Returns `None` when the project has no Vue install or the install
+/// doesn't expose the canonical methods as interface members (Vue 3's
+/// `ComponentPublicInstance` is declared as a structural type alias,
+/// so its members aren't currently indexed as distinct symbols — that
+/// gap is an extractor concern, not a discovery concern).
 pub(crate) fn discover_component_instance(lookup: &dyn SymbolLookup) -> Option<String> {
-    for sym in lookup.by_name("$emit") {
-        if sym.kind != "method" {
-            continue;
-        }
-        let Some(parent) = sym.qualified_name.rsplit_once('.').map(|(p, _)| p) else {
-            continue;
-        };
-        if parent.is_empty() {
-            continue;
-        }
-        let all_present = VUE_INSTANCE_CANONICAL_METHODS.iter().all(|member| {
-            let qname = format!("{parent}.{member}");
-            lookup.by_qualified_name(&qname).is_some()
-        });
-        if all_present {
-            return Some(parent.to_string());
-        }
-    }
-    None
+    discover_type_by_canonical_members(lookup, "$emit", &["$nextTick", "$forceUpdate"])
 }
 
 #[cfg(test)]

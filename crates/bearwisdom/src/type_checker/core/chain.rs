@@ -594,6 +594,72 @@ impl<'a> ChainWalker<'a> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Discovery helpers — building blocks for per-language RootResolvers that
+// need to identify a framework's implicit receiver type without hardcoding
+// version-specific qnames.
+// ---------------------------------------------------------------------------
+
+/// Find the qualified name of a type by its canonical member set.
+///
+/// Given a `seed_method` (a method name that's expected on every variant
+/// of the type — e.g. `$emit` for Vue's component instance, `$patch` for
+/// Pinia stores, `timeout` for Mocha's test context) and a list of
+/// `canonical_members` (sibling methods that must coexist on the same
+/// type to disambiguate from impostors), return the qname of the first
+/// type in the symbol index whose member set contains all of them.
+///
+/// This is the canonical mechanism a `RootResolver` implementation
+/// should use to discover a framework's receiver type. It works
+/// regardless of the framework version, the package layout, or the
+/// declaring interface's name — only the structural member shape
+/// matters. A new major version that renames the type but keeps the
+/// API is automatically picked up; an unrelated library that happens
+/// to ship one same-named method is rejected by the sibling check.
+///
+/// Returns `None` when no candidate satisfies the full canonical set —
+/// the project doesn't have the framework installed, or its version
+/// is so old/new it lacks the canonical signature.
+///
+/// Examples:
+///
+/// - Vue component instance: `discover_type_by_canonical_members(
+///   lookup, "$emit", &["$nextTick", "$forceUpdate"])` returns
+///   `vue.Vue` on Vue 2, `@vue/runtime-core.ComponentPublicInstance`
+///   on Vue 3 (when its members are extracted as interface members),
+///   and whatever future Vue names its instance type.
+/// - Pinia store: `discover_type_by_canonical_members(lookup, "$patch",
+///   &["$reset", "$subscribe", "$dispose"])` returns `pinia.Store` or
+///   whichever interface Pinia's d.ts ships.
+/// - Mocha context: `discover_type_by_canonical_members(lookup,
+///   "timeout", &["skip", "retries", "slow"])` returns
+///   `mocha.Context` / `Mocha.Context`.
+pub fn discover_type_by_canonical_members(
+    lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
+    seed_method: &str,
+    canonical_members: &[&str],
+) -> Option<String> {
+    for sym in lookup.by_name(seed_method) {
+        if sym.kind != "method" {
+            continue;
+        }
+        let Some(parent) = sym.qualified_name.rsplit_once('.').map(|(p, _)| p) else {
+            continue;
+        };
+        if parent.is_empty() {
+            continue;
+        }
+        let all_present = canonical_members.iter().all(|member| {
+            let qname = format!("{parent}.{member}");
+            lookup.by_qualified_name(&qname).is_some()
+        });
+        if all_present {
+            return Some(parent.to_string());
+        }
+    }
+    None
+}
+
 /// True when `name` is composed only of characters that may appear in a
 /// legitimate type identifier across the languages this resolver serves
 /// (JS/TS/Vue/Python/Java/C#/Rust/Go/Ruby/PHP/Scala/Kotlin/Swift/Ada/...).

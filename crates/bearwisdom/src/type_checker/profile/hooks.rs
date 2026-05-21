@@ -195,17 +195,39 @@ pub trait LanguageEngineHooks: Send + Sync {
     /// `None` keeps the engine's `DefaultRootResolver`.
     ///
     /// This is the hook for frameworks where `this` (or another self
-    /// keyword) has an *implicit* type set by the framework — Vue 2/3
-    /// component instances, Vuex action contexts, MDX page contexts —
-    /// rather than by user-source declarations the extractor already
-    /// captured.
+    /// keyword) has an *implicit* type set by the framework rather than
+    /// by user-source declarations the extractor captured. Canonical
+    /// examples:
     ///
-    /// The resolver impl should discover the implicit type structurally
-    /// from the symbol index (looking for the canonical member set the
-    /// framework declares in its `.d.ts`) so version changes that rename
-    /// the type do not require code changes here. Hardcoding qnames or
-    /// branching on package versions is a smell — let the framework's
-    /// own type declarations drive the answer.
+    /// | Framework | SelfRef context | Receiver type |
+    /// |---|---|---|
+    /// | Vue Options API | `methods: { foo() { this.X } }` in `.vue` | Vue component instance |
+    /// | Pinia (options-style) | `actions: { foo() { this.X } }` in `defineStore` | Pinia Store instance |
+    /// | Mocha test callback | `function() { this.timeout(...) }` in `it(...)` | Mocha test context |
+    /// | Backbone Model methods | `Model.extend({ foo() { this.X } })` | Backbone Model |
+    /// | AngularJS controller | `module.controller('X', function() { this.X })` | scope |
+    ///
+    /// The resolver impl MUST discover the implicit type structurally
+    /// from the symbol index — look for the canonical member set the
+    /// framework declares in its `.d.ts`. Hardcoding qnames (`vue.Vue`)
+    /// or branching on package versions is a smell: a new major version
+    /// that renames the type would require new code. Let the framework's
+    /// own declarations drive the answer.
+    ///
+    /// The reusable building block is
+    /// `crate::type_checker::core::chain::discover_type_by_canonical_members`.
+    /// Pass it a seed method name and 2–3 sibling methods that uniquely
+    /// identify the framework's receiver type. Every existing
+    /// implementation should be one or two lines of glue around that
+    /// helper plus a SegmentKind::SelfRef arm; non-SelfRef segments
+    /// delegate to `DefaultRootResolver` (see `languages/vue/root_resolver.rs`
+    /// for the canonical example).
+    ///
+    /// Languages whose `this` is always explicit (Python `self` in a
+    /// class, C# `this` in a class, Rust `&self` in an `impl`, Java
+    /// `this`, Ruby `self` in a class) DO NOT need to override this —
+    /// `DefaultRootResolver` finds the enclosing type via
+    /// `source_symbol.scope_path` and that's correct for them.
     fn root_resolver(
         &self,
     ) -> Option<&'static dyn crate::type_checker::core::chain::RootResolver> {
