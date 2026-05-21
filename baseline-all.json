@@ -9978,9 +9978,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "perf": {
-        "end_ws_mb": 76,
-        "files_per_sec": 56,
-        "index_duration_ms": 5278
+        "end_ws_mb": 73,
+        "files_per_sec": 59,
+        "index_duration_ms": 5016
       },
       "project": "vue-element-admin",
       "resolution_rate": 60.4,
@@ -10115,7 +10115,7 @@
         "http_call": 1
       },
       "flow_edges": 13,
-      "internal_edges": 25802,
+      "internal_edges": 25757,
       "internal_unresolved": 173,
       "languages": {
         "css": 14,
@@ -10134,9 +10134,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-naive-admin",
       "perf": {
-        "end_ws_mb": 123,
-        "files_per_sec": 23,
-        "index_duration_ms": 76714
+        "end_ws_mb": 83,
+        "files_per_sec": 22,
+        "index_duration_ms": 80239
       },
       "project": "vue-naive-admin",
       "resolution_rate": 99.33,
@@ -10164,7 +10164,7 @@
         "http_call": 1
       },
       "flow_edges": 13,
-      "internal_edges": 24782,
+      "internal_edges": 24787,
       "internal_unresolved": 171,
       "languages": {
         "css": 13,
@@ -10183,9 +10183,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 123,
+        "end_ws_mb": 126,
         "files_per_sec": 24,
-        "index_duration_ms": 73785
+        "index_duration_ms": 74879
       },
       "project": "vue-vben-admin",
       "resolution_rate": 99.31,
@@ -10224,9 +10224,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin",
       "perf": {
-        "end_ws_mb": 98,
-        "files_per_sec": 47,
-        "index_duration_ms": 6346
+        "end_ws_mb": 247,
+        "files_per_sec": 48,
+        "index_duration_ms": 6179
       },
       "project": "vue-vuestic-admin",
       "resolution_rate": 92.74,

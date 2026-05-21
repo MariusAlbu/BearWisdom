@@ -783,6 +783,25 @@ fn resolve_iteration_body(
                         local_stats.unresolved += 1;
                         continue;
                     }
+                    // Bare unresolved refs (no module path, no chain) seed
+                    // the demand-driven expand pass: record an empty-receiver
+                    // chain miss so `locate_via_symbol_index` Phase B can
+                    // probe `find_by_name(target)` against the external
+                    // symbol index and pull the declaring file. Without
+                    // this the seed and chain expand both skip bare names,
+                    // so ambient identifiers declared in external `.d.ts`
+                    // (Vue 3 macros in `@vue/runtime-core`, RxJS pipeable
+                    // operators, lodash defaults) never trigger a pull.
+                    if r.module.is_none()
+                        && r.chain.is_none()
+                        && !r.target_name.is_empty()
+                        && !r.target_name.contains('.')
+                    {
+                        index.record_chain_miss(engine::ChainMiss {
+                            current_type: String::new(),
+                            target_name: r.target_name.clone(),
+                        });
+                    }
                     let module_value = r.module.as_deref().map(|s| s.to_string());
                     // E3: propagate snippet flag from source symbol for
                     // aggregate-stats exclusion.
