@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-05-20T00:00:00Z",
+  "captured_at": "2026-05-21T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -172,8 +172,8 @@
         "di_binding": 4
       },
       "flow_edges": 8,
-      "internal_edges": 6781,
-      "internal_unresolved": 128,
+      "internal_edges": 6924,
+      "internal_unresolved": 75,
       "languages": {
         "angular_template": 52,
         "html": 1,
@@ -185,17 +185,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/angular-coreui",
       "perf": {
-        "end_ws_mb": 135,
-        "files_per_sec": 41,
-        "index_duration_ms": 6293
+        "end_ws_mb": 87,
+        "files_per_sec": 40,
+        "index_duration_ms": 6500
       },
       "project": "angular-coreui",
-      "resolution_rate": 98.15,
+      "resolution_rate": 98.93,
       "routes": 0,
-      "symbols": 5938,
+      "symbols": 5942,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 117,
-        "typescript.type_ref": 11
+        "angular_template.calls": 49,
+        "typescript.calls": 25,
+        "typescript.type_ref": 1
       }
     },
     {
@@ -249,8 +250,8 @@
         "di_binding": 74
       },
       "flow_edges": 75,
-      "internal_edges": 5161,
-      "internal_unresolved": 85,
+      "internal_edges": 5302,
+      "internal_unresolved": 96,
       "languages": {
         "angular_template": 78,
         "html": 1,
@@ -263,15 +264,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/angular-ngx-admin",
       "perf": {
-        "end_ws_mb": 157,
-        "files_per_sec": 21,
-        "index_duration_ms": 24557
+        "end_ws_mb": 95,
+        "files_per_sec": 22,
+        "index_duration_ms": 23730
       },
       "project": "angular-ngx-admin",
-      "resolution_rate": 98.38,
+      "resolution_rate": 98.22,
       "routes": 0,
-      "symbols": 3478,
+      "symbols": 3482,
       "unresolved_by_lang_kind": {
+        "angular_template.calls": 11,
         "typescript.calls": 12,
         "typescript.instantiates": 63,
         "typescript.type_ref": 10
@@ -7491,13 +7493,13 @@
       "flow_edge_types": {
         "config_lookup": 61,
         "db_query": 5,
-        "di_binding": 41,
+        "di_binding": 36,
         "feature_flag": 3,
-        "http_call": 241
+        "http_call": 137
       },
-      "flow_edges": 351,
-      "internal_edges": 64997,
-      "internal_unresolved": 264,
+      "flow_edges": 242,
+      "internal_edges": 64535,
+      "internal_unresolved": 276,
       "languages": {
         "angular_template": 17,
         "astro": 3,
@@ -7514,17 +7516,20 @@
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "perf": {
-        "end_ws_mb": 381,
+        "end_ws_mb": 147,
         "files_per_sec": 33,
-        "index_duration_ms": 65602
+        "index_duration_ms": 66131
       },
       "project": "react-tanstack-query",
-      "resolution_rate": 99.6,
+      "resolution_rate": 99.57,
       "routes": 7,
-      "symbols": 31801,
+      "symbols": 31932,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 144,
-        "typescript.type_ref": 110,
+        "javascript.calls": 39,
+        "markdown.calls": 17,
+        "markdown.type_ref": 7,
+        "typescript.calls": 108,
+        "typescript.type_ref": 95,
         "vue.calls": 10
       }
     },
@@ -9198,12 +9203,11 @@
         "di_binding": 652,
         "feature_flag": 2,
         "graphql_op": 194,
-        "http_call": 36,
-        "service_dependency": 5
+        "http_call": 36
       },
-      "flow_edges": 1120,
-      "internal_edges": 84393,
-      "internal_unresolved": 2313,
+      "flow_edges": 1115,
+      "internal_edges": 85634,
+      "internal_unresolved": 2025,
       "languages": {
         "angular_template": 276,
         "c": 1,
@@ -9227,44 +9231,47 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-ever-demand",
       "perf": {
-        "end_ws_mb": 509,
-        "files_per_sec": 20,
-        "index_duration_ms": 180671
+        "end_ws_mb": 294,
+        "files_per_sec": 18,
+        "index_duration_ms": 203654
       },
       "project": "ts-ever-demand",
-      "resolution_rate": 97.33,
+      "resolution_rate": 97.69,
       "routes": 7,
-      "symbols": 49046,
+      "symbols": 49290,
       "unresolved_by_lang_kind": {
+        "angular_template.calls": 166,
         "dart.calls": 4,
         "dart.instantiates": 3,
         "dart.type_ref": 50,
+        "html.calls": 6,
+        "javascript.imports": 1,
+        "markdown.calls": 2,
         "scss.calls": 2,
-        "typescript.calls": 1114,
-        "typescript.implements": 3,
+        "typescript.calls": 656,
         "typescript.instantiates": 315,
-        "typescript.type_ref": 822
+        "typescript.type_ref": 820
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 98
       },
       "code_chunks": 162243,
       "files": 3371,
       "flow_edge_types": {
         "auth_guard": 3,
         "config_lookup": 13,
-        "db_query": 437,
+        "db_query": 436,
         "di_binding": 214,
         "feature_flag": 7,
         "http_call": 864,
         "mailer": 9,
         "websocket": 8
       },
-      "flow_edges": 1555,
-      "internal_edges": 289929,
-      "internal_unresolved": 1987,
+      "flow_edges": 1554,
+      "internal_edges": 284039,
+      "internal_unresolved": 3391,
       "languages": {
         "c": 3,
         "cmake": 1,
@@ -9298,26 +9305,28 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-immich",
       "perf": {
-        "end_ws_mb": 343,
+        "end_ws_mb": 338,
         "files_per_sec": 8,
-        "index_duration_ms": 435054
+        "index_duration_ms": 402980
       },
       "project": "ts-immich",
-      "resolution_rate": 99.32,
+      "resolution_rate": 98.82,
       "routes": 18,
       "symbols": 84877,
       "unresolved_by_lang_kind": {
         "c.type_ref": 67,
         "cmake.calls": 1,
         "cpp.calls": 12,
+        "cpp.imports": 1,
         "cpp.inherits": 2,
         "cpp.type_ref": 79,
         "dart.calls": 229,
         "dart.inherits": 24,
         "dart.instantiates": 5,
-        "dart.type_ref": 862,
+        "dart.type_ref": 1908,
+        "handlebars.imports": 4,
         "hcl.calls": 8,
-        "kotlin.calls": 97,
+        "kotlin.calls": 93,
         "kotlin.implements": 3,
         "kotlin.inherits": 2,
         "kotlin.type_ref": 103,
@@ -9326,31 +9335,31 @@
         "python.type_ref": 53,
         "shell.calls": 3,
         "sql.type_ref": 4,
-        "svelte.calls": 80,
+        "svelte.calls": 84,
         "swift.type_ref": 7,
-        "typescript.calls": 201,
-        "typescript.inherits": 1,
-        "typescript.instantiates": 9,
-        "typescript.type_ref": 95
+        "typescript.calls": 200,
+        "typescript.imports": 6,
+        "typescript.instantiates": 13,
+        "typescript.type_ref": 440
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 93
+        "min_resolution_rate": 99
       },
       "code_chunks": 76003,
       "files": 2260,
       "flow_edge_types": {
         "cli_command": 14,
         "config_lookup": 134,
-        "db_query": 1371,
+        "db_query": 1372,
         "feature_flag": 11,
         "http_call": 164,
         "mailer": 16
       },
-      "flow_edges": 1710,
-      "internal_edges": 70418,
-      "internal_unresolved": 4996,
+      "flow_edges": 1711,
+      "internal_edges": 83540,
+      "internal_unresolved": 548,
       "languages": {
         "css": 5,
         "javascript": 8,
@@ -9368,25 +9377,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-inbox-zero",
       "perf": {
-        "end_ws_mb": 423,
+        "end_ws_mb": 301,
         "files_per_sec": 37,
-        "index_duration_ms": 60878
+        "index_duration_ms": 61098
       },
       "project": "ts-inbox-zero",
-      "resolution_rate": 93.38,
+      "resolution_rate": 99.35,
       "routes": 148,
-      "symbols": 44958,
+      "symbols": 44986,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 9,
+        "javascript.calls": 13,
+        "javascript.type_ref": 2,
         "mdx.calls": 30,
-        "ruby.calls": 13,
+        "ruby.calls": 14,
         "ruby.inherits": 1,
         "ruby.type_ref": 1,
         "shell.calls": 15,
         "sql.type_ref": 5,
-        "typescript.calls": 638,
-        "typescript.instantiates": 41,
-        "typescript.type_ref": 4243
+        "typescript.calls": 189,
+        "typescript.imports": 117,
+        "typescript.instantiates": 22,
+        "typescript.type_ref": 139
       }
     },
     {
@@ -9398,12 +9409,12 @@
       "flow_edge_types": {
         "config_lookup": 81,
         "db_query": 8,
-        "http_call": 130,
+        "http_call": 129,
         "service_dependency": 1
       },
-      "flow_edges": 220,
-      "internal_edges": 18908,
-      "internal_unresolved": 938,
+      "flow_edges": 219,
+      "internal_edges": 19572,
+      "internal_unresolved": 858,
       "languages": {
         "css": 2,
         "dockerfile": 2,
@@ -9422,24 +9433,24 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-kaneo",
       "perf": {
-        "end_ws_mb": 391,
-        "files_per_sec": 62,
-        "index_duration_ms": 17636
+        "end_ws_mb": 213,
+        "files_per_sec": 87,
+        "index_duration_ms": 12617
       },
       "project": "ts-kaneo",
-      "resolution_rate": 95.27,
+      "resolution_rate": 95.8,
       "routes": 0,
-      "symbols": 16585,
+      "symbols": 16588,
       "unresolved_by_lang_kind": {
         "mdx.calls": 58,
         "typescript.calls": 679,
         "typescript.instantiates": 12,
-        "typescript.type_ref": 189
+        "typescript.type_ref": 109
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 100
       },
       "code_chunks": 926,
       "files": 56,
@@ -9450,8 +9461,8 @@
         "http_call": 41
       },
       "flow_edges": 87,
-      "internal_edges": 996,
-      "internal_unresolved": 8,
+      "internal_edges": 1105,
+      "internal_unresolved": 0,
       "languages": {
         "javascript": 1,
         "json": 6,
@@ -9460,42 +9471,38 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "perf": {
-        "end_ws_mb": 386,
-        "files_per_sec": 18,
-        "index_duration_ms": 3131
+        "end_ws_mb": 325,
+        "files_per_sec": 13,
+        "index_duration_ms": 4283
       },
       "project": "ts-nestjs-realworld",
-      "resolution_rate": 99.2,
+      "resolution_rate": 100.0,
       "routes": 21,
       "symbols": 456,
-      "unresolved_by_lang_kind": {
-        "typescript.calls": 2,
-        "typescript.type_ref": 6
-      }
+      "unresolved_by_lang_kind": {}
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 97
       },
-      "code_chunks": 656849,
+      "code_chunks": 656850,
       "files": 28996,
       "flow_edge_types": {
         "auth_guard": 22,
         "bg_job": 38,
         "cli_command": 2,
-        "config_lookup": 4557,
-        "db_query": 300,
+        "config_lookup": 4541,
+        "db_query": 250,
         "feature_flag": 43,
         "graphql_op": 96,
-        "http_call": 2478,
-        "ipc_call": 12,
+        "http_call": 2163,
+        "ipc_call": 9,
         "message_queue": 1,
-        "rpc_call": 283,
-        "websocket": 1
+        "rpc_call": 6
       },
-      "flow_edges": 7833,
-      "internal_edges": 726320,
-      "internal_unresolved": 12562,
+      "flow_edges": 7171,
+      "internal_edges": 725887,
+      "internal_unresolved": 19218,
       "languages": {
         "c": 1,
         "css": 857,
@@ -9521,34 +9528,36 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 337,
-        "files_per_sec": 13,
-        "index_duration_ms": 2180265
+        "end_ws_mb": 322,
+        "files_per_sec": 18,
+        "index_duration_ms": 1635272
       },
       "project": "ts-nextjs",
-      "resolution_rate": 98.3,
+      "resolution_rate": 97.42,
       "routes": 511,
-      "symbols": 377771,
+      "symbols": 377772,
       "unresolved_by_lang_kind": {
-        "html.calls": 60,
+        "html.calls": 63,
         "html.type_ref": 2,
-        "javascript.calls": 759,
-        "javascript.type_ref": 148,
-        "markdown.calls": 12,
+        "javascript.calls": 4806,
+        "javascript.imports": 18,
+        "javascript.type_ref": 188,
+        "markdown.calls": 53,
         "markdown.type_ref": 3,
-        "mdx.calls": 284,
+        "mdx.calls": 294,
         "mdx.type_ref": 4,
         "python.type_ref": 1,
-        "rust.calls": 812,
+        "rust.calls": 809,
         "rust.implements": 140,
-        "rust.inherits": 7,
+        "rust.inherits": 6,
         "rust.type_ref": 1299,
         "scss.calls": 7,
         "shell.calls": 12,
-        "typescript.calls": 2201,
-        "typescript.inherits": 6,
-        "typescript.instantiates": 143,
-        "typescript.type_ref": 6662
+        "typescript.calls": 2146,
+        "typescript.imports": 3294,
+        "typescript.inherits": 5,
+        "typescript.instantiates": 109,
+        "typescript.type_ref": 5959
       }
     },
     {
@@ -9565,8 +9574,8 @@
         "mailer": 85
       },
       "flow_edges": 630,
-      "internal_edges": 16739,
-      "internal_unresolved": 250,
+      "internal_edges": 16652,
+      "internal_unresolved": 208,
       "languages": {
         "css": 4,
         "dockerfile": 1,
@@ -9584,12 +9593,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 168,
-        "files_per_sec": 38,
-        "index_duration_ms": 33064
+        "end_ws_mb": 246,
+        "files_per_sec": 32,
+        "index_duration_ms": 38663
       },
       "project": "ts-rallly",
-      "resolution_rate": 98.53,
+      "resolution_rate": 98.77,
       "routes": 18,
       "symbols": 8777,
       "unresolved_by_lang_kind": {
@@ -9597,7 +9606,7 @@
         "sql.type_ref": 24,
         "typescript.calls": 35,
         "typescript.instantiates": 9,
-        "typescript.type_ref": 61
+        "typescript.type_ref": 19
       }
     },
     {
@@ -9607,13 +9616,13 @@
       "code_chunks": 64623,
       "files": 1697,
       "flow_edge_types": {
-        "config_lookup": 101,
-        "db_query": 225,
-        "http_call": 5678
+        "config_lookup": 71,
+        "db_query": 145,
+        "http_call": 3700
       },
-      "flow_edges": 6004,
-      "internal_edges": 66990,
-      "internal_unresolved": 309,
+      "flow_edges": 3916,
+      "internal_edges": 64645,
+      "internal_unresolved": 251,
       "languages": {
         "css": 8,
         "html": 2,
@@ -9631,20 +9640,20 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-trpc",
       "perf": {
-        "end_ws_mb": 447,
-        "files_per_sec": 34,
-        "index_duration_ms": 49322
+        "end_ws_mb": 317,
+        "files_per_sec": 37,
+        "index_duration_ms": 46395
       },
       "project": "ts-trpc",
-      "resolution_rate": 99.54,
+      "resolution_rate": 99.61,
       "routes": 30,
-      "symbols": 37849,
+      "symbols": 37913,
       "unresolved_by_lang_kind": {
+        "javascript.calls": 3,
+        "markdown.type_ref": 1,
         "mdx.calls": 15,
-        "typescript.calls": 94,
-        "typescript.inherits": 2,
-        "typescript.instantiates": 7,
-        "typescript.type_ref": 191
+        "typescript.calls": 95,
+        "typescript.type_ref": 137
       }
     },
     {
@@ -9947,14 +9956,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 82
+        "min_resolution_rate": 43
       },
       "code_chunks": 4346,
       "files": 294,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1319,
-      "internal_unresolved": 279,
+      "internal_edges": 775,
+      "internal_unresolved": 991,
       "languages": {
         "css": 2,
         "handlebars": 3,
@@ -9969,18 +9978,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "perf": {
-        "end_ws_mb": 127,
-        "files_per_sec": 62,
-        "index_duration_ms": 4733
+        "end_ws_mb": 360,
+        "files_per_sec": 57,
+        "index_duration_ms": 5124
       },
       "project": "vue-element-admin",
-      "resolution_rate": 82.54,
+      "resolution_rate": 43.88,
       "routes": 0,
       "symbols": 2366,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 225,
-        "javascript.type_ref": 7,
-        "vue.calls": 47
+        "javascript.calls": 471,
+        "javascript.type_ref": 13,
+        "vue.calls": 507
       }
     },
     {
@@ -10096,18 +10105,18 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 90
       },
       "code_chunks": 34700,
       "files": 1783,
       "flow_edge_types": {
         "config_lookup": 3,
         "db_query": 9,
-        "http_call": 5
+        "http_call": 1
       },
-      "flow_edges": 17,
-      "internal_edges": 24820,
-      "internal_unresolved": 182,
+      "flow_edges": 13,
+      "internal_edges": 19808,
+      "internal_unresolved": 2187,
       "languages": {
         "css": 14,
         "dockerfile": 1,
@@ -10125,35 +10134,38 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-naive-admin",
       "perf": {
-        "end_ws_mb": 190,
-        "files_per_sec": 19,
-        "index_duration_ms": 93639
+        "end_ws_mb": 238,
+        "files_per_sec": 27,
+        "index_duration_ms": 65232
       },
       "project": "vue-naive-admin",
-      "resolution_rate": 99.27,
+      "resolution_rate": 90.06,
       "routes": 0,
-      "symbols": 17570,
+      "symbols": 17660,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 54,
-        "typescript.instantiates": 16,
-        "typescript.type_ref": 75,
-        "vue.calls": 37
+        "javascript.calls": 2,
+        "markdown.calls": 2,
+        "markdown.type_ref": 2,
+        "typescript.calls": 980,
+        "typescript.instantiates": 19,
+        "typescript.type_ref": 1071,
+        "vue.calls": 111
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 89
       },
       "code_chunks": 34124,
       "files": 1772,
       "flow_edge_types": {
         "config_lookup": 3,
         "db_query": 9,
-        "http_call": 5
+        "http_call": 1
       },
-      "flow_edges": 17,
-      "internal_edges": 24502,
-      "internal_unresolved": 173,
+      "flow_edges": 13,
+      "internal_edges": 18809,
+      "internal_unresolved": 2181,
       "languages": {
         "css": 13,
         "dockerfile": 1,
@@ -10171,31 +10183,34 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 155,
-        "files_per_sec": 27,
-        "index_duration_ms": 65616
+        "end_ws_mb": 236,
+        "files_per_sec": 28,
+        "index_duration_ms": 64142
       },
       "project": "vue-vben-admin",
-      "resolution_rate": 99.3,
+      "resolution_rate": 89.61,
       "routes": 0,
       "symbols": 17306,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 51,
-        "typescript.instantiates": 16,
-        "typescript.type_ref": 69,
-        "vue.calls": 37
+        "javascript.calls": 2,
+        "markdown.calls": 2,
+        "markdown.type_ref": 2,
+        "typescript.calls": 974,
+        "typescript.instantiates": 19,
+        "typescript.type_ref": 1071,
+        "vue.calls": 111
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 98
+        "min_resolution_rate": 73
       },
       "code_chunks": 5154,
       "files": 297,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2755,
-      "internal_unresolved": 31,
+      "internal_edges": 1703,
+      "internal_unresolved": 627,
       "languages": {
         "html": 1,
         "javascript": 4,
@@ -10209,19 +10224,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin",
       "perf": {
-        "end_ws_mb": 344,
-        "files_per_sec": 29,
-        "index_duration_ms": 10252
+        "end_ws_mb": 390,
+        "files_per_sec": 53,
+        "index_duration_ms": 5614
       },
       "project": "vue-vuestic-admin",
-      "resolution_rate": 98.89,
+      "resolution_rate": 73.09,
       "routes": 0,
-      "symbols": 2082,
+      "symbols": 2087,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 10,
+        "typescript.calls": 93,
         "typescript.instantiates": 3,
-        "typescript.type_ref": 4,
-        "vue.calls": 14
+        "typescript.type_ref": 109,
+        "vue.calls": 422
       }
     },
     {
