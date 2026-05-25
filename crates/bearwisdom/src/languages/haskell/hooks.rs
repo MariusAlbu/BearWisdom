@@ -5,6 +5,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -175,9 +176,6 @@ impl LanguageEngineHooks for HaskellHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
@@ -195,13 +193,13 @@ impl LanguageEngineHooks for HaskellHooks {
                 });
             }
         }
-        engine::resolve_common(
-            "haskell",
+        (DefaultResolver {
             file_ctx,
             ref_ctx,
             lookup,
-            predicates::kind_compatible,
-        )
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

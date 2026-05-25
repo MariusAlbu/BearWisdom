@@ -41,15 +41,23 @@ pub(super) fn extract_impl(
     };
     let type_name = node_text(&type_node, source);
 
-    // Emit a Namespace symbol at the impl_item line.  This gives the coverage
+    // Emit a Namespace symbol at the impl_item line. This gives the coverage
     // system something to match against for `impl_item` in symbol_node_kinds.
+    //
+    // Name + qname suffix the line number so the impl-block symbol never
+    // collides with the implementing type's real definition. Without the
+    // suffix, `impl Term { ... }` produced a second `Term` symbol at
+    // `kind=namespace`, polluting `by_name("Term")` and `types_by_name("Term")`
+    // and causing the chain walker and TypeRef fallback to bail on ambiguity.
     let impl_sym_idx = symbols.len();
     {
         use super::helpers::{qualify, scope_from_prefix};
-        let impl_name = if outer_prefix.is_empty() {
-            type_name.clone()
+        let impl_line = node.start_position().row as u32 + 1;
+        let impl_short = format!("<impl {type_name}@{impl_line}>");
+        let impl_qname = if outer_prefix.is_empty() {
+            impl_short.clone()
         } else {
-            format!("{outer_prefix}.{type_name}")
+            format!("{outer_prefix}.{impl_short}")
         };
         // Carry the impl block's own type_parameters into the signature
         // so the engine's generic_params parser picks them up. Without
@@ -60,8 +68,8 @@ pub(super) fn extract_impl(
             None => format!("impl {type_name}"),
         };
         symbols.push(ExtractedSymbol {
-            name: type_name.clone(),
-            qualified_name: impl_name,
+            name: impl_short.clone(),
+            qualified_name: impl_qname,
             kind: SymbolKind::Namespace,
             visibility: super::helpers::detect_visibility(node),
             start_line: node.start_position().row as u32,
@@ -1161,7 +1169,96 @@ fn infer_rust_variable_type(
             }
         }
 
+        // `recv.method(args)` or `recv.field.method(args)` — call on a
+        // field-expression receiver. Emit a chain-bearing TypeRef so the
+        // build-time chain inference can hop receiver → return type and
+        // bind the variable. Catches the `let searcher = index.searcher();`
+        // / `let it = collection.iter();` / builder-chain pattern.
+        "call_expression" if value_node
+            .child_by_field_name("function")
+            .map(|f| f.kind() == "field_expression")
+            .unwrap_or(false) =>
+        {
+            if let Some(func) = value_node.child_by_field_name("function") {
+                let chain = build_field_expression_chain(&func, source);
+                if chain.segments.len() >= 2 {
+                    let leaf_name = chain.segments.last().unwrap().name.clone();
+                    let byte_offset = func.start_byte() as u32;
+                    let line = func.start_position().row as u32;
+                    refs.push(crate::types::ExtractedRef {
+                        source_symbol_index: var_sym_idx,
+                        target_name: leaf_name,
+                        kind: EdgeKind::TypeRef,
+                        line,
+                        col: 0,
+                        module: None,
+                        chain: Some(chain),
+                        byte_offset,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
+            }
+        }
+
         _ => {}
     }
+}
+
+/// Flatten a tree-sitter-rust `field_expression` node into a MemberChain
+/// `[root, ..., leaf]` so the build-time chain walker can drive hop-by-hop
+/// type inference. Returns an empty chain when the shape isn't recognised.
+fn build_field_expression_chain(
+    node: &tree_sitter::Node,
+    source: &str,
+) -> crate::types::MemberChain {
+    use crate::types::{ChainSegment, MemberChain, SegmentKind};
+    let mut segments_rev: Vec<ChainSegment> = Vec::new();
+    let mut current = *node;
+    loop {
+        match current.kind() {
+            "field_expression" => {
+                let Some(field) = current.child_by_field_name("field") else {
+                    return MemberChain { segments: Vec::new() };
+                };
+                segments_rev.push(ChainSegment {
+                    name: node_text(&field, source),
+                    node_kind: "field_expression".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: false,
+                    byte_offset: field.start_byte() as u32,
+                    declared_type_id: None,
+                    type_arg_ids: Vec::new(),
+                });
+                match current.child_by_field_name("value") {
+                    Some(next) => current = next,
+                    None => return MemberChain { segments: Vec::new() },
+                }
+            }
+            "identifier" | "self" => {
+                segments_rev.push(ChainSegment {
+                    name: node_text(&current, source),
+                    node_kind: current.kind().to_string(),
+                    kind: if current.kind() == "self" {
+                        SegmentKind::SelfRef
+                    } else {
+                        SegmentKind::Identifier
+                    },
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: false,
+                    byte_offset: current.start_byte() as u32,
+                    declared_type_id: None,
+                    type_arg_ids: Vec::new(),
+                });
+                break;
+            }
+            _ => return MemberChain { segments: Vec::new() },
+        }
+    }
+    segments_rev.reverse();
+    crate::types::MemberChain { segments: segments_rev }
 }
 

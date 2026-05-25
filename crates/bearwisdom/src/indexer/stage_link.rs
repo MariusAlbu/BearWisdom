@@ -409,7 +409,7 @@ pub(crate) fn seed_demand_from_user_refs(
     std::thread::scope(|s| {
         let handle = std::thread::Builder::new()
             .name("bw-demand-seed".to_string())
-            .stack_size(32 * 1024 * 1024)
+            .stack_size(64 * 1024 * 1024)
             .spawn_scoped(s, move || {
                 seed_demand_from_user_refs_inner(parsed, symbol_index, registry, type_arena)
             })

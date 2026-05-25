@@ -6,6 +6,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -118,9 +119,6 @@ impl LanguageEngineHooks for PuppetHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if !target.contains("::") {
             let target_lower = target.to_ascii_lowercase();
             let mut synthetic_match = None;
@@ -220,13 +218,13 @@ impl LanguageEngineHooks for PuppetHooks {
                 }
             }
         }
-        engine::resolve_common(
-            "puppet",
+        (DefaultResolver {
             file_ctx,
             ref_ctx,
             lookup,
-            predicates::kind_compatible,
-        )
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

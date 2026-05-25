@@ -46,9 +46,6 @@ impl KotlinResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         // Synthetic-global lookup. kotlin_stdlib + jdk_src + android_sdk +
         // maven (sources jars) emit real symbols for stdlib functions
@@ -226,31 +223,6 @@ impl KotlinResolver {
                         flow_emit: None,
                     });
                 }
-            }
-        }
-
-        // `.kt`/`.kts`-gated bare-name fallback for extension functions,
-        // top-level declarations, and JVM-bridge static imports.
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
-            && ref_ctx.extracted_ref.module.is_none()
-            && !target.contains('.')
-        {
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_kotlin = path.ends_with(".kt") || path.ends_with(".kts");
-                if !is_kotlin {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "kotlin_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
             }
         }
 
@@ -714,7 +686,16 @@ impl LanguageEngineHooks for KotlinHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        KotlinResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = KotlinResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

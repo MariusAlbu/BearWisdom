@@ -44,9 +44,6 @@ impl ElixirResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         // Synthetic-global lookup. elixir_stdlib + erlang_otp + hex (when
         // mix.exs declares deps) emit real symbols for Kernel functions
@@ -687,7 +684,16 @@ impl LanguageEngineHooks for ElixirHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        ElixirResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = ElixirResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

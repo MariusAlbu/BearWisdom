@@ -5,6 +5,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -120,48 +121,24 @@ impl LanguageEngineHooks for BashHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if predicates::is_bash_builtin(target) {
             return None;
         }
-        if let Some(res) = engine::resolve_common(
-            "bash",
-            file_ctx,
-            ref_ctx,
-            lookup,
-            predicates::kind_compatible,
-        ) {
-            return Some(res);
-        }
+        // Bash-specific `source ./path.sh` resolution runs first — its
+        // confidence is higher than the generic DefaultResolver fallback
+        // when an explicit `source` directive is in scope.
         if edge_kind == EdgeKind::Calls {
             if let Some(res) = resolve_via_shell_source(target, file_ctx, lookup) {
                 return Some(res);
             }
         }
-        if edge_kind == EdgeKind::Calls && ref_ctx.extracted_ref.module.is_none() {
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_bash = path.ends_with(".sh")
-                    || path.ends_with(".bash")
-                    || path.starts_with("ext:bash-completion-synthetics:");
-                if !is_bash {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "bash_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        None
+        (DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

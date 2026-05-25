@@ -32,6 +32,30 @@ pub(crate) fn strip_generic_args(s: &str) -> String {
     base.trim_end_matches('.').to_string()
 }
 
+/// Return the first generic argument of `T<A, B, …>` (depth-aware), or `None`
+/// when `s` carries no top-level generic application. Used to peel a fallible
+/// wrapper's payload after a `?`/unwrap: `Result<IndexReader>` → `IndexReader`,
+/// `Result<Field, Error>` → `Field`.
+pub(crate) fn first_generic_arg(s: &str) -> Option<String> {
+    let open = s.find('<')?;
+    let close_rel = find_matching_bracket(&s[open..], '<', '>')?;
+    let inner = &s[open + 1..open + close_rel];
+    let mut depth = 0usize;
+    for (i, c) in inner.char_indices() {
+        match c {
+            '<' | '(' | '[' => depth += 1,
+            '>' | ')' | ']' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                let arg = inner[..i].trim();
+                return (!arg.is_empty()).then(|| arg.to_string());
+            }
+            _ => {}
+        }
+    }
+    let arg = inner.trim();
+    (!arg.is_empty()).then(|| arg.to_string())
+}
+
 /// Find the index of the closing bracket that matches the first opening bracket
 /// in `s`.  Uses depth counting so nested brackets are handled correctly.
 ///
@@ -830,5 +854,50 @@ pub fn infer_external_from_chain(
         break;
     }
 
+    None
+}
+
+/// Walk `current_type`'s inheritance chain looking for a member named
+/// `seg_name` that satisfies `kind_compatible`. At each ancestor, try both
+/// the qualified-name shape (`{ancestor}.{seg_name}`) and a members scan.
+/// Bounded at `MAX_INHERITANCE_DEPTH = 8` levels. Returns the first hit.
+///
+/// Generic helper for per-language chain walkers. The typed core walker
+/// (`type_checker/core/chain.rs`) already does this for `Class`-shaped
+/// TypeIds; this fallback covers the string-keyed shape per-language
+/// walkers like `walk_rust_lang_chain` use.
+pub fn find_member_via_inheritance<'a>(
+    current_type: &str,
+    seg_name: &str,
+    edge_kind: crate::types::EdgeKind,
+    lookup: &'a dyn super::SymbolLookup,
+    kind_compatible: fn(crate::types::EdgeKind, &str) -> bool,
+) -> Option<&'a super::SymbolInfo> {
+    const MAX_INHERITANCE_DEPTH: usize = 8;
+    let mut ancestor = match lookup.parent_class_qname(current_type) {
+        Some(p) => p.to_string(),
+        None => return None,
+    };
+    for _ in 0..MAX_INHERITANCE_DEPTH {
+        let candidate = format!("{ancestor}.{seg_name}");
+        if let Some(sym) = lookup.by_qualified_name(&candidate) {
+            if kind_compatible(edge_kind, &sym.kind) {
+                return Some(sym);
+            }
+        }
+        for sym in lookup.members_of(&ancestor) {
+            if sym.name == seg_name && kind_compatible(edge_kind, &sym.kind) {
+                return Some(sym);
+            }
+        }
+        let next = match lookup.parent_class_qname(&ancestor) {
+            Some(p) => p.to_string(),
+            None => return None,
+        };
+        if next == ancestor {
+            return None;
+        }
+        ancestor = next;
+    }
     None
 }

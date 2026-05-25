@@ -17,9 +17,6 @@ impl LanguageEngineHooks for MdxHooks {
         project_ctx: Option<&ProjectContext>,
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return None;
-        }
         crate::languages::typescript::hooks::infer_external_inner_with_lookup(
             file_ctx, ref_ctx, project_ctx, lookup,
         )

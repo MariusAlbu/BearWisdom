@@ -52,9 +52,6 @@ pub(crate) fn resolve(
         let edge_kind = ref_ctx.extracted_ref.kind;
 
         // Skip import refs — they declare scope, not symbol references.
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         // `Self` → resolve to the enclosing struct/enum/trait.
         if target == "Self" {
@@ -504,6 +501,72 @@ pub(crate) fn resolve(
             }
         }
 
+        // Step 7: Rust prelude. Names in `std::prelude::v1` are in scope
+        // without an explicit `use`. The earlier steps fail when an
+        // identically-named internal symbol (e.g. an `<Enum>.Vec`
+        // variant) makes the by-name lookup ambiguous, or when the
+        // prelude entity is one of many external crates re-exporting
+        // the same identifier. Prefer the `rust-stdlib` candidate.
+        if matches!(
+            edge_kind,
+            EdgeKind::Calls
+                | EdgeKind::TypeRef
+                | EdgeKind::Instantiates
+                | EdgeKind::Implements
+                | EdgeKind::Inherits
+        )
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains("::")
+            && !target.contains('.')
+            && keywords::PRELUDE_NAMES.contains(&target.as_str())
+        {
+            // Variants are stored under their parent enum's qname:
+            // `Option.Some`, `Result.Ok`, `Result.Err`. Probe those
+            // first when the target is a prelude variant.
+            let variant_qname = match target.as_str() {
+                "Some" | "None" => Some(format!("Option.{target}")),
+                "Ok" | "Err" => Some(format!("Result.{target}")),
+                _ => None,
+            };
+            if let Some(qn) = variant_qname.as_deref() {
+                for sym in lookup.all_by_qualified_name(qn) {
+                    // Variants of `Option` / `Result` are constructed via call
+                    // syntax (`Some(x)`, `Ok(y)`) and pattern-matched (`Some(_)` in
+                    // a match arm). Both shapes land here — accept enum_member
+                    // regardless of edge_kind for the four prelude variants.
+                    let compat = sym.kind == "enum_member"
+                        || predicates::kind_compatible(edge_kind, &sym.kind);
+                    if compat && keywords::is_rust_stdlib_path(&sym.file_path) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.95,
+                            strategy: "rust_prelude",
+                            resolved_yield_type: None,
+                            flow_emit: None,
+                        });
+                    }
+                }
+            }
+
+            // Bare-name shape: trait/type/macro lives at the leaf qname
+            // (`Vec`, `Box`, `Default`, `format`, `println`, ...). The
+            // stdlib walker is authoritative; ignore same-named symbols
+            // from third-party crates and from internal collisions.
+            for sym in lookup.by_name(target) {
+                if keywords::is_rust_stdlib_path(&sym.file_path)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.95,
+                        strategy: "rust_prelude",
+                        resolved_yield_type: None,
+                        flow_emit: None,
+                    });
+                }
+            }
+        }
+
         // Rust bare-name fallback. Continues the cross-language
         // template (PRs 31, 35-40, Lua, Go). Rust's `use` brings
         // names into scope and trait methods are callable by bare
@@ -525,24 +588,6 @@ pub(crate) fn resolve(
             && !target.contains("::")
             && !target.contains('.')
         {
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_rust = path.ends_with(".rs") || path.starts_with("ext:rust:");
-                if !is_rust {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "rust_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-
             // Name-only chain miss: every project resolution path failed,
             // but the target might live in an external Rust file the
             // demand-driven cargo walker hasn't parsed yet (only
@@ -734,6 +779,28 @@ pub(crate) fn walk_rust_lang_chain(
                 flow_emit: None,
             });
         }
+    }
+
+    // Inheritance walk: `current_type` may inherit `last.name` from a parent
+    // (trait default method, struct extending another via inheritance map).
+    // Generic helper that climbs `parent_class_qname` and retries the lookup.
+    if let Some(sym) = crate::indexer::resolve::engine::find_member_via_inheritance(
+        &current_type,
+        &last.name,
+        edge_kind,
+        lookup,
+        predicates::kind_compatible,
+    ) {
+        return Some(Resolution {
+            target_symbol_id: sym.id,
+            confidence: 0.90,
+            strategy: "rust_chain_inheritance",
+            resolved_yield_type: intern_yield_type(
+                simple_yield_type(sym, lookup).map(|t| normalize_path(&t)),
+                lookup,
+            ),
+            flow_emit: None,
+});
     }
 
     lookup.record_chain_miss(ChainMiss {
@@ -1310,7 +1377,16 @@ impl crate::type_checker::profile::hooks::LanguageEngineHooks for RustHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        RustResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = RustResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

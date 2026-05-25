@@ -52,9 +52,6 @@ impl PythonResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         // Bare-name walker lookup. cpython_stdlib emits real symbols for
         // `print`, `len`, `dict`, exception types, str/list/dict methods,
@@ -393,45 +390,6 @@ impl PythonResolver {
                         flow_emit: None,
                     });
                 }
-            }
-        }
-
-        // Bare-name fallback for unittest-style assertion / mixin calls.
-        // The chain walker can't follow `self.assertEqual` through
-        // Django's deep TestCase hierarchy without inheritance type-flow,
-        // so chain refs that resolve to a leaf method on `self` fall
-        // through here. TypeRef accepts `method` here because
-        // context-manager patterns like `with self.assertLogs(): …` are
-        // emitted as TypeRef by the Python extractor.
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef)
-            && ref_ctx.extracted_ref.module.is_none()
-            && !effective_target.contains('.')
-        {
-            let kind_ok = |sym_kind: &str| -> bool {
-                if predicates::kind_compatible(edge_kind, sym_kind) {
-                    return true;
-                }
-                edge_kind == EdgeKind::TypeRef && sym_kind == "method"
-            };
-            for sym in lookup.by_name(effective_target) {
-                if !kind_ok(&sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_py = path.ends_with(".py")
-                    || path.ends_with(".pyi")
-                    || path.starts_with("ext:python:")
-                    || path.starts_with("ext:idx:");
-                if !is_py {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "python_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
             }
         }
 
@@ -787,7 +745,16 @@ impl LanguageEngineHooks for PythonHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        PythonResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = PythonResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

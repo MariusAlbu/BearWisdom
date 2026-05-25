@@ -868,3 +868,203 @@ fn test_rust_async_graphql_rejects_unrelated() {
     assert!(detect_rust_async_graphql_attribute("derive").is_none());
     assert!(detect_rust_async_graphql_attribute("test").is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Step 7 — Rust prelude resolution against indexed `rust-stdlib` externals.
+// ---------------------------------------------------------------------------
+
+mod prelude {
+    use super::*;
+    use crate::indexer::resolve::engine::SymbolIndex;
+    use std::collections::HashMap;
+
+    fn stdlib_path(rel: &str) -> String {
+        format!(
+            "ext:idx:C:/toolchain/lib/rustlib/src/rust/library/{rel}"
+        )
+    }
+
+    fn external_file(path: &str, symbols: Vec<ExtractedSymbol>) -> ParsedFile {
+        ParsedFile {
+            path: path.to_string(),
+            language: "rust".to_string(),
+            content_hash: String::new(),
+            size: 0,
+            line_count: 0,
+            mtime: None,
+            package_id: None,
+            content: None,
+            has_errors: false,
+            symbols,
+            refs: vec![],
+            routes: vec![],
+            db_sets: vec![],
+            symbol_origin_languages: vec![],
+            ref_origin_languages: vec![],
+            symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
+            plugin_flow_emissions: Vec::new(),
+        }
+    }
+
+    /// Build a SymbolIndex from the given files, faking the symbol_id_map
+    /// the indexer normally produces.
+    fn build_index(files: &[ParsedFile]) -> SymbolIndex {
+        let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+        let mut next: i64 = 1;
+        for pf in files {
+            for sym in &pf.symbols {
+                id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next);
+                next += 1;
+            }
+        }
+        SymbolIndex::build(files, &id_map)
+    }
+
+    fn run_resolve(
+        resolver: &RustResolver,
+        ctx: &ProjectContext,
+        caller_idx: usize,
+        files: &[ParsedFile],
+    ) -> Option<crate::indexer::resolve::engine::Resolution> {
+        let caller = &files[caller_idx];
+        let index = build_index(files);
+        let file_ctx = resolver.build_file_context(caller, Some(ctx));
+        let ref_ctx = RefContext {
+            extracted_ref: &caller.refs[0],
+            source_symbol: &caller.symbols[0],
+            scope_chain: build_scope_chain(caller.symbols[0].scope_path.as_deref()),
+            file_package_id: None,
+        };
+        resolver.resolve(&file_ctx, &ref_ctx, &index)
+    }
+
+    #[test]
+    fn prelude_bare_vec_typeref_with_no_collision_uses_global_fallback() {
+        // Single external candidate — the cheaper single-candidate fallback
+        // (step 6) wins before the prelude path is reached. The prelude path
+        // is intentionally a fallback for the ambiguous case; step 6 already
+        // covers the unambiguous one.
+        let files = vec![
+            external_file(
+                &stdlib_path("alloc/src/vec/mod.rs"),
+                vec![make_symbol("Vec", "Vec", SymbolKind::Struct, Visibility::Public, None)],
+            ),
+            make_file(
+                "src/lib.rs",
+                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_ref(0, "Vec", EdgeKind::TypeRef, 5)],
+            ),
+        ];
+        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files)
+            .expect("Vec must resolve");
+        assert_eq!(res.strategy, "rust_global_typeref_fallback");
+    }
+
+    #[test]
+    fn prelude_vec_prefers_stdlib_over_internal_enum_variant() {
+        let files = vec![
+            // Internal collision: `<Enum>.Vec` variant shares the bare name.
+            make_file(
+                "src/percentile.rs",
+                vec![
+                    make_symbol(
+                        "PercentileValues",
+                        "PercentileValues",
+                        SymbolKind::Enum,
+                        Visibility::Public,
+                        None,
+                    ),
+                    make_symbol(
+                        "Vec",
+                        "PercentileValues.Vec",
+                        SymbolKind::EnumMember,
+                        Visibility::Public,
+                        Some("PercentileValues"),
+                    ),
+                ],
+                vec![],
+            ),
+            external_file(
+                &stdlib_path("alloc/src/vec/mod.rs"),
+                vec![make_symbol("Vec", "Vec", SymbolKind::Struct, Visibility::Public, None)],
+            ),
+            make_file(
+                "src/lib.rs",
+                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_ref(0, "Vec", EdgeKind::TypeRef, 5)],
+            ),
+        ];
+        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 2, &files)
+            .expect("Vec should still resolve, preferring stdlib");
+        assert_eq!(res.strategy, "rust_prelude");
+    }
+
+    #[test]
+    fn prelude_some_resolves_to_option_variant() {
+        let files = vec![
+            external_file(
+                &stdlib_path("core/src/option.rs"),
+                vec![
+                    make_symbol("Option", "Option", SymbolKind::Enum, Visibility::Public, None),
+                    make_symbol(
+                        "Some",
+                        "Option.Some",
+                        SymbolKind::EnumMember,
+                        Visibility::Public,
+                        Some("Option"),
+                    ),
+                ],
+            ),
+            make_file(
+                "src/lib.rs",
+                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_ref(0, "Some", EdgeKind::Calls, 5)],
+            ),
+        ];
+        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files)
+            .expect("Some should resolve to Option.Some");
+        assert_eq!(res.strategy, "rust_prelude");
+    }
+
+    #[test]
+    fn prelude_does_not_fire_for_non_prelude_name() {
+        let files = vec![
+            external_file(
+                &stdlib_path("alloc/src/vec/mod.rs"),
+                vec![make_symbol("MyType", "MyType", SymbolKind::Struct, Visibility::Public, None)],
+            ),
+            make_file(
+                "src/lib.rs",
+                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_ref(0, "MyType", EdgeKind::TypeRef, 5)],
+            ),
+        ];
+        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files);
+        if let Some(r) = res {
+            assert_ne!(r.strategy, "rust_prelude");
+        }
+    }
+
+    #[test]
+    fn prelude_ignores_third_party_crate_with_same_name() {
+        let files = vec![
+            external_file(
+                "ext:idx:C:/Users/Reaper/.cargo/registry/src/index.crates.io-x/bumpalo-3.20.2/src/collections/vec.rs",
+                vec![make_symbol("Vec", "Vec", SymbolKind::Struct, Visibility::Public, None)],
+            ),
+            make_file(
+                "src/lib.rs",
+                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_ref(0, "Vec", EdgeKind::TypeRef, 5)],
+            ),
+        ];
+        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files);
+        if let Some(r) = res {
+            assert_ne!(r.strategy, "rust_prelude");
+        }
+    }
+}

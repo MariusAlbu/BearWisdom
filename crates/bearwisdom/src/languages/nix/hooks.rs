@@ -4,6 +4,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -73,9 +74,6 @@ impl LanguageEngineHooks for NixHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if target.starts_with("builtins.")
             || target.starts_with("lib.")
             || target.starts_with("pkgs.")
@@ -104,7 +102,13 @@ impl LanguageEngineHooks for NixHooks {
                 });
             }
         }
-        engine::resolve_common("nix", file_ctx, ref_ctx, lookup, |_, _| true)
+        (DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: |_, _| true,
+        })
+        .resolve_all()
     }
 }
 

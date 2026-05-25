@@ -5,6 +5,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -118,13 +119,16 @@ impl LanguageEngineHooks for ZigHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if predicates::is_zig_builtin(target) {
             return None;
         }
-        engine::resolve_common("zig", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        (DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

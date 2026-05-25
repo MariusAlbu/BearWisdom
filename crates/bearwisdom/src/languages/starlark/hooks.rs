@@ -107,9 +107,6 @@ impl LanguageEngineHooks for StarlarkHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         let full_name = dotted_name(&ref_ctx.extracted_ref);
         if full_name.contains('.') && predicates::is_builtin_method_tail(&full_name) {
             return None;

@@ -37,6 +37,7 @@
 // Sprint 2 wires TypeScript. Sprint 3+ wires Python/Rust/etc.
 // =============================================================================
 
+use crate::indexer::resolve::engine::strip_generic_args;
 use crate::types::{ChainSegment, ExtractedRef, ExtractedSymbol, FlowMeta, Narrowing};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
 
@@ -119,27 +120,40 @@ fn run_assignment_query(
     let Ok(query) = Query::new(&root.language(), cfg.assignment_query) else {
         return;
     };
-    let lhs_cap = query.capture_index_for_name("lhs");
-    let rhs_cap = query.capture_index_for_name("rhs");
-    let (Some(lhs_cap), Some(rhs_cap)) = (lhs_cap, rhs_cap) else {
+    let Some(lhs_cap) = query.capture_index_for_name("lhs") else {
         return;
     };
+    // `@rhs` (forward inference from the initializer) and `@type` (explicit
+    // annotation) are both optional — a query may capture either or both. A
+    // binding with only `@type` (`let x: T;`) seeds a declared type with no
+    // ref to resolve; one with only `@rhs` (`let x = expr`) drives forward
+    // inference as before.
+    let rhs_cap = query.capture_index_for_name("rhs");
+    let type_cap = query.capture_index_for_name("type");
+    // `@rhs_unwrap` is `@rhs` whose initializer applies a fallible-unwrap
+    // operator (Rust `?`). Correlated to a ref like `@rhs`, but the binding is
+    // additionally flagged so the resolver peels one wrapper layer.
+    let unwrap_cap = query.capture_index_for_name("rhs_unwrap");
 
     let mut cursor = QueryCursor::new();
     let mut it = cursor.matches(&query, *root, src);
     while let Some(m) = it.next() {
         let mut lhs_node: Option<Node> = None;
         let mut rhs_node: Option<Node> = None;
+        let mut type_node: Option<Node> = None;
+        let mut unwrap_node: Option<Node> = None;
         for cap in m.captures {
             if cap.index == lhs_cap {
                 lhs_node = Some(cap.node);
-            } else if cap.index == rhs_cap {
+            } else if Some(cap.index) == rhs_cap {
                 rhs_node = Some(cap.node);
+            } else if Some(cap.index) == type_cap {
+                type_node = Some(cap.node);
+            } else if Some(cap.index) == unwrap_cap {
+                unwrap_node = Some(cap.node);
             }
         }
-        let (Some(lhs), Some(rhs)) = (lhs_node, rhs_node) else {
-            continue;
-        };
+        let Some(lhs) = lhs_node else { continue };
         let lhs_name = match lhs.utf8_text(src) {
             Ok(t) => t,
             Err(_) => continue,
@@ -159,23 +173,45 @@ fn run_assignment_query(
             continue;
         };
 
-        // Correlate RHS byte range → ref_idx. The ref whose byte_offset is
-        // within [rhs.start_byte, rhs.end_byte) AND whose chain covers the
-        // RHS's final segment wins. For a chain expression `foo.bar()`, the
-        // refs emitter creates a Calls ref at the call node's position —
-        // typically the start of the outer call. A looser heuristic: match
-        // the ref with byte_offset in range AND latest (furthest-right)
-        // start.
-        let r_start = rhs.start_byte() as u32;
-        let r_end = rhs.end_byte() as u32;
-        let ref_idx = refs
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| r.byte_offset >= r_start && r.byte_offset < r_end)
-            .max_by_key(|(_, r)| r.byte_offset)
-            .map(|(i, _)| i);
-        if let Some(ref_idx) = ref_idx {
-            meta.flow_binding_lhs.insert(ref_idx, lhs_idx);
+        // Explicit annotation: record the declared type directly. The base
+        // type (generic args stripped) keys the member lookup, so `Vec<T>`
+        // and `Vec` resolve the same members.
+        if let Some(ty) = type_node {
+            if let Ok(text) = ty.utf8_text(src) {
+                let base = strip_generic_args(text.trim());
+                if !base.is_empty() {
+                    meta.flow_binding_decl_type.insert(lhs_idx, base);
+                }
+            }
+        }
+
+        // Initializer: correlate RHS byte range → ref_idx. The ref whose
+        // byte_offset is within [rhs.start_byte, rhs.end_byte) AND whose chain
+        // covers the RHS's final segment wins. For a chain `foo.bar()` the
+        // refs emitter creates a Calls ref at the call node — match the ref
+        // with byte_offset in range AND latest (furthest-right) start. A
+        // `@rhs_unwrap` capture (fallible `?`) is correlated the same way and
+        // additionally flags the binding for wrapper peeling.
+        let (rhs, is_unwrap) = match (rhs_node, unwrap_node) {
+            (Some(r), _) => (Some(r), false),
+            (None, Some(u)) => (Some(u), true),
+            (None, None) => (None, false),
+        };
+        if let Some(rhs) = rhs {
+            let r_start = rhs.start_byte() as u32;
+            let r_end = rhs.end_byte() as u32;
+            let ref_idx = refs
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.byte_offset >= r_start && r.byte_offset < r_end)
+                .max_by_key(|(_, r)| r.byte_offset)
+                .map(|(i, _)| i);
+            if let Some(ref_idx) = ref_idx {
+                meta.flow_binding_lhs.insert(ref_idx, lhs_idx);
+                if is_unwrap {
+                    meta.flow_binding_unwrap.insert(lhs_idx);
+                }
+            }
         }
     }
 }

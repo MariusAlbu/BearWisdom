@@ -21,8 +21,8 @@
 // the key → path entries.
 //
 // Output shape is (`alias/`, `target/`) prefix tuples — the exact form
-// `NpmManifest.tsconfig_paths` stores so the existing
-// `ProjectContext::resolve_tsconfig_alias` mechanism picks them up without
+// `ManifestData.path_aliases` stores so the existing
+// `ProjectContext::resolve_path_alias` mechanism picks them up without
 // any resolver changes.
 //
 // Only statically evaluable values are extracted:
@@ -240,7 +240,7 @@ fn template_string_literal_contents(node: &Node, src: &[u8]) -> Option<String> {
 
 /// Strip leading `./`, convert Windows separators to forward slashes, and
 /// collapse redundant slashes. Leaves the path in a form comparable to
-/// `tsconfig_paths` targets.
+/// `path_aliases` targets.
 fn normalize_path(raw: &str) -> String {
     let mut s = raw.replace('\\', "/");
     while let Some(rest) = s.strip_prefix("./") {

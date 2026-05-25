@@ -16,6 +16,7 @@
 //! the indexer processes the embedded text as a separate extraction target.
 
 pub mod extract;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 
 pub use profile::ASTRO_PROFILE;
@@ -89,5 +90,11 @@ impl LanguagePlugin for AstroPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ASTRO_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
+        Some(&hooks::ASTRO_HOOKS)
     }
 }

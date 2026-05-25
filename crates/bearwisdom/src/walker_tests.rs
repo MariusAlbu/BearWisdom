@@ -15,6 +15,26 @@ fn detect_typescript() {
 }
 
 #[test]
+fn detect_qt_linguist_ts_is_not_typescript() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("keepassxc_en.ts");
+    fs::write(
+        &path,
+        b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!DOCTYPE TS>\n<TS version=\"2.1\" language=\"en_US\">\n<context>\n<name>About</name>\n</context>\n</TS>\n",
+    )
+    .unwrap();
+    assert_eq!(detect_language(&path), None);
+}
+
+#[test]
+fn detect_typescript_with_xml_header_is_still_typescript() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("note.ts");
+    fs::write(&path, b"export const xml = '<?xml ?>';\n").unwrap();
+    assert_eq!(detect_language(&path), Some("typescript"));
+}
+
+#[test]
 fn detect_python() {
     assert_eq!(detect_language(Path::new("main.py")), Some("python"));
     assert_eq!(detect_language(Path::new("script.pyw")), Some("python"));

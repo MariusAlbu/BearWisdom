@@ -167,6 +167,32 @@ fn walk_use_tree(
                 Some(prefix.to_string())
             };
 
+            // Aliased imports carry the original name as a single-segment
+            // chain so the SymbolIndex builder can register the alias as
+            // a virtual entry pointing at the source symbol.
+            let chain = if let (Some(a), Some(o)) = (alias.as_deref(), original.as_deref()) {
+                if a != o && !o.is_empty() {
+                    let leaf = o.rsplit("::").next().unwrap_or(o);
+                    Some(crate::types::MemberChain {
+                        segments: vec![crate::types::ChainSegment {
+                            name: leaf.to_string(),
+                            node_kind: "use_as_original".to_string(),
+                            kind: crate::types::SegmentKind::Identifier,
+                            declared_type: None,
+                            type_args: Vec::new(),
+                            optional_chaining: false,
+                            byte_offset: node.start_byte() as u32,
+                            declared_type_id: None,
+                            type_arg_ids: Vec::new(),
+                        }],
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             refs.push(ExtractedRef {
                 source_symbol_index: current_symbol_count,
                 target_name: target,
@@ -174,7 +200,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 col: 0,
                 module,
-                chain: None,
+                chain,
                 byte_offset: node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),

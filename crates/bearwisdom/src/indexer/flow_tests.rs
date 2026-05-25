@@ -198,3 +198,75 @@ fn flow_type_args_populate_chain_segment() {
         "type-args query should populate the chain segment's type_args"
     );
 }
+
+#[test]
+fn rust_let_mut_annotation_records_declared_type() {
+    use crate::languages::rust_lang::flow::RUST_FLOW_CONFIG;
+    use crate::languages::rust_lang::RustLangPlugin;
+
+    // `let mut x: T = …` — pattern is a `mut_pattern`, type is the annotation.
+    // The runner must capture the declared type for the bare-identifier name
+    // even though the initializer (`.unwrap()`) wouldn't resolve to it.
+    let source = "fn f() {\n    let mut index_writer: IndexWriter = build().unwrap();\n}\n";
+    let grammar = RustLangPlugin.grammar("rust").expect("rust grammar must load");
+    let symbols = vec![mk_sym("index_writer", SymbolKind::Variable, 1)];
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, &RUST_FLOW_CONFIG, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_binding_decl_type.get(&0),
+        Some(&"IndexWriter".to_string()),
+        "the `let mut x: IndexWriter` annotation types symbol 0 directly"
+    );
+}
+
+#[test]
+fn rust_generic_annotation_records_bare_base() {
+    use crate::languages::rust_lang::flow::RUST_FLOW_CONFIG;
+    use crate::languages::rust_lang::RustLangPlugin;
+
+    // Generic annotation `Vec<String>` records the bare base `Vec` so it keys
+    // the same members the dual-keyed MembersIndex registers.
+    let source = "fn f() {\n    let names: Vec<String> = make();\n}\n";
+    let grammar = RustLangPlugin.grammar("rust").expect("rust grammar must load");
+    let symbols = vec![mk_sym("names", SymbolKind::Variable, 1)];
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, &RUST_FLOW_CONFIG, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_binding_decl_type.get(&0),
+        Some(&"Vec".to_string()),
+        "generic annotation records the bare base type"
+    );
+}
+
+#[test]
+fn rust_try_operator_marks_binding_for_unwrap() {
+    use crate::languages::rust_lang::flow::RUST_FLOW_CONFIG;
+    use crate::languages::rust_lang::RustLangPlugin;
+
+    // `let reader = index.reader()?;` — the `?` makes the RHS a try_expression.
+    // The runner binds the inner call ref to the LHS AND flags the binding so
+    // the resolver peels `Result<IndexReader>` → `IndexReader`.
+    let source = "fn f() {\n    let reader = index.reader()?;\n}\n";
+    let grammar = RustLangPlugin.grammar("rust").expect("rust grammar must load");
+    let symbols = vec![mk_sym("reader", SymbolKind::Variable, 1)];
+    // A Calls ref for `index.reader()` — byte offset inside the try_expression.
+    // "fn f() {\n    let reader = " is 26 bytes; `index.reader()?` starts at 26,
+    // the `reader` call segment lands a few bytes in.
+    let mut refs = vec![mk_call_ref("reader", 1, 32)];
+
+    let meta = run_flow_queries(source, &grammar, &RUST_FLOW_CONFIG, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_binding_lhs.get(&0),
+        Some(&0),
+        "the call ref inside the try-expression binds to `reader`"
+    );
+    assert!(
+        meta.flow_binding_unwrap.contains(&0),
+        "the `?` flags symbol 0 (`reader`) for wrapper peeling"
+    );
+}

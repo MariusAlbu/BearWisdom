@@ -84,9 +84,6 @@ pub(crate) fn resolve(
         let edge_kind = ref_ctx.extracted_ref.kind;
 
         // Skip EdgeKind::Imports — TS/JS extractor rarely emits these, but be safe.
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         // Chain-aware resolution: if we have a structured MemberChain, walk it
         // step-by-step following field types. Dispatch to the TypeChecker.
@@ -135,7 +132,7 @@ pub(crate) fn resolve(
         // through the existing relative-import path.
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if let Some(rewritten) =
-                lookup.resolve_tsconfig_alias(ref_ctx.file_package_id, module)
+                lookup.resolve_path_alias(ref_ctx.file_package_id, module)
             {
                 if let Some(res) =
                     resolve_via_alias(&rewritten, target, edge_kind, lookup)
@@ -449,7 +446,7 @@ pub(crate) fn resolve(
             // refs (whose own `module` field is None) fall through to the
             // heuristic when an alias rewrite would have resolved them.
             if let Some(rewritten) =
-                lookup.resolve_tsconfig_alias(ref_ctx.file_package_id, module_path)
+                lookup.resolve_path_alias(ref_ctx.file_package_id, module_path)
             {
                 if let Some(res) =
                     resolve_via_alias(&rewritten, target, edge_kind, lookup)
@@ -1132,7 +1129,16 @@ impl crate::type_checker::profile::hooks::LanguageEngineHooks for TypeScriptHook
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

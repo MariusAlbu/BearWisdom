@@ -5,6 +5,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -165,9 +166,6 @@ impl LanguageEngineHooks for RHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return None;
-        }
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
         if !target.contains("::") {
@@ -196,13 +194,13 @@ impl LanguageEngineHooks for RHooks {
                 return None;
             }
         }
-        engine::resolve_common(
-            "r",
+        (DefaultResolver {
             file_ctx,
             ref_ctx,
             lookup,
-            predicates::kind_compatible,
-        )
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

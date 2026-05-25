@@ -242,7 +242,15 @@ fn candidate_globals_entry_files(pkg_root: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    for name in ["index.d.ts", "types/index.d.ts"] {
+    // Some packages declare their globals ONLY in a separate `globals.d.ts`
+    // (vitest `globals: true`, @vue/test-utils), never in the `types` entry —
+    // so the entry-only check misses them and the probe below never fires.
+    for name in [
+        "index.d.ts",
+        "types/index.d.ts",
+        "globals.d.ts",
+        "dist/globals.d.ts",
+    ] {
         let candidate = pkg_root.join(name);
         if candidate.is_file() {
             out.push(candidate);

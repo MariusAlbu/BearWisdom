@@ -82,24 +82,73 @@ fn collect_cargo_tomls(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     }
 }
 
-/// Parse crate names from `[dependencies]` + `[dev-dependencies]` +
-/// `[build-dependencies]` + `[workspace.dependencies]` sections.
+/// True for any TOML table header that declares Cargo dependencies. Covers:
+/// `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`,
+/// `[workspace.dependencies]`, `[workspace.dev-dependencies]`, and the
+/// per-target form `[target.'cfg(...)'.dependencies]` /
+/// `[target."cfg(...)".dev-dependencies]` / `[target.x86_64-pc-windows.dependencies]`
+/// — anything `.dependencies]` / `.dev-dependencies]` / `.build-dependencies]`
+/// terminated.
+fn is_cargo_dependency_section(trimmed: &str) -> bool {
+    matches!(
+        trimmed,
+        "[dependencies]"
+            | "[dev-dependencies]"
+            | "[build-dependencies]"
+            | "[workspace.dependencies]"
+            | "[workspace.dev-dependencies]"
+            | "[workspace.build-dependencies]"
+    ) || (trimmed.starts_with("[target.")
+        && (trimmed.ends_with(".dependencies]")
+            || trimmed.ends_with(".dev-dependencies]")
+            || trimmed.ends_with(".build-dependencies]")))
+}
+
+/// True for sub-table-form headers `[dependencies.crate]`, `[dev-dependencies.crate]`,
+/// `[workspace.dependencies.crate]`, `[target.'cfg(...)'.dependencies.crate]`.
+/// Returns the crate name extracted from the header.
+fn cargo_subtable_dep_name(trimmed: &str) -> Option<&str> {
+    let body = trimmed.strip_prefix('[')?.strip_suffix(']')?;
+    for marker in [
+        "workspace.dependencies.",
+        "workspace.dev-dependencies.",
+        "workspace.build-dependencies.",
+        "dev-dependencies.",
+        "build-dependencies.",
+        "dependencies.",
+    ] {
+        if let Some(name) = body.rsplit_once(marker).map(|(_, n)| n) {
+            if !name.is_empty()
+                && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+/// Parse crate names from every Cargo dependency table. See `is_cargo_dependency_section`.
 ///
 /// Line-by-line scan — avoids a full TOML dependency. Handles
-/// `serde = "1"`, `tokio = { ... }`, `foo.workspace = true`.
+/// `serde = "1"`, `tokio = { ... }`, `foo.workspace = true`, plus
+/// the sub-table form `[dependencies.foo]\nversion = "1"`.
 pub fn parse_cargo_dependencies(content: &str) -> Vec<String> {
     let mut crates = Vec::new();
     let mut in_dep_section = false;
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('[') {
-            in_dep_section = matches!(
-                trimmed,
-                "[dependencies]"
-                    | "[dev-dependencies]"
-                    | "[build-dependencies]"
-                    | "[workspace.dependencies]"
-            );
+            // Sub-table form: the crate name is in the header itself, and the
+            // body holds version/feature keys (which we skip — only the crate
+            // matters here). The header sets in_dep_section=false so the
+            // body's `version = "1"` line doesn't get treated as a flat dep.
+            if let Some(name) = cargo_subtable_dep_name(trimmed) {
+                crates.push(name.to_string());
+                in_dep_section = false;
+                continue;
+            }
+            in_dep_section = is_cargo_dependency_section(trimmed);
             continue;
         }
         if !in_dep_section { continue }
@@ -134,13 +183,7 @@ pub fn parse_cargo_path_dependencies(content: &str) -> Vec<String> {
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('[') {
-            in_dep_section = matches!(
-                trimmed,
-                "[dependencies]"
-                    | "[dev-dependencies]"
-                    | "[build-dependencies]"
-                    | "[workspace.dependencies]"
-            );
+            in_dep_section = is_cargo_dependency_section(trimmed);
             pending_key = None;
             pending_table.clear();
             continue;

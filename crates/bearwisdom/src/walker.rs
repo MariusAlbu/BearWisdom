@@ -41,15 +41,17 @@ impl From<&ScannedFile> for WalkedFile {
 /// than "css" before they reach the indexer.
 pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
     let scanned = bearwisdom_profile::walk_files(project_root);
-    Ok(scanned.iter().map(|sf| {
-        let language = detect_language(&sf.absolute_path)
-            .unwrap_or(sf.language_id);
-        WalkedFile {
-            relative_path: sf.relative_path.clone(),
-            absolute_path: sf.absolute_path.clone(),
-            language,
-        }
-    }).collect())
+    Ok(scanned
+        .iter()
+        .filter_map(|sf| {
+            let language = detect_language(&sf.absolute_path)?;
+            Some(WalkedFile {
+                relative_path: sf.relative_path.clone(),
+                absolute_path: sf.absolute_path.clone(),
+                language,
+            })
+        })
+        .collect())
 }
 
 /// Map a file path to a language identifier.
@@ -90,7 +92,39 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
     if lang == Some("css") && is_dot_css(path) && file_looks_like_scss(path) {
         return Some("scss");
     }
+    if lang == Some("typescript") && is_dot_ts(path) && is_likely_qt_linguist(path) {
+        return None;
+    }
     lang
+}
+
+fn is_dot_ts(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("ts"))
+        .unwrap_or(false)
+}
+
+/// Read the first 256 bytes of a `.ts` file and detect Qt Linguist
+/// translation XML. Qt's `.ts` files are XML documents that start with
+/// `<?xml ...?>` followed by `<!DOCTYPE TS>` or `<TS version=...>` — none
+/// of which are valid TypeScript syntax. Returning `None` for these
+/// files keeps the TS extractor from indexing thousands of XML elements
+/// as TypeScript symbols and refs.
+fn is_likely_qt_linguist(path: &Path) -> bool {
+    let Ok(file) = std::fs::File::open(path) else { return false };
+    use std::io::Read;
+    let mut head = [0u8; 256];
+    let n = match (&file).take(256).read(&mut head) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    let text = String::from_utf8_lossy(&head[..n]);
+    let trimmed = text.trim_start();
+    if !trimmed.starts_with("<?xml") {
+        return false;
+    }
+    text.contains("<!DOCTYPE TS") || text.contains("<TS ") || text.contains("<TS>")
 }
 
 fn is_dot_h(path: &Path) -> bool {

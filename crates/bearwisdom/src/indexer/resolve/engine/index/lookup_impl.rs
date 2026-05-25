@@ -240,6 +240,19 @@ impl SymbolLookup for SymbolIndex {
         self.ambient_global_method_names.contains(name)
     }
 
+    fn is_ambient_path(&self, path: &str) -> bool {
+        SymbolIndex::is_ambient_path(self, path)
+    }
+
+    fn resolve_external_reexport(
+        &self,
+        target_name: &str,
+        chain_prefix: &str,
+        module_path: &str,
+    ) -> Option<i64> {
+        SymbolIndex::resolve_via_external_reexport(self, target_name, chain_prefix, module_path, &[])
+    }
+
     fn symbols_in_package(&self, package_id: i64) -> &[SymbolInfo] {
         self.by_package
             .get(&package_id)
@@ -265,15 +278,15 @@ impl SymbolLookup for SymbolIndex {
         self.workspace_pkg_by_declared_name.contains_key(name)
     }
 
-    fn resolve_tsconfig_alias(
+    fn resolve_path_alias(
         &self,
         package_id: Option<i64>,
         specifier: &str,
     ) -> Option<String> {
         let paths = package_id
-            .and_then(|id| self.tsconfig_paths_by_pkg.get(&id))
+            .and_then(|id| self.path_aliases_by_pkg.get(&id))
             .map(|v| v.as_slice())
-            .unwrap_or(self.tsconfig_paths_union.as_slice());
+            .unwrap_or(self.path_aliases_union.as_slice());
         if paths.is_empty() {
             return None;
         }

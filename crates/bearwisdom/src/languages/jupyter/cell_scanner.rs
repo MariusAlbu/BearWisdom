@@ -43,11 +43,33 @@ pub struct Notebook {
 /// `None` on malformed JSON or missing `cells` array.
 pub fn parse_notebook(source: &str) -> Option<Notebook> {
     let root: Value = serde_json::from_str(source).ok()?;
-    let kernel_language = root
-        .get("metadata")
-        .and_then(|m| m.get("kernelspec"))
-        .and_then(|k| k.get("language"))
-        .and_then(|l| l.as_str())
+    let metadata = root.get("metadata");
+    // Read the notebook's declared language. Jupyter ships three places
+    // this can live (none of them required by the schema):
+    //   * `metadata.language_info.name` — the canonical field (e.g. "R",
+    //     "python", "julia"). Populated by the kernel itself at notebook
+    //     save time, so it reflects what actually ran.
+    //   * `metadata.kernelspec.language` — a custom convention; some
+    //     tooling writes it but it isn't part of the kernelspec schema.
+    //   * `metadata.kernelspec.name` — the kernel id (e.g. "ir",
+    //     "python3"). Last-resort fallback.
+    // Default to "python" when none is present (Jupyter's de facto default).
+    let kernel_language = metadata
+        .and_then(|m| m.get("language_info"))
+        .and_then(|li| li.get("name"))
+        .and_then(|n| n.as_str())
+        .or_else(|| {
+            metadata
+                .and_then(|m| m.get("kernelspec"))
+                .and_then(|k| k.get("language"))
+                .and_then(|l| l.as_str())
+        })
+        .or_else(|| {
+            metadata
+                .and_then(|m| m.get("kernelspec"))
+                .and_then(|k| k.get("name"))
+                .and_then(|n| n.as_str())
+        })
         .unwrap_or("python")
         .to_ascii_lowercase();
     let cells_value = root.get("cells")?.as_array()?;
@@ -300,6 +322,35 @@ mod tests {
         let src = r##"{"cells": [], "metadata": {}, "nbformat": 4}"##;
         let nb = parse_notebook(src).unwrap();
         assert_eq!(nb.kernel_language, "python");
+    }
+
+    #[test]
+    fn r_notebook_detected_via_language_info() {
+        // Real-world R notebook (IRkernel): kernelspec.name = "ir",
+        // language_info.name = "R". Without reading language_info.name we
+        // misclassify every R cell as Python.
+        let src = r##"{
+ "cells": [],
+ "metadata": {
+   "kernelspec": {"name": "ir", "display_name": "R"},
+   "language_info": {"name": "R"}
+ }
+}"##;
+        let nb = parse_notebook(src).unwrap();
+        assert_eq!(nb.kernel_language, "r");
+    }
+
+    #[test]
+    fn r_notebook_detected_via_kernelspec_name_when_language_info_absent() {
+        // Sparse metadata: only kernelspec.name = "ir".
+        let src = r##"{
+ "cells": [],
+ "metadata": {
+   "kernelspec": {"name": "ir"}
+ }
+}"##;
+        let nb = parse_notebook(src).unwrap();
+        assert_eq!(nb.kernel_language, "ir");
     }
 
     #[test]

@@ -1,9 +1,14 @@
 // =============================================================================
 // indexer/resolve/mod.rs — Reference resolution façade
 //
-// Two-tier resolution:
-//   1. Language-specific resolvers (engine) — deterministic, 1.0 confidence
-//   2. Heuristic fallback (heuristic.rs) — best-effort, 0.50-0.95 confidence
+// Single-tier resolution: every ref is either engine-resolved at
+// `confidence = 1.0` (via `type_checker::core::DefaultResolver` plus per-
+// language hook strategies), classified as external, or honestly
+// unresolved. The pre-existing tier-2 heuristic fallback was deleted
+// once every deterministic strategy it offered had been lifted into
+// `DefaultResolver` and every language hook had been migrated to call
+// it. See `type_checker/core/default_resolver.rs` for the strategy
+// tower.
 //
 // This file is the public API. The implementation splits across siblings:
 //
@@ -12,7 +17,6 @@
 //   * flow_pair  — Producer/Consumer pairing of FlowEmissions
 //   * adapters   — framework-specific Consumer adapters (mailer / Next.js /
 //                  extractor-emitted routes + DbSets)
-//   * heuristic  — tier-2 name/import/qname/namespace lookup fallback
 //   * engine     — SymbolIndex + chain walker + language resolver dispatch
 //   * flow_emit  — FlowEmission data model
 //   * reachability + synthesize_dispatch — post-resolution dead-code support
@@ -22,7 +26,6 @@ mod adapters;
 pub mod engine;
 pub mod flow_emit;
 mod flow_pair;
-mod heuristic;
 mod indexes;
 mod loop_body;
 mod path_util;

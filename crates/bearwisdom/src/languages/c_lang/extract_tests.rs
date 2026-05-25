@@ -120,6 +120,42 @@ class Container {
         assert!(has_ref, "expected TypeRef to `MyAllocator` from default type param: {:?}", r.refs);
     }
 
+    #[test]
+    fn cpp_template_class_captures_generic_param_names() {
+        let src = r#"
+template<typename T, class charT>
+class basic_string {
+    T data;
+};
+"#;
+        let r = extract::extract(src, "cpp");
+        let sym = r.symbols.iter().find(|s| s.name == "basic_string").expect("basic_string");
+        // Params are folded into the signature; the index build parses them
+        // into the generic_params map consumed by the resolver.
+        let sig = sym.signature.as_deref().unwrap_or("");
+        assert!(
+            sig.contains("<T, charT>"),
+            "expected template params in signature, got: {sig:?}"
+        );
+    }
+
+    #[test]
+    fn cpp_template_function_captures_generic_param_names() {
+        let src = r#"
+template<typename OutputIt, typename T>
+OutputIt fill_n(OutputIt first, T value) {
+    return first;
+}
+"#;
+        let r = extract::extract(src, "cpp");
+        let sym = r.symbols.iter().find(|s| s.name == "fill_n").expect("fill_n");
+        let sig = sym.signature.as_deref().unwrap_or("");
+        assert!(
+            sig.contains("<OutputIt, T>"),
+            "expected template params in signature, got: {sig:?}"
+        );
+    }
+
     // =========================================================================
     // namespace_alias_definition
     // =========================================================================

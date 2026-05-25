@@ -49,7 +49,16 @@ impl LanguageEngineHooks for VueHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        VueResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = VueResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: crate::languages::typescript::predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 
     fn root_resolver(

@@ -15,8 +15,11 @@
 
 pub(crate) mod keywords;
 pub mod extract;
+pub mod hooks;
+pub(crate) mod predicates;
 pub(crate) mod profile;
 
+pub use hooks::VBNET_HOOKS;
 pub use profile::VBNET_PROFILE;
 
 #[cfg(test)]
@@ -86,5 +89,12 @@ impl LanguagePlugin for VbNetPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::VBNET_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
+    {
+        Some(&hooks::VBNET_HOOKS)
     }
 }

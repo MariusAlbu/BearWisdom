@@ -5,6 +5,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -97,9 +98,6 @@ impl LanguageEngineHooks for ScssHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if module == super::extract::SCSS_CSS_FN_HINT {
                 return None;
@@ -110,41 +108,14 @@ impl LanguageEngineHooks for ScssHooks {
                 return None;
             }
         }
-        if let Some(res) = engine::resolve_common(
-            "scss",
+        if let Some(res) = (DefaultResolver {
             file_ctx,
             ref_ctx,
             lookup,
-            predicates::kind_compatible,
-        ) {
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all() {
             return Some(res);
-        }
-        if ref_ctx.extracted_ref.module.is_some() {
-            return None;
-        }
-        let is_alias = file_ctx.imports.iter().any(|imp| {
-            imp.alias.as_deref() == Some(target.as_str()) || imp.imported_name == *target
-        });
-        if is_alias {
-            return None;
-        }
-        for sym in lookup.by_name(target) {
-            if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                continue;
-            }
-            if !sym.file_path.ends_with(".scss")
-                && !sym.file_path.ends_with(".sass")
-                && !sym.file_path.ends_with(".css")
-            {
-                continue;
-            }
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "scss_bare_name",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
         }
         None
     }

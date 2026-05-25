@@ -262,9 +262,6 @@ impl LanguageEngineHooks for RobotHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if resolve_qualified_library(
             file_ctx,
             ref_ctx.extracted_ref.module.as_deref(),

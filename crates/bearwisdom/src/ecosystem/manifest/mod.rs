@@ -21,6 +21,9 @@ pub mod js_config_aliases;
 pub mod maven;
 pub mod mix;
 pub mod npm;
+pub mod pip_requirements;
+pub mod rebar;
+pub mod vcpkg;
 // NOTE: `nuget` manifest reader migrated to `crate::ecosystem::nuget` in Phase 2+3.
 pub mod sbt;
 // NOTE: `opam` manifest reader migrated to `crate::ecosystem::opam` in Phase 2+3.
@@ -92,6 +95,17 @@ pub enum ManifestKind {
     /// classify refs that start with a declared external role prefix as
     /// `external_refs` rather than truly unresolved.
     AnsibleRequirements,
+    /// C/C++ `vcpkg.json` manifest. Dependency names are the `dependencies`
+    /// array's package names (vcpkg port ids). Consumed by C/C++ resolvers
+    /// to classify bare `#include <pkg/...>` refs as external.
+    Vcpkg,
+    /// Python `requirements.txt` / `requirements-*.txt`. Each non-comment
+    /// line names a pip-installable package (with optional version specs).
+    PipRequirements,
+    /// Erlang `rebar.config` / `rebar3.config`. Dependency names from
+    /// `{deps, [{name, ...}]}` tuples. Closes the bulk of erlang
+    /// AMQP/record-type refs in rabbitmq-style projects.
+    Rebar,
 }
 
 /// Normalized data extracted from a project manifest.
@@ -110,12 +124,12 @@ pub struct ManifestData {
     /// project's filename stem (e.g. `../Shared/Shared.csproj` →
     /// `"Shared"`). Matches sibling packages' `declared_name`.
     pub project_refs: Vec<String>,
-    /// TypeScript: `compilerOptions.paths` alias map from tsconfig.json.
-    /// Each entry is `(alias_prefix, target_prefix)` with trailing `*`
-    /// stripped — e.g. `("@/", "src/")` lets `@/utils` resolve to
-    /// `src/utils`. Populated only for the NuGet-sibling TS ecosystem;
-    /// other manifest kinds leave this empty.
-    pub tsconfig_paths: Vec<(String, String)>,
+    /// Import path-alias map for the JS/TS ecosystem, drawn from tsconfig
+    /// `compilerOptions.paths`, jsconfig, and framework configs (vite, vue,
+    /// webpack). Each entry is `(alias_prefix, target_prefix)` with trailing
+    /// `*` stripped — e.g. `("@/", "src/")` lets `@/utils` resolve to
+    /// `src/utils`. Other manifest kinds leave this empty.
+    pub path_aliases: Vec<(String, String)>,
     /// TypeScript: `compilerOptions.types` from tsconfig.json — the list
     /// of packages whose type definitions are auto-loaded as ambient
     /// globals (the same way TS itself treats them). Each entry is the
@@ -245,6 +259,9 @@ fn all_readers() -> Vec<Box<dyn ManifestReader>> {
         Box::new(crate::ecosystem::bazel_central_registry::ModuleBazelManifest),
         Box::new(crate::ecosystem::tf_registry::TerraformManifest),
         Box::new(ansible::AnsibleRequirementsManifest),
+        Box::new(vcpkg::VcpkgManifest),
+        Box::new(pip_requirements::PipRequirementsManifest),
+        Box::new(rebar::RebarManifest),
     ]
 }
 
@@ -277,9 +294,9 @@ pub fn read_all_manifests(project_root: &Path) -> HashMap<ManifestKind, Manifest
         // configs) must propagate into the union or single-package projects
         // — those that don't trigger the per-package builder — will never
         // see any alias rewrite. Deduplicate so repeat runs stay idempotent.
-        for alias in pm.data.tsconfig_paths {
-            if !entry.tsconfig_paths.contains(&alias) {
-                entry.tsconfig_paths.push(alias);
+        for alias in pm.data.path_aliases {
+            if !entry.path_aliases.contains(&alias) {
+                entry.path_aliases.push(alias);
             }
         }
         for t in pm.data.tsconfig_types {

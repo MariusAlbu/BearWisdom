@@ -1,203 +1,21 @@
 // =============================================================================
-// indexer/resolve/engine/common.rs — shared tier-2 resolver helpers
+// indexer/resolve/engine/common.rs — shared external-classification helpers
 //
-// Free functions language resolvers use to handle the common "scope walk +
-// import lookup + qualified-name fallback" pattern. Each language plugin can
-// call resolve_common / infer_external_common instead of re-implementing the
-// same lookup cascade. The lang_prefix argument provides per-language
-// strategy attribution for diagnostics.
+// `infer_external_common` decides whether an unresolved ref should be
+// classified as belonging to an external namespace (third-party package,
+// runtime ambient, declared dependency). Language plugins call it from
+// `LanguageEngineHooks::classify_external`.
+//
+// The companion symbol-resolution helper `resolve_common` lived here too
+// until every language hook adopted `DefaultResolver`. That function is
+// gone; the symbol-resolution path is centralized in
+// `type_checker/core/default_resolver.rs`.
 // =============================================================================
 
 use crate::indexer::project_context::ProjectContext;
 use crate::types::EdgeKind;
 
-use super::{FileContext, RefContext, Resolution, SymbolLookup};
-
-// ---------------------------------------------------------------------------
-// Shared resolution helpers for tier-2 language resolvers
-// ---------------------------------------------------------------------------
-
-/// Common resolution logic for languages that follow the standard pattern.
-///
-/// Steps (highest confidence first):
-///   1. Module-qualified lookup: ref has `module` field → try `{module}.{target}`
-///   2. Import-based: find target in imported modules via file context
-///   3. Scope chain walk: try `{scope}.{target}` for each scope
-///   4. Same-file: find target among symbols in the current file
-///   5. Qualified name: target contains `.` → direct qname lookup
-///
-/// Does NOT include a by-name fallback — that's the heuristic resolver's job.
-/// This prevents low-confidence false matches from intercepting the heuristic's
-/// module-aware matching.
-pub fn resolve_common(
-    lang_prefix: &'static str,
-    file_ctx: &FileContext,
-    ref_ctx: &RefContext,
-    lookup: &dyn SymbolLookup,
-    kind_compatible: fn(EdgeKind, &str) -> bool,
-) -> Option<Resolution> {
-    let target = &ref_ctx.extracted_ref.target_name;
-    let edge_kind = ref_ctx.extracted_ref.kind;
-
-    // Skip import refs — they declare scope, not symbol references.
-    if edge_kind == EdgeKind::Imports {
-        return None;
-    }
-
-    // Step 1: Module-qualified lookup.
-    // If ref has module="List" and target="map", try "List.map" as qname.
-    if let Some(module) = &ref_ctx.extracted_ref.module {
-        // Try direct qualified name: module.target
-        let candidates = [
-            format!("{module}.{target}"),
-            format!("{module}::{target}"),
-            format!("{module}/{target}"),
-            format!("{module}:{target}"),
-        ];
-        for candidate in &candidates {
-            if let Some(sym) = lookup.by_qualified_name(candidate) {
-                if kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: concat_strategy(lang_prefix, "module_qualified"),
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        // Try finding target in files that match the module name
-        let by_name = lookup.by_name(target);
-        for sym in by_name {
-            let file_lower = sym.file_path.to_lowercase();
-            let module_lower = module.to_lowercase();
-            // File stem or path segment matches module name
-            if file_stem_matches(&file_lower, &module_lower)
-                && kind_compatible(edge_kind, &sym.kind)
-            {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: concat_strategy(lang_prefix, "module_file"),
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-    }
-
-    // Step 2: Import-based resolution.
-    // Check if target matches an imported name, then find it in the imported module.
-    for import in &file_ctx.imports {
-        let Some(module_path) = &import.module_path else {
-            continue;
-        };
-
-        // Wildcard import: all names from module are in scope
-        if import.is_wildcard {
-            let by_name = lookup.by_name(target);
-            for sym in by_name {
-                let file_lower = sym.file_path.to_lowercase();
-                let mod_lower = module_path.to_lowercase();
-                let last_seg = mod_lower.rsplit('/').next()
-                    .unwrap_or(&mod_lower)
-                    .rsplit('.')
-                    .next()
-                    .unwrap_or(&mod_lower);
-                if file_stem_matches(&file_lower, last_seg)
-                    && kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.95,
-                        strategy: concat_strategy(lang_prefix, "import"),
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-            continue;
-        }
-
-        // Named import: target matches the imported name or its local alias.
-        // When an alias is present (e.g. `import { Foo as Bar }`, or Fortran
-        // `use m, only: local => source`), the target is the *local* name but
-        // the symbol in the index uses the *source* name — look up by
-        // `imported_name` when the alias matched.
-        let matches_direct = import.imported_name == *target;
-        let matches_alias = import.alias.as_deref() == Some(target);
-        if matches_direct || matches_alias {
-            // When the local alias matched, the actual symbol name is
-            // `imported_name`; otherwise use the target as-is.
-            let lookup_name: &str = if matches_alias {
-                &import.imported_name
-            } else {
-                target
-            };
-            let by_name = lookup.by_name(lookup_name);
-            for sym in by_name {
-                if kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.95,
-                        strategy: concat_strategy(lang_prefix, "import"),
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-    }
-
-    // Step 3: Scope chain walk.
-    for scope in &ref_ctx.scope_chain {
-        let candidate = format!("{scope}.{target}");
-        if let Some(sym) = lookup.by_qualified_name(&candidate) {
-            if kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: concat_strategy(lang_prefix, "scope_chain"),
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-    }
-
-    // Step 4: Same-file resolution.
-    for sym in lookup.in_file(&file_ctx.file_path) {
-        if sym.name == *target && kind_compatible(edge_kind, &sym.kind) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 1.0,
-                strategy: concat_strategy(lang_prefix, "same_file"),
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
-        }
-    }
-
-    // Step 5: Fully qualified name (target contains dots).
-    if target.contains('.') || target.contains("::") || target.contains('/') {
-        if let Some(sym) = lookup.by_qualified_name(target) {
-            if kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: concat_strategy(lang_prefix, "qualified_name"),
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-    }
-
-    // No deterministic resolution — let heuristic handle it.
-    None
-}
+use super::{FileContext, RefContext};
 
 /// Common external namespace inference for tier-2 languages.
 ///
@@ -268,9 +86,9 @@ pub fn infer_external_common(
         // In that case, treat non-relative imports as external since we have no
         // way to distinguish project-local from third-party.
         //
-        // For per-package isolation (M2), `manifests_for(package_id)` returns
-        // only the source file's own package's manifests — so `server/` files
-        // don't see deps that only `e2e/` declares.
+        // For per-package isolation, `manifests_for(package_id)` returns only
+        // the source file's own package's manifests — so `server/` files don't
+        // see deps that only `e2e/` declares.
         let pkg_id = ref_ctx.file_package_id;
         let pkg_manifests = project_ctx.map(|ctx| ctx.manifests_for(pkg_id));
         let has_manifest = pkg_manifests
@@ -396,53 +214,4 @@ fn is_manifest_dependency(
         }
     }
     false
-}
-
-/// Check if a file path's stem matches a module name.
-fn file_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
-    let normalized = file_path_lower.replace('\\', "/");
-    // Check file stem: "src/lists.erl" stem is "lists"
-    if let Some(basename) = normalized.rsplit('/').next() {
-        if let Some(stem) = basename.rsplit_once('.').map(|(s, _)| s) {
-            if stem == module_lower {
-                return true;
-            }
-        }
-    }
-    // Check path segment: "src/lists/mod.rs".
-    // External paths carry an "ext:<lang>:<pkg>" prefix segment — strip the
-    // colon-delimited prefix so "ext:ocaml:ctypes" matches module "ctypes".
-    normalized.split('/').any(|seg| {
-        seg == module_lower
-            || seg.split(':').last().map_or(false, |tail| tail == module_lower)
-    })
-}
-
-/// Strategy name helper — returns a leaked &'static str for diagnostics.
-/// Uses a fixed set of known suffixes to avoid allocation.
-fn concat_strategy(prefix: &'static str, suffix: &str) -> &'static str {
-    // For diagnostics only — use the prefix as a fallback.
-    // The full "{prefix}_{suffix}" string can't be &'static without leaking,
-    // so we return just the suffix which is always a literal.
-    match suffix {
-        "module_qualified" => match prefix {
-            "erlang" => "erlang_module_qualified",
-            "ocaml" => "ocaml_module_qualified",
-            "haskell" => "haskell_module_qualified",
-            "r" => "r_module_qualified",
-            "clojure" => "clojure_module_qualified",
-            "pascal" => "pascal_module_qualified",
-            "fortran" => "fortran_module_qualified",
-            "matlab" => "matlab_module_qualified",
-            "powershell" => "powershell_module_qualified",
-            "fsharp" => "fsharp_module_qualified",
-            _ => "common_module_qualified",
-        },
-        "module_file" => "common_module_file",
-        "import" => "common_import",
-        "scope_chain" => "common_scope_chain",
-        "same_file" => "common_same_file",
-        "qualified_name" => "common_qualified_name",
-        _ => "common_resolved",
-    }
 }

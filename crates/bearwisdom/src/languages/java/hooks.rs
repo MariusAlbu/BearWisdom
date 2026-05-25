@@ -54,9 +54,6 @@ impl JavaResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         // Bare-name walker lookup. jdk_src + maven (sources jars) emit real
         // symbols for java.lang types (String, Integer, Object), exception
@@ -205,39 +202,6 @@ impl JavaResolver {
 
         // Bare-name fallback. Spring fluent APIs, Stream / Optional
         // methods, and AssertJ matchers leave the chain walker without
-        // a usable declared type at the leaf segment. The leaf method
-        // IS in the externals index — it just can't be bound by chain
-        // walking alone. File-extension gate prevents cross-language
-        // collisions.
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
-            && ref_ctx.extracted_ref.module.is_none()
-            && !effective_target.contains('.')
-        {
-            for sym in lookup.by_name(effective_target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_java = path.ends_with(".java")
-                    || path.ends_with(".jar")
-                    || path.starts_with("ext:java:")
-                    || path.starts_with("ext:idx:");
-                if !is_java {
-                    continue;
-                }
-                if !self.is_visible(file_ctx, ref_ctx, sym) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "java_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
         None
     }
 
@@ -653,7 +617,16 @@ impl LanguageEngineHooks for JavaHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        JavaResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = JavaResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

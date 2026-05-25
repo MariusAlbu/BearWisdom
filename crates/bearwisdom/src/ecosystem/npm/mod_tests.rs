@@ -1476,6 +1476,34 @@ fn package_declares_globals_honors_package_json_types_field() {
 }
 
 #[test]
+fn package_declares_globals_detects_globals_dts_only_package() {
+    // vitest `globals: true` shape: the `types` entry (dist/index.d.ts) has no
+    // `declare global`; the globals live ONLY in a separate globals.d.ts.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("vitest");
+    std::fs::create_dir_all(root.join("dist")).unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"vitest","types":"dist/index.d.ts"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("dist").join("index.d.ts"),
+        "export declare const expect: unknown;\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("globals.d.ts"),
+        "declare global {\n  const describe: () => void;\n  const it: () => void;\n  const expect: unknown;\n}\nexport {};\n",
+    )
+    .unwrap();
+    assert!(
+        package_declares_globals(&root),
+        "must detect globals declared in a separate globals.d.ts"
+    );
+}
+
+#[test]
 fn package_declares_globals_false_when_no_entry_file_exists() {
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path().join("pkg");

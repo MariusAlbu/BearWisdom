@@ -59,7 +59,41 @@ impl Ecosystem for RustStdlibEcosystem {
     ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
         super::cargo::build_cargo_symbol_index(dep_roots)
     }
+
+    /// Files that hold the Rust prelude's `macro_rules!` definitions. The
+    /// header-only parses that build the symbol-location index don't
+    /// surface `macro_rules!` names, so demand-driven pulls for `vec!`,
+    /// `format!`, etc. never find their defining file. Pre-pulling these
+    /// puts the macros into the project index up-front.
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+    ) -> Vec<crate::walker::WalkedFile> {
+        let mut out = Vec::new();
+        for dep in dep_roots {
+            for rel in PRELUDE_MACRO_FILES {
+                let abs = dep.root.join(rel);
+                if !abs.is_file() { continue }
+                let display = abs.to_string_lossy().replace('\\', "/");
+                out.push(crate::walker::WalkedFile {
+                    relative_path: format!("ext:rust:{}", display),
+                    absolute_path: abs,
+                    language: "rust",
+                });
+            }
+        }
+        out
+    }
 }
+
+/// Files containing prelude `macro_rules!` definitions, expressed relative
+/// to a stdlib crate's `src/` root. Each `ExternalDepRoot` points at one
+/// crate's `src/` directory (std, core, alloc, proc_macro).
+const PRELUDE_MACRO_FILES: &[&str] = &[
+    "macros.rs",
+    "macros/mod.rs",
+    "fmt/macros.rs",
+];
 
 impl ExternalSourceLocator for RustStdlibEcosystem {
     fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }

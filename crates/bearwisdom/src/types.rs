@@ -798,6 +798,14 @@ pub struct Narrowing {
 /// - `flow_binding_lhs`: sparse map `ref_idx → lhs_symbol_idx`. Present when
 ///   a ref is the RHS of `<lhs> = <chain>`; the resolver records the resolved
 ///   yield type against the named LHS symbol in the file's local-type cache.
+/// - `flow_binding_decl_type`: sparse map `lhs_symbol_idx → declared type text`.
+///   Present when a binding carries an explicit annotation (`let x: T`). Unlike
+///   `flow_binding_lhs` this needs no RHS resolution — the annotation is the
+///   type — so the resolver seeds it into the local-type cache directly.
+/// - `flow_binding_unwrap`: set of `lhs_symbol_idx` whose initializer applies a
+///   fallible-unwrap operator (Rust `?`). The operator guarantees the RHS is a
+///   single-arg fallible wrapper (`Result<T>` / `Option<T>`), so the resolver
+///   peels one generic layer off the resolved yield before recording it.
 /// - `ref_byte_offsets`: parallel to `refs`; the byte offset of each ref's
 ///   site in the source. Empty means "unknown — treat as 0" (used as a
 ///   cursor when looking up narrowings). Same convention as
@@ -806,6 +814,8 @@ pub struct Narrowing {
 pub struct FlowMeta {
     pub narrowings: Vec<Narrowing>,
     pub flow_binding_lhs: HashMap<usize, usize>,
+    pub flow_binding_decl_type: HashMap<usize, String>,
+    pub flow_binding_unwrap: std::collections::HashSet<usize>,
     pub ref_byte_offsets: Vec<u32>,
 }
 

@@ -41,7 +41,25 @@ pub fn extract(source: &str) -> ExtractionResult {
         .set_language(&language)
         .expect("Failed to set Rust grammar");
 
-    let tree = match parser.parse(source, None) {
+    // tree-sitter-rust 0.24 doesn't recognise the `const trait` syntax
+    // introduced by the unstable `const_trait_impl` feature. The grammar
+    // emits ERROR nodes around the entire trait_item, dropping it from
+    // extraction. `core/src/cmp.rs` (PartialEq/Eq/Ord/PartialOrd) and
+    // `core/src/convert.rs` (AsRef/AsMut) are the load-bearing cases.
+    //
+    // Rewrite `const trait` → `      trait` (same byte length so positions
+    // stay valid) before parsing. Whitespace doesn't affect semantics and
+    // keeps the parsed tree's byte ranges aligned with the source slice
+    // the extractor reads identifiers from.
+    let owned;
+    let parse_input: &str = if memchr_const_trait(source) {
+        owned = rewrite_const_trait(source);
+        owned.as_str()
+    } else {
+        source
+    };
+
+    let tree = match parser.parse(parse_input, None) {
         Some(t) => t,
         None => {
             return ExtractionResult {
@@ -126,6 +144,71 @@ pub fn extract(source: &str) -> ExtractionResult {
 /// commas, whitespace, semicolons, or backslashes. Returns true for the
 /// empty string so callers that explicitly accept empty targets aren't
 /// disturbed; the main extract path already filters empty.
+/// Cheap pre-scan to decide whether `rewrite_const_trait` is worth running.
+/// Returns true only when both `const` and `trait` appear in the source.
+fn memchr_const_trait(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    let mut has_const = false;
+    let mut has_trait = false;
+    while i + 5 <= bytes.len() {
+        let head = &bytes[i..];
+        if !has_const && head.starts_with(b"const") { has_const = true }
+        if !has_trait && head.starts_with(b"trait") { has_trait = true }
+        if has_const && has_trait { return true }
+        i += 1;
+    }
+    false
+}
+
+/// Replace `const trait` and `[const]` super-trait projection notation
+/// with whitespace, preserving byte offsets so tree-sitter spans still
+/// line up with the original source for identifier extraction.
+fn rewrite_const_trait(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut out_bytes: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"const")
+            && is_word_boundary_before(bytes, i)
+            && is_word_boundary_after(bytes, i + 5)
+        {
+            let mut j = i + 5;
+            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') { j += 1 }
+            if bytes[j..].starts_with(b"trait")
+                && is_word_boundary_after(bytes, j + 5)
+            {
+                out_bytes.extend_from_slice(b"     ");
+                out_bytes.extend_from_slice(&bytes[i + 5..j]);
+                i = j;
+                continue;
+            }
+        }
+        if bytes[i..].starts_with(b"[const]") {
+            out_bytes.extend_from_slice(b"       ");
+            i += 7;
+            continue;
+        }
+        out_bytes.push(bytes[i]);
+        i += 1;
+    }
+    // SAFETY: every byte either came verbatim from the original UTF-8
+    // string or is an ASCII space — the result is still valid UTF-8.
+    unsafe { String::from_utf8_unchecked(out_bytes) }
+}
+
+fn is_word_boundary_before(bytes: &[u8], i: usize) -> bool {
+    if i == 0 { return true }
+    let c = bytes[i - 1];
+    !(c.is_ascii_alphanumeric() || c == b'_')
+}
+
+fn is_word_boundary_after(bytes: &[u8], i: usize) -> bool {
+    if i >= bytes.len() { return true }
+    let c = bytes[i];
+    !(c.is_ascii_alphanumeric() || c == b'_')
+}
+
 fn is_valid_rust_target_name(name: &str) -> bool {
     if name.is_empty() {
         return true;

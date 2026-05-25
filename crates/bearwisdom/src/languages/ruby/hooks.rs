@@ -207,34 +207,6 @@ impl RubyResolver {
             }
         }
 
-        // Bare-name fallback. Ruby's open classes, monkey-patching, and
-        // include/extend mixins put many methods in scope by bare name.
-        // The engine's module/import path can't follow Ruby's runtime
-        // composition.
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
-            && ref_ctx.extracted_ref.module.is_none()
-            && !target.contains("::")
-            && !target.contains('.')
-        {
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_ruby = path.ends_with(".rb") || path.ends_with(".rbs");
-                if !is_ruby {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "ruby_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
         None
     }
 }
@@ -762,7 +734,16 @@ impl LanguageEngineHooks for RubyHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        RubyResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = RubyResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

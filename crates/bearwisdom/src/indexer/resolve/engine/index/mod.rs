@@ -97,13 +97,14 @@ pub struct SymbolIndex {
     /// build time — lets `SymbolLookup::workspace_package_id` stand alone
     /// without holding a borrow on the project context.
     workspace_pkg_by_declared_name: FxHashMap<String, i64>,
-    /// Per-package tsconfig `paths` aliases, snapshot of the NPM manifest's
-    /// `tsconfig_paths` for each workspace package. Empty for single-project
+    /// Per-package path aliases (tsconfig `paths`, jsconfig, framework
+    /// configs), snapshot of the NPM manifest's `path_aliases` for each
+    /// workspace package. Empty for single-project
     /// layouts — callers fall back to the union.
-    tsconfig_paths_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
-    /// Project-wide union of tsconfig alias entries; used when no
+    path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
+    /// Project-wide union of path-alias entries; used when no
     /// `package_id` is set or the package has no per-package entry.
-    tsconfig_paths_union: Vec<(String, String)>,
+    path_aliases_union: Vec<(String, String)>,
     /// Set of package names (as listed in `tsconfig.json`'s
     /// `compilerOptions.types` array) whose external file paths are
     /// treated as ambient-global providers — symbols from these

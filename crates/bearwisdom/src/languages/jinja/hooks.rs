@@ -7,6 +7,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -149,7 +150,13 @@ impl LanguageEngineHooks for JinjaHooks {
     ) -> Option<Resolution> {
         match ref_ctx.extracted_ref.kind {
             EdgeKind::Imports => resolve_template_path(file_ctx, ref_ctx, lookup),
-            _ => engine::resolve_common("jinja", file_ctx, ref_ctx, lookup, kind_compatible),
+            _ => (DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: kind_compatible,
+        })
+        .resolve_all(),
         }
     }
 }

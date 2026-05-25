@@ -1651,7 +1651,7 @@ fn tsconfig_alias_resolves_bare_specifier() {
 
     let mut ctx = ProjectContext::default();
     let mut npm = ManifestData::default();
-    npm.tsconfig_paths.push(("@/".to_string(), "src/".to_string()));
+    npm.path_aliases.push(("@/".to_string(), "src/".to_string()));
     ctx.manifests.insert(ManifestKind::Npm, npm);
 
     let parsed = vec![producer, consumer];
@@ -1720,7 +1720,7 @@ fn tsconfig_alias_prepends_package_path_in_monorepo() {
     let mut ctx = ProjectContext::default();
     let mut landing_npm = ManifestData::default();
     landing_npm
-        .tsconfig_paths
+        .path_aliases
         .push(("@/".to_string(), "src/".to_string()));
     let mut by_pkg = std::collections::HashMap::new();
     by_pkg.insert(ManifestKind::Npm, landing_npm);
@@ -1819,7 +1819,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
 
     let mut ctx = ProjectContext::default();
     let mut npm = ManifestData::default();
-    npm.tsconfig_paths
+    npm.path_aliases
         .push(("@/".to_string(), "src/".to_string()));
     let mut by_pkg = std::collections::HashMap::new();
     by_pkg.insert(ManifestKind::Npm, npm);
@@ -1899,8 +1899,8 @@ fn tsconfig_alias_longest_prefix_wins() {
 
     let mut ctx = ProjectContext::default();
     let mut npm = ManifestData::default();
-    npm.tsconfig_paths.push(("@/".to_string(), "src/".to_string()));
-    npm.tsconfig_paths.push((
+    npm.path_aliases.push(("@/".to_string(), "src/".to_string()));
+    npm.path_aliases.push((
         "@/components/".to_string(),
         "packages/ui/src/".to_string(),
     ));
@@ -2055,7 +2055,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
 
     let mut ctx = ProjectContext::default();
     let mut npm = ManifestData::default();
-    npm.tsconfig_paths
+    npm.path_aliases
         .push(("@/".to_string(), "src/".to_string()));
     let mut by_pkg = std::collections::HashMap::new();
     by_pkg.insert(ManifestKind::Npm, npm);

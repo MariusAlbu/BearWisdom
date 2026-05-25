@@ -204,7 +204,11 @@ fn walk_node(
             let sym_idx = parent_idx.unwrap_or(0);
             if let Some(target) = node.child_by_field_name("target") {
                 let name = leaf_name(target, src);
-                if !name.is_empty() {
+                // `NameOf`/`CType`/`GetType`/`TryCast`/… parse as invocations
+                // but are operators, not calls — they have no symbol target.
+                if !name.is_empty()
+                    && !super::keywords::OPERATOR_KEYWORDS.contains(&name.as_str())
+                {
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
                         target_name: name,

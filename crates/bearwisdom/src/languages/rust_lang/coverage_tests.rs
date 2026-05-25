@@ -90,15 +90,18 @@ fn coverage_impl_item_emits_namespace_symbol_at_impl_line() {
     // coverage system can match `impl_item` in symbol_node_kinds.
     let src = "struct S;\nimpl S { fn method(&self) {} }";
     let r = extract::extract(src);
-    // The impl is on line 1 (0-indexed). A Namespace symbol for "S" should
-    // be emitted at that line.
+    // The impl is on line 1 (0-indexed). A Namespace symbol marker for the
+    // impl block must be emitted at that line. The name suffixes `@<line>`
+    // so it never collides with the struct's own symbol — earlier
+    // versions emitted both at name="S" and the duplicate polluted
+    // `by_name`/`types_by_name` for every type with an impl.
     let ns = r
         .symbols
         .iter()
-        .find(|s| s.name == "S" && s.kind == SymbolKind::Namespace);
+        .find(|s| s.kind == SymbolKind::Namespace && s.name.starts_with("<impl S"));
     assert!(
         ns.is_some(),
-        "expected Namespace symbol 'S' from impl_item; symbols: {:?}",
+        "expected `<impl S@N>` Namespace marker; symbols: {:?}",
         r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
     );
     assert_eq!(ns.unwrap().start_line, 1, "Namespace symbol should be at impl line (1)");

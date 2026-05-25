@@ -236,6 +236,46 @@ pub trait SymbolLookup {
         false
     }
 
+    /// Does `path` lie inside a package declared as ambient by the project's
+    /// own configuration (TypeScript `tsconfig.json#compilerOptions.types`,
+    /// `@types/*` packages, or `globals.d.ts` files)?
+    ///
+    /// Ambient packages contribute symbols the user can reference without an
+    /// `import` statement. The DefaultResolver's `ambient_package` strategy
+    /// uses this to prefer candidates inside an ambient-declared package
+    /// when a bare-name ref could otherwise match thousands of identically-
+    /// named symbols across the project.
+    ///
+    /// Default returns `false` — synthetic test lookups and non-TS projects
+    /// pay nothing.
+    fn is_ambient_path(&self, _path: &str) -> bool {
+        false
+    }
+
+    /// Walk the cross-package re-export chain starting from `module_path` (a
+    /// bare specifier the user imported `target_name` from), looking for the
+    /// package that actually owns the symbol.
+    ///
+    /// User imports `TSESTree` from `@typescript-eslint/utils`, but the
+    /// definition lives in `@typescript-eslint/types` (`utils` re-exports
+    /// from `types`). The plain import strategy fails because the candidate
+    /// file is in a different package than the import specifier; this hop
+    /// walks the re-export graph and accepts a candidate whose file lives
+    /// in any reachable package.
+    ///
+    /// `target_name` is the symbol to resolve, `chain_prefix` is the dotted
+    /// prefix (or equal to `target_name` for the direct shape). Returns the
+    /// symbol id when found in any reachable package, `None` otherwise.
+    /// Default returns `None`.
+    fn resolve_external_reexport(
+        &self,
+        _target_name: &str,
+        _chain_prefix: &str,
+        _module_path: &str,
+    ) -> Option<i64> {
+        None
+    }
+
     /// Return all symbols belonging to a workspace package.
     ///
     /// Used by language resolvers to scope lookups when an import specifier
@@ -259,10 +299,15 @@ pub trait SymbolLookup {
         false
     }
 
-    /// Rewrite a TS import specifier through the source package's tsconfig
-    /// `paths` aliases. Returns the resolved bare path (e.g. `@/utils` →
-    /// `src/utils`) or `None` when no alias matches.
-    fn resolve_tsconfig_alias(
+    /// Resolve an import specifier through the project's declared path
+    /// aliases. Returns the rewritten bare path (e.g. `@/utils` → `src/utils`,
+    /// `$lib/x` → `src/lib/x`) or `None` when no alias matches.
+    ///
+    /// The alias table is populated per ecosystem from whatever config
+    /// declares it — TS `tsconfig.json#paths`, `jsconfig.json`, framework
+    /// configs — so the resolver tower can rewrite aliased specifiers without
+    /// baking any one config format into the language-agnostic path.
+    fn resolve_path_alias(
         &self,
         _package_id: Option<i64>,
         _specifier: &str,

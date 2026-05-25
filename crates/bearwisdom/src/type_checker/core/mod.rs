@@ -6,6 +6,7 @@
 // =============================================================================
 
 pub mod chain;
+pub mod default_resolver;
 pub mod dispatch;
 pub mod generics;
 pub mod inference;
@@ -16,6 +17,7 @@ pub mod symbol_types;
 pub mod types;
 
 pub use chain::{ChainResolution, ChainWalker, DefaultRootResolver, RootResolver};
+pub use default_resolver::DefaultResolver;
 pub use dispatch::{select_method, DispatchQuery};
 pub use generics::{substitute, GenericEnv};
 pub use inference::{infer_expression_type, unwrap_await, unwrap_iterator};

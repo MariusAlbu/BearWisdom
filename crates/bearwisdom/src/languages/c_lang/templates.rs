@@ -32,12 +32,14 @@ pub(super) fn push_template_decl<'a>(
     // The inner declaration is the last named child that is not the template
     // parameter list.
     let mut inner: Option<Node<'a>> = None;
+    let mut param_names: Vec<String> = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "template_parameter_list" => {
                 // emit TypeRef for default type arguments  e.g. `typename T = Foo`
                 emit_template_param_typerefs(&child, src, symbols.len(), refs);
+                param_names = collect_template_param_names(&child, src);
             }
             "class_specifier" | "struct_specifier" | "union_specifier"
             | "function_definition" | "alias_declaration" | "declaration"
@@ -73,7 +75,61 @@ pub(super) fn push_template_decl<'a>(
         _ => None,
     };
 
+    // Fold the template's type-parameter names into the inner symbol's
+    // signature as `<T, charT>`. The index build parses generic params out of
+    // signatures into the string `generic_params` map, so this feeds the
+    // engine's generic-parameter strategy (which binds bare refs to `T`,
+    // `charT`, `OutputIt` to this scope) without needing the workspace arena
+    // at extract time.
+    if let Some(i) = idx {
+        if !param_names.is_empty() {
+            let suffix = format!("<{}>", param_names.join(", "));
+            match symbols[i].signature.as_mut() {
+                Some(sig) if !sig.contains('<') => sig.push_str(&suffix),
+                Some(_) => {}
+                None => symbols[i].signature = Some(suffix),
+            }
+        }
+    }
+
     (idx, Some(inner_node))
+}
+
+/// Collect the declared type-parameter names from a `template_parameter_list`
+/// — `T` from `typename T`, `charT` from `class charT`, `Ts` from `typename...
+/// Ts`. Non-type params (`int N`) are skipped: they are values, not types, so
+/// they never appear as unresolved type refs. For default forms
+/// (`typename T = Foo`) the name is the first `type_identifier`, before `=`.
+fn collect_template_param_names(param_list: &Node, src: &[u8]) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut cursor = param_list.walk();
+    for child in param_list.children(&mut cursor) {
+        let mut ic = child.walk();
+        let name_node = match child.kind() {
+            "type_parameter_declaration"
+            | "optional_type_parameter_declaration"
+            | "variadic_type_parameter_declaration" => {
+                // Name is the first `type_identifier`; for default forms
+                // (`typename T = Foo`) it precedes `=`, so `find` stops at `T`.
+                child.children(&mut ic).find(|c| c.kind() == "type_identifier")
+            }
+            "template_template_parameter_declaration" => {
+                // `template<...> class T` — the name is the trailing identifier.
+                child
+                    .children(&mut ic)
+                    .filter(|c| c.kind() == "type_identifier" || c.kind() == "identifier")
+                    .last()
+            }
+            _ => None,
+        };
+        if let Some(id) = name_node {
+            let name = node_text(id, src);
+            if !name.is_empty() {
+                names.push(name);
+            }
+        }
+    }
+    names
 }
 
 // ---------------------------------------------------------------------------

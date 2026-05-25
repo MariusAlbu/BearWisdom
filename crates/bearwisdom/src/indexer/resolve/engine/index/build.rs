@@ -155,6 +155,69 @@ impl SymbolIndex {
             }
         }
 
+        // Re-export alias synthesis. An import of the shape `pub use X as Y`
+        // (rust), `export { X as Y }` (ts), `from m import X as Y` (python)
+        // carries the original name in chain.segments[0] and the alias in
+        // target_name. Register a virtual `Y` entry under by_name + by_qname
+        // pointing at the same file + kind as `X`'s definition.
+        //
+        // Resolution is transitive: a multi-hop barrel chain like
+        //   $lib/components/ui/sidebar/index.ts   `export * from "./Sidebar.svelte"`
+        //   $lib/index.ts                         `export * from "./components/ui/sidebar"`
+        //   src/+page.svelte                      `import { Sidebar } from "$lib"`
+        // requires the inner alias to land before the outer one can resolve.
+        // Fixed-point loop runs the registration pass up to `MAX_ALIAS_HOPS`
+        // times, stopping as soon as a pass adds no new entries. Cycles
+        // (alias-of-alias-of-self) terminate naturally — neither side ever
+        // resolves to a non-alias source.
+        let mut alias_decls: Vec<(String, String)> = Vec::new();
+        for pf in parsed {
+            for r in &pf.refs {
+                if r.kind != EdgeKind::Imports {
+                    continue;
+                }
+                let alias = r.target_name.as_str();
+                let original = match r.chain.as_ref().and_then(|c| c.segments.first()) {
+                    Some(seg) => seg.name.as_str(),
+                    None => continue,
+                };
+                if alias.is_empty() || original.is_empty() || alias == original {
+                    continue;
+                }
+                alias_decls.push((alias.to_string(), original.to_string()));
+            }
+        }
+        const MAX_ALIAS_HOPS: usize = 5;
+        for _hop in 0..MAX_ALIAS_HOPS {
+            let mut registered_this_pass = 0usize;
+            for (alias, original) in &alias_decls {
+                if by_name.contains_key(alias.as_str()) {
+                    continue;
+                }
+                let Some(candidates) = by_name.get(original.as_str()) else {
+                    continue;
+                };
+                let Some(source) = candidates.first() else { continue };
+                let synth = SymbolInfo {
+                    id: source.id,
+                    name: alias.clone(),
+                    qualified_name: alias.clone(),
+                    kind: source.kind.clone(),
+                    visibility: source.visibility.clone(),
+                    file_path: Arc::clone(&source.file_path),
+                    scope_path: source.scope_path.clone(),
+                    package_id: source.package_id,
+                    signature: source.signature.clone(),
+                };
+                by_name.insert(alias.clone(), vec![synth.clone()]);
+                by_qname.entry(alias.clone()).or_insert(synth);
+                registered_this_pass += 1;
+            }
+            if registered_this_pass == 0 {
+                break;
+            }
+        }
+
         // Build field_type, field_type_args, return_type, and generic_params maps.
         let mut field_type: FxHashMap<String, String> = FxHashMap::default();
         let mut field_type_args: FxHashMap<String, Vec<String>> = FxHashMap::default();
@@ -772,20 +835,20 @@ impl SymbolIndex {
         // rewritten `@/components/x` must land at
         // `apps/landing/src/components/x` for `in_file()` to find the file.
         // Prepend the package path to each target at snapshot time.
-        let mut tsconfig_paths_by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
-        let mut tsconfig_paths_union: Vec<(String, String)> = Vec::new();
+        let mut path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
+        let mut path_aliases_union: Vec<(String, String)> = Vec::new();
         let mut tsconfig_types_union: Vec<String> = Vec::new();
         if let Some(ctx) = project_ctx {
             if let Some(npm) = ctx.manifest(crate::ecosystem::manifest::ManifestKind::Npm) {
-                tsconfig_paths_union = npm.tsconfig_paths.clone();
+                path_aliases_union = npm.path_aliases.clone();
                 tsconfig_types_union = npm.tsconfig_types.clone();
             }
             for (&pkg_id, manifests) in &ctx.by_package {
                 if let Some(npm) = manifests.get(&crate::ecosystem::manifest::ManifestKind::Npm) {
-                    if !npm.tsconfig_paths.is_empty() {
+                    if !npm.path_aliases.is_empty() {
                         let pkg_path = ctx.workspace_pkg_paths.get(&pkg_id);
                         let rewritten: Vec<(String, String)> = npm
-                            .tsconfig_paths
+                            .path_aliases
                             .iter()
                             .map(|(alias, target)| {
                                 let full_target = match pkg_path {
@@ -795,7 +858,7 @@ impl SymbolIndex {
                                 (alias.clone(), full_target)
                             })
                             .collect();
-                        tsconfig_paths_by_pkg.insert(pkg_id, rewritten);
+                        path_aliases_by_pkg.insert(pkg_id, rewritten);
                     }
                 }
             }
@@ -921,8 +984,8 @@ impl SymbolIndex {
             primitives_by_language,
             by_package,
             workspace_pkg_by_declared_name,
-            tsconfig_paths_by_pkg,
-            tsconfig_paths_union,
+            path_aliases_by_pkg,
+            path_aliases_union,
             tsconfig_types_union,
             inherits_map,
             alias_target: alias_target_map,

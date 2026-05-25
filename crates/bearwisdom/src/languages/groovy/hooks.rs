@@ -78,39 +78,7 @@ impl LanguageEngineHooks for GroovyHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        if let Some(res) = JavaResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        let target = &ref_ctx.extracted_ref.target_name;
-        let effective_target = target.strip_prefix("this.").unwrap_or(target);
-        if matches!(
-            edge_kind,
-            EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates
-        ) && ref_ctx.extracted_ref.module.is_none()
-            && ref_ctx.extracted_ref.chain.is_none()
-            && !effective_target.contains('.')
-        {
-            for sym in lookup.by_name(effective_target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                if !sym.file_path.ends_with(".groovy") {
-                    continue;
-                }
-                if !JavaResolver.is_visible(file_ctx, ref_ctx, sym) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "groovy_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        None
+        JavaResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 }
 

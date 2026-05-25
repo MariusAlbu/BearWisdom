@@ -13,7 +13,7 @@
 // =============================================================================
 
 use super::types::{Type, TypeArena, TypeId};
-use crate::indexer::resolve::engine::SymbolInfo;
+use crate::indexer::resolve::engine::{strip_generic_args, SymbolInfo};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::profile::language_profile::{
     KindCompatibility, LanguageProfile,
@@ -80,6 +80,17 @@ impl MembersIndex {
                     continue;
                 };
                 let parent_ty = arena.class(scope);
+                // A member of a generic type carries the impl's type params in
+                // its scope (`IndexWriter<D>`). The chain walker reaches this
+                // lookup with the receiver typed two ways: a `self` receiver
+                // inside the impl keeps the params (`class("IndexWriter<D>")`),
+                // while a receiver typed through a return/field/param annotation
+                // is normalized to the bare base (generics are stripped at the
+                // yield step, `class("IndexWriter")`). Key the member under the
+                // bare base too so both receiver shapes find it.
+                let bare_scope = strip_generic_args(scope);
+                let bare_parent_ty = (bare_scope.as_str() != scope.as_str())
+                    .then(|| arena.class(&bare_scope));
                 let info = SymbolInfo {
                     id: sym_id,
                     name: sym.name.clone(),
@@ -101,6 +112,9 @@ impl MembersIndex {
                 if let Some(ext_type) = ext_target {
                     let ext_ty = arena.class(ext_type);
                     index.extensions.entry(ext_ty).or_default().push(info.clone());
+                }
+                if let Some(bare_ty) = bare_parent_ty {
+                    index.direct.entry(bare_ty).or_default().push(info.clone());
                 }
                 index.direct.entry(parent_ty).or_default().push(info);
             }

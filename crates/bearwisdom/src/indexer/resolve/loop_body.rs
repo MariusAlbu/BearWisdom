@@ -37,7 +37,6 @@ use super::engine::{
 };
 use super::flow_emit;
 use super::flow_pair::flush_flow_emissions;
-use super::heuristic;
 use super::indexes;
 use super::write_buf::{flush_resolve_buf, FileStats, FileWriteBuf};
 use super::ResolutionStats;
@@ -338,6 +337,17 @@ fn resolve_iteration_body(
         narrowings.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
         index.install_local_cache(narrowings);
 
+        // R5: seed local types from explicit annotations (`let x: T`). Unlike
+        // forward inference these need no RHS to resolve — the annotation is
+        // the type — so a chain whose receiver is an annotated local resolves
+        // even when its initializer (`expr()?`, `.unwrap()`) doesn't. The ref
+        // loop's resolved-RHS writes overwrite in source order.
+        for (&lhs_idx, decl_type) in &pf.flow.flow_binding_decl_type {
+            if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
+                index.record_local_type(lhs_sym.name.clone(), decl_type.clone());
+            }
+        }
+
         // R5: iterate refs in source order so forward inference
         // (`let x = foo(); x.bar()`) propagates correctly. Reassignment is
         // handled naturally by last-write-wins in the cache. We keep the
@@ -471,10 +481,19 @@ fn resolve_iteration_body(
                                     })
                             });
                         if let Some(yield_str) = yield_str {
+                            // A `?`-unwrapped binding (`let x = expr()?`) yields
+                            // the wrapper's payload — peel one layer so `x` is
+                            // typed as `T`, not `Result<T>`.
+                            let recorded = if pf.flow.flow_binding_unwrap.contains(&lhs_idx) {
+                                engine::first_generic_arg(&yield_str)
+                                    .unwrap_or(yield_str)
+                            } else {
+                                yield_str
+                            };
                             if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
                                 index.record_local_type(
                                     lhs_sym.name.clone(),
-                                    yield_str,
+                                    recorded,
                                 );
                             }
                         }
@@ -663,33 +682,12 @@ fn resolve_iteration_body(
                 continue;
             }
 
-            // Tier 2: Heuristic fallback.
-            let ref_module = r.module.as_deref();
-            let chain_prefix = r.chain.as_ref().and_then(|c| {
-                if c.segments.len() >= 2 {
-                    Some(c.segments[c.segments.len() - 2].name.as_str())
-                } else {
-                    None
-                }
-            });
-            let resolution = heuristic::resolve_ref(
-                r.target_name.as_str(),
-                r.kind,
-                &pf.path,
-                file_imports,
-                source_namespace,
-                chain_prefix,
-                ref_module,
-                &name_to_ids,
-                &qname_to_id,
-                &module_to_files,
-                symbol_id_map,
-                parsed,
-                &|p| index.is_ambient_path(p),
-                &|suffix, prefix, module, cands| {
-                    index.resolve_via_external_reexport(suffix, prefix, module, cands)
-                },
-            );
+            // The heuristic Tier-2 fallback is gone. Every deterministic
+            // strategy that lived in `heuristic.rs` was lifted into
+            // `DefaultResolver` (engine tier) and called by every language
+            // hook via `resolve_all()`. Refs reaching this point are
+            // honestly unresolved.
+            let resolution: Option<(i64, f64, &'static str)> = None;
 
             match resolution {
                 Some((target_id, confidence, strategy)) => {

@@ -406,6 +406,143 @@ fn direct_keys_iterates_registered_types() {
 }
 
 #[test]
+fn generic_type_members_keyed_under_both_bare_and_parameterized() {
+    // A method of a generic type carries the impl's type params in its
+    // scope_path (`IndexWriter<D>`). It must be reachable both from a `self`
+    // receiver that keeps the params and from a receiver normalized to the
+    // bare base. build_from_parsed_files dual-keys it.
+    use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
+
+    let method = ExtractedSymbol {
+        name: "add_document".to_string(),
+        qualified_name: "IndexWriter<D>.add_document".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: Some("IndexWriter<D>".to_string()),
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    };
+    let pf = ParsedFile {
+        path: "lib.rs".to_string(),
+        language: "rust".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: vec![method],
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("lib.rs".to_string(), 0), 7);
+
+    let arena = TypeArena::new();
+    let index = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &arena,
+    );
+
+    let bare = arena.class("IndexWriter");
+    let parameterized = arena.class("IndexWriter<D>");
+    assert!(
+        index.direct_of(bare).iter().any(|m| m.id == 7),
+        "member must be reachable from the bare base type"
+    );
+    assert!(
+        index.direct_of(parameterized).iter().any(|m| m.id == 7),
+        "member must stay reachable from the parameterized self type"
+    );
+}
+
+#[test]
+fn non_generic_type_members_keyed_once() {
+    // A non-generic type's scope equals its bare name — no duplicate key.
+    use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
+
+    let method = ExtractedSymbol {
+        name: "schema".to_string(),
+        qualified_name: "Searcher.schema".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: Some("Searcher".to_string()),
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    };
+    let pf = ParsedFile {
+        path: "lib.rs".to_string(),
+        language: "rust".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: vec![method],
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("lib.rs".to_string(), 0), 9);
+
+    let arena = TypeArena::new();
+    let index = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &arena,
+    );
+
+    let searcher = arena.class("Searcher");
+    assert_eq!(
+        index.direct_of(searcher).iter().filter(|m| m.id == 9).count(),
+        1,
+        "non-generic member is keyed exactly once"
+    );
+}
+
+#[test]
 fn csharp_extension_target_recognises_simple_signature() {
     assert_eq!(
         super::csharp_extension_target("string MyExt(this string s, int x)"),

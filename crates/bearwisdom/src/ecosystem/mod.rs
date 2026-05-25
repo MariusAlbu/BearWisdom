@@ -25,6 +25,7 @@ use crate::ecosystem::externals::ExternalDepRoot;
 use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 
+pub mod ambient;
 pub mod externals;
 pub mod imports;
 pub mod manifest;
@@ -37,6 +38,7 @@ pub mod jinja_ansible_runtime;
 pub mod bicep_runtime;
 pub mod prolog_runtime;
 pub mod hexo_runtime;
+pub mod nuxt_runtime;
 pub mod cargo_build_scripts;
 pub mod cargo_expand_runtime;
 pub mod alire;
@@ -79,7 +81,12 @@ pub mod php_stubs;
 pub mod compile_commands;
 pub mod ecmascript_imports;
 pub mod msvc_sdk;
+pub mod jar_walker;
+pub mod maven_classes;
+pub mod openapi_generated;
 pub mod posix_headers;
+pub mod prisma_client;
+pub mod protoc_generated;
 pub mod qt_runtime;
 pub mod powershell_cmdlet_types;
 pub mod powershell_stdlib;
@@ -107,6 +114,7 @@ pub use jinja_ansible_runtime::JinjaAnsibleRuntimeEcosystem;
 pub use bicep_runtime::BicepRuntimeEcosystem;
 pub use prolog_runtime::PrologRuntimeEcosystem;
 pub use hexo_runtime::HexoRuntimeEcosystem;
+pub use nuxt_runtime::NuxtRuntimeEcosystem;
 pub use cargo_build_scripts::CargoBuildScriptsEcosystem;
 pub use cargo_expand_runtime::CargoExpandRuntimeEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
@@ -117,6 +125,10 @@ pub use clojure_core::ClojureCoreEcosystem;
 pub use composer::ComposerEcosystem;
 pub use cpan::CpanEcosystem;
 pub use cpython_stdlib::CpythonStdlibEcosystem;
+pub use maven_classes::MavenClassesEcosystem;
+pub use openapi_generated::OpenApiGeneratedEcosystem;
+pub use prisma_client::PrismaClientEcosystem;
+pub use protoc_generated::ProtocGeneratedEcosystem;
 pub use cran::CranEcosystem;
 pub use dart_sdk::DartSdkEcosystem;
 pub use dotnet_stdlib::DotnetStdlibEcosystem;
@@ -651,6 +663,7 @@ pub fn default_locator(
         "bicep-runtime" => Some(bicep_runtime::shared_locator()),
         "prolog-runtime" => Some(prolog_runtime::shared_locator()),
         "hexo-runtime" => Some(hexo_runtime::shared_locator()),
+        "nuxt-runtime" => Some(nuxt_runtime::shared_locator()),
         "cargo-build-scripts" => Some(cargo_build_scripts::shared_locator()),
         "cargo-expand-runtime" => Some(cargo_expand_runtime::shared_locator()),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
@@ -763,6 +776,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(BicepRuntimeEcosystem);
         reg_eco!(PrologRuntimeEcosystem);
         reg_eco!(HexoRuntimeEcosystem);
+        reg_eco!(NuxtRuntimeEcosystem);
         reg_eco!(CargoBuildScriptsEcosystem);
         reg_eco!(CargoExpandRuntimeEcosystem);
         reg_eco!(SwiftFoundationEcosystem);
@@ -780,6 +794,10 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(GnatProjectEcosystem);
         reg_eco!(ZigStdEcosystem);
         reg_eco!(SdlSyntheticsEcosystem);
+        reg_eco!(PrismaClientEcosystem);
+        reg_eco!(ProtocGeneratedEcosystem);
+        reg_eco!(OpenApiGeneratedEcosystem);
+        reg_eco!(MavenClassesEcosystem);
         reg
     })
 }

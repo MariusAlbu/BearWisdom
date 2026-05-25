@@ -64,7 +64,7 @@ impl ManifestReader for NpmManifest {
             // resolver just won't rewrite aliases for this package.
             let tsconfig_path = package_dir.join("tsconfig.json");
             if let Ok(ts_content) = std::fs::read_to_string(&tsconfig_path) {
-                data.tsconfig_paths = parse_tsconfig_paths(&ts_content);
+                data.path_aliases = parse_tsconfig_paths(&ts_content);
                 data.tsconfig_types = parse_tsconfig_types(&ts_content);
             }
 
@@ -98,7 +98,7 @@ impl ManifestReader for NpmManifest {
                     }
                     // Longest-match wins in the resolver, so duplicate keys
                     // across config files are harmless — we just push them.
-                    data.tsconfig_paths.push(entry);
+                    data.path_aliases.push(entry);
                 }
             }
 
@@ -119,7 +119,7 @@ impl ManifestReader for NpmManifest {
                     .iter()
                     .any(|d| d == "laravel-vite-plugin");
                 if has_laravel_vite && package_dir.join("resources").join("js").is_dir() {
-                    data.tsconfig_paths
+                    data.path_aliases
                         .push(("@/".to_string(), "resources/js/".to_string()));
                 }
             }

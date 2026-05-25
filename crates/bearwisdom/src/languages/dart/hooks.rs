@@ -299,9 +299,6 @@ impl LanguageEngineHooks for DartHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
@@ -375,30 +372,6 @@ impl LanguageEngineHooks for DartHooks {
                     target_symbol_id: sym.id,
                     confidence: 0.85,
                     strategy: "dart_by_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        if matches!(
-            edge_kind,
-            EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates
-        ) && ref_ctx.extracted_ref.module.is_none()
-            && !target.contains('.')
-        {
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_dart = path.ends_with(".dart");
-                if !is_dart {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "dart_bare_name",
                     resolved_yield_type: None,
                     flow_emit: None,
                 });

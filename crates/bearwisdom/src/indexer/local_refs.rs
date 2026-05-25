@@ -123,3 +123,32 @@ pub(super) fn filter_local_refs(
     }
 }
 
+/// Operator characters that, alone, make a target a language primitive rather
+/// than a symbol reference.
+const OPERATOR_CHARS: &str = "+-*/<>=!&|^%~.:?@";
+
+/// Drop `Calls` refs whose target is a punctuation-only operator token,
+/// optionally paren-wrapped (F# `(+)` / `(=)`, gleam `<>` / `==`, Scala `::`).
+/// Operators are language primitives — `1 + 2`'s `+` has no resolvable target —
+/// so emitting them as calls only inflates the unresolved count. Runs
+/// unconditionally, unlike `filter_local_refs` which needs a `locals.scm`.
+pub(super) fn filter_operator_refs(refs: &mut Vec<crate::types::ExtractedRef>) {
+    refs.retain(|r| !is_operator_only_call(r));
+}
+
+fn is_operator_only_call(r: &crate::types::ExtractedRef) -> bool {
+    if r.kind != crate::types::EdgeKind::Calls || r.module.is_some() || r.chain.is_some() {
+        return false;
+    }
+    let t = r.target_name.trim();
+    let inner = t
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap_or(t);
+    !inner.is_empty() && inner.chars().all(|c| OPERATOR_CHARS.contains(c))
+}
+
+#[cfg(test)]
+#[path = "local_refs_tests.rs"]
+mod tests;
+

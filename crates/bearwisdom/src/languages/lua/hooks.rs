@@ -3,8 +3,9 @@
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -162,9 +163,6 @@ impl LanguageEngineHooks for LuaHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if !target.contains('.') && !target.contains(':') {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
@@ -182,41 +180,13 @@ impl LanguageEngineHooks for LuaHooks {
                 });
             }
         }
-        if let Some(res) = engine::resolve_common(
-            "lua",
+        (DefaultResolver {
             file_ctx,
             ref_ctx,
             lookup,
-            predicates::kind_compatible,
-        ) {
-            return Some(res);
-        }
-        if matches!(
-            edge_kind,
-            EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates
-        ) && ref_ctx.extracted_ref.module.is_none()
-            && !target.contains('.')
-            && !target.contains(':')
-        {
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_lua = path.ends_with(".lua") || path.ends_with(".luac");
-                if !is_lua {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "lua_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        None
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

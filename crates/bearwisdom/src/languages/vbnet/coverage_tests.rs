@@ -136,6 +136,22 @@ fn ref_invocation() {
     );
 }
 
+/// VB operator keywords (`NameOf`, `CType`, `GetType`, …) parse as invocations
+/// but are operators — they must NOT emit Calls refs (no resolvable target).
+#[test]
+fn operator_keywords_not_emitted_as_calls() {
+    let r = extract(
+        "Module Main\n  Sub Test()\n    Dim n = NameOf(Test)\n    Dim o = CType(n, String)\n    Dim t = GetType(Integer)\n  End Sub\nEnd Module",
+    );
+    for op in ["NameOf", "CType", "GetType"] {
+        assert!(
+            !r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == op),
+            "{op} must not emit a Calls ref; got {:?}",
+            r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        );
+    }
+}
+
 /// ref_node_kind: `new_expression`  →  Instantiates edge
 /// NOTE: The grammar currently parses `Dim x As New Type()` with an ERROR node
 /// inside the as_clause, so new_expression is not emitted and the handler yields nothing.

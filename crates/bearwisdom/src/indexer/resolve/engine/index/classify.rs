@@ -56,9 +56,14 @@ impl SymbolIndex {
         //    ambient by default when `compilerOptions.types` is not
         //    explicitly set, and most projects don't override that.
         //    `@types/node` provides `process` / `Buffer`, `@types/jest`
-        //    provides `expect` / `describe`, etc. Match the path suffix
-        //    so per-package nesting (`@types/node/fs.d.ts`) is covered.
-        if lower.contains("/@types/") || lower.contains("node_modules/@types/") {
+        //    provides `expect` / `describe`, etc. Match `@types/` as a path
+        //    component: `/@types/` for on-disk node_modules paths AND
+        //    `:@types/` for the externals-index form `ext:ts:@types/jest/...`
+        //    (no leading slash — the `ext:<lang>:` prefix sits before it).
+        if lower.contains("/@types/")
+            || lower.contains(":@types/")
+            || lower.starts_with("@types/")
+        {
             return true;
         }
 
@@ -67,6 +72,16 @@ impl SymbolIndex {
         //    distribute their declare-global block here regardless of
         //    whether they're in @types or in the project's types list.
         if lower.ends_with("/globals.d.ts") || lower.ends_with("\\globals.d.ts") {
+            return true;
+        }
+
+        // 4. Framework-generated and runtime ambient declarations — Nuxt /
+        //    `unplugin-*` auto-imports, SvelteKit + Next env types, and the
+        //    Vue 3 runtime declarations the SFC compiler injects. The path
+        //    markers live in the ecosystem layer alongside other on-disk
+        //    discovery rules (they self-gate by file existence).
+        let lower_fwd = lower.replace('\\', "/");
+        if crate::ecosystem::ambient::is_framework_ambient_path(&lower_fwd) {
             return true;
         }
 

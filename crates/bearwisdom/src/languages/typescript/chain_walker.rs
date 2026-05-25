@@ -445,7 +445,7 @@ fn resolve_call_root_type(
         if let Some(ft) = lookup.field_type_str(&candidate) {
             return Some(ft.to_string());
         }
-        if let Some(rewritten) = lookup.resolve_tsconfig_alias(ref_ctx.file_package_id, module) {
+        if let Some(rewritten) = lookup.resolve_path_alias(ref_ctx.file_package_id, module) {
             let alias_candidate = format!("{rewritten}.{name}");
             if let Some(rt) = lookup.return_type_str(&alias_candidate) {
                 return Some(rt.to_string());

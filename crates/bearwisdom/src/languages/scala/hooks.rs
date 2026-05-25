@@ -39,9 +39,6 @@ impl ScalaResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         // Global external lookup for bare names. Prefers chain walker context
         // when the ref has a real multi-segment chain, but falls back here
@@ -640,7 +637,16 @@ impl LanguageEngineHooks for ScalaHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        ScalaResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = ScalaResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

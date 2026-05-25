@@ -4,6 +4,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -66,12 +67,18 @@ impl LanguageEngineHooks for GraphQlHooks {
         if is_graphql_builtin(&ref_ctx.extracted_ref.target_name) {
             return None;
         }
-        engine::resolve_common("graphql", file_ctx, ref_ctx, lookup, |_, sym_kind| {
-            matches!(
-                sym_kind,
-                "class" | "interface" | "enum" | "struct" | "type_alias"
-            )
+        (DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: |_, sym_kind| {
+                matches!(
+                    sym_kind,
+                    "class" | "interface" | "enum" | "struct" | "type_alias"
+                )
+            },
         })
+        .resolve_all()
     }
 }
 

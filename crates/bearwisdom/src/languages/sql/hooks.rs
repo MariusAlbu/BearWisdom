@@ -4,6 +4,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -93,7 +94,13 @@ impl LanguageEngineHooks for SqlHooks {
                 });
             }
         }
-        engine::resolve_common("sql", file_ctx, ref_ctx, lookup, sql_kind_compatible)
+        (DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: sql_kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

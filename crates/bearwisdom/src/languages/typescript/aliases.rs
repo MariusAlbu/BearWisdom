@@ -67,7 +67,7 @@ pub(super) fn classify_passthrough_alias(
     lookup: &dyn SymbolLookup,
 ) -> Option<String> {
     // Need the rewritten bare path. Skip when no alias matches.
-    let rewritten = lookup.resolve_tsconfig_alias(package_id, spec)?;
+    let rewritten = lookup.resolve_path_alias(package_id, spec)?;
 
     // Try to locate the resolved file in the index. Walk the same shape
     // resolve_via_alias uses so we land on the actual indexed file.

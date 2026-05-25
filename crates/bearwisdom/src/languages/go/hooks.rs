@@ -46,9 +46,6 @@ impl GoResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = walk_go_chain(chain_ref, edge_kind, ref_ctx, lookup) {
@@ -191,46 +188,6 @@ impl GoResolver {
                         flow_emit: None,
                     });
                 }
-            }
-        }
-
-        // Bare-name fallback. Honors Go visibility — unexported (lowercase)
-        // targets must live in the same package directory as the source.
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
-            && ref_ctx.extracted_ref.module.is_none()
-            && !target.contains('.')
-        {
-            let is_exported = target.chars().next().is_some_and(|c| c.is_uppercase());
-            let source_pkg_dir = file_ctx
-                .file_path
-                .rfind('/')
-                .map(|i| &file_ctx.file_path[..i])
-                .unwrap_or("");
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_go = path.ends_with(".go") || path.starts_with("ext:go:");
-                if !is_go {
-                    continue;
-                }
-                if !is_exported {
-                    let target_pkg_dir = path
-                        .rfind('/')
-                        .map(|i| &path[..i])
-                        .unwrap_or("");
-                    if target_pkg_dir != source_pkg_dir {
-                        continue;
-                    }
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "go_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
             }
         }
 
@@ -757,7 +714,16 @@ impl LanguageEngineHooks for GoHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        GoResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = GoResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

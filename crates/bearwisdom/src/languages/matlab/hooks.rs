@@ -5,6 +5,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -74,9 +75,6 @@ impl LanguageEngineHooks for MatlabHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return None;
-        }
         let bare = target.split('.').next().unwrap_or(target);
         let hits = lookup.by_name(bare);
         if hits.iter().any(|sym| sym.file_path.starts_with("ext:matlab:")) {
@@ -126,16 +124,13 @@ impl LanguageEngineHooks for MatlabHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return None;
-        }
-        engine::resolve_common(
-            "matlab",
+        (DefaultResolver {
             file_ctx,
             ref_ctx,
             lookup,
-            predicates::kind_compatible,
-        )
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

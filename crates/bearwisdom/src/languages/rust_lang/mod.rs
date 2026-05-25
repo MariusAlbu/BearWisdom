@@ -6,7 +6,7 @@ mod calls_imports;
 mod calls_macros;
 pub(crate) mod decorators;
 mod embedded;
-mod flow;
+pub(crate) mod flow;
 mod flow_detectors;
 mod helpers;
 mod patterns;

@@ -22,6 +22,7 @@ use crate::indexer::resolve::engine::{
     intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo,
     SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::inheritance;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::type_checker::type_env::TypeEnvironment;
@@ -46,10 +47,6 @@ impl CSharpResolver {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = walk_csharp_chain(chain_ref, edge_kind, file_ctx, ref_ctx, lookup) {
@@ -1065,7 +1062,16 @@ impl LanguageEngineHooks for CSharpHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        CSharpResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = CSharpResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

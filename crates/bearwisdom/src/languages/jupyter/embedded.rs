@@ -37,12 +37,19 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
     regions
 }
 
+/// Map a notebook's declared kernel/language name to a registry language id.
+///
+/// Accepts the three forms a notebook can supply: a canonical language name
+/// (`language_info.name` — "R", "python", "julia"), the legacy
+/// `kernelspec.language` field, or the kernelspec id (`kernelspec.name` —
+/// "ir", "python3", "ijavascript"). Returns `None` for kernels whose
+/// extractor isn't plumbed yet (Julia).
 fn map_kernel_language(kernel: &str) -> Option<String> {
     let k = kernel.to_ascii_lowercase();
     let mapped = match k.as_str() {
+        // Canonical names.
         "python" | "python3" | "python2" => "python",
         "r" => "r",
-        "julia" => return None, // Julia extractor not yet plumbed
         "javascript" | "js" | "node" => "javascript",
         "typescript" | "ts" => "typescript",
         "scala" => "scala",
@@ -52,6 +59,16 @@ fn map_kernel_language(kernel: &str) -> Option<String> {
         "powershell" | "pwsh" => "powershell",
         "csharp" | "c#" => "csharp",
         "fsharp" | "f#" => "fsharp",
+        // Kernel ids — the IRkernel ships as "ir", IJulia as "julia",
+        // ITypeScript as "tslab", etc. Map the common kernel ids to the
+        // language they execute so `kernelspec.name` fallback works.
+        "ir" => "r",
+        "ijavascript" => "javascript",
+        "tslab" => "typescript",
+        "iruby" => "ruby",
+        "iscala" | "scala-kernel" => "scala",
+        "ipowershell" => "powershell",
+        "julia" | "ijulia" => return None, // extractor not yet plumbed
         _ => return None,
     };
     Some(mapped.to_string())
@@ -98,6 +115,37 @@ mod tests {
   {"cell_type": "code", "source": "library(dplyr)\n", "metadata": {}}
  ],
  "metadata": {"kernelspec": {"language": "R"}}
+}"##;
+        let regions = detect_regions(src);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].language_id, "r");
+    }
+
+    #[test]
+    fn r_notebook_with_irkernel_metadata_emits_r_regions() {
+        // Real-world IRkernel notebook: kernelspec.name = "ir",
+        // language_info.name = "R". Both paths should converge on "r".
+        let src = r##"{
+ "cells": [
+  {"cell_type": "code", "source": "library(dplyr)\n", "metadata": {}}
+ ],
+ "metadata": {
+   "kernelspec": {"name": "ir", "display_name": "R"},
+   "language_info": {"name": "R"}
+ }
+}"##;
+        let regions = detect_regions(src);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].language_id, "r");
+    }
+
+    #[test]
+    fn r_notebook_with_only_kernelspec_name_ir_still_emits_r_regions() {
+        let src = r##"{
+ "cells": [
+  {"cell_type": "code", "source": "library(dplyr)\n", "metadata": {}}
+ ],
+ "metadata": {"kernelspec": {"name": "ir"}}
 }"##;
         let regions = detect_regions(src);
         assert_eq!(regions.len(), 1);

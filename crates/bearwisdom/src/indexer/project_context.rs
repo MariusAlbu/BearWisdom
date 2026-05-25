@@ -237,9 +237,9 @@ pub fn build_project_context_with_packages(
                         entry.project_refs.push(pr.clone());
                     }
                 }
-                for alias in &pm.data.tsconfig_paths {
-                    if !entry.tsconfig_paths.contains(alias) {
-                        entry.tsconfig_paths.push(alias.clone());
+                for alias in &pm.data.path_aliases {
+                    if !entry.path_aliases.contains(alias) {
+                        entry.path_aliases.push(alias.clone());
                     }
                 }
             }
@@ -808,9 +808,9 @@ fn union_manifests(per_package: &[PackageManifest]) -> HashMap<ManifestKind, Man
                 entry.project_refs.push(pr.clone());
             }
         }
-        for alias in &pm.data.tsconfig_paths {
-            if !entry.tsconfig_paths.contains(alias) {
-                entry.tsconfig_paths.push(alias.clone());
+        for alias in &pm.data.path_aliases {
+            if !entry.path_aliases.contains(alias) {
+                entry.path_aliases.push(alias.clone());
             }
         }
         for t in &pm.data.tsconfig_types {
@@ -901,15 +901,15 @@ impl ProjectContext {
         !self.by_package.is_empty()
     }
 
-    /// Rewrite a TS import specifier through the given package's tsconfig
-    /// `paths` aliases.
+    /// Rewrite an import specifier through the given package's declared path
+    /// aliases (tsconfig `paths`, jsconfig, framework configs).
     ///
     /// Returns the longest-matching alias prefix's rewrite, or `None` if no
     /// alias matches. The target is a bare prefix (trailing `*` already
     /// stripped), so `@/utils` with alias `@/ -> src/` becomes `src/utils`.
     /// Consumers typically drop the result into `SymbolLookup::in_file`
     /// (via the module_to_file map) or use it as a filename-stem match.
-    pub fn resolve_tsconfig_alias(
+    pub fn resolve_path_alias(
         &self,
         package_id: Option<i64>,
         specifier: &str,
@@ -920,7 +920,7 @@ impl ProjectContext {
         //   "@/":           "src/"
         //   "@/components/": "packages/ui/src/"
         let mut best: Option<&(String, String)> = None;
-        for entry in &npm.tsconfig_paths {
+        for entry in &npm.path_aliases {
             let (alias, _) = entry;
             if specifier.starts_with(alias.as_str()) {
                 if best.map_or(true, |(b, _)| alias.len() > b.len()) {

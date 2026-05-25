@@ -49,9 +49,6 @@ impl PhpResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
 
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = walk_php_chain(chain_val, edge_kind, file_ctx, ref_ctx, lookup) {
@@ -216,40 +213,6 @@ impl PhpResolver {
                         }
                     }
                 }
-            }
-        }
-
-        // `.php`/`.phtml`/`.phpt` bare-name fallback for autoloader-registered
-        // global classes (Closure, RuntimeException, ArrayAccess, …) and
-        // PHPUnit assertions. Visibility check stays active so private /
-        // protected cross-file refs remain unbound.
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
-            && ref_ctx.extracted_ref.module.is_none()
-            && !target.contains('\\')
-            && !target.contains("::")
-        {
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_php = path.ends_with(".php")
-                    || path.ends_with(".phtml")
-                    || path.ends_with(".phpt")
-                    || path.starts_with("ext:php:");
-                if !is_php {
-                    continue;
-                }
-                if !self.is_visible(file_ctx, ref_ctx, sym) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "php_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
             }
         }
 
@@ -944,7 +907,16 @@ impl LanguageEngineHooks for PhpHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        PhpResolver.resolve(file_ctx, ref_ctx, lookup)
+        if let Some(res) = PhpResolver.resolve(file_ctx, ref_ctx, lookup) {
+            return Some(res);
+        }
+        (crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all()
     }
 }
 

@@ -8,6 +8,7 @@ use crate::indexer::resolve::engine::{
     SymbolLookup,
 };
 use crate::type_checker::chain::simple_yield_type;
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, MemberChain, ParsedFile, SegmentKind};
 use tracing::debug;
@@ -153,9 +154,6 @@ impl LanguageEngineHooks for CHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Imports {
-            return None;
-        }
         if predicates::is_template_param(target) {
             return None;
         }
@@ -246,13 +244,13 @@ impl LanguageEngineHooks for CHooks {
                 });
             }
         }
-        if let Some(res) = engine::resolve_common(
-            "c",
+        if let Some(res) = (DefaultResolver {
             file_ctx,
             ref_ctx,
             lookup,
-            predicates::kind_compatible,
-        ) {
+            kind_compatible: predicates::kind_compatible,
+        })
+        .resolve_all() {
             return Some(res);
         }
         if matches!(
@@ -262,32 +260,6 @@ impl LanguageEngineHooks for CHooks {
             && !target.contains('.')
             && !target.contains("::")
         {
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let path = &sym.file_path;
-                let is_c_or_cpp = path.ends_with(".c")
-                    || path.ends_with(".h")
-                    || path.ends_with(".cc")
-                    || path.ends_with(".cpp")
-                    || path.ends_with(".cxx")
-                    || path.ends_with(".hpp")
-                    || path.ends_with(".hh")
-                    || path.ends_with(".hxx")
-                    || path.starts_with("ext:c:")
-                    || path.starts_with("ext:cpp:");
-                if !is_c_or_cpp {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "c_bare_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
             let trivial = target.len() < 2
                 || target.chars().next().map_or(true, |c| c == '_')
                 || !target.chars().any(|c| c.is_alphabetic());

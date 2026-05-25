@@ -176,6 +176,7 @@ fn parse_file_internal(
     // This removes local variables, parameters, and other intra-scope names
     // that don't need cross-file resolution.
     super::local_refs::filter_local_refs(&content, walked.language, plugin, &r.symbols, &mut r.refs);
+    super::local_refs::filter_operator_refs(&mut r.refs);
 
     // Symbols produced by the host extractor all share the file's language,
     // so the origin vector starts empty and grows only when we splice in

@@ -58,6 +58,7 @@ pub(super) fn dispatch_embedded_regions(
 
         let mut sub = sub_plugin.extract(&sub_text, file_path, &region.language_id);
         super::local_refs::filter_local_refs(&sub_text, &region.language_id, sub_plugin, &sub.symbols, &mut sub.refs);
+        super::local_refs::filter_operator_refs(&mut sub.refs);
 
         let symbol_offset = r.symbols.len();
         let line_offset = region.line_offset;
