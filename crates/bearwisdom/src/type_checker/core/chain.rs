@@ -31,10 +31,11 @@
 //     when Wave B migrations land.
 // =============================================================================
 
-use super::types::{Type, TypeArena, TypeId};
+use super::types::{GenericParamId, Type, TypeArena, TypeId};
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
 use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
 use crate::type_checker::core::generics::{substitute, GenericEnv};
+use rustc_hash::FxHashMap;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
@@ -361,10 +362,9 @@ impl<'a> ChainWalker<'a> {
                     // returning `T` substitutes to the concrete type at the
                     // yield step below.
                     if !owner_args.is_empty() {
-                        if let Some(data) = self.symbol_types.data_for_class(owner) {
-                            if !data.generic_params.is_empty() {
-                                env.bind_positional(&data.generic_params, &owner_args);
-                            }
+                        let params = self.owner_generic_params(owner);
+                        if !params.is_empty() {
+                            env.bind_positional(&params, &owner_args);
                         }
                     }
                     m
@@ -485,6 +485,15 @@ impl<'a> ChainWalker<'a> {
         // Mirrors the SymbolTypeMap path's `substitute` step; concrete args
         // (`Iter<User>`) survive directly, env-bound params (`<T>`) resolve.
         let yielded = self.arena.intern_type_str(cleaned);
+        // Rebind nominal param tokens (`Class("T")`) to the owner's canonical
+        // `Generic(T)` so a generic return substitutes against the receiver's
+        // bound args; `intern_type_str` alone is param-blind.
+        let params = self.owner_param_type_map(&sym.qualified_name);
+        let yielded = if params.is_empty() {
+            yielded
+        } else {
+            self.arena.rebind_class_params(yielded, &params)
+        };
         Some(substitute(yielded, env, self.arena))
     }
 
@@ -611,13 +620,52 @@ impl<'a> ChainWalker<'a> {
         if args.is_empty() {
             return;
         }
-        let Some(data) = self.symbol_types.data_for_class(base) else {
-            return;
-        };
-        if data.generic_params.is_empty() {
+        let params = self.owner_generic_params(base);
+        if params.is_empty() {
             return;
         }
-        env.bind_positional(&data.generic_params, &args);
+        env.bind_positional(&params, &args);
+    }
+
+    /// Declared generic params of a type as `GenericParamId`s for positional
+    /// binding. Prefers extractor-populated `symbol_types`; falls back to the
+    /// build-time canonical `Type::Generic` ids in `generic_param_type_ids` —
+    /// the source that is actually populated in a real index.
+    fn owner_generic_params(&self, owner_ty: TypeId) -> Vec<GenericParamId> {
+        if let Some(data) = self.symbol_types.data_for_class(owner_ty) {
+            if !data.generic_params.is_empty() {
+                return data.generic_params.clone();
+            }
+        }
+        let qname = match self.arena.get(owner_ty) {
+            Type::Class(q) => q,
+            _ => return Vec::new(),
+        };
+        let Some(ids) = self.lookup.generic_param_type_ids(&qname) else {
+            return Vec::new();
+        };
+        ids.iter()
+            .filter_map(|&id| match self.arena.get(id) {
+                Type::Generic { param } => Some(param),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `{param-name → Type::Generic id}` for the type owning `member_qname`
+    /// (its qname minus the trailing member segment). Drives the rebind of a
+    /// member's declared-type string from nominal `Class("T")` to the owner's
+    /// canonical `Generic(T)`.
+    fn owner_param_type_map(&self, member_qname: &str) -> FxHashMap<String, TypeId> {
+        let Some((owner, _)) = member_qname.rsplit_once('.') else {
+            return FxHashMap::default();
+        };
+        let Some(ids) = self.lookup.generic_param_type_ids(owner) else {
+            return FxHashMap::default();
+        };
+        ids.iter()
+            .map(|&id| (self.arena.format_type(id), id))
+            .collect()
     }
 }
 

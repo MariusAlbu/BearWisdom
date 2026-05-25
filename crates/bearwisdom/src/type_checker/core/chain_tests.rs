@@ -906,6 +906,93 @@ fn string_map_yield_preserves_generic_args() {
 }
 
 #[test]
+fn substitution_fires_from_canonical_params_and_string_yield() {
+    // class Repo<T> { first(): T }   const r: Repo<User>;  r.first() → User.
+    // Production shape: T's params live ONLY in generic_param_type_ids (not
+    // symbol_types), and first's return is known ONLY as the string "T" (no
+    // SymbolTypeMap TypeId). Exercises U1 (binder falls back to canonical
+    // params) + U2a (string yield rebinds "T" → Generic before substitute).
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let repo_ty = arena.class("Repo");
+    let user_ty = arena.class("User");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let generic_t = arena.intern(Type::Generic { param: t_param });
+    let apply_ty = arena.intern(Type::Apply {
+        base: repo_ty,
+        args: vec![user_ty],
+    });
+
+    // No symbol_types entry for Repo (params come from the canonical source)
+    // and none for first (its yield must come from the string map).
+    let symbol_types = SymbolTypeMap::new();
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        repo_ty,
+        sym_info(3, "first", "Repo.first", "method", Some("Repo")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_return_type("Repo.first", "T")
+        .with_generic_param_type_ids("Repo", vec![generic_t]);
+
+    struct ApplyRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for ApplyRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("r", SegmentKind::Identifier),
+            seg("first", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("first");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &ApplyRoot { ty: apply_ty })
+        .expect("generic chain resolves");
+    assert_eq!(result.target_symbol_id, 3);
+    // T must substitute to User via the canonical params + string-yield rebind.
+    assert_eq!(result.resolved_yield_type, user_ty);
+}
+
+#[test]
 fn chain_misses_when_member_not_found() {
     let mut arena = TypeArena::new();
     let user_ty = arena.class("User");
