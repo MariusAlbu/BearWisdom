@@ -53,6 +53,14 @@ fn default_value_dropped_from_bound() {
 }
 
 #[test]
+fn scala_upper_bound_is_caught_via_colon() {
+    // Scala `[T <: Animal]` — the `:` in `<:` already triggers the bound
+    // branch, and the name split on `<` keeps the name clean.
+    let parsed = parse_generic_param_clause("T <: Animal");
+    assert_eq!(parsed, vec![("T".to_string(), Some("Animal".to_string()))]);
+}
+
+#[test]
 fn generic_bound_preserved() {
     let parsed = parse_generic_param_clause("T extends Repository<User>");
     assert_eq!(

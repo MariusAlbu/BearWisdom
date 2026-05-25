@@ -53,12 +53,14 @@ per-language code. Size: XS/S/M/L.
 - **L1 — bound capture.** The gap-B signature parser already handles `<T extends B>`
   and `<T: B>`, so bounds flow as long as the extractor puts the bound in the signature.
   Splits by **bound syntax**:
-  - `~` already-parseable syntax (verify the extractor includes the bound): **Java**,
-    **Kotlin** (`<T : B>`), **Swift** (`<T: B>`), **Rust** (`<T: B>`), **Dart** (`extends`).
-    TypeScript ✓ done.
-  - `~` bound syntax the parser does **not** catch — needs parser + extractor work:
-    **C#** (`where T : B`, a separate clause), **Scala** (`[T <: B]`), **Go**
-    (`[T Constraint]`, space-separated), **Haskell** (`(C a) =>` constraints).
+  - `~` already-parseable (verify the extractor includes the bound): **Java**,
+    **Kotlin** (`<T : B>`), **Swift** (`<T: B>`), **Rust** (`<T: B>`), **Scala**
+    (`[T <: B]` — the `:` in `<:` triggers the bound branch; verified), **Dart**
+    (`extends`). TypeScript ✓ done.
+  - `~` NOT caught — the bound lives **outside** the `<>`/`[]` param clause, so it
+    needs extractor/clause-position work, not a separator tweak: **C#**
+    (`where T : B`), **Go** (`[T Constraint]`, space-separated), **Haskell**
+    (`(C a) =>` constraints).
 - **L2 — guard vocabulary.** `✓` exactly the 14 languages with a `FlowConfig`: **c,
   csharp, go, java, kotlin, php, python, ruby, scala, typescript, r, groovy, lua, rust**.
   Each already has a `type_guard_query` but covers only part of its guard syntax —
@@ -146,5 +148,5 @@ machinery, not a single-session sweep:**
 - **G9 / L6** closures — corpus-wide function-type parsing + a call-yield arm;
   yield-precision payoff (rarely new edges).
 - **G10 / L7** HKT — new kinded `Type` variant; largest, rarest.
-- **L1** bound syntax for **C# / Scala / Go / Haskell** (extends G6 to them);
-  **L2** guard vocabulary across the 14 flow languages.
+- **L1** bound syntax for **C# / Go / Haskell** (extends G6 to them; Scala
+  already works via `<:`); **L2** guard vocabulary across the 14 flow languages.
