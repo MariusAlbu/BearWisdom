@@ -123,7 +123,19 @@ pub struct ManifestData {
     /// `<ProjectReference Include="..."/>`. Each entry is the referenced
     /// project's filename stem (e.g. `../Shared/Shared.csproj` →
     /// `"Shared"`). Matches sibling packages' `declared_name`.
+    ///
+    /// Cargo: the dependency KEY of every `path = "..."` dependency — the
+    /// rename alias as written in source (`common`, `columnar`), not the
+    /// target crate's package name. Lets the resolver tell a workspace-local
+    /// path-dep apart from a third-party crate.
     pub project_refs: Vec<String>,
+    /// The own package name(s) declared by the manifests folded into this
+    /// data. For a single manifest it's that package's name; for the
+    /// workspace-union it's every member's name including the root. Cargo
+    /// populates it from `[package].name`. Used to recognize a reference to
+    /// the project's own crate (a bench/test/example using the public API)
+    /// as internal rather than external.
+    pub package_names: Vec<String>,
     /// Import path-alias map for the JS/TS ecosystem, drawn from tsconfig
     /// `compilerOptions.paths`, jsconfig, and framework configs (vite, vue,
     /// webpack). Each entry is `(alias_prefix, target_prefix)` with trailing

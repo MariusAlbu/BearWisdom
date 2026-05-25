@@ -187,8 +187,9 @@ impl MembersIndex {
     ///   wrapper itself has no surface members the engine resolves.
     /// - `Class(_)` / `Primitive(_)`: walk supertype graph BFS and search
     ///   direct + extensions on each ancestor.
-    /// - `Function` / `Tuple` / `Literal` / `Generic` / `Unknown`: no
-    ///   members.
+    /// - `Generic { param }`: resolve members on the param's declared upper
+    ///   bound (`T: Animal` → look up on Animal); unbounded `T` has none.
+    /// - `Function` / `Tuple` / `Literal` / `Unknown`: no members.
     pub fn lookup(
         &self,
         ty: TypeId,
@@ -198,9 +199,28 @@ impl MembersIndex {
         arena: &TypeArena,
         profile: &LanguageProfile,
     ) -> Option<SymbolInfo> {
+        self.lookup_with_binding(ty, name, kind_filter, supertypes, arena, profile)
+            .map(|(sym, _, _)| sym)
+    }
+
+    /// Like `lookup`, but also returns the ancestor TypeId the member was
+    /// resolved on and the generic arguments bound on the edge that reached
+    /// it (both empty/irrelevant when the member is direct or the edge is
+    /// non-generic). The chain walker uses these to bind an inherited generic
+    /// method's parameters — `class UserRepo: Repository<User>` calling
+    /// `Repository::find_one(): T` yields `User`, not unbound `T`.
+    pub fn lookup_with_binding(
+        &self,
+        ty: TypeId,
+        name: &str,
+        kind_filter: EdgeKind,
+        supertypes: &SupertypeGraph,
+        arena: &TypeArena,
+        profile: &LanguageProfile,
+    ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
         match arena.get(ty) {
             Type::Apply { base, .. } => {
-                self.lookup(base, name, kind_filter, supertypes, arena, profile)
+                self.lookup_with_binding(base, name, kind_filter, supertypes, arena, profile)
             }
             Type::Union(branches) => {
                 // Every branch must carry the member — partial union members
@@ -208,9 +228,9 @@ impl MembersIndex {
                 // on a branch missing the member. First branch's match is
                 // the returned symbol; chain walker narrows further if it
                 // can.
-                let mut first: Option<SymbolInfo> = None;
+                let mut first: Option<(SymbolInfo, TypeId, Vec<TypeId>)> = None;
                 for b in branches {
-                    match self.lookup(b, name, kind_filter, supertypes, arena, profile) {
+                    match self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile) {
                         Some(s) => {
                             if first.is_none() {
                                 first = Some(s);
@@ -224,7 +244,7 @@ impl MembersIndex {
             Type::Intersection(branches) => {
                 for b in branches {
                     if let Some(s) =
-                        self.lookup(b, name, kind_filter, supertypes, arena, profile)
+                        self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile)
                     {
                         return Some(s);
                     }
@@ -232,21 +252,30 @@ impl MembersIndex {
                 None
             }
             Type::Optional(inner) if profile.look_through_optional => {
-                self.lookup(inner, name, kind_filter, supertypes, arena, profile)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile)
             }
             Type::AsyncWrapper(inner) => {
-                self.lookup(inner, name, kind_filter, supertypes, arena, profile)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile)
             }
             Type::Iterator(inner) => {
-                self.lookup(inner, name, kind_filter, supertypes, arena, profile)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile)
             }
-            Type::Class(_) | Type::Primitive(_) => self.find_on_chain(
-                ty, name, kind_filter, supertypes, profile,
-            ),
+            Type::Class(_) | Type::Primitive(_) => {
+                self.find_on_chain(ty, name, kind_filter, supertypes, profile)
+            }
+            // A bare generic parameter carries members only through its
+            // declared upper bound: `T: Animal` resolves `T`'s members on
+            // Animal. Recursion terminates because a bound is a Class/Apply
+            // in every realistic declaration; an unbounded `T` has no members.
+            Type::Generic { param } => match arena.generic_param(param).bound {
+                Some(bound) => {
+                    self.lookup_with_binding(bound, name, kind_filter, supertypes, arena, profile)
+                }
+                None => None,
+            },
             Type::Function { .. }
             | Type::Tuple(_)
             | Type::Literal(_)
-            | Type::Generic { .. }
             | Type::Optional(_)
             | Type::Unknown => None,
         }
@@ -255,7 +284,9 @@ impl MembersIndex {
     /// Walk the supertype chain starting at `ty` and find the first
     /// kind-compatible member named `name`. Direct members win over
     /// extension members at the same supertype level — extensions extend
-    /// but do not override the body.
+    /// but do not override the body. Returns the member, the ancestor it was
+    /// found on, and the generic arguments bound on the edge that reached
+    /// that ancestor (for the chain walker's generic substitution).
     fn find_on_chain(
         &self,
         ty: TypeId,
@@ -263,15 +294,15 @@ impl MembersIndex {
         kind_filter: EdgeKind,
         supertypes: &SupertypeGraph,
         profile: &LanguageProfile,
-    ) -> Option<SymbolInfo> {
-        for ancestor in supertypes.walk_up(ty) {
+    ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
+        for (ancestor, args) in supertypes.walk_up_with_args(ty) {
             if let Some(found) = self
                 .direct_of(ancestor)
                 .iter()
                 .chain(self.extensions_of(ancestor).iter())
                 .find(|s| s.name == name && kind_matches(profile, kind_filter, &s.kind))
             {
-                return Some(found.clone());
+                return Some((found.clone(), ancestor, args));
             }
         }
         None

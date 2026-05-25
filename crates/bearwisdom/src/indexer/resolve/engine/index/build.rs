@@ -26,10 +26,12 @@ use crate::types::{
 
 use super::super::{
     file_belongs_to_npm_package, infer_type_from_chain, npm_package_from_external_path,
-    npm_package_from_specifier, parse_return_type_from_signature, resolve_type_name_in_scope,
+    npm_package_from_specifier, parse_arrow_return_type, parse_return_type_from_signature,
+    resolve_type_name_in_scope,
 };
 use super::{
     common_prefix_len, find_matching_bracket, is_ambient_global_lib_path, is_type_like_kind,
+    parse_generic_param_clause,
 };
 use super::SymbolIndex;
 use crate::indexer::resolve::engine::{ChainMiss, ImportEntry, SymbolInfo, TypeInfo};
@@ -223,6 +225,7 @@ impl SymbolIndex {
         let mut field_type_args: FxHashMap<String, Vec<String>> = FxHashMap::default();
         let mut return_type: FxHashMap<String, String> = FxHashMap::default();
         let mut generic_params: FxHashMap<String, Vec<String>> = FxHashMap::default();
+        let mut generic_param_bounds: FxHashMap<String, Vec<Option<String>>> = FxHashMap::default();
 
         for pf in parsed {
             // Group TypeRef (non-import) refs by source_symbol_index in one
@@ -358,7 +361,17 @@ impl SymbolIndex {
                         // real return_type aren't overwritten.
                         if !return_type.contains_key(&sym.qualified_name) {
                             if let Some(sig) = &sym.signature {
-                                if let Some(rt) = parse_return_type_from_signature(sig) {
+                                // Arrow-return signatures (`(...) -> T`, Rust/
+                                // C++) are mined only under compiler-resolve —
+                                // it widens external chain-walk reach but shifts
+                                // the type maps, so it stays behind the gate
+                                // with the rest of the routing change.
+                                let rt = parse_return_type_from_signature(sig).or_else(|| {
+                                    crate::indexer::resolve::compiler_resolve_enabled()
+                                        .then(|| parse_arrow_return_type(sig))
+                                        .flatten()
+                                });
+                                if let Some(rt) = rt {
                                     let resolved = resolve_type_name_in_scope(
                                         &rt,
                                         sym.scope_path.as_deref(),
@@ -424,29 +437,15 @@ impl SymbolIndex {
                                 find_matching_bracket(&sig[start..], open, close)
                             {
                                 let end = start + relative_end;
-                                let params_str = &sig[start + 1..end];
-                                let params: Vec<String> = params_str
-                                    .split(',')
-                                    .map(|s| {
-                                        let trimmed = s.trim();
-                                        // Strip higher-kinded markers: "F[_]" → "F"
-                                        let name = trimmed
-                                            .split(|c: char| c == '[' || c == '<' || c == ':')
-                                            .next()
-                                            .unwrap_or("")
-                                            .split_whitespace()
-                                            .next()
-                                            .unwrap_or("")
-                                            .to_string();
-                                        name
-                                    })
-                                    .filter(|s| !s.is_empty())
-                                    .collect();
-                                if !params.is_empty() {
-                                    generic_params
-                                        .insert(sym.name.clone(), params.clone());
-                                    generic_params
-                                        .insert(sym.qualified_name.clone(), params);
+                                let parsed = parse_generic_param_clause(&sig[start + 1..end]);
+                                if !parsed.is_empty() {
+                                    let (params, bounds): (Vec<String>, Vec<Option<String>>) =
+                                        parsed.into_iter().unzip();
+                                    generic_params.insert(sym.name.clone(), params.clone());
+                                    generic_params.insert(sym.qualified_name.clone(), params);
+                                    generic_param_bounds.insert(sym.name.clone(), bounds.clone());
+                                    generic_param_bounds
+                                        .insert(sym.qualified_name.clone(), bounds);
                                     break; // found params, don't try next bracket pair
                                 }
                             }
@@ -469,6 +468,9 @@ impl SymbolIndex {
         }
         for (name_or_qname, params) in generic_params {
             type_info.entry(name_or_qname).or_default().generic_params = params;
+        }
+        for (name_or_qname, bounds) in generic_param_bounds {
+            type_info.entry(name_or_qname).or_default().generic_param_bounds = bounds;
         }
 
         // Variable type inference pass: for Variable symbols without an explicit
@@ -957,12 +959,18 @@ impl SymbolIndex {
             ti.generic_param_type_ids = ti
                 .generic_params
                 .iter()
-                .map(|name| {
+                .enumerate()
+                .map(|(i, name)| {
+                    let bound = ti
+                        .generic_param_bounds
+                        .get(i)
+                        .and_then(|b| b.as_deref())
+                        .map(|b| type_arena.intern_type_str(b));
                     let param = type_arena.intern_generic(
                         crate::type_checker::core::types::GenericParamData {
                             name: name.clone(),
                             owner_symbol_index: owner_id,
-                            bound: None,
+                            bound,
                         },
                     );
                     type_arena.intern(crate::type_checker::core::types::Type::Generic { param })

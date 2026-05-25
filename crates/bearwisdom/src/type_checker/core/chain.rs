@@ -184,6 +184,18 @@ impl RootResolver for DefaultRootResolver {
                 for scope in &ref_ctx.scope_chain {
                     let qname = format!("{scope}.{}", seg.name);
                     if let Some(type_name) = lookup.field_type_name(&qname) {
+                        // When the declared type names a generic parameter of
+                        // this scope, resolve to the canonical Type::Generic —
+                        // which carries the param's upper bound — rather than a
+                        // class literally named `T`. `t: T` in `f<T: Animal>`
+                        // then finds members on Animal via the bound.
+                        if let Some(ids) = lookup.generic_param_type_ids(scope) {
+                            if let Some(&gid) =
+                                ids.iter().find(|&&id| arena.format_type(id) == type_name)
+                            {
+                                return Some(gid);
+                            }
+                        }
                         return Some(arena.class(type_name));
                     }
                 }
@@ -334,7 +346,7 @@ impl<'a> ChainWalker<'a> {
                 EdgeKind::TypeRef
             };
 
-            let member = match self.members.lookup(
+            let member = match self.members.lookup_with_binding(
                 current_ty,
                 &seg.name,
                 kind_filter,
@@ -342,7 +354,21 @@ impl<'a> ChainWalker<'a> {
                 self.arena,
                 self.profile,
             ) {
-                Some(m) => m,
+                Some((m, owner, owner_args)) => {
+                    // Inherited generic method: bind the ancestor's generic
+                    // params to the arguments named on the `extends` /
+                    // `implements` edge (`Repository<User>`), so a member
+                    // returning `T` substitutes to the concrete type at the
+                    // yield step below.
+                    if !owner_args.is_empty() {
+                        if let Some(data) = self.symbol_types.data_for_class(owner) {
+                            if !data.generic_params.is_empty() {
+                                env.bind_positional(&data.generic_params, &owner_args);
+                            }
+                        }
+                    }
+                    m
+                }
                 None => self.qualified_member_lookup(current_ty, &seg.name, file_ctx)?,
             };
 
@@ -388,10 +414,10 @@ impl<'a> ChainWalker<'a> {
     /// The fallback covers extractors that don't yet emit
     /// `ExtractedSymbol.return_type` / `declared_type` TypeIds (C# methods,
     /// Java fields, etc.) and bridges the engine to the rich string-keyed
-    /// type info the legacy chain walkers consume. Generic decomposition
-    /// is dropped at this hop — the bare class TypeId is returned, which
-    /// is enough for the next segment's MembersIndex lookup but loses any
-    /// type-args binding the SymbolTypeMap path would have substituted.
+    /// type info the legacy chain walkers consume. The string is decomposed
+    /// via `intern_type_str` so a generic return keeps its `Apply` args;
+    /// env-bound params then resolve through `substitute`, matching the
+    /// SymbolTypeMap path.
     fn yield_type_of(
         &self,
         sym: &SymbolInfo,
@@ -449,16 +475,17 @@ impl<'a> ChainWalker<'a> {
         if is_this_return {
             return Some(current_ty);
         }
-        let base = match raw_str.find('<') {
-            Some(i) => &raw_str[..i],
-            None => raw_str,
-        };
-        let trimmed = base.trim_end_matches('.');
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(self.arena.class(trimmed))
+        let cleaned = raw_trim.trim_end_matches('.');
+        if cleaned.is_empty() {
+            return None;
         }
+        // Decompose the declared-type string structurally so a generic return
+        // (`Iter<User>`, `Array<T>`) keeps its args instead of collapsing to
+        // the bare base — the next segment can then carry or substitute them.
+        // Mirrors the SymbolTypeMap path's `substitute` step; concrete args
+        // (`Iter<User>`) survive directly, env-bound params (`<T>`) resolve.
+        let yielded = self.arena.intern_type_str(cleaned);
+        Some(substitute(yielded, env, self.arena))
     }
 
     /// Qualified-name fallback for member lookup when MembersIndex misses.

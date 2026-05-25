@@ -26,6 +26,13 @@ use std::collections::VecDeque;
 #[derive(Debug, Default)]
 pub struct SupertypeGraph {
     edges: FxHashMap<TypeId, Vec<TypeId>>,
+    /// Generic arguments supplied on a `child → parent` edge — the
+    /// `<User>` in `class UserRepo extends Repository<User>`. Keyed by the
+    /// directed edge so an inherited generic method's `T` can bind to the
+    /// concrete argument. Absent / empty for non-generic edges. Stored
+    /// alongside (not inside) `edges` so the bare-TypeId walk used by
+    /// dispatch and subtype checks is unchanged.
+    edge_args: FxHashMap<(TypeId, TypeId), Vec<TypeId>>,
 }
 
 impl SupertypeGraph {
@@ -50,6 +57,48 @@ impl SupertypeGraph {
         if !parents.contains(&parent) {
             parents.push(parent);
         }
+    }
+
+    /// Add a `child → parent` edge that supplies generic arguments — the
+    /// `Repository<User>` in `class UserRepo: Repository<User>`. The edge
+    /// itself is recorded the same as `add_edge`; `args` are stored on the
+    /// side so a member resolved on `parent` can bind the parent's generic
+    /// parameters positionally. Empty `args` is identical to `add_edge`.
+    pub fn add_edge_generic(&mut self, child: TypeId, parent: TypeId, args: Vec<TypeId>) {
+        self.add_edge(child, parent);
+        if !args.is_empty() {
+            self.edge_args.insert((child, parent), args);
+        }
+    }
+
+    /// BFS like `walk_up`, but each yielded ancestor is paired with the
+    /// generic arguments on the **direct** edge that reached it (empty for
+    /// the start node and for non-generic edges). Lets member lookup bind an
+    /// inherited generic method's parameters to the concrete arguments named
+    /// at the `extends`/`implements` site. Composition across multiple
+    /// generic hops is not modeled — a deeper ancestor carries only its
+    /// immediate edge's args, which is correct for the dominant single-level
+    /// `Subclass: Generic<Concrete>` case and degrades (unbound) for the rest.
+    pub fn walk_up_with_args(&self, start: TypeId) -> Vec<(TypeId, Vec<TypeId>)> {
+        let mut out = Vec::new();
+        let mut queue = VecDeque::new();
+        queue.push_back((start, Vec::new()));
+        let mut seen = FxHashSet::default();
+        seen.insert(start);
+        while let Some((node, args)) = queue.pop_front() {
+            for parent in self.parents_of(node) {
+                if seen.insert(*parent) {
+                    let p_args = self
+                        .edge_args
+                        .get(&(node, *parent))
+                        .cloned()
+                        .unwrap_or_default();
+                    queue.push_back((*parent, p_args));
+                }
+            }
+            out.push((node, args));
+        }
+        out
     }
 
     /// Direct parents of `ty`. Empty slice when none recorded.
@@ -150,9 +199,23 @@ fn build_explicit(
                 continue;
             };
             let child = arena.class(&source_sym.qualified_name);
-            let parent_qname = resolve_target_qname(&r.target_name, lookup);
+            // Decompose a generic parent (`Repository<User>`) into its base
+            // class + arguments so the args can bind the parent's params on
+            // an inherited generic method. A bare parent decodes to `Class`
+            // with no args — identical to the previous behavior.
+            let parent_raw = arena.intern_type_str(&r.target_name);
+            let (parent_base_qname, parent_args) = match arena.get(parent_raw) {
+                crate::type_checker::core::types::Type::Apply { base, args } => {
+                    match arena.get(base) {
+                        crate::type_checker::core::types::Type::Class(q) => (q, args),
+                        _ => (r.target_name.clone(), Vec::new()),
+                    }
+                }
+                _ => (r.target_name.clone(), Vec::new()),
+            };
+            let parent_qname = resolve_target_qname(&parent_base_qname, lookup);
             let parent = arena.class(parent_qname.as_str());
-            graph.add_edge(child, parent);
+            graph.add_edge_generic(child, parent, parent_args);
         }
     }
 }

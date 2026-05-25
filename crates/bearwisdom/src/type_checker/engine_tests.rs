@@ -350,6 +350,75 @@ fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
 }
 
 #[test]
+fn engine_yields_none_when_last_segment_has_no_type() {
+    // `class User { bar() {} }` — bar has no captured return type, so the
+    // chain resolves bar but the last segment's yield is Unknown. The adapter
+    // must surface None, not a yield that formats to "unknown" — otherwise a
+    // forward-inferred local (`let w = u.bar(); w.x`) is typed `unknown` and
+    // every later member access on it fails.
+    let pf = ts_parsed_file("src/u.ts", "export class User { bar() {} }");
+    let sym_ids = deterministic_ids(&pf);
+    let lookup = EmptyLookup::from(&pf, &sym_ids);
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("typescript", &TYPESCRIPT_PROFILE);
+    let mut engine = Engine::build(std::slice::from_ref(&pf), &sym_ids, profiles, &lookup);
+
+    let bar_idx = pf
+        .symbols
+        .iter()
+        .position(|s| s.name == "bar")
+        .expect("bar method extracted");
+    let bar_id = sym_ids[&(pf.path.clone(), bar_idx)];
+
+    let chain = MemberChain {
+        segments: vec![
+            ChainSegment {
+                name: "User".to_string(),
+                node_kind: "type_identifier".to_string(),
+                kind: SegmentKind::TypeAccess,
+                declared_type: None,
+                type_args: Vec::new(),
+                optional_chaining: false,
+                byte_offset: 0,
+                declared_type_id: None,
+                type_arg_ids: Vec::new(),
+            },
+            ChainSegment {
+                name: "bar".to_string(),
+                node_kind: "property_identifier".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                type_args: Vec::new(),
+                optional_chaining: false,
+                byte_offset: 0,
+                declared_type_id: None,
+                type_arg_ids: Vec::new(),
+            },
+        ],
+    };
+    let source = dummy_source();
+    let r = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "bar".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: Some(chain),
+        byte_offset: 0,
+        call_args: Vec::new(),
+    };
+    let rc = ref_ctx_for(&r, &source);
+    let fc = file_ctx_ts("src/u.ts");
+
+    let resolution = engine.resolve(&rc, &fc, &lookup).expect("engine resolves bar");
+    assert_eq!(resolution.target_symbol_id, bar_id);
+    assert_eq!(resolution.resolved_yield_type, None);
+}
+
+#[test]
 fn engine_build_aggregates_aliases_into_index() {
     let pf = ts_parsed_file(
         "src/a.ts",

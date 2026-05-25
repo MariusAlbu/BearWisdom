@@ -808,6 +808,12 @@ fn union_manifests(per_package: &[PackageManifest]) -> HashMap<ManifestKind, Man
                 entry.project_refs.push(pr.clone());
             }
         }
+        // The package's own declared name — its members' names plus the
+        // workspace root's — so a reference to a project-own crate is
+        // recognized as internal.
+        if !pm.name.is_empty() && !entry.package_names.contains(&pm.name) {
+            entry.package_names.push(pm.name.clone());
+        }
         for alias in &pm.data.path_aliases {
             if !entry.path_aliases.contains(alias) {
                 entry.path_aliases.push(alias.clone());
@@ -953,6 +959,33 @@ impl ProjectContext {
             }
         }
         None
+    }
+
+    /// `true` when `crate_name` names a crate that lives inside this project —
+    /// a workspace member, a `path = "..."` dependency alias, or the project's
+    /// own package — rather than a third-party dependency.
+    ///
+    /// Checks three signals across the union manifests: declared workspace
+    /// package names, `project_refs` (path-dep rename aliases as written in
+    /// source, e.g. `common`), and `package_names` (own/member names incl. the
+    /// workspace root, e.g. `tantivy`). Hyphen and underscore are treated as
+    /// equivalent because source references normalize a crate's `-` to `_`
+    /// (`tantivy-common` package → `use tantivy_common`).
+    pub fn is_workspace_local_crate(&self, crate_name: &str) -> bool {
+        if crate_name.is_empty() {
+            return false;
+        }
+        let hyphen = crate_name.replace('_', "-");
+        let under = crate_name.replace('-', "_");
+        let matches = |s: &str| s == crate_name || s == hyphen || s == under;
+
+        if self.workspace_pkg_by_declared_name.keys().any(|k| matches(k)) {
+            return true;
+        }
+        self.manifests.values().any(|m| {
+            m.project_refs.iter().any(|p| matches(p))
+                || m.package_names.iter().any(|n| matches(n))
+        })
     }
 }
 

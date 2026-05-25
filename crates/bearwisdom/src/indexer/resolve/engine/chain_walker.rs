@@ -76,6 +76,45 @@ pub(crate) fn find_matching_bracket(s: &str, open: char, close: char) -> Option<
     None
 }
 
+/// Parse the body of a generic-parameter clause — the text between the
+/// `<>` / `[]` brackets — into `(name, optional-upper-bound)` pairs.
+///
+/// Recognizes both bound spellings: `T extends Animal` (TS, Java, ...) and
+/// `T: Animal` (Rust, Scala, ...). The first nominal token is the bound;
+/// multi-bounds (`T: A + B`) and defaults (`T extends X = Y`) collapse to the
+/// first segment, and higher-kinded markers (`F[_]`) carry no bound. Params
+/// are split on plain commas — a bound that itself contains a comma
+/// (`T extends Map<K, V>`) truncates, which fails closed at lookup rather
+/// than producing a wrong member. The name output is identical to a name-only
+/// parse so generic-param positions stay aligned with `type_args`.
+pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<String>)> {
+    clause
+        .split(',')
+        .filter_map(|part| {
+            let part = part.trim();
+            let name = part
+                .split(|c: char| c == '[' || c == '<' || c == ':')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let bound = part
+                .find(" extends ")
+                .map(|i| &part[i + " extends ".len()..])
+                .or_else(|| part.find(':').map(|i| &part[i + 1..]))
+                .map(|b| b.split(|c: char| c == '=' || c == '+').next().unwrap_or(b).trim())
+                .filter(|b| !b.is_empty())
+                .map(|b| b.to_string());
+            Some((name, bound))
+        })
+        .collect()
+}
+
 
 /// Lightweight chain resolution for variable type inference during index building.
 /// Uses the already-built type_info map (not the full SymbolLookup trait).
@@ -475,6 +514,59 @@ pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Extract the return type from an arrow-return signature: `(...) -> T`.
+///
+/// Returns the first top-level `->` target (paren/angle/bracket depth 0), so a
+/// closure parameter `Fn(X) -> Y` nested in the argument list is skipped and
+/// only the function's own return arrow fires. Trailing `where` clauses, block
+/// bodies, and `;` are dropped, and leading `&` / `&mut` / `mut` borrow markers
+/// are stripped so the result is a bare type name the chain walker can intern.
+///
+/// Used by the build/augment type-map population under the compiler-resolve
+/// gate as a fallback when the `): T` form yields nothing.
+pub(crate) fn parse_arrow_return_type(sig: &str) -> Option<String> {
+    let bytes = sig.as_bytes();
+    let mut depth_paren: i32 = 0;
+    let mut depth_angle: i32 = 0;
+    let mut depth_square: i32 = 0;
+    let mut arrow_at: Option<usize> = None;
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        match bytes[i] {
+            b'(' => depth_paren += 1,
+            b')' => depth_paren -= 1,
+            b'<' => depth_angle += 1,
+            // `>` closes a generic UNLESS it is the tail of `->` / `=>`.
+            b'>' if i == 0 || (bytes[i - 1] != b'-' && bytes[i - 1] != b'=') => {
+                depth_angle -= 1;
+            }
+            b'[' => depth_square += 1,
+            b']' => depth_square -= 1,
+            b'-' if bytes[i + 1] == b'>'
+                && depth_paren == 0
+                && depth_angle == 0
+                && depth_square == 0 =>
+            {
+                arrow_at = Some(i);
+                break;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let rt = sig[arrow_at? + 2..].trim();
+    let rt = rt.split(" where ").next().unwrap_or(rt);
+    let rt = rt.split('{').next().unwrap_or(rt);
+    let rt = rt.split(';').next().unwrap_or(rt).trim();
+    let rt = rt.trim_start_matches('&').trim_start();
+    let rt = rt.strip_prefix("mut ").unwrap_or(rt).trim();
+    if rt.is_empty() {
+        None
+    } else {
+        Some(rt.to_string())
+    }
 }
 
 
@@ -901,3 +993,7 @@ pub fn find_member_via_inheritance<'a>(
     }
     None
 }
+
+#[cfg(test)]
+#[path = "chain_walker_tests.rs"]
+mod tests;

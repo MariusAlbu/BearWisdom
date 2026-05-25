@@ -23,7 +23,8 @@ use rustc_hash::FxHashMap;
 use crate::types::{EdgeKind, ParsedFile, SymbolKind, Visibility};
 
 use super::super::{
-    find_matching_bracket, parse_return_type_from_signature, resolve_type_name_in_scope,
+    find_matching_bracket, parse_arrow_return_type, parse_generic_param_clause,
+    parse_return_type_from_signature, resolve_type_name_in_scope,
 };
 use super::{common_prefix_len, is_type_like_kind};
 use super::SymbolIndex;
@@ -183,7 +184,14 @@ impl SymbolIndex {
                             .is_some();
                         if !already {
                             if let Some(sig) = &sym.signature {
-                                if let Some(rt) = parse_return_type_from_signature(sig) {
+                                // Arrow-return (`(...) -> T`) mined only under
+                                // the compiler-resolve gate — see build.rs.
+                                let rt = parse_return_type_from_signature(sig).or_else(|| {
+                                    crate::indexer::resolve::compiler_resolve_enabled()
+                                        .then(|| parse_arrow_return_type(sig))
+                                        .flatten()
+                                });
+                                if let Some(rt) = rt {
                                     let resolved = resolve_type_name_in_scope(
                                         &rt,
                                         sym.scope_path.as_deref(),
@@ -227,30 +235,15 @@ impl SymbolIndex {
                             find_matching_bracket(&sig[start..], open, close)
                         {
                             let end = start + relative_end;
-                            let params_str = &sig[start + 1..end];
-                            let params: Vec<String> = params_str
-                                .split(',')
-                                .map(|s| {
-                                    s.trim()
-                                        .split(|c: char| c == '[' || c == '<' || c == ':')
-                                        .next()
-                                        .unwrap_or("")
-                                        .split_whitespace()
-                                        .next()
-                                        .unwrap_or("")
-                                        .to_string()
-                                })
-                                .filter(|s| !s.is_empty())
-                                .collect();
-                            if !params.is_empty() {
-                                self.type_info
-                                    .entry(sym.name.clone())
-                                    .or_default()
-                                    .generic_params = params.clone();
-                                self.type_info
-                                    .entry(sym.qualified_name.clone())
-                                    .or_default()
-                                    .generic_params = params;
+                            let parsed = parse_generic_param_clause(&sig[start + 1..end]);
+                            if !parsed.is_empty() {
+                                let (params, bounds): (Vec<String>, Vec<Option<String>>) =
+                                    parsed.into_iter().unzip();
+                                for key in [&sym.name, &sym.qualified_name] {
+                                    let ti = self.type_info.entry(key.clone()).or_default();
+                                    ti.generic_params = params.clone();
+                                    ti.generic_param_bounds = bounds.clone();
+                                }
                                 break;
                             }
                         }
@@ -364,12 +357,18 @@ impl SymbolIndex {
             ti.generic_param_type_ids = ti
                 .generic_params
                 .iter()
-                .map(|name| {
+                .enumerate()
+                .map(|(i, name)| {
+                    let bound = ti
+                        .generic_param_bounds
+                        .get(i)
+                        .and_then(|b| b.as_deref())
+                        .map(|b| arena.intern_type_str(b));
                     let param = arena.intern_generic(
                         crate::type_checker::core::types::GenericParamData {
                             name: name.clone(),
                             owner_symbol_index: owner_id,
-                            bound: None,
+                            bound,
                         },
                     );
                     arena.intern(crate::type_checker::core::types::Type::Generic { param })

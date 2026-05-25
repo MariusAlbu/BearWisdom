@@ -30,93 +30,66 @@ pub(super) fn extract_heritage(
                 for clause in child.children(&mut hc) {
                     match clause.kind() {
                         "extends_clause" => {
-                            let mut ec = clause.walk();
-                            for type_node in clause.children(&mut ec) {
-                                if type_node.kind() == "identifier"
-                                    || type_node.kind() == "type_identifier"
-                                {
-                                    refs.push(ExtractedRef {
-                                        source_symbol_index: source_idx,
-                                        target_name: node_text(type_node, src),
-                                        kind: EdgeKind::Inherits,
-                                        line: type_node.start_position().row as u32,
-                                        col: 0,
-                                        module: None,
-                                        chain: None,
-                                        byte_offset: type_node.start_byte() as u32,
-                                                                            namespace_segments: Vec::new(),
-                                                                            call_args: Vec::new(),
-});
-                                }
-                            }
+                            push_heritage_refs(&clause, src, source_idx, EdgeKind::Inherits, refs)
                         }
                         "implements_clause" => {
-                            let mut ic = clause.walk();
-                            for type_node in clause.children(&mut ic) {
-                                if type_node.kind() == "type_identifier"
-                                    || type_node.kind() == "identifier"
-                                {
-                                    refs.push(ExtractedRef {
-                                        source_symbol_index: source_idx,
-                                        target_name: node_text(type_node, src),
-                                        kind: EdgeKind::Implements,
-                                        line: type_node.start_position().row as u32,
-                                        col: 0,
-                                        module: None,
-                                        chain: None,
-                                        byte_offset: type_node.start_byte() as u32,
-                                                                            namespace_segments: Vec::new(),
-                                                                            call_args: Vec::new(),
-});
-                                }
-                            }
+                            push_heritage_refs(&clause, src, source_idx, EdgeKind::Implements, refs)
                         }
                         _ => {}
                     }
                 }
             }
-            "extends_clause" => {
-                // Direct child for interfaces.
-                let mut ec = child.walk();
-                for type_node in child.children(&mut ec) {
-                    if type_node.kind() == "identifier" || type_node.kind() == "type_identifier" {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: source_idx,
-                            target_name: node_text(type_node, src),
-                            kind: EdgeKind::Inherits,
-                            line: type_node.start_position().row as u32,
-                            col: 0,
-                            module: None,
-                            chain: None,
-                            byte_offset: type_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
-                    }
-                }
-            }
-            // `extends_type_clause` is the TS grammar node for interface inheritance:
-            // `interface B extends A, C` -- distinct from `extends_clause` used for classes.
-            "extends_type_clause" => {
-                let mut ec = child.walk();
-                for type_node in child.children(&mut ec) {
-                    if type_node.kind() == "type_identifier" || type_node.kind() == "identifier" {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: source_idx,
-                            target_name: node_text(type_node, src),
-                            kind: EdgeKind::Inherits,
-                            line: type_node.start_position().row as u32,
-                            col: 0,
-                            module: None,
-                            chain: None,
-                            byte_offset: type_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
-                    }
-                }
+            // Direct `extends_clause` child for interfaces; `extends_type_clause`
+            // is the TS grammar node for `interface B extends A, C`.
+            "extends_clause" | "extends_type_clause" => {
+                push_heritage_refs(&child, src, source_idx, EdgeKind::Inherits, refs)
             }
             _ => {}
         }
+    }
+}
+
+/// Emit one heritage ref per base type named in `clause`, pairing each base
+/// identifier with a following `type_arguments` node so a generic parent
+/// (`Repository<User>`) carries its arguments in `target_name`. The engine
+/// decomposes that string into the parent's base class + bound args, which is
+/// what lets an inherited generic method (`find_one(): T`) resolve `T` to the
+/// concrete argument. A non-generic parent yields the bare name unchanged.
+fn push_heritage_refs(
+    clause: &Node,
+    src: &[u8],
+    source_idx: usize,
+    kind: EdgeKind,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut c = clause.walk();
+    let children: Vec<Node> = clause.children(&mut c).collect();
+    let mut i = 0;
+    while i < children.len() {
+        let n = children[i];
+        if matches!(n.kind(), "identifier" | "type_identifier") {
+            let mut target = node_text(n, src);
+            // A `type_arguments` sibling immediately after the base is this
+            // parent's generic argument list — fold it into the target name.
+            if let Some(next) = children.get(i + 1) {
+                if next.kind() == "type_arguments" {
+                    target.push_str(&node_text(*next, src));
+                    i += 1;
+                }
+            }
+            refs.push(ExtractedRef {
+                source_symbol_index: source_idx,
+                target_name: target,
+                kind,
+                line: n.start_position().row as u32,
+                col: 0,
+                module: None,
+                chain: None,
+                byte_offset: n.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
+        }
+        i += 1;
     }
 }

@@ -221,7 +221,7 @@ impl<'a> Engine<'a> {
                         target_symbol_id: cr.target_symbol_id,
                         confidence: 1.0,
                         strategy: cr.strategy,
-                        resolved_yield_type: Some(cr.resolved_yield_type),
+                        resolved_yield_type: self.yield_or_none(cr.resolved_yield_type),
                         flow_emit: None,
                     });
                 }
@@ -278,9 +278,22 @@ impl<'a> Engine<'a> {
             target_symbol_id: cr.target_symbol_id,
             confidence: 1.0,
             strategy: cr.strategy,
-            resolved_yield_type: Some(cr.resolved_yield_type),
+            resolved_yield_type: self.yield_or_none(cr.resolved_yield_type),
             flow_emit: None,
         })
+    }
+
+    /// Map the chain walker's yield slot to a forward-inference type. A chain
+    /// that resolves its target but can't type the last segment's yield
+    /// returns `Type::Unknown` (the engine-bailout sentinel). Forward-flow
+    /// inference must see `None` there so the resolver loop falls back to the
+    /// target's declared return type — recording a local as `unknown` would
+    /// poison every later member access on it.
+    fn yield_or_none(&self, id: TypeId) -> Option<TypeId> {
+        match self.arena.get(id) {
+            crate::type_checker::core::types::Type::Unknown => None,
+            _ => Some(id),
+        }
     }
 
     /// Direct access to engine-side inference for refs without an attached

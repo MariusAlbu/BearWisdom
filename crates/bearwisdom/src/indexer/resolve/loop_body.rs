@@ -422,17 +422,21 @@ fn resolve_iteration_body(
                 .unwrap_or(0);
             index.set_cursor(ref_byte);
 
+            // Built once per ref and shared by tier-1 resolution, the
+            // compiler-resolve reroute check, and tier-1.5 external
+            // classification — all of which need the same scope chain and
+            // source symbol.
+            let source_sym = &pf.symbols[r.source_symbol_index];
+            let ref_ctx = RefContext {
+                extracted_ref: r,
+                source_symbol: source_sym,
+                scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
+                file_package_id: pf.package_id,
+            };
+
             // Tier 1: Try language-specific resolver (for the effective language).
             let mut resolved_by_engine = false;
             if let Some(file_ctx) = &file_ctx {
-                let source_sym = &pf.symbols[r.source_symbol_index];
-                let ref_ctx = RefContext {
-                    extracted_ref: r,
-                    source_symbol: source_sym,
-                    scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
-                    file_package_id: pf.package_id,
-                };
-
                 // Flow-emission detection runs regardless of whether resolution
                 // succeeds — HTTP client calls, IPC, WebSocket emits, etc. are
                 // identifiable from import context alone, even when the chain
@@ -447,12 +451,74 @@ fn resolve_iteration_body(
                 // refs through the bare-name resolver, and falls back to
                 // the language hook's `resolve_ref` (the absorbed legacy
                 // resolver body) for everything the engine declines.
-                let _ = effective_lang;
                 let resolution = type_engine
                     .resolve(&ref_ctx, file_ctx, index)
                     .map(|r| (r, true));
 
                 if let Some((resolution, came_from_engine)) = resolution {
+                    // Compiler-resolve routing (gated): a coincidental
+                    // same-name bind on a ref whose head an import or manifest
+                    // places in a dependency is a false call-graph edge. Reject
+                    // it and record the ref as external + demand, so a later
+                    // expand pass can pull the dependency that actually
+                    // declares the name and turn it into a real edge — rather
+                    // than asserting a call into a same-named local symbol.
+                    //
+                    // Exception: when the coincidental bind already landed on
+                    // an `origin='external'` symbol, the grep found the real
+                    // declaration. That IS the origin-blind edge we want — keep
+                    // it. Diverting it to an external_ref would drop a correct
+                    // edge to a hydrated dependency symbol.
+                    let reroute_ns = if super::compiler_resolve_enabled()
+                        && is_coincidental_name_strategy(resolution.strategy)
+                        && !target_symbol_is_external(resolution.target_symbol_id, &r.target_name, index)
+                    {
+                        classify_external_ns(
+                            r,
+                            &ref_ctx,
+                            Some(file_ctx),
+                            file_imports,
+                            &module_to_files,
+                            &type_engine,
+                            project_ctx,
+                            index,
+                            effective_lang,
+                            true,
+                            // Authoritative signals only — the chain-root
+                            // heuristic must not divert a grep edge that found
+                            // a real internal target.
+                            false,
+                        )
+                    } else {
+                        None
+                    };
+                    if let Some(ns) = reroute_ns {
+                        buf.externals.push((
+                            source_id,
+                            r.target_name.clone(),
+                            r.kind.as_str(),
+                            r.line,
+                            ns,
+                            pf.package_id,
+                        ));
+                        local_stats.external += 1;
+                        // Seed demand for the at-the-ref pull: a bare,
+                        // chain-less name records an empty-receiver miss so
+                        // `locate_via_symbol_index` Phase B can probe the
+                        // external symbol index and hydrate the declaring file.
+                        if r.module.is_none()
+                            && r.chain.is_none()
+                            && !r.target_name.is_empty()
+                            && !r.target_name.contains('.')
+                        {
+                            index.record_chain_miss(engine::ChainMiss {
+                                current_type: String::new(),
+                                target_name: r.target_name.clone(),
+                            });
+                        }
+                        continue;
+                    }
+
                     // R5 forward-inference cache write. Engine yields are
                     // recorded only when the engine path provided them;
                     // legacy resolutions still drive the cache as before.
@@ -522,10 +588,6 @@ fn resolve_iteration_body(
                 continue;
             }
 
-            // Build scope context once for remaining classification steps.
-            let source_sym = &pf.symbols[r.source_symbol_index];
-            let scope_chain = build_scope_chain(source_sym.scope_path.as_deref());
-
             // ---------------------------------------------------------------
             // Tier 1.1: Generic type parameter resolution.
             // If this is a TypeRef and the target matches a generic param
@@ -538,7 +600,7 @@ fn resolve_iteration_body(
                 // type parameters; refs in its signature have its qname (not
                 // its parent) as the relevant scope for generic-param lookup.
                 let is_generic_param = std::iter::once(source_sym.qualified_name.as_str())
-                    .chain(scope_chain.iter().map(String::as_str))
+                    .chain(ref_ctx.scope_chain.iter().map(String::as_str))
                     .any(|scope| {
                         index
                             .generic_params(scope)
@@ -558,118 +620,55 @@ fn resolve_iteration_body(
                 }
             }
 
-            // Tier 1.5: external classification — `LanguageEngineHooks::classify_external`
-            // is the only entry point. The legacy resolver method has been retired.
-            let inferred_ns = if let Some(file_ctx) = &file_ctx {
-                let ref_ctx = RefContext {
-                    extracted_ref: r,
-                    source_symbol: source_sym,
-                    scope_chain: scope_chain.clone(),
-                    file_package_id: pf.package_id,
-                };
-                type_engine.classify_external(&ref_ctx, file_ctx, project_ctx, index)
-            } else {
-                None
-            };
-
-            // Chain-to-external: if the chain walks to a type not in the index,
-            // classify as external (handles ORM, test framework, fluent API chains).
-            let inferred_ns = inferred_ns.or_else(|| {
-                r.chain.as_ref().and_then(|chain| {
-                    engine::infer_external_from_chain(chain, &scope_chain, index)
-                })
-            });
-
-            // Bare-name external check: test globals, language primitives,
-            // and runtime builtins — classified with specific namespaces.
-            // Use effective_lang so JS/TS refs embedded in Elixir/PHP/Ruby
-            // host files are classified against the JS/TS primitive/builtin
-            // tables, not the host language's.
-            let inferred_ns = inferred_ns.or_else(|| {
-                index
-                    .classify_external_name(&r.target_name, effective_lang)
-                    .map(|ns| ns.to_string())
-            });
-
-            // Import-based external for bare usages: if the ref's name (or its
-            // leading segment, for qualified targets like `Stripe.Event`) matches
-            // an entry in this file's import list whose source module has zero
-            // local symbols in the project index, classify as external.
-            //
-            // Catches three practical cases the language-specific manifest
-            // checks miss:
-            //   1. Transitive bare-package deps — e.g. Java `import
-            //      tools.jackson.databind.ObjectMapper` (Jackson 3.x, pulled in
-            //      via spring-boot-starter, not declared in pom.xml) or Python
-            //      `from sqlalchemy import Engine` (transitive of sqlmodel).
-            //   2. Bare-package deep imports like `rxjs/operators`,
-            //      `lodash/fp`, `date-fns/utcToZonedTime` — the slash-bearing
-            //      specifier isn't a relative path, it's a sub-module of an
-            //      indexed package that the manifest may not enumerate.
-            //   3. Relative imports to files that don't exist in the index —
-            //      e.g. NSwag-generated `'../web-api-client'` that's produced
-            //      at build time and absent at scan time.
-            //
-            // Language-agnostic: relies only on the project's own symbol
-            // index via `is_module_in_project` as the sole "is this actually
-            // local?" authority. Imports whose target the module resolvers
-            // couldn't reach, by any path, are called external — honest to
-            // "we don't have its definition" without inventing a fake edge.
-            let inferred_ns = inferred_ns.or_else(|| {
-                if r.module.is_some() {
-                    return None;
-                }
-                let target = r.target_name.as_str();
-                let first_segment = target.split('.').next().unwrap_or(target);
-                for (imported_name, module_path_opt) in file_imports.iter() {
-                    if imported_name != target && imported_name != first_segment {
-                        continue;
-                    }
-                    let Some(module_path) = module_path_opt.as_deref() else {
-                        continue;
-                    };
-                    if is_module_in_project(module_path, &module_to_files, index) {
-                        continue;
-                    }
-                    return Some(format!("ext:{module_path}"));
-                }
-                None
-            });
-
-            // Module-qualified external check: if the ref has module="X" and
-            // "X" is not a local file/namespace, classify as external.
-            // e.g., R `dplyr::mutate` → dplyr not local → external.
-            //       Erlang `lists:map` → lists not local → external.
-            //       Haskell `Map.lookup` → Map not local → external.
-            let inferred_ns = inferred_ns.or_else(|| {
-                if let Some(module) = &r.module {
-                    let mod_lower = module.to_lowercase();
-                    // Full-path match: "Ecto.Changeset" or "dplyr" as-is.
-                    let mut is_local = module_to_files.contains_key(module.as_str())
-                        || module_to_files.contains_key(&mod_lower);
-
-                    // Last-segment match ONLY for single-segment modules.
-                    // Multi-segment modules like "Ecto.Changeset" should NOT
-                    // be classified as local just because a file named
-                    // "changeset.ex" exists — that's a coincidental stem match.
-                    if !is_local && !module.contains('.') {
-                        let last_seg = module.rsplit('.').next().unwrap_or(module);
-                        let last_lower = last_seg.to_lowercase();
-                        is_local = module_to_files.contains_key(last_seg)
-                            || module_to_files.contains_key(&last_lower);
-                    }
-
-                    if !is_local {
-                        Some(format!("ext:{module}"))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            });
+            // Tier 1.5: external classification. The same authority the
+            // compiler-resolve reroute uses above — manifest/import hook,
+            // chain-to-external, bare-name builtins, import list (guarded by
+            // `is_module_in_project`), and module-qualified targets that name
+            // no local file.
+            let inferred_ns = classify_external_ns(
+                r,
+                &ref_ctx,
+                file_ctx.as_ref(),
+                file_imports,
+                &module_to_files,
+                &type_engine,
+                project_ctx,
+                index,
+                effective_lang,
+                super::compiler_resolve_enabled(),
+                // Tier-1.5 has no edge at stake — the chain heuristic is a
+                // reasonable last-resort classification here.
+                true,
+            );
 
             if let Some(ns) = &inferred_ns {
+                // Origin-blind bind (gated): the ref is external-bound and a
+                // single kind-compatible external symbol carries this name —
+                // that's the declaring symbol. Emit the edge instead of an
+                // external_ref so a hydrated dependency reference resolves like
+                // any internal one. Covers the grep-declined case (a name that
+                // exists both internally and externally bails out of the
+                // unique-candidate grep) where the import names the dependency.
+                if super::compiler_resolve_enabled() {
+                    if let Some(target_id) = resolve_unique_external_symbol(
+                        &r.target_name,
+                        r.kind,
+                        index,
+                        type_engine.profile_for(effective_lang),
+                    ) {
+                        buf.edges.push((
+                            source_id,
+                            target_id,
+                            r.kind.as_str(),
+                            r.line,
+                            1.0,
+                            "external_unique_symbol",
+                        ));
+                        local_stats.resolved += 1;
+                        local_stats.engine_resolved += 1;
+                        continue;
+                    }
+                }
                 buf.externals.push((
                     source_id,
                     r.target_name.clone(),
@@ -890,6 +889,268 @@ fn resolve_iteration_body(
     }
 
     Ok(stats)
+}
+
+/// `true` when a module/import path is rooted at a crate-internal keyword
+/// (`crate`, `super`, `self`, `Self`). Such a path resolves inside the
+/// project by definition — no language has an external dependency whose
+/// module is literally one of these. Separators handled: `::` (Rust) and
+/// `.` (dotted languages).
+fn is_crate_internal_module(module_path: &str) -> bool {
+    let first_seg = module_path
+        .split(|c| c == ':' || c == '.')
+        .find(|s| !s.is_empty())
+        .unwrap_or(module_path);
+    matches!(first_seg, "crate" | "super" | "self" | "Self")
+}
+
+/// Resolve a bare external-bound name to the single external symbol that
+/// carries it, or `None`.
+///
+/// Filters `by_name` to `origin='external'`, kind-compatible candidates and
+/// dedups on qualified name (the same logical dependency symbol indexed from
+/// duplicate files counts once). Returns the id only when exactly one remains
+/// — two distinct external symbols of the same name (`serde_json::Value` vs
+/// `toml::Value`) stay ambiguous and fall back to an external_ref. The caller
+/// has already established the ref is external-bound, so an internal symbol of
+/// the same name is correctly ignored.
+fn resolve_unique_external_symbol(
+    target_name: &str,
+    edge_kind: EdgeKind,
+    index: &SymbolIndex,
+    profile: Option<&crate::type_checker::profile::language_profile::LanguageProfile>,
+) -> Option<i64> {
+    use crate::type_checker::profile::language_profile::KindCompatibility;
+    use crate::types::SymbolKind;
+    use std::str::FromStr;
+    let mut ext: Vec<&engine::SymbolInfo> = index
+        .by_name(target_name)
+        .iter()
+        .filter(|s| index.is_external_file(&s.file_path))
+        .filter(|s| match (profile, SymbolKind::from_str(&s.kind)) {
+            (Some(p), Ok(k)) => {
+                KindCompatibility::check(p.kind_compatible_table, edge_kind, k)
+            }
+            // No profile or unrecognized kind → permissive, matching the
+            // bare-resolver's `kind_ok` default.
+            _ => true,
+        })
+        .collect();
+    ext.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name));
+    ext.dedup_by(|a, b| a.qualified_name == b.qualified_name);
+    if ext.len() == 1 {
+        Some(ext[0].id)
+    } else {
+        None
+    }
+}
+
+/// `true` when the resolved target (`target_id`) is an `origin='external'`
+/// symbol. A coincidental bind that landed on an external symbol is the
+/// real declaration — an origin-blind edge to a hydrated dependency, not a
+/// false same-name internal bind — so the router keeps it instead of
+/// diverting it to an external_ref. The id→symbol lookup goes through
+/// `by_name` (coincidental targets are bare names) and matches on id.
+fn target_symbol_is_external(target_id: i64, target_name: &str, index: &SymbolIndex) -> bool {
+    index
+        .by_name(target_name)
+        .iter()
+        .find(|s| s.id == target_id)
+        .map(|s| index.is_external_file(&s.file_path))
+        .unwrap_or(false)
+}
+
+/// `true` for resolution strategies that bind a bare name to a same-named
+/// symbol without scope/import evidence — the coincidental-name ("grep")
+/// family. A hit from one of these on a ref that an import or manifest
+/// places in a dependency is a false edge; the compiler-resolve router
+/// rejects it in favour of external classification + demand.
+fn is_coincidental_name_strategy(strategy: &str) -> bool {
+    matches!(
+        strategy,
+        "rust_global_name_fallback"
+            | "rust_global_name_scoped"
+            | "rust_same_file_name_fallback"
+            | "rust_global_typeref_fallback"
+            | "default_same_file"
+            | "default_unique_internal_name"
+            | "default_ranked_candidate"
+            | "engine_bare_same_file"
+    )
+}
+
+/// Decide the external namespace a ref belongs to, or `None`.
+///
+/// Authoritative signals only, in priority order: the language hook's
+/// manifest/import classifier, chain-to-external inference, the bare-name
+/// primitive/builtin tables, the file's import list (an imported name whose
+/// module resolves to no local file, guarded by `is_module_in_project`), and
+/// an explicit `r.module` that names no local file/namespace. A ref no
+/// authority places in a dependency returns `None` — internal or honestly
+/// unresolved, never branded external by elimination.
+///
+/// Shared by the tier-1.5 classification pass and the compiler-resolve
+/// reroute check so both decide external-ness identically.
+#[allow(clippy::too_many_arguments)]
+fn classify_external_ns(
+    r: &crate::types::ExtractedRef,
+    ref_ctx: &RefContext,
+    file_ctx: Option<&engine::FileContext>,
+    file_imports: &[(String, Option<String>)],
+    module_to_files: &rustc_hash::FxHashMap<String, Vec<String>>,
+    type_engine: &crate::type_checker::Engine,
+    project_ctx: Option<&ProjectContext>,
+    index: &SymbolIndex,
+    effective_lang: &str,
+    strict: bool,
+    include_chain_heuristic: bool,
+) -> Option<String> {
+    file_ctx
+        .and_then(|fc| type_engine.classify_external(ref_ctx, fc, project_ctx, index))
+        // Chain-to-external: the chain walks to a type not in the index
+        // (ORM, test framework, fluent API chains). This is a HEURISTIC — an
+        // un-inferred chain root (a local variable whose type wasn't resolved)
+        // looks the same as a genuine external receiver — so it is excluded
+        // from the reroute decision, which must not override a grep edge on a
+        // guess. Tier-1.5 (no edge at stake) still consults it.
+        .or_else(|| {
+            if !include_chain_heuristic {
+                return None;
+            }
+            r.chain.as_ref().and_then(|chain| {
+                engine::infer_external_from_chain(chain, &ref_ctx.scope_chain, index)
+            })
+        })
+        // Bare-name: test globals, language primitives, runtime builtins.
+        // `effective_lang` so JS/TS refs embedded in Elixir/PHP/Ruby host
+        // files classify against the JS/TS tables, not the host's.
+        .or_else(|| {
+            index
+                .classify_external_name(&r.target_name, effective_lang)
+                .map(|ns| ns.to_string())
+        })
+        // Import-based: the ref's name (or its leading segment, for dotted
+        // targets like `Stripe.Event`) matches an import whose module
+        // resolves to no local file. Catches transitive bare-package deps,
+        // slash-bearing sub-module specifiers (`rxjs/operators`), and
+        // relative imports to build-time-generated files absent at scan.
+        .or_else(|| {
+            if r.module.is_some() {
+                return None;
+            }
+            let target = r.target_name.as_str();
+            let first_segment = target.split('.').next().unwrap_or(target);
+            for (imported_name, module_path_opt) in file_imports.iter() {
+                if imported_name != target && imported_name != first_segment {
+                    continue;
+                }
+                let Some(module_path) = module_path_opt.as_deref() else {
+                    continue;
+                };
+                // A `crate::`/`super::`/`self::` import is project-local; only
+                // the strict (compiler-resolve) classifier knows to skip it —
+                // the legacy path leaves this to `is_module_in_project`.
+                if strict && is_crate_internal_module(module_path) {
+                    continue;
+                }
+                if is_module_in_project(module_path, module_to_files, index) {
+                    continue;
+                }
+                return Some(format!("ext:{module_path}"));
+            }
+            None
+        })
+        // Module-qualified: `r.module` names no local file/namespace —
+        // R `dplyr::mutate`, Erlang `lists:map`, Haskell `Map.lookup`.
+        .or_else(|| {
+            let module = r.module.as_ref()?;
+            // A path-internal keyword prefix (`crate::`, `super::`, `self::`,
+            // `Self::`) marks a project-local reference. Branding it external
+            // mistakes an unresolved-internal ref for a dependency — the S3
+            // authority hierarchy resolves these inside the project, never to
+            // a manifest dep. Strict (compiler-resolve) only.
+            if strict && is_crate_internal_module(module) {
+                return None;
+            }
+            let mod_lower = module.to_lowercase();
+            let mut is_local = module_to_files.contains_key(module.as_str())
+                || module_to_files.contains_key(&mod_lower);
+            // Last-segment match ONLY for single-segment modules — a
+            // multi-segment `Ecto.Changeset` must not be called local just
+            // because a `changeset.ex` file exists (coincidental stem match).
+            if !is_local && !module.contains('.') {
+                let last_seg = module.rsplit('.').next().unwrap_or(module);
+                let last_lower = last_seg.to_lowercase();
+                is_local = module_to_files.contains_key(last_seg)
+                    || module_to_files.contains_key(&last_lower);
+            }
+            if is_local {
+                None
+            } else {
+                Some(format!("ext:{module}"))
+            }
+        })
+        // Workspace authority (S3 first rule): a namespace that names a
+        // workspace-member package, a path-dependency alias, or the project's
+        // own crate is project-internal, not a dependency — its symbols are
+        // `origin='internal'` in the index. Branding it external would drop
+        // correct cross-package edges. Strict only, so the legacy classifier's
+        // output is unchanged.
+        .filter(|ns| !strict || !names_workspace_internal(ns, index, project_ctx))
+}
+
+/// `true` when an external namespace string actually names project-internal
+/// code, by an authoritative crate-identity signal:
+///   - a workspace package declared name (the symbol index), or
+///   - a cargo path-dep alias / own crate name (the project manifests).
+///
+/// Deliberately does NOT fall back to `is_module_in_project`: a bare module/
+/// file name (`core`, `std`) frequently collides with an external crate of the
+/// same name (Rust's `src/core/` module vs the `core` stdlib crate), and that
+/// probe would misclassify the dependency as internal. Crate-identity signals
+/// don't collide — stdlib/dep names never appear as workspace package names or
+/// path-dep aliases. Strips an `ext:` prefix and any `.*` wildcard tail and
+/// probes the leading segment.
+fn names_workspace_internal(
+    ns: &str,
+    index: &SymbolIndex,
+    project_ctx: Option<&ProjectContext>,
+) -> bool {
+    if names_workspace_package(ns, index) {
+        return true;
+    }
+    let Some(ctx) = project_ctx else { return false };
+    let probe = ns.strip_prefix("ext:").unwrap_or(ns);
+    let probe = probe.strip_suffix(".*").unwrap_or(probe);
+    let first = probe
+        .split(|c| c == ':' || c == '.' || c == '/')
+        .find(|s| !s.is_empty())
+        .unwrap_or(probe);
+    !first.is_empty() && ctx.is_workspace_local_crate(first)
+}
+
+/// `true` when an external namespace string actually names a workspace-member
+/// package — project-internal code, not a third-party dependency.
+///
+/// Strips an `ext:` prefix and any `.*` wildcard tail, then asks
+/// `workspace_package_id` about the **full** remaining specifier first — its
+/// own `/`-prefix walk matches a scoped package (`@scope/ui`) against a deep
+/// import (`@scope/ui/button`). Falls back to the leading `::`/`.`-segment for
+/// module paths whose package name is the first component (Rust/JVM).
+fn names_workspace_package(ns: &str, lookup: &dyn SymbolLookup) -> bool {
+    let probe = ns.strip_prefix("ext:").unwrap_or(ns);
+    let probe = probe.strip_suffix(".*").unwrap_or(probe);
+    if probe.is_empty() {
+        return false;
+    }
+    if lookup.workspace_package_id(probe).is_some() {
+        return true;
+    }
+    let first = probe
+        .split(|c| c == ':' || c == '.')
+        .find(|s| !s.is_empty())
+        .unwrap_or(probe);
+    first != probe && lookup.workspace_package_id(first).is_some()
 }
 
 /// Does the project's symbol index cover this import module?

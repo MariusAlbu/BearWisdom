@@ -58,6 +58,30 @@ pub(crate) use flow_pair::_test_flush_flow_emissions;
 mod tests;
 
 // ---------------------------------------------------------------------------
+// Compiler-resolve A/B gate
+// ---------------------------------------------------------------------------
+
+/// Process-level switch for compiler-style resolution routing.
+///
+/// When enabled, a coincidental same-name bind ("grep") on a ref whose head
+/// is bound to a dependency by import/manifest is rejected and recorded as
+/// external + demand instead of a false call-graph edge, and the eager
+/// demand seed is skipped — the at-the-ref demand pull covers it. When
+/// disabled, resolution behaves exactly as before. Read once and cached so
+/// the parallel resolve loop pays a single `getenv` per process.
+///
+/// On for `BEARWISDOM_COMPILER_RESOLVE=1` or `=true`; off otherwise.
+pub(crate) fn compiler_resolve_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("BEARWISDOM_COMPILER_RESOLVE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    })
+}
+
+// ---------------------------------------------------------------------------
 // ResolutionStats — return value of every resolve_* entry point
 // ---------------------------------------------------------------------------
 

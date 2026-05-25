@@ -169,6 +169,10 @@ pub struct TypeInfo {
     pub return_type: Option<String>,
     /// Generic parameter names for type declarations (e.g., ["T"] for `interface Repository<T>`).
     pub generic_params: Vec<String>,
+    /// Declared upper bounds for `generic_params`, index-aligned. `None` for an
+    /// unbounded parameter; `Some("Animal")` for `<T extends Animal>` / `<T: Animal>`.
+    /// Resolved to `GenericParamData.bound` when the param's `Type::Generic` is interned.
+    pub generic_param_bounds: Vec<Option<String>>,
     /// Canonical TypeId form of `field_type`.
     pub field_type_id: Option<TypeId>,
     /// Canonical TypeId form of `return_type`.

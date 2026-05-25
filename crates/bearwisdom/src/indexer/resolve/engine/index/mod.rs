@@ -29,7 +29,7 @@ use super::{ChainMiss, SymbolInfo, TypeInfo};
 // one `super::` hop instead of two.
 pub(super) use super::{
     common_prefix_len, find_matching_bracket, is_ambient_global_lib_path, is_type_like_kind,
-    strip_generic_args,
+    parse_generic_param_clause, strip_generic_args,
 };
 
 mod augment;

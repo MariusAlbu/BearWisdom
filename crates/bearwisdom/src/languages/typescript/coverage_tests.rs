@@ -581,6 +581,20 @@ fn coverage_extends_clause() {
 }
 
 #[test]
+fn coverage_extends_generic_clause() {
+    // A generic parent must carry its type arguments in the Inherits ref so
+    // the engine can bind the inherited method's `T` to the concrete arg.
+    let r = extract::extract("class UserRepo extends Repository<User> {}", false);
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Inherits && r.target_name == "Repository<User>"),
+        "generic extends should carry type args; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn coverage_implements_clause() {
     let r = extract::extract("class UserRepo implements IRepository {}", false);
     assert!(

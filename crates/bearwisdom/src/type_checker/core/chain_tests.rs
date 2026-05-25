@@ -102,6 +102,7 @@ struct EmptyLookup {
     return_types: rustc_hash::FxHashMap<String, String>,
     by_qname: rustc_hash::FxHashMap<String, SymbolInfo>,
     parents: rustc_hash::FxHashMap<String, String>,
+    generic_param_type_ids: rustc_hash::FxHashMap<String, Vec<TypeId>>,
 }
 
 impl EmptyLookup {
@@ -115,6 +116,7 @@ impl EmptyLookup {
             return_types: Default::default(),
             by_qname: Default::default(),
             parents: Default::default(),
+            generic_param_type_ids: Default::default(),
         }
     }
     fn with_type(mut self, name: &str, qname: &str) -> Self {
@@ -151,6 +153,10 @@ impl EmptyLookup {
     }
     fn with_parent(mut self, child: &str, parent: &str) -> Self {
         self.parents.insert(child.to_string(), parent.to_string());
+        self
+    }
+    fn with_generic_param_type_ids(mut self, scope: &str, ids: Vec<TypeId>) -> Self {
+        self.generic_param_type_ids.insert(scope.to_string(), ids);
         self
     }
 }
@@ -194,6 +200,11 @@ impl SymbolLookup for EmptyLookup {
     }
     fn generic_params(&self, _: &str) -> Option<&[String]> {
         None
+    }
+    fn generic_param_type_ids(&self, type_name: &str) -> Option<&[TypeId]> {
+        self.generic_param_type_ids
+            .get(type_name)
+            .map(|v| v.as_slice())
     }
     fn alias_target(&self, _: &str) -> Option<&AliasTarget> {
         None
@@ -541,6 +552,357 @@ fn generic_apply_substitutes_yield_type() {
     assert_eq!(result.target_symbol_id, 3);
     // Generic T must have been substituted to User.
     assert_eq!(result.resolved_yield_type, user_ty);
+}
+
+#[test]
+fn generic_arg_substitutes_through_inheritance() {
+    // class Repository<T> { find_one(): T }
+    // class UserRepo: Repository<User> {}
+    // let r: UserRepo; r.find_one() → yields User (T bound through the
+    // `extends Repository<User>` edge), NOT the unbound generic T.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let repository_ty = arena.class("Repository");
+    let user_repo_ty = arena.class("UserRepo");
+    let user_ty = arena.class("User");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let generic_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    // Repository<T> — generic, self-yields, declares T.
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(repository_ty),
+            generic_params: vec![t_param],
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(repository_ty, 1);
+    // UserRepo — non-generic subclass.
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(user_repo_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(user_repo_ty, 2);
+    // User — leaf type.
+    symbol_types.insert(
+        3,
+        SymbolTypeData {
+            return_type: Some(user_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(user_ty, 3);
+    // find_one(): T — declared on Repository.
+    symbol_types.insert(
+        4,
+        SymbolTypeData {
+            return_type: Some(generic_t),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        repository_ty,
+        sym_info(4, "find_one", "Repository.find_one", "method", Some("Repository")),
+    );
+
+    // UserRepo extends Repository<User> — the edge carries the bound arg.
+    let mut supertypes = SupertypeGraph::new();
+    supertypes.add_edge_generic(user_repo_ty, repository_ty, vec![user_ty]);
+
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("r", SegmentKind::Identifier),
+            seg("find_one", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("find_one");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: user_repo_ty })
+        .expect("inherited generic method resolves");
+    assert_eq!(result.target_symbol_id, 4);
+    // T must be bound to User through the inheritance edge.
+    assert_eq!(result.resolved_yield_type, user_ty);
+}
+
+#[test]
+fn bare_param_receiver_types_as_generic_then_resolves_via_bound() {
+    // fn f<T: Animal>(t: T) { t.name() }
+    // The receiver `t` is declared as the bare generic param `T`. The default
+    // root resolver must type it as the canonical Type::Generic (carrying the
+    // bound), NOT a class literally named "T", so the member walk reaches
+    // Animal.name() through the bound.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let animal_ty = arena.class("Animal");
+    let string_ty = arena.class("String");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: Some(animal_ty),
+    });
+    let generic_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(string_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        animal_ty,
+        sym_info(1, "name", "Animal.name", "method", Some("Animal")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // `t`'s declared type is "T"; scope `f` declares T → Type::Generic{T}.
+    let lookup = EmptyLookup::new()
+        .with_field_type("f.t", "T")
+        .with_generic_param_type_ids("f", vec![generic_t]);
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("t", SegmentKind::Identifier),
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: vec!["f".to_string()],
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("bare generic receiver resolves via bound");
+    assert_eq!(result.target_symbol_id, 1);
+    assert_eq!(result.resolved_yield_type, string_ty);
+}
+
+#[test]
+fn generic_param_resolves_member_via_bound() {
+    // fn f<T: Animal>(t: T) { t.name() }
+    // `t` is a bare generic parameter; member lookup must follow the
+    // declared upper bound (Animal) to find `name()`.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let animal_ty = arena.class("Animal");
+    let string_ty = arena.class("String");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: Some(animal_ty),
+    });
+    let generic_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    // name(): String — declared on Animal.
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(string_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        animal_ty,
+        sym_info(1, "name", "Animal.name", "method", Some("Animal")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("t", SegmentKind::Identifier),
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: generic_t })
+        .expect("bounded generic member resolves via bound");
+    assert_eq!(result.target_symbol_id, 1);
+    assert_eq!(result.resolved_yield_type, string_ty);
+}
+
+#[test]
+fn string_map_yield_preserves_generic_args() {
+    // v.iter() where iter()'s return type is only known as the string
+    // "Box<User>" (no SymbolTypeMap TypeId entry). The yield must decompose
+    // to Apply{Box,[User]}, not collapse to the bare class Box — otherwise a
+    // following `.get()` loses the User element binding.
+    use crate::type_checker::core::types::Type;
+
+    let mut arena = TypeArena::new();
+    let vec_ty = arena.class("Vec");
+    let box_ty = arena.class("Box");
+    let user_ty = arena.class("User");
+    let expected = arena.intern(Type::Apply {
+        base: box_ty,
+        args: vec![user_ty],
+    });
+
+    // iter has no SymbolTypeMap entry → yield falls to the string map.
+    let symbol_types = SymbolTypeMap::new();
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        vec_ty,
+        sym_info(1, "iter", "Vec.iter", "method", Some("Vec")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_return_type("Vec.iter", "Box<User>");
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("v", SegmentKind::Identifier),
+            seg("iter", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("iter");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: vec_ty })
+        .expect("string-yield chain resolves");
+    assert_eq!(result.target_symbol_id, 1);
+    assert_eq!(result.resolved_yield_type, expected);
 }
 
 #[test]
