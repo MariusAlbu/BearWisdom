@@ -18,17 +18,16 @@
 // Spec: research/architecture/02-engine-internal-architecture.html § Layer 4
 //       research/architecture/04-implementation-phases.html § Phase 4
 //
-// Known scope limitations honoured by Phase 5+ migrations:
+// Known scope limitations:
 //   - Optional-chaining (`a?.b`) preserves the chain miss/hit on `b` but the
 //     yield type does not re-wrap in Optional. Affects flow-typing of the
 //     downstream binding, not target-symbol resolution.
-//   - Per-segment narrowings (FlowMeta.narrowings) are not consulted here;
-//     the resolver loop in Phase 5 threads them via SymbolLookup's cursor.
-//   - Dispatch axis enforcement: the walker uses receiver dispatch via
-//     MembersIndex::lookup. MultiArg (R/Clojure) and ReturnType (Haskell)
-//     callers invoke `dispatch::select_method` directly with a synthesised
-//     DispatchQuery; their per-language hook will replace this lookup call
-//     when Wave B migrations land.
+//   - Flow narrowing refines only the ROOT receiver: the default root resolver
+//     reads `FlowMeta.narrowings` via `SymbolLookup::local_type` + a position
+//     cursor. Mid-chain segments and union-branch selection don't consult it.
+//   - Dispatch: members resolve by receiver dispatch (MembersIndex::lookup) for
+//     every language. The MultiArg / ReturnType axes in `dispatch::select_method`
+//     are configured per-language but not yet consumed by this walker.
 // =============================================================================
 
 use super::types::{GenericParamId, Type, TypeArena, TypeId};

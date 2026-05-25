@@ -46,6 +46,7 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
             condition: (parenthesized_expression
                 (binary_expression
                     left: (identifier) @guard.local
+                    operator: "instanceof"
                     right: (identifier) @guard.type))
             consequence: (statement_block) @guard.body)
     "#,

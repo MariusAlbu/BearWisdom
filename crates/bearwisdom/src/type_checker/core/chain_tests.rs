@@ -673,6 +673,108 @@ fn generic_arg_substitutes_through_inheritance() {
 }
 
 #[test]
+fn generic_arg_composes_through_multi_level_inheritance() {
+    // class C<T> { item(): T }
+    // class B<T> extends C<T> {}        // B→C edge arg = Generic(B::T)  (G2 output)
+    // class A    extends B<X> {}        // A→B edge arg = X (concrete)
+    // let a: A; a.item() → X — the B::T → X binding must compose across the
+    // B→C hop (G3), not surface the unbound Generic(B::T).
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let a_ty = arena.class("A");
+    let b_ty = arena.class("B");
+    let c_ty = arena.class("C");
+    let x_ty = arena.class("X");
+    let b_t = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 3,
+        bound: None,
+    });
+    let c_t = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 4,
+        bound: None,
+    });
+    let generic_bt = arena.intern(Type::Generic { param: b_t });
+    let generic_ct = arena.intern(Type::Generic { param: c_t });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(2, SymbolTypeData { return_type: Some(a_ty), ..Default::default() });
+    symbol_types.mark_self_yielding(a_ty, 2);
+    symbol_types.insert(
+        3,
+        SymbolTypeData { return_type: Some(b_ty), generic_params: vec![b_t], ..Default::default() },
+    );
+    symbol_types.mark_self_yielding(b_ty, 3);
+    symbol_types.insert(
+        4,
+        SymbolTypeData { return_type: Some(c_ty), generic_params: vec![c_t], ..Default::default() },
+    );
+    symbol_types.mark_self_yielding(c_ty, 4);
+    symbol_types.insert(1, SymbolTypeData { return_type: Some(generic_ct), ..Default::default() });
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(1, "item", "C.item", "method", Some("C")));
+
+    // A → B<X> (concrete) ; B → C<T> (B's own param, as G2 emits) ; B declares T.
+    let mut supertypes = SupertypeGraph::new();
+    supertypes.add_edge_generic(a_ty, b_ty, vec![x_ty]);
+    supertypes.add_edge_generic(b_ty, c_ty, vec![generic_bt]);
+    supertypes.record_node_params(b_ty, vec![b_t]);
+
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("a", SegmentKind::Identifier),
+            seg("item", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("item");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: a_ty })
+        .expect("multi-level inherited generic resolves");
+    assert_eq!(result.target_symbol_id, 1);
+    // C::T composes through B::T → X across both hops.
+    assert_eq!(result.resolved_yield_type, x_ty);
+}
+
+#[test]
 fn bare_param_receiver_types_as_generic_then_resolves_via_bound() {
     // fn f<T: Animal>(t: T) { t.name() }
     // The receiver `t` is declared as the bare generic param `T`. The default

@@ -12,8 +12,9 @@
 //       research/architecture/04-implementation-phases.html § Phase 3
 // =============================================================================
 
-use super::types::{TypeArena, TypeId};
+use super::types::{GenericParamId, TypeArena, TypeId};
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::type_checker::core::generics::{substitute, GenericEnv};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::profile::language_profile::{LanguageProfile, SupertypeDiscovery};
 use crate::types::{EdgeKind, ParsedFile};
@@ -33,6 +34,12 @@ pub struct SupertypeGraph {
     /// alongside (not inside) `edges` so the bare-TypeId walk used by
     /// dispatch and subtype checks is unchanged.
     edge_args: FxHashMap<(TypeId, TypeId), Vec<TypeId>>,
+    /// Declared generic params of each node (the `<T>` on `class B<T>`), in
+    /// declaration order, as `GenericParamId`s. Lets `walk_up_with_args`
+    /// bind a node's params to the args that reached it and substitute the
+    /// next edge's args through that binding — composing generic arguments
+    /// across multiple inheritance hops.
+    node_params: FxHashMap<TypeId, Vec<GenericParamId>>,
 }
 
 impl SupertypeGraph {
@@ -71,32 +78,51 @@ impl SupertypeGraph {
         }
     }
 
+    /// Record a node's declared generic params (declaration order) so the
+    /// arg-carrying walk can compose substitutions through it. Empty params
+    /// are ignored — a non-generic node composes as the identity.
+    pub fn record_node_params(&mut self, node: TypeId, params: Vec<GenericParamId>) {
+        if !params.is_empty() {
+            self.node_params.insert(node, params);
+        }
+    }
+
     /// BFS like `walk_up`, but each yielded ancestor is paired with the
-    /// generic arguments on the **direct** edge that reached it (empty for
-    /// the start node and for non-generic edges). Lets member lookup bind an
-    /// inherited generic method's parameters to the concrete arguments named
-    /// at the `extends`/`implements` site. Composition across multiple
-    /// generic hops is not modeled — a deeper ancestor carries only its
-    /// immediate edge's args, which is correct for the dominant single-level
-    /// `Subclass: Generic<Concrete>` case and degrades (unbound) for the rest.
-    pub fn walk_up_with_args(&self, start: TypeId) -> Vec<(TypeId, Vec<TypeId>)> {
+    /// generic arguments that reach it — **composed across hops**. At each
+    /// node the args that reached it bind the node's declared params
+    /// (`node_params`); the next edge's args are substituted through that
+    /// binding before being queued. So `A: B<X>, B<T>: C<T>` reaches `C` with
+    /// `[X]`, not the unbound `[Generic(B::T)]`. The start node and
+    /// non-generic edges carry empty args; a node with no recorded params
+    /// composes as the identity (the single-level `Subclass: Generic<Concrete>`
+    /// case is unchanged — its edge args are already concrete).
+    pub fn walk_up_with_args(&self, start: TypeId, arena: &TypeArena) -> Vec<(TypeId, Vec<TypeId>)> {
         let mut out = Vec::new();
         let mut queue = VecDeque::new();
         queue.push_back((start, Vec::new()));
         let mut seen = FxHashSet::default();
         seen.insert(start);
-        while let Some((node, args)) = queue.pop_front() {
-            for parent in self.parents_of(node) {
-                if seen.insert(*parent) {
-                    let p_args = self
-                        .edge_args
-                        .get(&(node, *parent))
-                        .cloned()
-                        .unwrap_or_default();
-                    queue.push_back((*parent, p_args));
+        while let Some((node, node_args)) = queue.pop_front() {
+            // Bind node's params to the args that reached it, so a deeper
+            // edge's args (which may name node's params) resolve to the
+            // concrete root arguments.
+            let mut env = GenericEnv::new();
+            if let Some(params) = self.node_params.get(&node) {
+                if !node_args.is_empty() {
+                    env.bind_positional(params, &node_args);
                 }
             }
-            out.push((node, args));
+            for parent in self.parents_of(node) {
+                if seen.insert(*parent) {
+                    let composed: Vec<TypeId> = self
+                        .edge_args
+                        .get(&(node, *parent))
+                        .map(|raw| raw.iter().map(|&a| substitute(a, &env, arena)).collect())
+                        .unwrap_or_default();
+                    queue.push_back((*parent, composed));
+                }
+            }
+            out.push((node, node_args));
         }
         out
     }
@@ -213,9 +239,42 @@ fn build_explicit(
                 }
                 _ => (r.target_name.clone(), Vec::new()),
             };
+            // Rebind any arg that names the CHILD's own generic param to the
+            // canonical `Type::Generic`, so multi-level inheritance composes:
+            // in `class B<T> extends C<T>` the arg `T` is B's param, not a
+            // class. `walk_up_with_args` then substitutes it through B's
+            // binding. Concrete args (`Repository<User>`) are untouched —
+            // "User" isn't one of the child's params.
+            let parent_args = if parent_args.is_empty() {
+                parent_args
+            } else {
+                let child_params = child_param_map(&source_sym.qualified_name, arena, lookup);
+                if child_params.is_empty() {
+                    parent_args
+                } else {
+                    parent_args
+                        .iter()
+                        .map(|&a| arena.rebind_class_params(a, &child_params))
+                        .collect()
+                }
+            };
             let parent_qname = resolve_target_qname(&parent_base_qname, lookup);
             let parent = arena.class(parent_qname.as_str());
             graph.add_edge_generic(child, parent, parent_args);
+
+            // Record the child's declared params so `walk_up_with_args` can
+            // compose this edge's args through the child's binding at deeper
+            // hops.
+            if let Some(ids) = lookup.generic_param_type_ids(&source_sym.qualified_name) {
+                let params: Vec<GenericParamId> = ids
+                    .iter()
+                    .filter_map(|&id| match arena.get(id) {
+                        crate::type_checker::core::types::Type::Generic { param } => Some(param),
+                        _ => None,
+                    })
+                    .collect();
+                graph.record_node_params(child, params);
+            }
         }
     }
 }
@@ -231,6 +290,22 @@ fn resolve_target_qname(target_name: &str, lookup: &dyn SymbolLookup) -> String 
         return candidates[0].qualified_name.clone();
     }
     target_name.to_string()
+}
+
+/// `{param-name → Type::Generic id}` for a type's own declared generic params,
+/// from the canonical `generic_param_type_ids`. Used to rebind an inheritance
+/// edge's args (`extends C<T>`) where `T` names the child's own param.
+fn child_param_map(
+    child_qname: &str,
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+) -> FxHashMap<String, TypeId> {
+    let Some(ids) = lookup.generic_param_type_ids(child_qname) else {
+        return FxHashMap::default();
+    };
+    ids.iter()
+        .map(|&id| (arena.format_type(id), id))
+        .collect()
 }
 
 /// For each `Interface` symbol, mark every class whose direct member set is a

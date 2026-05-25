@@ -225,9 +225,8 @@ impl MembersIndex {
             Type::Union(branches) => {
                 // Every branch must carry the member — partial union members
                 // are unsafe to resolve since the runtime value could land
-                // on a branch missing the member. First branch's match is
-                // the returned symbol; chain walker narrows further if it
-                // can.
+                // on a branch missing the member. Returns the first branch's
+                // match; the walker does not yet select a branch by a guard.
                 let mut first: Option<(SymbolInfo, TypeId, Vec<TypeId>)> = None;
                 for b in branches {
                     match self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile) {
@@ -261,7 +260,7 @@ impl MembersIndex {
                 self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile)
             }
             Type::Class(_) | Type::Primitive(_) => {
-                self.find_on_chain(ty, name, kind_filter, supertypes, profile)
+                self.find_on_chain(ty, name, kind_filter, supertypes, arena, profile)
             }
             // A bare generic parameter carries members only through its
             // declared upper bound: `T: Animal` resolves `T`'s members on
@@ -293,9 +292,10 @@ impl MembersIndex {
         name: &str,
         kind_filter: EdgeKind,
         supertypes: &SupertypeGraph,
+        arena: &TypeArena,
         profile: &LanguageProfile,
     ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
-        for (ancestor, args) in supertypes.walk_up_with_args(ty) {
+        for (ancestor, args) in supertypes.walk_up_with_args(ty, arena) {
             if let Some(found) = self
                 .direct_of(ancestor)
                 .iter()
