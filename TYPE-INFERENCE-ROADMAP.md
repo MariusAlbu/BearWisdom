@@ -113,3 +113,38 @@ per-language code. Size: XS/S/M/L.
 
 Only **G1, G2, G3, G8** are pure generic wins with no per-language dependency.
 Everything else is generic engine + a per-language feed, or TS-specific.
+
+---
+
+## Implementation status
+
+Prior to this roadmap: bounded-generic / forward-inference / string-hop
+(`f6f77196`), U1+U2a substitution-on (`d2cbec56`).
+
+**Landed:**
+- **G2 + G3** — multi-level generic inheritance composition (`a05235f5`).
+- **G6** — F-bounded member resolution already worked via the fix-#2 leaf +
+  gap-B bound capture + the `Apply` arm; verified by a test, no new prod code.
+  Fires for `extends`/`:`-bound languages.
+- **TS3** — `instanceof` guard query no longer matches `===` (`a05235f5`).
+- **C1** — stale comments corrected (`a05235f5`).
+
+**Deferred with reasons:**
+- **G1 (D7)** — segment types intern nominal (`canonical_form.rs:197`), no
+  `Cast` SegmentKind, turbofish/annotation share `type_args`, method-vs-class
+  owner interacts with U2a. Needs a design pass before coding.
+- **G8** — subsumed by D9; the string `expand_alias` can't represent a union
+  head, and a first-branch heuristic would be wrong.
+
+**Remaining — each is a substantial effort gated on a per-language feed or new
+machinery, not a single-session sweep:**
+- **G4/G5** dispatch + overload — gated on **L4** (typing call-argument
+  expressions), itself a real inference task; the selector (`dispatch.rs`) is
+  already built.
+- **G7** discriminated-union — gated on **L3** (per-language discriminant
+  extraction) before the generic Union-arm selection can fire.
+- **G9 / L6** closures — corpus-wide function-type parsing + a call-yield arm;
+  yield-precision payoff (rarely new edges).
+- **G10 / L7** HKT — new kinded `Type` variant; largest, rarest.
+- **L1** bound syntax for **C# / Scala / Go / Haskell** (extends G6 to them);
+  **L2** guard vocabulary across the 14 flow languages.

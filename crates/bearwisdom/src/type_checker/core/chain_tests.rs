@@ -847,6 +847,89 @@ fn bare_param_receiver_types_as_generic_then_resolves_via_bound() {
 }
 
 #[test]
+fn f_bounded_param_resolves_member_on_generic_bound() {
+    // fn f<T: Comparable<T>>(x: T) { x.compareTo(...) }
+    // T's bound is the generic application Comparable<T>; member lookup must
+    // follow it to Comparable.compareTo (the inner self-ref T stays nominal —
+    // it doesn't affect resolving compareTo on the base).
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let comparable_ty = arena.class("Comparable");
+    let int_ty = arena.class("int");
+    // bound = Comparable<T> (inner T nominal, as gap-B's intern_type_str emits).
+    let inner_t = arena.class("T");
+    let bound = arena.intern(Type::Apply {
+        base: comparable_ty,
+        args: vec![inner_t],
+    });
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: Some(bound),
+    });
+    let generic_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(1, SymbolTypeData { return_type: Some(int_ty), ..Default::default() });
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        comparable_ty,
+        sym_info(1, "compareTo", "Comparable.compareTo", "method", Some("Comparable")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("x", SegmentKind::Identifier),
+            seg("compareTo", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("compareTo");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: generic_t })
+        .expect("f-bounded member resolves via generic bound");
+    assert_eq!(result.target_symbol_id, 1);
+}
+
+#[test]
 fn generic_param_resolves_member_via_bound() {
     // fn f<T: Animal>(t: T) { t.name() }
     // `t` is a bare generic parameter; member lookup must follow the
