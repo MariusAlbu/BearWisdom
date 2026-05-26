@@ -195,12 +195,6 @@ impl LanguagePlugin for TypeScriptPlugin {
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
-        // Temporarily disabled while investigating ts-immich hang.
-        // Set BW_TS_FLOW=1 to re-enable.
-        if std::env::var_os("BW_TS_FLOW").is_some() {
-            Some(&flow::TS_FLOW_CONFIG)
-        } else {
-            None
-        }
+        Some(&flow::TS_FLOW_CONFIG)
     }
 }

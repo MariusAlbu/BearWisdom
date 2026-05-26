@@ -437,8 +437,6 @@ fn go_type_switch_narrows_alias_per_case() {
 #[test]
 fn ts_typeof_string_guard_narrows() {
     // `if (typeof x === "string") { ... }` narrows `x` to the string primitive.
-    // The real config is referenced directly — `flow_config()` is env-gated off
-    // (BW_TS_FLOW) pending a separate investigation, so we test the static.
     use crate::languages::typescript::flow::TS_FLOW_CONFIG;
     let source = "function f(x: unknown) {\n  if (typeof x === \"string\") {\n    x.length;\n  }\n}\n";
     let symbols: Vec<ExtractedSymbol> = Vec::new();

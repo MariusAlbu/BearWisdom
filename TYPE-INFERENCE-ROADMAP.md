@@ -238,9 +238,9 @@ machinery, not a single-session sweep:**
 - **L5** (`134cfaad`) — generic most-specific multi-arg selection (CLOS-style),
   not per-language hooks (the algorithm is language-agnostic).
 - **L2** (`637ea5f5`) — Java `instanceof Foo f` pattern binding, Ruby `kind_of?`,
-  TS `typeof x === "…"`, Go `switch v := x.(type)`. TS/Go flow are gated off in
-  prod (BW_TS_FLOW / Go OOM) so those two are dormant-but-ready; their flow
-  modules are now `pub(crate)` for direct-static tests.
+  TS `typeof x === "…"`, Go `switch v := x.(type)`. Go flow is gated off in
+  prod (Go OOM) so it's dormant-but-ready; the TS flow gate is lifted (TS flow
+  runs in prod). Flow modules are `pub(crate)` for direct-static tests.
 - **L6** (`2c20e746`) — root-call form `f().x`; `is_call` marked in Go/C#/Kotlin/
   Scala/Swift chain builders; `intern_type_str` parses `->` (Rust `Fn()->T`,
   Kotlin/Swift `(T)->R`; Scala `=>` already worked).
@@ -264,12 +264,12 @@ gate, or the closeout recapture (NOT autonomous single-session work):**
   resolution**: it would only refine `resolved_yield_type` on the *final,
   unchained* segment, and the annotated LHS is already typed directly from
   `flow_binding_decl_type` into the local cache — so the refinement is
-  redundant (and its source is flow-gated, dormant for TS). Not worth the
-  RefContext→loop→walker plumbing for zero observable resolution gain.
-- **G7 early-return narrowing — landed (`dc58bd25`), dormant.** Negated
+  redundant. Not worth the RefContext→loop→walker plumbing for zero observable
+  resolution gain.
+- **G7 early-return narrowing — landed (`dc58bd25`), active.** Negated
   discriminant guard (`if (s.kind !== "x") return;`) scoped to the rest of the
-  block, with negated branch selection. Additive (no regression when inert),
-  dormant behind the TS `flow_config` gate (`BW_TS_FLOW`) like the rest of the
+  block, with negated branch selection. Additive (no regression when inert);
+  active now that the TS `flow_config` gate is lifted, like the rest of the
   discriminant path.
 - **G7 anonymous-branch precision — landed (`d4fff83a`) via Intersection of
   synthetic branches.** An anonymous union `{kind:"a";x}|{kind:"b";y}` now
@@ -279,8 +279,8 @@ gate, or the closeout recapture (NOT autonomous single-session work):**
   member still resolves (= the prior flat behavior, no regression);
   `narrow_union_by_discriminant` now narrows a `Type::Intersection` to one
   branch under a guard, giving precision. The branch-selection precision is
-  dormant until `BW_TS_FLOW` lifts (narrowing is flow-fed); the non-regressing
-  flat resolution is active now. The synthetic branch types change the TS
+  active now that the TS `flow_config` gate is lifted (narrowing is flow-fed);
+  the non-regressing flat resolution was already active. The synthetic branch types change the TS
   symbol table (sentinel qnames, discriminant member per branch) — flagged for
   the closeout recapture to confirm no search/count regressions.
 - **TS2 mapped beyond transparent — foundation.** Record value-type / key-remap /
