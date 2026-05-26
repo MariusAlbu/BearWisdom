@@ -157,10 +157,18 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
   `LocalTypeCache` carries them; `SymbolLookup::local_discriminant` surfaces the
   active `(prop, literal)`. (4) The walker's `narrow_union_by_discriminant`
   replaces a `Type::Union` receiver with the branch whose discriminant member's
-  signature equals the literal, before the segment loop. Remaining G7 scope:
-  anonymous-object-type union branches (`type S = {kind:"a"}|{kind:"b"}`),
-  early-return narrowing, and non-TS languages (Rust/Kotlin/Scala) via their own
-  `discriminant_guard_query` + literal-field capture.
+  signature equals the literal, before the segment loop. Remaining G7 scope,
+  each a foundation-build:
+  - **anonymous-object-type union branches** (`type S = {kind:"a"}|{kind:"b"}`)
+    — `classify_alias_target`'s `union_type` arm uses `head_type_name`, which is
+    empty for an anonymous `object_type`, so the branch is dropped and the
+    `AliasTarget::Union` is empty. Needs synthetic identities for anonymous types
+    plus member-scoping under them (extraction + type-system work).
+  - **early-return narrowing** (`if (s.kind !== "x") return;` then `s` narrowed)
+    — control-flow analysis, not a lexical block scope.
+  - **non-TS** (Rust `match`, Kotlin sealed `when`, Scala) — per-language
+    `discriminant_guard_query` + literal-field capture; Rust enums are a
+    different shape (variants, not a `kind` field).
 
 **Deferred with reasons:**
 - **G1 (D7)** — segment types intern nominal (`canonical_form.rs:197`), no
