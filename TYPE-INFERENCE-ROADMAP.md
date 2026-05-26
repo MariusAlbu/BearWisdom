@@ -246,17 +246,21 @@ machinery, not a single-session sweep:**
   Kotlin/Swift `(T)->R`; Scala `=>` already worked).
 - **TS1** (`36a839a2`) — `keyof T` expands to a string-literal union from the
   target's member names.
+- **G1 (turbofish)** (`636f9aba`) — method-own generics bind on the *primary*
+  yield path. `owner_param_type_map` merges method + class params; the primary
+  path rebinds the param-blind stored return (`Class("U")`) before substituting
+  (mirroring the string path); a turbofish segment binds the method's own params
+  to the call-site type args. Also repairs inherited-generic substitution on the
+  primary path in production.
 
 **Remaining — gated; needs an architect decision, a foundation, a lifted prod
 gate, or the closeout recapture (NOT autonomous single-session work):**
-- **G1 (D7) — design-gated.** Confirmed: the primary yield path
-  (`yield_type_of` `data_raw`) reads `symbol_types.return_type` = `Class("U")`
-  (build.rs never rebinds it to `Generic`); `substitute` is a no-op on `Class`,
-  so inherited-generic substitution flows only through the *string* fallback's
-  `owner_param_type_map` rebind. Making turbofish (and LHS-annotation / `as T`)
-  bind method-own generics requires canonicalizing method params across BOTH
-  paths + a `Cast` SegmentKind — the U2a interaction the deferral named. Needs a
-  design decision on the canonicalization model.
+- **G1 (D7) — turbofish/canonicalization landed (`636f9aba`); remainder is the
+  expected-type direction.** The primary-path rebind (Option C) is in. Still
+  open: (a) LHS-annotation expected-type (`const x: User = repo.find()` binds an
+  unbound yield from the assignment's declared type — needs the assignment
+  context threaded to the yield, not just the segment), and (b) a `Cast`
+  SegmentKind so `(x as User).foo` adopts `User` (per-language extractor work).
 - **G7 anonymous-branch precision / early-return narrowing — dormant + foundation.**
   Both extend the discriminant-narrowing path fed by TS `flow_config`, which is
   gated off in prod (BW_TS_FLOW, ts-immich hang). Early-return also needs new
