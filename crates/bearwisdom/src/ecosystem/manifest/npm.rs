@@ -84,6 +84,14 @@ impl ManifestReader for NpmManifest {
                 "webpack.config.ts",
                 "nuxt.config.ts",
                 "nuxt.config.js",
+                // SvelteKit declares aliases under `kit.alias` (e.g.
+                // `$lib -> src/lib`). The generated `.svelte-kit/tsconfig.json`
+                // carries the same `paths`, but the root tsconfig only reaches
+                // them through `extends`, which `parse_tsconfig_paths` does not
+                // follow — svelte.config is the authoritative source.
+                "svelte.config.js",
+                "svelte.config.ts",
+                "svelte.config.mjs",
             ];
             let mut has_any_js_config = false;
             let mut declares_at_alias = false;
