@@ -27,14 +27,14 @@
 //       research/architecture/04-implementation-phases.html § Phase 4
 // =============================================================================
 
-use super::types::{PrimKind, TypeArena, TypeId};
+use super::types::{PrimKind, Type, TypeArena, TypeId};
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::profile::language_profile::{DispatchAxis, LanguageProfile};
-use crate::type_checker::subtype::{is_assignable_to_typed_with, SubtypeResult};
-use crate::types::EdgeKind;
+use crate::type_checker::subtype::{args_assignable, is_assignable_to_typed_with, SubtypeResult};
+use crate::types::{CallArg, EdgeKind};
 
 /// Inputs for a dispatch query — all the information a candidate selector
 /// could plausibly need across the three axes.
@@ -112,7 +112,9 @@ fn select_multi_arg(
             return Some(candidate);
         }
     }
-    None
+    // No argument-type match — fall back to receiver dispatch so the call
+    // still resolves to a single-dispatch target rather than missing.
+    select_receiver(query, members, supertypes, arena, profile)
 }
 
 fn select_return_type(
@@ -167,27 +169,56 @@ fn candidates<'a>(
         })
 }
 
-fn args_assignable(
-    params: &[TypeId],
-    args: &[TypeId],
+/// Resolve a call's argument expressions to their types, for overload
+/// disambiguation. Literals mint the matching primitive; a bare identifier is
+/// chased to its local declared type; anything the extractor couldn't pin down
+/// yields `Unknown` (which the dispatch arms treat as "can't reject"). The
+/// resulting types feed `DispatchQuery::arg_types`.
+pub(crate) fn resolve_arg_types(
+    call_args: &[CallArg],
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
-    prims: &[(&str, PrimKind)],
-) -> bool {
-    if params.len() != args.len() {
-        return false;
-    }
-    for (param, arg) in params.iter().zip(args.iter()) {
-        match is_assignable_to_typed_with(*arg, *param, arena, lookup, prims) {
-            SubtypeResult::Yes => continue,
-            SubtypeResult::No => return false,
-            // Unknown is treated as "accept" — conservative for the
-            // multi-method case where the engine doesn't know enough to
-            // reject, and rejecting would cause every call to miss.
-            SubtypeResult::Unknown => continue,
+) -> Vec<TypeId> {
+    call_args
+        .iter()
+        .map(|a| resolve_arg_type(a, arena, lookup))
+        .collect()
+}
+
+fn resolve_arg_type(arg: &CallArg, arena: &TypeArena, lookup: &dyn SymbolLookup) -> TypeId {
+    match arg {
+        // String-shaped literals all type as the string primitive.
+        CallArg::StringLit(_) | CallArg::TemplateLit(_) | CallArg::TaggedTemplate { .. } => {
+            arena.primitive(PrimKind::Str)
         }
+        // Numeric / boolean literals. Other literal text (null/undefined,
+        // collection literals) is left Unknown rather than guessed.
+        CallArg::Literal(text) => match scalar_literal_kind(text) {
+            Some(kind) => arena.primitive(kind),
+            None => arena.intern(Type::Unknown),
+        },
+        // A bare identifier: chase its local declared type when known. The
+        // name interns as a nominal `Class` — primitive disjointness against a
+        // primitive-typed parameter is decided at compare time, not here.
+        CallArg::Ident(name) => match lookup.local_type(name) {
+            Some(ty) if !ty.is_empty() => arena.intern_type_str(&ty),
+            _ => arena.intern(Type::Unknown),
+        },
+        CallArg::ObjectKeys(_) | CallArg::Other => arena.intern(Type::Unknown),
     }
-    true
+}
+
+/// Classify a literal's source text into a primitive kind. Returns None for
+/// shapes the engine does not type as a scalar (null/undefined, collection
+/// literals), leaving the argument Unknown.
+fn scalar_literal_kind(text: &str) -> Option<PrimKind> {
+    let t = text.trim();
+    match t {
+        "true" | "false" => Some(PrimKind::Bool),
+        _ if t.parse::<i64>().is_ok() => Some(PrimKind::Int),
+        _ if t.parse::<f64>().is_ok() => Some(PrimKind::Float),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

@@ -5,11 +5,12 @@
 use super::*;
 use crate::indexer::resolve::engine::SymbolInfo;
 use crate::type_checker::core::symbol_types::SymbolTypeData;
-use crate::type_checker::core::types::{PrimKind, TypeArena};
+use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::{
     DispatchAxis, LanguageProfile, DEFAULT_PROFILE,
 };
-use crate::types::AliasTarget;
+use crate::types::{AliasTarget, CallArg};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> SymbolInfo {
@@ -29,6 +30,7 @@ fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> Sym
 struct EmptyLookup {
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
+    locals: HashMap<String, String>,
 }
 
 impl EmptyLookup {
@@ -36,7 +38,13 @@ impl EmptyLookup {
         Self {
             empty: Vec::new(),
             empty_reexports: Vec::new(),
+            locals: HashMap::new(),
         }
+    }
+
+    fn with_local(mut self, name: &str, ty: &str) -> Self {
+        self.locals.insert(name.to_string(), ty.to_string());
+        self
     }
 }
 
@@ -82,6 +90,9 @@ impl SymbolLookup for EmptyLookup {
     }
     fn is_external_name(&self, _: &str, _: &str) -> bool {
         false
+    }
+    fn local_type(&self, name: &str) -> Option<String> {
+        self.locals.get(name).cloned()
     }
 }
 
@@ -198,7 +209,7 @@ fn multi_arg_dispatch_picks_signature_matching_arg_types() {
 }
 
 #[test]
-fn multi_arg_dispatch_misses_when_no_signature_matches() {
+fn multi_arg_dispatch_falls_back_to_receiver_when_no_signature_matches() {
     let mut arena = TypeArena::new();
     let target = arena.class("Comparator");
     let int_ty = arena.primitive(PrimKind::Int);
@@ -234,7 +245,9 @@ fn multi_arg_dispatch_misses_when_no_signature_matches() {
         expected_return: None,
         kind_filter: EdgeKind::Calls,
     };
-    assert!(select_method(
+    // No arg-type match → fall back to receiver dispatch (the sole candidate)
+    // so the call still resolves rather than missing.
+    let result = select_method(
         &query,
         &members,
         &supertypes,
@@ -243,7 +256,8 @@ fn multi_arg_dispatch_misses_when_no_signature_matches() {
         &profile,
         &lookup,
     )
-    .is_none());
+    .expect("falls back to receiver dispatch");
+    assert_eq!(result.id, 10);
 }
 
 #[test]
@@ -342,4 +356,47 @@ fn return_type_dispatch_falls_back_to_receiver_when_no_expected_return() {
     )
     .expect("falls back to receiver dispatch");
     assert_eq!(result.id, 20);
+}
+
+#[test]
+fn resolve_arg_types_classifies_literals() {
+    let arena = TypeArena::new();
+    let lookup = EmptyLookup::new();
+    let str_ty = arena.primitive(PrimKind::Str);
+    let int_ty = arena.primitive(PrimKind::Int);
+    let float_ty = arena.primitive(PrimKind::Float);
+    let bool_ty = arena.primitive(PrimKind::Bool);
+    let unknown = arena.intern(Type::Unknown);
+
+    let args = vec![
+        CallArg::StringLit("x".into()),
+        CallArg::TemplateLit("/a/{}".into()),
+        CallArg::Literal("42".into()),
+        CallArg::Literal("3.14".into()),
+        CallArg::Literal("true".into()),
+        CallArg::Literal("null".into()),
+        CallArg::Other,
+    ];
+    assert_eq!(
+        resolve_arg_types(&args, &arena, &lookup),
+        vec![str_ty, str_ty, int_ty, float_ty, bool_ty, unknown, unknown]
+    );
+}
+
+#[test]
+fn resolve_arg_types_chases_ident_local_type() {
+    let arena = TypeArena::new();
+    let lookup = EmptyLookup::new().with_local("u", "User");
+    let user = arena.class("User");
+    let unknown = arena.intern(Type::Unknown);
+
+    // Known local → its declared type; unknown local → Unknown.
+    assert_eq!(
+        resolve_arg_types(
+            &[CallArg::Ident("u".into()), CallArg::Ident("mystery".into())],
+            &arena,
+            &lookup
+        ),
+        vec![user, unknown]
+    );
 }

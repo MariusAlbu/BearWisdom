@@ -4,9 +4,10 @@
 
 use super::*;
 use crate::type_checker::core::supertype::SupertypeGraph;
+use crate::type_checker::core::symbol_types::SymbolTypeData;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-use crate::types::EdgeKind;
+use crate::types::{AliasTarget, EdgeKind};
 use std::sync::Arc;
 
 fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> SymbolInfo {
@@ -45,25 +46,127 @@ fn overload_selected_by_arity() {
     let graph = empty_supertypes();
 
     let two = index
-        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(2))
+        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(2), None)
         .expect("hit");
     assert_eq!(two.0.id, 2, "two args should pick the two-param overload");
 
     let one = index
-        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(1))
+        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(1), None)
         .expect("hit");
     assert_eq!(one.0.id, 1, "one arg should pick the one-param overload");
 
     // Unknown arity, and an arity that matches no overload, both fall back to
     // the first declared — the pre-arity behavior.
     let unknown = index
-        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, None)
+        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, None, None)
         .expect("hit");
     assert_eq!(unknown.0.id, 1);
     let no_match = index
-        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(3))
+        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(3), None)
         .expect("hit");
     assert_eq!(no_match.0.id, 1);
+}
+
+/// Minimal `SymbolLookup` for `ArgTypes` — never consulted when the argument
+/// and parameter types are primitives (disjointness decides without an
+/// inheritance walk).
+struct NullLookup {
+    empty: Vec<SymbolInfo>,
+    empty_reexports: Vec<(String, String)>,
+}
+
+impl NullLookup {
+    fn new() -> Self {
+        Self {
+            empty: Vec::new(),
+            empty_reexports: Vec::new(),
+        }
+    }
+}
+
+impl SymbolLookup for NullLookup {
+    fn by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+        None
+    }
+    fn members_of(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+        Vec::new()
+    }
+    fn has_in_namespace(&self, _: &str) -> bool {
+        false
+    }
+    fn in_file(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn field_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn alias_target(&self, _: &str) -> Option<&AliasTarget> {
+        None
+    }
+    fn parent_class_qname(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] {
+        &self.empty_reexports
+    }
+    fn is_external_name(&self, _: &str, _: &str) -> bool {
+        false
+    }
+}
+
+#[test]
+fn overload_selected_by_arg_type() {
+    let mut arena = TypeArena::new();
+    let svc = arena.class("Svc");
+    let int_ty = arena.primitive(PrimKind::Int);
+    let str_ty = arena.primitive(PrimKind::Str);
+    let mut index = MembersIndex::new();
+    // Two same-arity `process` overloads, distinguished only by parameter type.
+    index.add_direct(svc, sym_sig(1, "process", "Svc.process", "method", Some("Svc"), "process(x)"));
+    index.add_direct(svc, sym_sig(2, "process", "Svc.process", "method", Some("Svc"), "process(x)"));
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(1, SymbolTypeData { param_types: vec![int_ty], ..Default::default() });
+    symbol_types.insert(2, SymbolTypeData { param_types: vec![str_ty], ..Default::default() });
+    let graph = empty_supertypes();
+    let lookup = NullLookup::new();
+
+    // A string argument picks the Str overload (id 2), not the first-declared.
+    let str_args = [str_ty];
+    let by_str = index
+        .lookup_with_binding(
+            svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(1),
+            Some(ArgTypes { arg_types: &str_args, symbol_types: &symbol_types, lookup: &lookup }),
+        )
+        .expect("hit");
+    assert_eq!(by_str.0.id, 2, "string arg should pick the Str overload");
+
+    // An int argument picks the Int overload (id 1).
+    let int_args = [int_ty];
+    let by_int = index
+        .lookup_with_binding(
+            svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(1),
+            Some(ArgTypes { arg_types: &int_args, symbol_types: &symbol_types, lookup: &lookup }),
+        )
+        .expect("hit");
+    assert_eq!(by_int.0.id, 1, "int arg should pick the Int overload");
 }
 
 #[test]

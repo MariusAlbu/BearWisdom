@@ -14,8 +14,10 @@
 
 use super::types::{Type, TypeArena, TypeId};
 use crate::indexer::canonical_form::signature_arity;
-use crate::indexer::resolve::engine::{strip_generic_args, SymbolInfo};
+use crate::indexer::resolve::engine::{strip_generic_args, SymbolInfo, SymbolLookup};
 use crate::type_checker::core::supertype::SupertypeGraph;
+use crate::type_checker::core::symbol_types::SymbolTypeMap;
+use crate::type_checker::subtype::args_assignable;
 use crate::type_checker::profile::language_profile::{
     KindCompatibility, LanguageProfile,
 };
@@ -27,6 +29,17 @@ use std::sync::Arc;
 /// (file_path, parsed_file_symbol_index) → durable DB symbol id. Same shape as
 /// `SymbolTypeMap::SymbolIdMap` so a single map can drive both builders.
 pub type SymbolIdMap = FxHashMap<(String, usize), i64>;
+
+/// Resolved call-argument types for type-based overload selection, threaded
+/// into member lookup on a call segment. `arg_types` are the call's argument
+/// types positionally; `symbol_types` reads a candidate's parameter types;
+/// `lookup` backs the assignability check's inheritance walk.
+#[derive(Clone, Copy)]
+pub struct ArgTypes<'a> {
+    pub arg_types: &'a [TypeId],
+    pub symbol_types: &'a SymbolTypeMap,
+    pub lookup: &'a dyn SymbolLookup,
+}
 
 /// Per-type member lookup table.
 ///
@@ -200,7 +213,7 @@ impl MembersIndex {
         arena: &TypeArena,
         profile: &LanguageProfile,
     ) -> Option<SymbolInfo> {
-        self.lookup_with_binding(ty, name, kind_filter, supertypes, arena, profile, None)
+        self.lookup_with_binding(ty, name, kind_filter, supertypes, arena, profile, None, None)
             .map(|(sym, _, _)| sym)
     }
 
@@ -223,10 +236,11 @@ impl MembersIndex {
         arena: &TypeArena,
         profile: &LanguageProfile,
         arg_count: Option<usize>,
+        types: Option<ArgTypes>,
     ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
         match arena.get(ty) {
             Type::Apply { base, .. } => {
-                self.lookup_with_binding(base, name, kind_filter, supertypes, arena, profile, arg_count)
+                self.lookup_with_binding(base, name, kind_filter, supertypes, arena, profile, arg_count, types)
             }
             Type::Union(branches) => {
                 // Every branch must carry the member — partial union members
@@ -235,7 +249,7 @@ impl MembersIndex {
                 // match; the walker does not yet select a branch by a guard.
                 let mut first: Option<(SymbolInfo, TypeId, Vec<TypeId>)> = None;
                 for b in branches {
-                    match self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile, arg_count) {
+                    match self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile, arg_count, types) {
                         Some(s) => {
                             if first.is_none() {
                                 first = Some(s);
@@ -249,7 +263,7 @@ impl MembersIndex {
             Type::Intersection(branches) => {
                 for b in branches {
                     if let Some(s) =
-                        self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile, arg_count)
+                        self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile, arg_count, types)
                     {
                         return Some(s);
                     }
@@ -257,16 +271,16 @@ impl MembersIndex {
                 None
             }
             Type::Optional(inner) if profile.look_through_optional => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count, types)
             }
             Type::AsyncWrapper(inner) => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count, types)
             }
             Type::Iterator(inner) => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count, types)
             }
             Type::Class(_) | Type::Primitive(_) => {
-                self.find_on_chain(ty, name, kind_filter, supertypes, arena, profile, arg_count)
+                self.find_on_chain(ty, name, kind_filter, supertypes, arena, profile, arg_count, types)
             }
             // A bare generic parameter carries members only through its
             // declared upper bound: `T: Animal` resolves `T`'s members on
@@ -274,7 +288,7 @@ impl MembersIndex {
             // in every realistic declaration; an unbounded `T` has no members.
             Type::Generic { param } => match arena.generic_param(param).bound {
                 Some(bound) => {
-                    self.lookup_with_binding(bound, name, kind_filter, supertypes, arena, profile, arg_count)
+                    self.lookup_with_binding(bound, name, kind_filter, supertypes, arena, profile, arg_count, types)
                 }
                 None => None,
             },
@@ -293,7 +307,9 @@ impl MembersIndex {
     /// ancestor whose signature declares `n` parameters is preferred; with no
     /// arity match (or `None`) the first kind-compatible member wins, which is
     /// the behavior for non-call segments and languages that don't extract call
-    /// arguments. Selection stays within one ancestor so inheritance overrides
+    /// arguments. When `types` is supplied, a same-arity overload whose
+    /// parameter types accept the argument types wins over the bare arity match.
+    /// Selection stays within one ancestor so inheritance overrides
     /// are unaffected. Returns the member, the ancestor it was found on, and
     /// the generic arguments bound on the edge that reached that ancestor.
     fn find_on_chain(
@@ -305,10 +321,12 @@ impl MembersIndex {
         arena: &TypeArena,
         profile: &LanguageProfile,
         arg_count: Option<usize>,
+        types: Option<ArgTypes>,
     ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
         for (ancestor, args) in supertypes.walk_up_with_args(ty, arena) {
             let mut first: Option<&SymbolInfo> = None;
             let mut arity_hit: Option<&SymbolInfo> = None;
+            let mut type_hit: Option<&SymbolInfo> = None;
             for s in self
                 .direct_of(ancestor)
                 .iter()
@@ -320,14 +338,32 @@ impl MembersIndex {
                 if first.is_none() {
                     first = Some(s);
                 }
-                if arity_hit.is_none()
-                    && arg_count.is_some()
-                    && s.signature.as_deref().and_then(signature_arity) == arg_count
-                {
+                let arity_match = arg_count.is_some()
+                    && s.signature.as_deref().and_then(signature_arity) == arg_count;
+                if arity_match && arity_hit.is_none() {
                     arity_hit = Some(s);
                 }
+                // Among arity-matching overloads, prefer the one whose declared
+                // parameter types accept the call's argument types.
+                if arity_match && type_hit.is_none() {
+                    if let Some(t) = types {
+                        if let Some(data) = t.symbol_types.get(s.id) {
+                            if !data.param_types.is_empty()
+                                && args_assignable(
+                                    &data.param_types,
+                                    t.arg_types,
+                                    arena,
+                                    t.lookup,
+                                    profile.primitive_mapping,
+                                )
+                            {
+                                type_hit = Some(s);
+                            }
+                        }
+                    }
+                }
             }
-            if let Some(found) = arity_hit.or(first) {
+            if let Some(found) = type_hit.or(arity_hit).or(first) {
                 return Some((found.clone(), ancestor, args));
             }
         }

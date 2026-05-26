@@ -35,10 +35,11 @@ use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, Symbo
 use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
 use crate::type_checker::core::generics::{substitute, GenericEnv};
 use rustc_hash::FxHashMap;
-use crate::type_checker::core::members::MembersIndex;
+use crate::type_checker::core::dispatch::{resolve_arg_types, select_method, DispatchQuery};
+use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
-use crate::type_checker::profile::language_profile::LanguageProfile;
+use crate::type_checker::profile::language_profile::{DispatchAxis, LanguageProfile};
 use crate::types::{ChainSegment, EdgeKind, MemberChain, SegmentKind};
 
 /// Engine-side resolution result for a chain. Distinct from the legacy
@@ -347,29 +348,63 @@ impl<'a> ChainWalker<'a> {
                 EdgeKind::TypeRef
             };
 
-            // Overload disambiguation by arity. The call's argument count is
-            // reliable only on the final segment (the resolved ref carries the
-            // args) and only when the extractor populated `call_args` — an
-            // empty list is ambiguous (zero args vs. args not extracted), so it
-            // stays `None` and lookup keeps first-match behavior.
-            let arg_count = if i == last_idx
+            // Overload disambiguation. On the final call segment the resolved
+            // ref carries the arguments: their count drives arity selection and
+            // their resolved types drive type-based overload selection. An empty
+            // list is ambiguous (zero args vs. not extracted), so it leaves both
+            // off and lookup keeps first-match behavior.
+            let is_call_seg = i == last_idx
                 && matches!(kind_filter, EdgeKind::Calls | EdgeKind::Instantiates)
-                && !ref_ctx.extracted_ref.call_args.is_empty()
-            {
-                Some(ref_ctx.extracted_ref.call_args.len())
+                && !ref_ctx.extracted_ref.call_args.is_empty();
+            let arg_count = is_call_seg.then(|| ref_ctx.extracted_ref.call_args.len());
+            let arg_type_ids: Vec<TypeId> = if is_call_seg {
+                resolve_arg_types(&ref_ctx.extracted_ref.call_args, self.arena, self.lookup)
             } else {
-                None
+                Vec::new()
+            };
+            let arg_types = is_call_seg.then_some(ArgTypes {
+                arg_types: &arg_type_ids,
+                symbol_types: self.symbol_types,
+                lookup: self.lookup,
+            });
+
+            // Non-receiver dispatch axes (multi-arg / return-type) route through
+            // the dispatch front door; the receiver axis stays on the direct
+            // member lookup so the common path is unchanged.
+            let resolved = if is_call_seg
+                && !matches!(self.profile.dispatch_axis, DispatchAxis::Receiver)
+            {
+                let query = DispatchQuery {
+                    method_name: &seg.name,
+                    receiver: current_ty,
+                    arg_types: &arg_type_ids,
+                    expected_return: None,
+                    kind_filter,
+                };
+                select_method(
+                    &query,
+                    self.members,
+                    self.supertypes,
+                    self.symbol_types,
+                    self.arena,
+                    self.profile,
+                    self.lookup,
+                )
+                .map(|m| (m, current_ty, Vec::new()))
+            } else {
+                self.members.lookup_with_binding(
+                    current_ty,
+                    &seg.name,
+                    kind_filter,
+                    self.supertypes,
+                    self.arena,
+                    self.profile,
+                    arg_count,
+                    arg_types,
+                )
             };
 
-            let member = match self.members.lookup_with_binding(
-                current_ty,
-                &seg.name,
-                kind_filter,
-                self.supertypes,
-                self.arena,
-                self.profile,
-                arg_count,
-            ) {
+            let member = match resolved {
                 Some((m, owner, owner_args)) => {
                     // Inherited generic method: bind the ancestor's generic
                     // params to the arguments named on the `extends` /

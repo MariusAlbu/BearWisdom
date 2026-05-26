@@ -270,6 +270,31 @@ pub fn is_assignable_to_typed_with(
     SubtypeResult::Unknown
 }
 
+/// True when every `arg` is assignable to the `param` at the same position
+/// (lengths must match). `Unknown` is treated as assignable — conservative for
+/// overload disambiguation, where rejecting on missing evidence would drop a
+/// resolution. Shared by the dispatch axes and the receiver-overload pick in
+/// member lookup. `prims` is the language `primitive_mapping` so nominal
+/// primitive names are recognized as disjoint.
+pub(crate) fn args_assignable(
+    params: &[TypeId],
+    args: &[TypeId],
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    prims: &[(&str, PrimKind)],
+) -> bool {
+    if params.len() != args.len() {
+        return false;
+    }
+    for (param, arg) in params.iter().zip(args.iter()) {
+        match is_assignable_to_typed_with(*arg, *param, arena, lookup, prims) {
+            SubtypeResult::Yes | SubtypeResult::Unknown => continue,
+            SubtypeResult::No => return false,
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 #[path = "subtype_tests.rs"]
 mod tests;
