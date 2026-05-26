@@ -565,6 +565,7 @@ fn test_static_eloquent_call_via_type_access() {
                             optional_chaining: false,
                                                     byte_offset: 0,
     declared_type_id: None,
+    is_call: false,
     type_arg_ids: Vec::new(),
 },
                         ChainSegment {
@@ -576,6 +577,7 @@ fn test_static_eloquent_call_via_type_access() {
                             optional_chaining: false,
                                                     byte_offset: 0,
     declared_type_id: None,
+    is_call: false,
     type_arg_ids: Vec::new(),
 },
                     ],
@@ -673,6 +675,7 @@ fn test_inherited_method_via_chain_selfref() {
                             optional_chaining: false,
                                                     byte_offset: 0,
     declared_type_id: None,
+    is_call: false,
     type_arg_ids: Vec::new(),
 },
                         ChainSegment {
@@ -684,6 +687,7 @@ fn test_inherited_method_via_chain_selfref() {
                             optional_chaining: false,
                                                     byte_offset: 0,
     declared_type_id: None,
+    is_call: false,
     type_arg_ids: Vec::new(),
 },
                     ],
@@ -833,6 +837,7 @@ fn make_static_chain(segments: &[&str]) -> MemberChain {
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 })
             .collect(),
@@ -854,6 +859,7 @@ fn make_instance_chain(segments: &[&str]) -> MemberChain {
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 })
             .collect(),

@@ -184,6 +184,19 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
     `discriminant_guard_query` + literal-field capture; Rust enums are a
     different shape (variants, not a `kind` field).
 
+- **G9 / L6 (TS/JS, arrow form, mid-chain)** — closure call-yield landed. The
+  absent foundation — `ChainSegment` had no call marker — was added: an `is_call`
+  field set by the chain builder on the `function` child of a `call_expression`
+  (common.rs for JS, typescript `build_chain` for TS). `intern_type_str` parses a
+  top-level `=>` into `Type::Function { return_ }` (depth-tracked so a nested
+  arrow isn't mis-read), and `yield_type_of` peels a function-typed *value*
+  member to its return type when invoked (a method's type is already its return,
+  so it's untouched). So `obj.handler().name` resolves `name` on the handler's
+  return type. Remaining: other languages' own chain builders
+  (Go/Kotlin/Scala/Swift/C#), the root-call form (`f().x` — root resolver interns
+  via `class`, not `intern_type_str`), and non-arrow syntaxes (Rust `Fn`,
+  Kotlin `(T)->R`).
+
 **Deferred with reasons:**
 - **G1 (D7)** — segment types intern nominal (`canonical_form.rs:197`), no
   `Cast` SegmentKind, turbofish/annotation share `type_args`, method-vs-class
@@ -196,13 +209,6 @@ machinery, not a single-session sweep:**
 - **G4 + type-based G5** dispatch + overload — gated on **L4** (typing
   call-argument expressions), itself a real inference task; the selector
   (`dispatch.rs`) and the arity path of G5 are already built.
-- **G9 / L6** closures — needs a foundation that's absent: `SegmentKind` has no
-  `Call` variant (`types.rs:370`), so the walker can't tell `obj.handler` (a
-  function value) from `obj.handler()` (invoking it) — method-call yield only
-  works because the member's *kind* is `"method"`. A real win needs a call
-  marker on `ChainSegment` (cross-language extractor change), function-type
-  parsing in `intern_type_str` into `Type::Function { return_ }` (the variant
-  already carries `return_`), and a yield arm. Low payoff (rarely new edges).
 - **G10 / L7** HKT — new kinded `Type` variant; largest, rarest.
 - **L1 (Haskell only)** — needs a Haskell-specific path to extract type vars +
   their `(C a) =>` constraint context (no bracket clause to key off);

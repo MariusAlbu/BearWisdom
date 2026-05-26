@@ -183,6 +183,7 @@ fn walk_use_tree(
                             optional_chaining: false,
                             byte_offset: node.start_byte() as u32,
                             declared_type_id: None,
+                            is_call: false,
                             type_arg_ids: Vec::new(),
                         }],
                     })

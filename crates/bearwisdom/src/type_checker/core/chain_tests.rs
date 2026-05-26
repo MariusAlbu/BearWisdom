@@ -29,6 +29,7 @@ fn seg(name: &str, kind: SegmentKind) -> ChainSegment {
         optional_chaining: false,
         byte_offset: 0,
         declared_type_id: None,
+        is_call: false,
         type_arg_ids: Vec::new(),
     }
 }
@@ -951,6 +952,88 @@ fn f_bounded_param_resolves_member_on_generic_bound() {
         .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: generic_t })
         .expect("f-bounded member resolves via generic bound");
     assert_eq!(result.target_symbol_id, 1);
+}
+
+#[test]
+fn called_function_typed_field_yields_return_type() {
+    // obj.handler().name where handler: () => User. Calling the function-typed
+    // field yields User, so `name` resolves on User. Without call-yield,
+    // `name` would be looked up on the function value and miss.
+    use crate::type_checker::core::types::Type;
+
+    let mut arena = TypeArena::new();
+    let obj = arena.class("Obj");
+    let user = arena.class("User");
+    let handler_fn = arena.intern(Type::Function {
+        params: vec![],
+        return_: user,
+    });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            declared_type: Some(handler_fn),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(obj, sym_info(1, "handler", "Obj.handler", "property", Some("Obj")));
+    members.add_direct(user, sym_info(2, "name", "User.name", "property", Some("User")));
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("obj", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("handler", SegmentKind::Property)
+            },
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: obj })
+        .expect("name resolves on the called handler's return type");
+    assert_eq!(result.target_symbol_id, 2);
 }
 
 #[test]

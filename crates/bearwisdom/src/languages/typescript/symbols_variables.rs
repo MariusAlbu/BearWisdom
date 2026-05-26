@@ -262,6 +262,7 @@ pub(super) fn push_variable_decl(
                                 optional_chaining: false,
                                 byte_offset: 0,
                                                             declared_type_id: None,
+                                is_call: false,
                                 type_arg_ids: Vec::new(),
 });
                             refs.push(ExtractedRef {
@@ -392,6 +393,7 @@ pub(super) fn push_variable_decl(
                                     optional_chaining: false,
                                     byte_offset: 0,
                                                                     declared_type_id: None,
+                                    is_call: false,
                                     type_arg_ids: Vec::new(),
 });
                                 refs.push(ExtractedRef {

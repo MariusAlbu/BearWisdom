@@ -171,6 +171,7 @@ pub(super) fn emit_new_ref(
                     optional_chaining: false,
                     byte_offset: 0,
                                     declared_type_id: None,
+                    is_call: false,
                     type_arg_ids: Vec::new(),
 }],
             });
@@ -646,6 +647,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -661,6 +663,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -683,6 +686,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -701,6 +705,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -718,6 +723,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -735,6 +741,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -753,6 +760,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -769,6 +777,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -797,6 +806,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: is_optional,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -818,6 +828,7 @@ pub(super) fn build_chain_inner(
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -825,9 +836,14 @@ pub(super) fn build_chain_inner(
 
         "call_expression" => {
             // Nested call in a chain: `a.b().c()` — the object is a call_expression.
-            // Walk into its function child to continue the chain.
+            // Walk into its function child, then mark the resolved segment as
+            // invoked so the walker yields a function-typed member's return type.
             let func = node.child_by_field_name("function")?;
-            build_chain_inner(func, src, segments)
+            build_chain_inner(func, src, segments)?;
+            if let Some(last) = segments.last_mut() {
+                last.is_call = true;
+            }
+            Some(())
         }
 
         // `await foo()`, `await x.method()` — peel the `await` so the chain

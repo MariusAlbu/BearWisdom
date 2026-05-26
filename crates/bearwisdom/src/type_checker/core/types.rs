@@ -222,6 +222,17 @@ impl TypeArena {
         if trimmed.is_empty() {
             return self.class(s);
         }
+        // Function type: a top-level `=>` marks a callable (`() => User`,
+        // `(x: Foo<T>) => Bar`). Keep the return type — params aren't needed for
+        // call-yield. Checked before the generic-bracket search so a function
+        // type with generic params/return isn't mis-read as an application.
+        if let Some(arrow) = find_top_level_arrow(trimmed) {
+            let return_ = self.intern_type_str(trimmed[arrow + 2..].trim());
+            return self.intern(Type::Function {
+                params: Vec::new(),
+                return_,
+            });
+        }
         // Locate the first generic-open at depth 0. Accept both `<` and
         // `[` so Scala / OCaml-style param brackets resolve too.
         let (open_idx, open_char, close_char) = {
@@ -473,6 +484,27 @@ impl TypeArena {
     pub fn generic_param_count(&self) -> usize {
         self.inner.read().unwrap().generic_params.len()
     }
+}
+
+/// Byte index of a top-level `=>` (function-type arrow) in `s`, or `None`.
+/// Depth-tracks `()`/`[]`/`<>`/`{}` so an arrow nested inside a generic
+/// argument (`Foo<() => T>`) or a parameter list isn't mistaken for the
+/// type's own arrow. Returns the index of the `=`.
+fn find_top_level_arrow(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'(' | b'[' | b'<' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b'>' => depth -= 1,
+            b'=' if depth == 0 && i + 1 < b.len() && b[i + 1] == b'>' => return Some(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Locate the position of the bracket that closes `open` in `s`. `s` must

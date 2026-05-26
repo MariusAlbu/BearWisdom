@@ -244,6 +244,7 @@ fn engine_resolve_returns_none_for_unregistered_language() {
             optional_chaining: false,
             byte_offset: 0,
             declared_type_id: None,
+            is_call: false,
             type_arg_ids: Vec::new(),
         }],
     };
@@ -323,6 +324,7 @@ fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
             optional_chaining: false,
             byte_offset: 0,
             declared_type_id: None,
+            is_call: false,
             type_arg_ids: Vec::new(),
         }],
     };
@@ -382,6 +384,7 @@ fn engine_yields_none_when_last_segment_has_no_type() {
                 optional_chaining: false,
                 byte_offset: 0,
                 declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
             },
             ChainSegment {
@@ -393,6 +396,7 @@ fn engine_yields_none_when_last_segment_has_no_type() {
                 optional_chaining: false,
                 byte_offset: 0,
                 declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
             },
         ],

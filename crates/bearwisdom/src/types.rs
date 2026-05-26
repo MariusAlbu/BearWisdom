@@ -409,6 +409,10 @@ pub struct ChainSegment {
     pub declared_type_id: Option<crate::type_checker::core::types::TypeId>,
     /// Canonical TypeId forms of `type_args`. Populated post-extract.
     pub type_arg_ids: Vec<crate::type_checker::core::types::TypeId>,
+    /// Whether this segment is invoked (`f()`). Set by the chain builder when
+    /// the segment is the function of a `call_expression`. The walker yields a
+    /// function-typed member's return type instead of the function value.
+    pub is_call: bool,
 }
 
 /// A structured member access chain built from tree-sitter AST nodes.

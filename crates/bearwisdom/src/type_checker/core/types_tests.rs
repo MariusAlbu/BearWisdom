@@ -19,6 +19,32 @@ fn distinct_types_produce_distinct_ids() {
 }
 
 #[test]
+fn intern_type_str_parses_function_type() {
+    let mut arena = TypeArena::new();
+    let f = arena.intern_type_str("() => User");
+    match arena.get(f) {
+        Type::Function { params, return_ } => {
+            assert!(params.is_empty());
+            assert!(matches!(arena.get(return_), Type::Class(q) if q == "User"));
+        }
+        other => panic!("expected Function, got {other:?}"),
+    }
+    // Params with annotations and a generic return are still a function type.
+    assert!(matches!(
+        arena.get(arena.intern_type_str("(x: number) => Box<User>")),
+        Type::Function { .. }
+    ));
+    // A generic that merely carries a function-typed arg must NOT be read as a
+    // function type — the arrow is nested, not top-level.
+    assert!(!matches!(
+        arena.get(arena.intern_type_str("Foo<() => void>")),
+        Type::Function { .. }
+    ));
+    // A plain nominal type is unaffected.
+    assert!(matches!(arena.get(arena.intern_type_str("User")), Type::Class(_)));
+}
+
+#[test]
 fn class_returns_stable_id_per_qname() {
     let mut arena = TypeArena::new();
     let a = arena.class("com.foo.User");

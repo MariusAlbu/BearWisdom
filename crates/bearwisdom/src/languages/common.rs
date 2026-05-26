@@ -138,6 +138,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -153,6 +154,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -179,6 +181,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 optional_chaining: is_optional,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -199,15 +202,22 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
         }
 
         "call_expression" => {
-            // Nested call in a chain: `a.b().c()` — walk into the function child.
+            // Nested call in a chain: `a.b().c()` — walk into the function child,
+            // then mark the resolved segment as invoked so the walker yields the
+            // function's return type rather than the function value itself.
             let func = node.child_by_field_name("function")?;
-            build_chain_inner(func, src, segments)
+            build_chain_inner(func, src, segments)?;
+            if let Some(last) = segments.last_mut() {
+                last.is_call = true;
+            }
+            Some(())
         }
 
         // Non-chainable node (arrow, conditional, etc.) — abort.

@@ -455,7 +455,7 @@ impl<'a> ChainWalker<'a> {
             }
         });
         if let Some(raw) = data_raw {
-            return Some(substitute(raw, env, self.arena));
+            return Some(self.unwrap_if_called(substitute(raw, env, self.arena), seg, &sym.kind));
         }
 
         let raw_str = match sym.kind.as_str() {
@@ -509,7 +509,22 @@ impl<'a> ChainWalker<'a> {
         } else {
             self.arena.rebind_class_params(yielded, &params)
         };
-        Some(substitute(yielded, env, self.arena))
+        Some(self.unwrap_if_called(substitute(yielded, env, self.arena), seg, &sym.kind))
+    }
+
+    /// When a function-typed value member (field/property/variable/parameter)
+    /// is invoked, the chain yields the function's return type rather than the
+    /// function value. A method/function member's resolved type is already its
+    /// return type, so it is never peeled here.
+    fn unwrap_if_called(&self, ty: TypeId, seg: &ChainSegment, sym_kind: &str) -> TypeId {
+        if seg.is_call
+            && matches!(sym_kind, "field" | "property" | "variable" | "parameter")
+        {
+            if let Type::Function { return_, .. } = self.arena.get(ty) {
+                return return_;
+            }
+        }
+        ty
     }
 
     /// Qualified-name fallback for member lookup when MembersIndex misses.

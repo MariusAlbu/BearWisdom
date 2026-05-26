@@ -876,6 +876,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -891,6 +892,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -909,6 +911,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 optional_chaining: false,
                 byte_offset: 0,
                             declared_type_id: None,
+                is_call: false,
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -927,6 +930,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                     optional_chaining: false,
                     byte_offset: 0,
                                     declared_type_id: None,
+                    is_call: false,
                     type_arg_ids: Vec::new(),
 });
             } else {
@@ -954,6 +958,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                         optional_chaining: false,
                         byte_offset: 0,
                                             declared_type_id: None,
+                        is_call: false,
                         type_arg_ids: Vec::new(),
 });
                 }
@@ -1230,6 +1235,7 @@ fn build_field_expression_chain(
                     optional_chaining: false,
                     byte_offset: field.start_byte() as u32,
                     declared_type_id: None,
+                    is_call: false,
                     type_arg_ids: Vec::new(),
                 });
                 match current.child_by_field_name("value") {
@@ -1251,6 +1257,7 @@ fn build_field_expression_chain(
                     optional_chaining: false,
                     byte_offset: current.start_byte() as u32,
                     declared_type_id: None,
+                    is_call: false,
                     type_arg_ids: Vec::new(),
                 });
                 break;
