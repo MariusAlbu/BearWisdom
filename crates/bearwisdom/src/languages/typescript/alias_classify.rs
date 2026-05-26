@@ -97,17 +97,32 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
         }
         "union_type" => {
             let mut branches = Vec::new();
+            let mut has_object_branch = false;
             for i in 0..node.child_count() {
                 let Some(child) = node.child(i) else { continue };
                 if child.kind() == "|" {
                     continue;
+                }
+                if child.kind() == "object_type" {
+                    has_object_branch = true;
                 }
                 let name = head_type_name(&child, src);
                 if !name.is_empty() {
                     branches.push(name);
                 }
             }
-            AliasTarget::Union(branches)
+            // A union whose only branches are anonymous object types
+            // (`{kind:"a"}|{kind:"b"}`) yields no nameable branch, but
+            // `recurse_for_object_types` flattens those members under the alias.
+            // Classify it as a structural Object so the flattened members
+            // resolve, instead of an empty Union that resolves nothing. A
+            // primitive/literal union (`string | number`) stays a Union — there
+            // are no members to flatten.
+            if branches.is_empty() && has_object_branch {
+                AliasTarget::Object
+            } else {
+                AliasTarget::Union(branches)
+            }
         }
         "intersection_type" => {
             let mut branches = Vec::new();

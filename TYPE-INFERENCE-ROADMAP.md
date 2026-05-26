@@ -157,13 +157,21 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
   `LocalTypeCache` carries them; `SymbolLookup::local_discriminant` surfaces the
   active `(prop, literal)`. (4) The walker's `narrow_union_by_discriminant`
   replaces a `Type::Union` receiver with the branch whose discriminant member's
-  signature equals the literal, before the segment loop. Remaining G7 scope,
-  each a foundation-build:
-  - **anonymous-object-type union branches** (`type S = {kind:"a"}|{kind:"b"}`)
-    — `classify_alias_target`'s `union_type` arm uses `head_type_name`, which is
-    empty for an anonymous `object_type`, so the branch is dropped and the
-    `AliasTarget::Union` is empty. Needs synthetic identities for anonymous types
-    plus member-scoping under them (extraction + type-system work).
+  signature equals the literal, before the segment loop.
+- **Anonymous-object-type union members now resolve** — `classify_alias_target`
+  drops anonymous `object_type` branches (`head_type_name` is empty for them),
+  which left `type S = {kind:"a";x}|{kind:"b";y}` as an empty `AliasTarget::Union`
+  that resolved nothing. But `recurse_for_object_types` already flattens those
+  members under the alias, so an all-anonymous-branch union (with ≥1 `object_type`
+  branch and no nameable branch) now classifies as `AliasTarget::Object`: the
+  alias stays `Class(S)`, its flattened members key under `Class(S)`, and `s.x`
+  resolves. Primitive/literal unions (`string|number`) stay `Union`. This gives
+  resolution, not branch precision (the union collapses to a flat object).
+
+  Remaining G7 scope, each a foundation-build:
+  - **anonymous-branch precision** — narrowing an anonymous union to the *right*
+    branch still needs synthetic per-branch identities (kept as a `Union`); the
+    above gives flat resolution only.
   - **early-return narrowing** (`if (s.kind !== "x") return;` then `s` narrowed)
     — control-flow analysis, not a lexical block scope.
   - **non-TS** (Rust `match`, Kotlin sealed `when`, Scala) — per-language

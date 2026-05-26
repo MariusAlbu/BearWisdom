@@ -924,6 +924,37 @@ fn coverage_instanceof_still_works_after_binary_expression_removal() {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn anonymous_object_union_classifies_as_object_for_resolution() {
+    use crate::types::AliasTarget;
+    // An all-anonymous-branch discriminated union flattens its members under the
+    // alias, so it must classify as a structural Object (members resolvable) —
+    // not an empty Union that resolves nothing.
+    let r = extract::extract(
+        "type Shape = { kind: \"circle\"; radius: number } | { kind: \"square\"; side: number };",
+        false,
+    );
+    let (_, target) = r
+        .alias_targets
+        .iter()
+        .find(|(q, _)| q == "Shape")
+        .expect("Shape alias target");
+    assert!(matches!(target, AliasTarget::Object), "got {target:?}");
+    // Branch members flatten under the alias, keying them under Class(Shape) in
+    // the members index so `s.radius` (s: Shape) resolves.
+    let radius = r.symbols.iter().find(|s| s.name == "radius").expect("radius");
+    assert_eq!(radius.scope_path.as_deref(), Some("Shape"));
+
+    // A primitive union has no members to flatten — it stays a Union.
+    let r2 = extract::extract("type Id = string | number;", false);
+    let (_, t2) = r2
+        .alias_targets
+        .iter()
+        .find(|(q, _)| q == "Id")
+        .expect("Id alias target");
+    assert!(matches!(t2, AliasTarget::Union(_)), "got {t2:?}");
+}
+
+#[test]
 fn coverage_property_signature_in_union_type_alias() {
     // property_signature inside a union member of a type alias should produce symbols.
     let r = extract::extract(
