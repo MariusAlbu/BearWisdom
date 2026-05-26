@@ -255,12 +255,17 @@ machinery, not a single-session sweep:**
 
 **Remaining — gated; needs an architect decision, a foundation, a lifted prod
 gate, or the closeout recapture (NOT autonomous single-session work):**
-- **G1 (D7) — turbofish/canonicalization landed (`636f9aba`); remainder is the
-  expected-type direction.** The primary-path rebind (Option C) is in. Still
-  open: (a) LHS-annotation expected-type (`const x: User = repo.find()` binds an
-  unbound yield from the assignment's declared type — needs the assignment
-  context threaded to the yield, not just the segment), and (b) a `Cast`
-  SegmentKind so `(x as User).foo` adopts `User` (per-language extractor work).
+- **G1 (D7) — complete for the resolution-meaningful parts.** Turbofish +
+  primary-path canonicalization (`636f9aba`) and cast adoption (`1a7701d8`,
+  TS/Rust/C#) landed — the two directions that change *mid-chain* resolution
+  (a bound generic consumed by a later segment; a receiver retyped by a cast).
+  The remaining LHS-annotation expected-type direction (`const x: User =
+  repo.find()` binds `find()`'s unbound yield from `User`) is **subsumed for
+  resolution**: it would only refine `resolved_yield_type` on the *final,
+  unchained* segment, and the annotated LHS is already typed directly from
+  `flow_binding_decl_type` into the local cache — so the refinement is
+  redundant (and its source is flow-gated, dormant for TS). Not worth the
+  RefContext→loop→walker plumbing for zero observable resolution gain.
 - **G7 anonymous-branch precision / early-return narrowing — dormant + foundation.**
   Both extend the discriminant-narrowing path fed by TS `flow_config`, which is
   gated off in prod (BW_TS_FLOW, ts-immich hang). Early-return also needs new
