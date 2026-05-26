@@ -266,12 +266,23 @@ gate, or the closeout recapture (NOT autonomous single-session work):**
   `flow_binding_decl_type` into the local cache — so the refinement is
   redundant (and its source is flow-gated, dormant for TS). Not worth the
   RefContext→loop→walker plumbing for zero observable resolution gain.
-- **G7 anonymous-branch precision / early-return narrowing — dormant + foundation.**
-  Both extend the discriminant-narrowing path fed by TS `flow_config`, which is
-  gated off in prod (BW_TS_FLOW, ts-immich hang). Early-return also needs new
-  negation + post-block-scope narrowing semantics; anonymous-branch needs
-  synthetic per-branch type identities (extractor change). Dormant until the TS
-  flow gate lifts.
+- **G7 early-return narrowing — landed (`dc58bd25`), dormant.** Negated
+  discriminant guard (`if (s.kind !== "x") return;`) scoped to the rest of the
+  block, with negated branch selection. Additive (no regression when inert),
+  dormant behind the TS `flow_config` gate (`BW_TS_FLOW`) like the rest of the
+  discriminant path.
+- **G7 anonymous-branch precision — blocked-by-regression on the TS flow gate.**
+  An anonymous union `{kind:"a";x}|{kind:"b";y}` currently classifies as
+  `AliasTarget::Object` (one flat `Class(S)` with `{kind,x,y}`), so `s.x` and
+  `s.y` both resolve (over-permissive but resolving). Branch precision needs the
+  union represented as `Union([S$a,S$b])` with synthetic per-branch members —
+  but `MembersIndex` requires a member in EVERY branch (`members.rs:245`), so a
+  Union makes `s.x`/`s.y` MISS unless narrowing selects a branch. Narrowing is
+  gated off (BW_TS_FLOW), so the Union representation is a pure regression until
+  the gate lifts. The non-regressing alternative (a tagged-union `Type` variant
+  or a side table with a flat fallback) is speculative new machinery for a
+  dormant benefit. Correct move: lift `BW_TS_FLOW` first, then the Union
+  representation is both safe and worthwhile.
 - **TS2 mapped beyond transparent — foundation.** Record value-type / key-remap /
   value-template need an index-signature type in the arena + extractor capture +
   member-lookup support. New machinery for a case (mapped types as chain
