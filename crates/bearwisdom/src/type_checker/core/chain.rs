@@ -747,8 +747,14 @@ impl<'a> ChainWalker<'a> {
         if root_seg.kind != SegmentKind::Identifier {
             return ty;
         }
-        let Type::Union(branches) = self.arena.get(ty) else {
-            return ty;
+        // A `Union` is a nominal discriminated union; an `Intersection` is how
+        // an anonymous discriminated union (`{kind:"a";…}|{kind:"b";…}`) is
+        // represented — its any-branch member lookup preserves flat resolution
+        // when no guard is active, and a guard narrows it to one branch here.
+        let (branches, is_union) = match self.arena.get(ty) {
+            Type::Union(b) => (b, true),
+            Type::Intersection(b) => (b, false),
+            _ => return ty,
         };
         let Some((prop, literal, negate)) = self.lookup.local_discriminant(&root_seg.name) else {
             return ty;
@@ -770,13 +776,20 @@ impl<'a> ChainWalker<'a> {
         if negate {
             // Early-exit guard (`if (x.kind !== "lit") return;`): keep the
             // branches whose discriminant is NOT the literal. One survivor
-            // narrows to it; several keep a sub-union; excluding none or all
-            // leaves the union unchanged.
+            // narrows to it; several keep a sub-container (same kind as the
+            // original); excluding none or all leaves the receiver unchanged.
             let kept: Vec<TypeId> = branches.iter().copied().filter(|&b| !matches_literal(b)).collect();
             match kept.len() {
                 1 => kept[0],
                 n if n == 0 || n == branches.len() => ty,
-                _ => self.arena.intern(Type::Union(kept)),
+                _ => {
+                    let narrowed = if is_union {
+                        Type::Union(kept)
+                    } else {
+                        Type::Intersection(kept)
+                    };
+                    self.arena.intern(narrowed)
+                }
             }
         } else {
             branches.into_iter().find(|&b| matches_literal(b)).unwrap_or(ty)

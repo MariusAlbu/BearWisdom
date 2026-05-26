@@ -924,11 +924,13 @@ fn coverage_instanceof_still_works_after_binary_expression_removal() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn anonymous_object_union_classifies_as_object_for_resolution() {
+fn anonymous_object_union_emits_synthetic_branches() {
     use crate::types::AliasTarget;
-    // An all-anonymous-branch discriminated union flattens its members under the
-    // alias, so it must classify as a structural Object (members resolvable) —
-    // not an empty Union that resolves nothing.
+    // An all-anonymous-branch discriminated union emits a synthetic per-branch
+    // type (its members parented under it) and classifies as an Intersection of
+    // them. Intersection member lookup is any-branch, so `s.radius` / `s.side`
+    // still resolve with no guard active (no regression from the old flat
+    // behavior); a discriminant guard narrows the Intersection to one branch.
     let r = extract::extract(
         "type Shape = { kind: \"circle\"; radius: number } | { kind: \"square\"; side: number };",
         false,
@@ -938,13 +940,25 @@ fn anonymous_object_union_classifies_as_object_for_resolution() {
         .iter()
         .find(|(q, _)| q == "Shape")
         .expect("Shape alias target");
-    assert!(matches!(target, AliasTarget::Object), "got {target:?}");
-    // Branch members flatten under the alias, keying them under Class(Shape) in
-    // the members index so `s.radius` (s: Shape) resolves.
+    match target {
+        AliasTarget::Intersection(branches) => {
+            assert_eq!(branches.len(), 2, "two synthetic branches; got {branches:?}");
+            assert!(
+                branches.iter().all(|b| b.starts_with("Shape\u{1}")),
+                "branch qnames carry the synthetic sentinel; got {branches:?}"
+            );
+        }
+        other => panic!("expected Intersection of synthetic branches, got {other:?}"),
+    }
+    // Branch members are parented under a synthetic branch, not the alias.
     let radius = r.symbols.iter().find(|s| s.name == "radius").expect("radius");
-    assert_eq!(radius.scope_path.as_deref(), Some("Shape"));
+    assert!(
+        radius.scope_path.as_deref().unwrap_or("").starts_with("Shape\u{1}"),
+        "radius parented under a synthetic branch; got {:?}",
+        radius.scope_path
+    );
 
-    // A primitive union has no members to flatten — it stays a Union.
+    // A primitive union has no object_type branches — it stays a Union.
     let r2 = extract::extract("type Id = string | number;", false);
     let (_, t2) = r2
         .alias_targets

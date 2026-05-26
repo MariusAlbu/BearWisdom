@@ -583,17 +583,27 @@ fn extract_node(
                 //   type Foo = Generic<{ inner: T }>            — object_type as type arg
                 if symbols.len() > idx {
                     if let Some(value) = child.child_by_field_name("value") {
-                        recurse_for_object_types(
-                            value, src, scope_tree, symbols, refs, alias_targets, Some(idx),
-                        );
-                        // Capture the alias's structural shape so the chain
-                        // walker can decide whether to expand it (Application
-                        // arm) or treat it as opaque (Union / Intersection /
-                        // Object / Other). This is the type-checker's
-                        // alternative to the engine's positional flatten.
                         let qname = symbols[idx].qualified_name.clone();
-                        let target = alias_classify::classify_alias_target(&value, src);
-                        alias_targets.push((qname, target));
+                        // A discriminated union of anonymous object types emits
+                        // synthetic per-branch types + an Intersection target so
+                        // a guard can narrow to one branch; every other shape
+                        // takes the flat-flatten + classify path.
+                        if let Some(target) = try_anonymous_discriminated_union(
+                            value, src, scope_tree, symbols, refs, alias_targets, idx,
+                        ) {
+                            alias_targets.push((qname, target));
+                        } else {
+                            recurse_for_object_types(
+                                value, src, scope_tree, symbols, refs, alias_targets, Some(idx),
+                            );
+                            // Capture the alias's structural shape so the chain
+                            // walker can decide whether to expand it (Application
+                            // arm) or treat it as opaque (Union / Intersection /
+                            // Object / Other). This is the type-checker's
+                            // alternative to the engine's positional flatten.
+                            let target = alias_classify::classify_alias_target(&value, src);
+                            alias_targets.push((qname, target));
+                        }
                     }
                 }
             }
@@ -1010,4 +1020,101 @@ fn recurse_for_object_types(
         // cannot contain object_type members — stop recursion here.
         _ => {}
     }
+}
+
+/// Unwrap `parenthesized_type` / `readonly_type` wrappers to the inner type.
+fn unwrap_type_wrappers(node: Node) -> Option<Node> {
+    let mut n = node;
+    loop {
+        match n.kind() {
+            "parenthesized_type" | "readonly_type" => {
+                let mut c = n.walk();
+                let inner = n
+                    .children(&mut c)
+                    .find(|ch| ch.is_named() && ch.kind() != "readonly");
+                drop(c);
+                n = inner?;
+            }
+            _ => return Some(n),
+        }
+    }
+}
+
+/// Handle a discriminated union of anonymous object types
+/// (`{kind:"a";x}|{kind:"b";y}`): emit a synthetic per-branch type (its members
+/// parented under it) for each branch and return an
+/// `AliasTarget::Intersection` of their qnames, instead of flattening every
+/// branch's members under the alias.
+///
+/// The Intersection's member lookup is any-branch (`members.rs`), so with no
+/// discriminant guard active every member still resolves (matching the prior
+/// flat behavior — no regression); an active guard narrows the Intersection to
+/// one branch (`narrow_union_by_discriminant`), giving branch precision.
+///
+/// Returns `None` for any other shape (single object type, mixed named/anonymous
+/// union, primitive union) — the caller then takes the flat-object / classify
+/// path. Synthetic branch qnames carry a `\u{1}` sentinel so they can't collide
+/// with a real identifier.
+fn try_anonymous_discriminated_union(
+    value: Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    alias_targets: &mut Vec<(String, AliasTarget)>,
+    alias_idx: usize,
+) -> Option<AliasTarget> {
+    let union = unwrap_type_wrappers(value)?;
+    if union.kind() != "union_type" {
+        return None;
+    }
+    let mut branch_nodes: Vec<Node> = Vec::new();
+    let mut has_nameable = false;
+    let mut cursor = union.walk();
+    for child in union.children(&mut cursor) {
+        match child.kind() {
+            "|" => {}
+            "object_type" => branch_nodes.push(child),
+            _ if child.is_named() => has_nameable = true,
+            _ => {}
+        }
+    }
+    drop(cursor);
+    // Only the pure-anonymous, multi-branch shape — otherwise let `classify`
+    // produce its `Union` / `Object` as before.
+    if has_nameable || branch_nodes.len() < 2 {
+        return None;
+    }
+
+    let alias_qname = symbols[alias_idx].qualified_name.clone();
+    let mut branch_qnames = Vec::with_capacity(branch_nodes.len());
+    for (i, branch) in branch_nodes.into_iter().enumerate() {
+        let branch_qname = format!("{alias_qname}\u{1}{i}");
+        let branch_idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: branch_qname.clone(),
+            qualified_name: branch_qname.clone(),
+            kind: SymbolKind::Interface,
+            visibility: None,
+            start_line: branch.start_position().row as u32,
+            end_line: branch.end_position().row as u32,
+            start_col: branch.start_position().column as u32,
+            end_col: branch.end_position().column as u32,
+            signature: None,
+            doc_comment: None,
+            scope_path: Some(alias_qname.clone()),
+            parent_index: Some(alias_idx),
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
+        // Emit the branch's members parented under the synthetic branch type.
+        extract_node(
+            branch, src, scope_tree, symbols, refs, alias_targets, Some(branch_idx), None,
+        );
+        branch_qnames.push(branch_qname);
+    }
+    Some(AliasTarget::Intersection(branch_qnames))
 }

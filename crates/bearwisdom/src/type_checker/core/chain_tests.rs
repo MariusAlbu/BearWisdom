@@ -1427,6 +1427,111 @@ fn discriminated_union_negate_excludes_branch() {
 }
 
 #[test]
+fn anonymous_union_intersection_narrows_to_branch() {
+    // An anonymous discriminated union is represented as Intersection([Circle,
+    // Square]). A guard `s.kind === "circle"` narrows it to Circle: `radius`
+    // resolves but `side` (Square-only) MISSES — proving branch precision, not
+    // the any-branch lookup an un-narrowed Intersection would give.
+    use crate::type_checker::core::types::Type;
+
+    let mut arena = TypeArena::new();
+    let circle = arena.class("S\u{1}0");
+    let square = arena.class("S\u{1}1");
+    let isect = arena.intern(Type::Intersection(vec![circle, square]));
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        circle,
+        sym_info_sig(1, "kind", "S\u{1}0.kind", "property", Some("S\u{1}0"), "\"circle\""),
+    );
+    members.add_direct(
+        circle,
+        sym_info(2, "radius", "S\u{1}0.radius", "property", Some("S\u{1}0")),
+    );
+    members.add_direct(
+        square,
+        sym_info_sig(3, "kind", "S\u{1}1.kind", "property", Some("S\u{1}1"), "\"square\""),
+    );
+    members.add_direct(
+        square,
+        sym_info(4, "side", "S\u{1}1.side", "property", Some("S\u{1}1")),
+    );
+
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_discriminant("s", "kind", "\"circle\"");
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let source = dummy_source_symbol("caller", None);
+    let fc = file_ctx();
+
+    // `s.radius` resolves on the narrowed Circle branch.
+    let radius_ref = dummy_extracted_ref("radius");
+    let radius_ctx = RefContext {
+        extracted_ref: &radius_ref,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let radius_chain = MemberChain {
+        segments: vec![
+            seg("s", SegmentKind::Identifier),
+            seg("radius", SegmentKind::Property),
+        ],
+    };
+    let radius = walker
+        .walk_with_root(&radius_chain, &radius_ctx, &fc, &FixedRoot { ty: isect })
+        .expect("radius resolves on the narrowed Circle branch");
+    assert_eq!(radius.target_symbol_id, 2);
+
+    // `s.side` (Square-only) must MISS — the guard narrowed `s` to Circle.
+    let side_ref = dummy_extracted_ref("side");
+    let side_ctx = RefContext {
+        extracted_ref: &side_ref,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let side_chain = MemberChain {
+        segments: vec![
+            seg("s", SegmentKind::Identifier),
+            seg("side", SegmentKind::Property),
+        ],
+    };
+    assert!(
+        walker
+            .walk_with_root(&side_chain, &side_ctx, &fc, &FixedRoot { ty: isect })
+            .is_none(),
+        "side must not resolve — narrowed to Circle, which has no `side`"
+    );
+}
+
+#[test]
 fn generic_param_resolves_member_via_bound() {
     // fn f<T: Animal>(t: T) { t.name() }
     // `t` is a bare generic parameter; member lookup must follow the
