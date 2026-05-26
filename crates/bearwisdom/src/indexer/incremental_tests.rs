@@ -250,17 +250,18 @@ fn reindex_files_empty_changes_is_noop() {
 fn blast_radius_reresolved_on_modify() {
     let dir = TempDir::new().unwrap();
 
-    // File A defines a class with a method.
+    // File A defines a class with a static method.
     fs::write(
         dir.path().join("a.cs"),
-        "namespace App { class Svc { public void DoWork() {} } }",
+        "namespace App { class Svc { public static void DoWork() {} } }",
     )
     .unwrap();
 
-    // File B references the method from A.
+    // File B references the method from A through its declaring class —
+    // a structural `Svc.DoWork` member reference, not a bare name.
     fs::write(
         dir.path().join("b.cs"),
-        "namespace App { class Consumer { void Run() { DoWork(); } } }",
+        "namespace App { class Consumer { void Run() { Svc.DoWork(); } } }",
     )
     .unwrap();
 
@@ -276,7 +277,7 @@ fn blast_radius_reresolved_on_modify() {
     // Modify A: rename the method.
     fs::write(
         dir.path().join("a.cs"),
-        "namespace App { class Svc { public void DoWorkRenamed() {} } }",
+        "namespace App { class Svc { public static void DoWorkRenamed() {} } }",
     )
     .unwrap();
 
@@ -319,7 +320,7 @@ fn blast_radius_reresolved_on_delete() {
     .unwrap();
     fs::write(
         dir.path().join("b.cs"),
-        "namespace App { class Main { void Go() { Aid(); } } }",
+        "namespace App { class Main { void Go() { Helper.Aid(); } } }",
     )
     .unwrap();
 
