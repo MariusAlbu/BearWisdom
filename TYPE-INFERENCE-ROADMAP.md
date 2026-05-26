@@ -281,8 +281,24 @@ gate, or the closeout recapture (NOT autonomous single-session work):**
   gated off (BW_TS_FLOW), so the Union representation is a pure regression until
   the gate lifts. The non-regressing alternative (a tagged-union `Type` variant
   or a side table with a flat fallback) is speculative new machinery for a
-  dormant benefit. Correct move: lift `BW_TS_FLOW` first, then the Union
-  representation is both safe and worthwhile.
+  dormant benefit. Correct move: lift `BW_TS_FLOW` first, then implement as
+  below and validate against the corpus.
+
+  **Turn-key plan (do at gate-lift):**
+  1. `narrow_union_by_discriminant` — handle `Type::Intersection` the same way
+     it handles `Type::Union` (select the branch whose discriminant member's
+     signature equals the literal; negate keeps the non-matching branches).
+     This is the generic-engine half — small and safe.
+  2. TS extractor (`recurse_for_object_types` / `classify_alias_target`) — for a
+     union of anonymous `object_type` branches, emit per-branch synthetic types
+     (members re-parented under `{alias}$<idx>` instead of flattened under the
+     alias) and classify the alias as `AliasTarget::Intersection([$0,$1])`.
+     Intersection member lookup is any-branch (`members.rs:249`), so the
+     no-narrowing case still resolves every member (= today's flat behavior, no
+     regression); narrowing then selects one branch for precision.
+  3. Validate: the synthetic per-branch symbols change the TS symbol table
+     (new qnames, discriminant member duplicated per branch) — the corpus
+     recapture confirms no search/count regressions and that narrowing fires.
 - **TS2 mapped beyond transparent — foundation.** Record value-type / key-remap /
   value-template need an index-signature type in the arena + extractor capture +
   member-lookup support. New machinery for a case (mapped types as chain
