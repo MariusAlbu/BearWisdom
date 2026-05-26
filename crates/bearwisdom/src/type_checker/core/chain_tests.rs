@@ -1037,6 +1037,76 @@ fn called_function_typed_field_yields_return_type() {
 }
 
 #[test]
+fn called_function_typed_root_yields_return_type() {
+    // f().name where f: () => User. Calling the function-typed root yields User,
+    // so `name` resolves on User — the root-call form of closure call-yield.
+    use crate::type_checker::core::types::Type;
+
+    let mut arena = TypeArena::new();
+    let user = arena.class("User");
+    let make_fn = arena.intern(Type::Function {
+        params: vec![],
+        return_: user,
+    });
+
+    let symbol_types = SymbolTypeMap::new();
+    let mut members = MembersIndex::new();
+    members.add_direct(user, sym_info(2, "name", "User.name", "property", Some("User")));
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            ChainSegment {
+                is_call: true,
+                ..seg("f", SegmentKind::Identifier)
+            },
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: make_fn })
+        .expect("name resolves on the called function root's return type");
+    assert_eq!(result.target_symbol_id, 2);
+}
+
+#[test]
 fn discriminated_union_narrows_to_matching_branch() {
     // type Shape = Circle | Square; if (s.kind === "circle") { s.radius }
     // The active discriminant guard selects Circle, whose `radius` resolves.

@@ -303,11 +303,17 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
         }
 
         "call_expression" => {
-            // Chained call: function child carries the chain.
+            // Chained call: function child carries the chain. Mark the invoked
+            // segment so the walker yields the function's return type rather than
+            // the function value (closure call-yield; Scala uses `T => R`).
             let callee = node
                 .child_by_field_name("function")
                 .or_else(|| node.named_child(0))?;
-            build_chain_inner(&callee, src, segments)
+            build_chain_inner(&callee, src, segments)?;
+            if let Some(last) = segments.last_mut() {
+                last.is_call = true;
+            }
+            Some(())
         }
 
         _ => None,

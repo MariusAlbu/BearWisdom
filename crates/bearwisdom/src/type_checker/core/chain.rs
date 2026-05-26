@@ -320,6 +320,15 @@ impl<'a> ChainWalker<'a> {
         current_ty = self.expand_aliases(current_ty);
         current_ty = self.narrow_union_by_discriminant(current_ty, root_seg);
 
+        // Root-call form: `f().x` where the root `f` is a function-typed value.
+        // Peel the invoked function to its return type before walking members
+        // (mirrors `unwrap_if_called` for mid-chain function-typed members).
+        if chain.segments.len() > 1 && root_seg.is_call {
+            if let Type::Function { return_, .. } = self.arena.get(current_ty) {
+                current_ty = self.expand_aliases(return_);
+            }
+        }
+
         let mut env = GenericEnv::new();
         self.bind_apply_args(current_ty, &mut env);
 

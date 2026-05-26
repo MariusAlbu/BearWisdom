@@ -222,10 +222,11 @@ impl TypeArena {
         if trimmed.is_empty() {
             return self.class(s);
         }
-        // Function type: a top-level `=>` marks a callable (`() => User`,
-        // `(x: Foo<T>) => Bar`). Keep the return type — params aren't needed for
-        // call-yield. Checked before the generic-bracket search so a function
-        // type with generic params/return isn't mis-read as an application.
+        // Function type: a top-level `=>` (`() => User`, TS/JS, Scala `T => R`)
+        // or `->` (Rust `Fn() -> T`, Kotlin/Swift `(T) -> R`) marks a callable.
+        // Keep the return type — params aren't needed for call-yield. Checked
+        // before the generic-bracket search so a function type with generic
+        // params/return isn't mis-read as an application.
         if let Some(arrow) = find_top_level_arrow(trimmed) {
             let return_ = self.intern_type_str(trimmed[arrow + 2..].trim());
             return self.intern(Type::Function {
@@ -500,6 +501,10 @@ fn find_top_level_arrow(s: &str) -> Option<usize> {
             b')' | b']' | b'}' => depth -= 1,
             b'>' => depth -= 1,
             b'=' if depth == 0 && i + 1 < b.len() && b[i + 1] == b'>' => return Some(i),
+            // `->` return arrow: Rust `Fn() -> T` / `impl Fn() -> T`, Kotlin and
+            // Swift `(T) -> R`. Matched before the `>` decrement below so the
+            // arrow's own `>` isn't mistaken for a generic close.
+            b'-' if depth == 0 && i + 1 < b.len() && b[i + 1] == b'>' => return Some(i),
             _ => {}
         }
         i += 1;

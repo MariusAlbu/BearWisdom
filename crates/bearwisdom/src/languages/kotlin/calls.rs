@@ -424,8 +424,14 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
         }
 
         "call_expression" => {
+            // Mark the invoked segment so the walker yields the function's return
+            // type rather than the function value (closure call-yield).
             let callee = node.named_child(0)?;
-            build_chain_inner(&callee, src, segments)
+            build_chain_inner(&callee, src, segments)?;
+            if let Some(last) = segments.last_mut() {
+                last.is_call = true;
+            }
+            Some(())
         }
 
         _ => None,

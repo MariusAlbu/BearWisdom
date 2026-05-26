@@ -45,6 +45,29 @@ fn intern_type_str_parses_function_type() {
 }
 
 #[test]
+fn intern_type_str_parses_arrow_return_function_type() {
+    let mut arena = TypeArena::new();
+    // Rust `Fn() -> T`, Kotlin / Swift `(T) -> R`, and `impl Fn(..) -> T` all
+    // carry a top-level `->` whose right side is the return type.
+    for s in ["Fn() -> User", "(x: I32) -> User", "impl Fn() -> User"] {
+        match arena.get(arena.intern_type_str(s)) {
+            Type::Function { return_, .. } => {
+                assert!(
+                    matches!(arena.get(return_), Type::Class(q) if q == "User"),
+                    "{s} should yield User"
+                );
+            }
+            other => panic!("expected Function for {s}, got {other:?}"),
+        }
+    }
+    // A nested `->` inside generic brackets is not a top-level function type.
+    assert!(!matches!(
+        arena.get(arena.intern_type_str("Box<dyn Fn() -> User>")),
+        Type::Function { .. }
+    ));
+}
+
+#[test]
 fn rebind_canonicalizes_higher_kinded_base() {
     use rustc_hash::FxHashMap;
     // `F<A>` interned nominally rebinds BOTH the base and the arg to their

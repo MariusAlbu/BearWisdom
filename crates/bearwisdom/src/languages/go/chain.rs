@@ -89,9 +89,15 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
         }
 
         "call_expression" => {
-            // Nested call in a chain: `a.B().C()` — walk into its function child.
+            // Nested call in a chain: `a.B().C()` — walk into its function child,
+            // then mark the invoked segment so the walker yields the function's
+            // return type rather than the function value.
             let func = node.named_child(0)?;
-            build_chain_inner(func, source, segments)
+            build_chain_inner(func, source, segments)?;
+            if let Some(last) = segments.last_mut() {
+                last.is_call = true;
+            }
+            Some(())
         }
 
         // Unknown node — can't build a chain from this.
