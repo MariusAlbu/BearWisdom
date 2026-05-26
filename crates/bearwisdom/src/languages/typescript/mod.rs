@@ -13,7 +13,7 @@ mod connectors_react;
 mod calls;
 pub(crate) mod decorators;
 mod embedded;
-mod flow;
+pub(crate) mod flow;
 mod helpers;
 mod imports;
 mod narrowing;

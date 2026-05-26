@@ -30,8 +30,11 @@ pub static GO_FLOW_CONFIG: FlowConfig = FlowConfig {
                 (_) @rhs))
     "#,
 
-    // Go's narrowing via type assertion: `if v, ok := x.(Foo); ok { ... }`.
-    // Captures `v` (the narrowed name), `Foo`, and the if body.
+    // Two Go narrowing forms:
+    //   if v, ok := x.(Foo); ok { ... }     — type assertion, narrows `v` to Foo
+    //   switch v := x.(type) { case *Foo: }  — type switch, narrows `v` per case
+    // For the type switch, the alias `v` narrows to each case's type within that
+    // case body (both the bare and pointer forms).
     type_guard_query: r#"
         (if_statement
             initializer: (short_var_declaration
@@ -41,6 +44,13 @@ pub static GO_FLOW_CONFIG: FlowConfig = FlowConfig {
                     (type_assertion_expression
                         type: (type_identifier) @guard.type)))
             consequence: (block) @guard.body)
+
+        (type_switch_statement
+            alias: (expression_list
+                (identifier) @guard.local)
+            (type_case
+                [(type_identifier) @guard.type
+                 (pointer_type (type_identifier) @guard.type)]) @guard.body)
     "#,
 
     // Go's generic type-argument node structure varies between grammar

@@ -5,7 +5,7 @@ mod calls;
 mod chain;
 mod embedded;
 mod refs;
-mod flow;
+pub(crate) mod flow;
 mod flow_detectors;
 mod helpers;
 pub(crate) mod keywords;

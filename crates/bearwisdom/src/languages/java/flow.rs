@@ -22,13 +22,22 @@ pub static JAVA_FLOW_CONFIG: FlowConfig = FlowConfig {
             right: (_) @rhs)
     "#,
 
-    // `if (x instanceof Foo) { ... }` — Java's narrowing form.
+    // `if (x instanceof Foo) { ... }` narrows `x`; `if (x instanceof Foo f)`
+    // (Java 16+ pattern binding) additionally types the binding `f` as Foo —
+    // the pattern variable follows the type_identifier positionally.
     type_guard_query: r#"
         (if_statement
             condition: (parenthesized_expression
                 (instanceof_expression
                     (identifier) @guard.local
                     (type_identifier) @guard.type))
+            consequence: (block) @guard.body)
+
+        (if_statement
+            condition: (parenthesized_expression
+                (instanceof_expression
+                    (type_identifier) @guard.type
+                    (identifier) @guard.local))
             consequence: (block) @guard.body)
     "#,
 

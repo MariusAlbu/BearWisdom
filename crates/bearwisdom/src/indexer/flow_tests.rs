@@ -365,3 +365,90 @@ fn rust_try_operator_marks_binding_for_unwrap() {
         "the `?` flags symbol 0 (`reader`) for wrapper peeling"
     );
 }
+
+#[test]
+fn java_instanceof_pattern_binding_narrows() {
+    use crate::languages::java::JavaPlugin;
+
+    // `if (x instanceof Admin a) { a.ban(); }` — Java 16+ pattern binding types
+    // `a` as Admin; the bindingless form additionally narrows the receiver `x`.
+    let source = "class C {\n  void m(Object x) {\n    if (x instanceof Admin a) {\n      a.ban();\n    }\n  }\n}\n";
+    let grammar = JavaPlugin.grammar("java").expect("java grammar must load");
+    let cfg = JavaPlugin.flow_config().expect("java flow config");
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
+
+    assert!(
+        meta.narrowings.iter().any(|n| n.name == "a" && n.narrowed_type == "Admin"),
+        "pattern binding `a` should narrow to Admin; got {:?}",
+        meta.narrowings
+    );
+    assert!(
+        meta.narrowings.iter().any(|n| n.name == "x" && n.narrowed_type == "Admin"),
+        "the receiver `x` also narrows to Admin"
+    );
+}
+
+#[test]
+fn ruby_kind_of_narrows_like_is_a() {
+    use crate::languages::ruby::RubyPlugin;
+
+    // `if x.kind_of?(Foo) then ... end` — the `kind_of?` alias narrows like `is_a?`.
+    let source = "if x.kind_of?(Foo)\n  x.bar\nend\n";
+    let grammar = RubyPlugin.grammar("ruby").expect("ruby grammar must load");
+    let cfg = RubyPlugin.flow_config().expect("ruby flow config");
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
+
+    assert!(
+        meta.narrowings.iter().any(|n| n.name == "x" && n.narrowed_type == "Foo"),
+        "kind_of? should narrow `x` to Foo; got {:?}",
+        meta.narrowings
+    );
+}
+
+#[test]
+fn go_type_switch_narrows_alias_per_case() {
+    use crate::languages::go::flow::GO_FLOW_CONFIG;
+    use crate::languages::go::GoPlugin;
+
+    // `switch v := x.(type) { case *Admin: v.Ban() }` narrows `v` to Admin in
+    // the matching case body. `flow_config()` is disabled for Go (go-pocketbase
+    // OOM), so the static is referenced directly to validate the query.
+    let source = "func f(x interface{}) {\n\tswitch v := x.(type) {\n\tcase *Admin:\n\t\tv.Ban()\n\t}\n}\n";
+    let grammar = GoPlugin.grammar("go").expect("go grammar must load");
+    let cfg = &GO_FLOW_CONFIG;
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
+
+    assert!(
+        meta.narrowings.iter().any(|n| n.name == "v" && n.narrowed_type == "Admin"),
+        "type switch should narrow `v` to Admin; got {:?}",
+        meta.narrowings
+    );
+}
+
+#[test]
+fn ts_typeof_string_guard_narrows() {
+    // `if (typeof x === "string") { ... }` narrows `x` to the string primitive.
+    // The real config is referenced directly — `flow_config()` is env-gated off
+    // (BW_TS_FLOW) pending a separate investigation, so we test the static.
+    use crate::languages::typescript::flow::TS_FLOW_CONFIG;
+    let source = "function f(x: unknown) {\n  if (typeof x === \"string\") {\n    x.length;\n  }\n}\n";
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_FLOW_CONFIG, &symbols, &mut refs);
+
+    assert!(
+        meta.narrowings.iter().any(|n| n.name == "x" && n.narrowed_type == "string"),
+        "typeof guard should narrow `x` to string; got {:?}",
+        meta.narrowings
+    );
+}

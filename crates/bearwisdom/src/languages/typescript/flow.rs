@@ -33,14 +33,14 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
             right: (_) @rhs)
     "#,
 
-    // Matches `if (x instanceof Foo) { ... }` — the canonical narrowing form
-    // in JS/TS. The @guard.body capture is the statement_block whose byte
-    // range defines the narrowed scope; `x` inside that range is treated as
-    // type `Foo`.
+    // Two block-scoped narrowing forms:
+    //   if (x instanceof Foo) { ... }       — `x` narrows to the class `Foo`
+    //   if (typeof x === "string") { ... }   — `x` narrows to the primitive
+    // The @guard.body statement_block bounds the narrowed scope.
     //
-    // Type predicates (`function isFoo(x): x is Foo`) and typeof-on-string
-    // narrowings are left as future work — they require tracking which
-    // function narrows which parameter, not just a lexical block scope.
+    // Type predicates (`function isFoo(x): x is Foo`) stay out: they narrow at
+    // the *call* site through which function was invoked, which is a cross-
+    // function dataflow, not a lexical block a single query can capture.
     type_guard_query: r#"
         (if_statement
             condition: (parenthesized_expression
@@ -48,6 +48,16 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
                     left: (identifier) @guard.local
                     operator: "instanceof"
                     right: (identifier) @guard.type))
+            consequence: (statement_block) @guard.body)
+
+        (if_statement
+            condition: (parenthesized_expression
+                (binary_expression
+                    left: (unary_expression
+                        operator: "typeof"
+                        argument: (identifier) @guard.local)
+                    operator: ["===" "=="]
+                    right: (string) @guard.type))
             consequence: (statement_block) @guard.body)
     "#,
 

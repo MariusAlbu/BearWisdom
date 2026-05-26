@@ -34,7 +34,7 @@ pub static RUBY_FLOW_CONFIG: FlowConfig = FlowConfig {
                 arguments: (argument_list
                     (constant) @guard.type))
             consequence: (then) @guard.body
-            (#eq? @_m "is_a?"))
+            (#any-of? @_m "is_a?" "kind_of?"))
     "#,
 
     // Ruby has no call-site generic arguments.
