@@ -31,6 +31,7 @@ struct EmptyLookup {
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
     locals: HashMap<String, String>,
+    parents: HashMap<String, String>,
 }
 
 impl EmptyLookup {
@@ -39,11 +40,17 @@ impl EmptyLookup {
             empty: Vec::new(),
             empty_reexports: Vec::new(),
             locals: HashMap::new(),
+            parents: HashMap::new(),
         }
     }
 
     fn with_local(mut self, name: &str, ty: &str) -> Self {
         self.locals.insert(name.to_string(), ty.to_string());
+        self
+    }
+
+    fn with_parent(mut self, child: &str, parent: &str) -> Self {
+        self.parents.insert(child.to_string(), parent.to_string());
         self
     }
 }
@@ -93,6 +100,9 @@ impl SymbolLookup for EmptyLookup {
     }
     fn local_type(&self, name: &str) -> Option<String> {
         self.locals.get(name).cloned()
+    }
+    fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
+        self.parents.get(class_qname).map(|s| s.as_str())
     }
 }
 
@@ -399,4 +409,48 @@ fn resolve_arg_types_chases_ident_local_type() {
         ),
         vec![user, unknown]
     );
+}
+
+#[test]
+fn multi_arg_dispatch_picks_most_specific_overload() {
+    // handle(User) and handle(Admin) where Admin <: User. An Admin argument is
+    // assignable to both; the most specific (Admin) overload wins.
+    let mut arena = TypeArena::new();
+    let target = arena.class("Handler");
+    let user = arena.class("User");
+    let admin = arena.class("Admin");
+
+    let mut members = MembersIndex::new();
+    members.add_direct(target, sym(40, "handle", "Handler.handle", "method", Some("Handler")));
+    members.add_direct(target, sym(41, "handle", "Handler.handle", "method", Some("Handler")));
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(40, SymbolTypeData { param_types: vec![user], ..Default::default() });
+    symbol_types.insert(41, SymbolTypeData { param_types: vec![admin], ..Default::default() });
+
+    let supertypes = SupertypeGraph::new();
+    let lookup = EmptyLookup::new().with_parent("Admin", "User");
+    let profile = LanguageProfile {
+        dispatch_axis: DispatchAxis::MultiArg,
+        ..DEFAULT_PROFILE
+    };
+
+    let query = DispatchQuery {
+        method_name: "handle",
+        receiver: target,
+        arg_types: &[admin],
+        expected_return: None,
+        kind_filter: EdgeKind::Calls,
+    };
+    let result = select_method(
+        &query,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &arena,
+        &profile,
+        &lookup,
+    )
+    .expect("most-specific dispatch hits");
+    assert_eq!(result.id, 41, "Admin arg should pick the Admin overload, not User");
 }

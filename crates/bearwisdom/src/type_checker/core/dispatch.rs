@@ -99,22 +99,75 @@ fn select_multi_arg(
     profile: &LanguageProfile,
     lookup: &dyn SymbolLookup,
 ) -> Option<SymbolInfo> {
+    let prims = profile.primitive_mapping;
+    let mut matches: Vec<SymbolInfo> = Vec::new();
     for candidate in candidates(query, members, supertypes) {
-        let Some(data) = symbol_types.get(candidate.id) else {
-            // No type info → can't decide. Accept conservatively when the
-            // call has zero args; otherwise skip.
-            if query.arg_types.is_empty() {
-                return Some(candidate);
+        match symbol_types.get(candidate.id) {
+            Some(data) => {
+                if args_assignable(&data.param_types, query.arg_types, arena, lookup, prims) {
+                    matches.push(candidate);
+                }
             }
-            continue;
-        };
-        if args_assignable(&data.param_types, query.arg_types, arena, lookup, profile.primitive_mapping) {
-            return Some(candidate);
+            // No type info → can't compare. Accept only when the call has no
+            // arguments to discriminate on.
+            None => {
+                if query.arg_types.is_empty() {
+                    matches.push(candidate);
+                }
+            }
         }
     }
-    // No argument-type match — fall back to receiver dispatch so the call
-    // still resolves to a single-dispatch target rather than missing.
-    select_receiver(query, members, supertypes, arena, profile)
+    if matches.is_empty() {
+        // No argument-type match — fall back to receiver dispatch so the call
+        // still resolves to a single-dispatch target rather than missing.
+        return select_receiver(query, members, supertypes, arena, profile);
+    }
+    // Prefer the most specific overload: the candidate whose parameter types are
+    // assignable to (subtypes of) every other match's at each position. When no
+    // single candidate dominates the set, the first match wins.
+    let best = most_specific_index(&matches, symbol_types, arena, lookup, prims);
+    Some(matches.swap_remove(best))
+}
+
+/// Index of the most specific candidate — one whose parameter types are
+/// assignable to every other candidate's at each position. Returns 0 when no
+/// candidate dominates the rest (ambiguous overload set).
+fn most_specific_index(
+    matches: &[SymbolInfo],
+    symbol_types: &SymbolTypeMap,
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    prims: &[(&str, PrimKind)],
+) -> usize {
+    let params = |s: &SymbolInfo| {
+        symbol_types
+            .get(s.id)
+            .map(|d| d.param_types.clone())
+            .unwrap_or_default()
+    };
+    'outer: for i in 0..matches.len() {
+        let pi = params(&matches[i]);
+        for (j, mj) in matches.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            let pj = params(mj);
+            if pi.len() != pj.len() {
+                continue 'outer;
+            }
+            let dominates = pi.iter().zip(pj.iter()).all(|(a, b)| {
+                matches!(
+                    is_assignable_to_typed_with(*a, *b, arena, lookup, prims),
+                    SubtypeResult::Yes
+                )
+            });
+            if !dominates {
+                continue 'outer;
+            }
+        }
+        return i;
+    }
+    0
 }
 
 fn select_return_type(
