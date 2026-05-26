@@ -44,18 +44,20 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         scan_all_type_identifiers(tree.root_node(), source, 0, &mut refs);
     }
 
-    // Drop noise refs: type_refs whose target matches a Dart library prefix
-    // (the `i1` in `import 'package:foo/foo.dart' as i1`). Generated code
-    // (Drift, auto_route, json_serializable, freezed, riverpod_generator)
-    // emits qualified types like `i1.AssetFaceEntityCompanion` which the
-    // tree-sitter walk records as TWO type_refs — one for the prefix
-    // `i1` and one for the type. The prefix is a namespace anchor, never
-    // a type, and would never resolve. Skipping it cleanly removes
-    // ~1k noise unresolved refs per ts-immich/mobile.
+    // Drop refs whose target is a bare Dart library prefix (the `i1` in
+    // `import 'package:foo/foo.dart' as i1`). Generated code (Drift,
+    // auto_route, json_serializable, freezed, riverpod_generator) writes
+    // qualified references like `i1.AssetFaceEntityCompanion` and
+    // `extends i0.BaseReferences<...>`; the tree-sitter walk records the
+    // prefix and the qualified name as separate refs. The bare prefix is a
+    // namespace anchor, never a symbol reference, so it is dropped for every
+    // usage kind (type position, instantiation, inheritance, implements,
+    // calls). The import directive itself (`Imports`) is kept. The qualified
+    // name after the prefix is left in place and resolves on its own.
     let aliases = collect_dart_import_aliases(source);
     if !aliases.is_empty() {
         refs.retain(|r| {
-            r.kind != EdgeKind::TypeRef || !aliases.contains(&r.target_name)
+            r.kind == EdgeKind::Imports || !aliases.contains(&r.target_name)
         });
     }
 

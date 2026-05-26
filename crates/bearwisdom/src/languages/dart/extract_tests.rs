@@ -79,3 +79,36 @@ class Config {
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         assert!(!imports.is_empty(), "expected import refs");
     }
+
+    #[test]
+    fn library_prefix_dropped_across_usage_kinds() {
+        // Generated drift code: `import '...' as i0;` then `i0.X` in type,
+        // field, inheritance, and instantiation positions. The bare prefix
+        // `i0` is a namespace anchor, not a reference, and must not appear as
+        // a usage ref in any kind.
+        let src = r#"
+import 'package:drift/drift.dart' as i0;
+
+class Foo extends i0.BaseReferences {
+  i0.Value<String> field;
+  void m() {
+    var x = i0.GeneratedColumn();
+  }
+}
+"#;
+        let r = extract::extract(src);
+        let prefix_usage: Vec<_> = r
+            .refs
+            .iter()
+            .filter(|rf| rf.target_name == "i0" && rf.kind != EdgeKind::Imports)
+            .collect();
+        assert!(
+            prefix_usage.is_empty(),
+            "bare library prefix i0 must not be a usage ref; got {prefix_usage:?}"
+        );
+        assert!(
+            r.refs.iter().any(|rf| rf.target_name == "BaseReferences" || rf.target_name == "Value"),
+            "the qualified type after the prefix should be kept; refs: {:?}",
+            r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+        );
+    }
