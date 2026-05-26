@@ -116,6 +116,31 @@ pub enum SubtypeResult {
     Unknown,
 }
 
+/// Public entry for the typed subtype check with no language primitive map.
+/// Structural `Primitive` pairs are still compared; nominal primitive names
+/// (`Class("number")`) are recognized only via [`is_assignable_to_typed_with`].
+pub fn is_assignable_to_typed(
+    source: TypeId,
+    target: TypeId,
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+) -> SubtypeResult {
+    is_assignable_to_typed_with(source, target, arena, lookup, &[])
+}
+
+/// Map a type to its primitive kind for disjointness checks. A structural
+/// `Primitive` yields its kind directly; a nominal `Class` yields a kind only
+/// when its qname appears in `prims` (a language's `primitive_mapping`). This
+/// bridges the two ways a primitive annotation can be interned, so `string`
+/// vs `number` is decided whether either side is `Primitive(..)` or `Class(..)`.
+fn prim_kind_of(ty: &Type, prims: &[(&str, PrimKind)]) -> Option<PrimKind> {
+    match ty {
+        Type::Primitive(k) => Some(*k),
+        Type::Class(q) => prims.iter().find(|(n, _)| *n == q.as_str()).map(|(_, k)| *k),
+        _ => None,
+    }
+}
+
 /// TypeId form of `is_assignable_to`. Decides whether `source` is assignable
 /// to `target` using only the type's structural shape in the arena plus the
 /// supertype chain reachable through `SymbolLookup::parent_class_qname`.
@@ -132,11 +157,12 @@ pub enum SubtypeResult {
 /// - `Primitive` → `Primitive`: equal kinds → Yes, different kinds → No.
 ///
 /// Everything else returns `Unknown`.
-pub fn is_assignable_to_typed(
+pub fn is_assignable_to_typed_with(
     source: TypeId,
     target: TypeId,
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
+    prims: &[(&str, PrimKind)],
 ) -> SubtypeResult {
     if source == target {
         return SubtypeResult::Yes;
@@ -167,7 +193,7 @@ pub fn is_assignable_to_typed(
 
     // Optional target: peel one layer. `T` is assignable to `T | undefined`.
     if let Type::Optional(inner) = tgt_ty {
-        return is_assignable_to_typed(source, inner, arena, lookup);
+        return is_assignable_to_typed_with(source, inner, arena, lookup, prims);
     }
 
     // Union source: every branch must be assignable; one Unknown taints the
@@ -175,7 +201,7 @@ pub fn is_assignable_to_typed(
     if let Type::Union(branches) = &src_ty {
         let mut any_unknown = false;
         for b in branches {
-            match is_assignable_to_typed(*b, target, arena, lookup) {
+            match is_assignable_to_typed_with(*b, target, arena, lookup, prims) {
                 SubtypeResult::Yes => continue,
                 SubtypeResult::No => return SubtypeResult::No,
                 SubtypeResult::Unknown => any_unknown = true,
@@ -193,7 +219,7 @@ pub fn is_assignable_to_typed(
     if let Type::Union(branches) = &tgt_ty {
         let mut any_unknown = false;
         for b in branches {
-            match is_assignable_to_typed(source, *b, arena, lookup) {
+            match is_assignable_to_typed_with(source, *b, arena, lookup, prims) {
                 SubtypeResult::Yes => return SubtypeResult::Yes,
                 SubtypeResult::No => continue,
                 SubtypeResult::Unknown => any_unknown = true,
@@ -206,8 +232,20 @@ pub fn is_assignable_to_typed(
         };
     }
 
-    // Class → Class via inheritance walk. Reuses the string lookup until
-    // Phase 3's SupertypeGraph lands.
+    // Primitive identity / disjointness, bridging structural `Primitive` and
+    // primitive-named `Class`: two names that both denote primitives are
+    // assignable only when they denote the same kind. A primitive vs a
+    // non-primitive falls through (never reject on a name not known to be a
+    // primitive).
+    if let (Some(a), Some(b)) = (prim_kind_of(&src_ty, prims), prim_kind_of(&tgt_ty, prims)) {
+        return if a == b {
+            SubtypeResult::Yes
+        } else {
+            SubtypeResult::No
+        };
+    }
+
+    // Class → Class via inheritance walk over `parent_class_qname`.
     if let (Type::Class(src_q), Type::Class(tgt_q)) = (&src_ty, &tgt_ty) {
         let mut ancestor = src_q.clone();
         for _ in 0..MAX_INHERITANCE_HOPS {
@@ -227,15 +265,6 @@ pub fn is_assignable_to_typed(
         // multi-inheritance) so call this Unknown rather than No — matches
         // the string form's "primitive vs user-type is undecidable" stance.
         return SubtypeResult::Unknown;
-    }
-
-    // Primitive → Primitive: equal kinds → Yes, different → No.
-    if let (Type::Primitive(a), Type::Primitive(b)) = (&src_ty, &tgt_ty) {
-        return if a == b {
-            SubtypeResult::Yes
-        } else {
-            SubtypeResult::No
-        };
     }
 
     SubtypeResult::Unknown

@@ -342,3 +342,67 @@ fn typed_union_target_assignable_when_any_branch_matches() {
         SubtypeResult::Yes
     );
 }
+
+#[test]
+fn typed_nominal_primitive_names_disjoint_with_prims() {
+    // Annotations intern `string` / `number` as `Class`, not `Primitive`.
+    // With a language primitive map they're still recognized as disjoint.
+    let mut arena = TypeArena::new();
+    let s = arena.class("string");
+    let n = arena.class("number");
+    let lookup = SubtypeFixture::new();
+    let prims: &[(&str, PrimKind)] = &[("string", PrimKind::Str), ("number", PrimKind::Int)];
+    assert_eq!(
+        is_assignable_to_typed_with(s, n, &arena, &lookup, prims),
+        SubtypeResult::No
+    );
+}
+
+#[test]
+fn typed_nominal_primitive_names_undecided_without_prims() {
+    // No primitive map: nominal `Class("string")` vs `Class("number")` has no
+    // inheritance link, so the check stays conservative (Unknown).
+    let mut arena = TypeArena::new();
+    let s = arena.class("string");
+    let n = arena.class("number");
+    let lookup = SubtypeFixture::new();
+    assert_eq!(
+        is_assignable_to_typed(s, n, &arena, &lookup),
+        SubtypeResult::Unknown
+    );
+}
+
+#[test]
+fn typed_bridge_primitive_value_vs_nominal_param() {
+    // A `Primitive(Str)` arg against a nominal `Class("number")` / `Class("string")`
+    // param — the bridge decides disjointness either way.
+    let mut arena = TypeArena::new();
+    let str_val = arena.primitive(PrimKind::Str);
+    let number_param = arena.class("number");
+    let string_param = arena.class("string");
+    let lookup = SubtypeFixture::new();
+    let prims: &[(&str, PrimKind)] = &[("string", PrimKind::Str), ("number", PrimKind::Int)];
+    assert_eq!(
+        is_assignable_to_typed_with(str_val, number_param, &arena, &lookup, prims),
+        SubtypeResult::No
+    );
+    assert_eq!(
+        is_assignable_to_typed_with(str_val, string_param, &arena, &lookup, prims),
+        SubtypeResult::Yes
+    );
+}
+
+#[test]
+fn typed_same_kind_different_primitive_names_assignable() {
+    // Two distinct names mapping to the same kind (`int` / `Int32`) are
+    // assignable — disjointness keys on the kind, not the spelling.
+    let mut arena = TypeArena::new();
+    let int_name = arena.class("int");
+    let int32_name = arena.class("Int32");
+    let lookup = SubtypeFixture::new();
+    let prims: &[(&str, PrimKind)] = &[("int", PrimKind::Int), ("Int32", PrimKind::Int)];
+    assert_eq!(
+        is_assignable_to_typed_with(int_name, int32_name, &arena, &lookup, prims),
+        SubtypeResult::Yes
+    );
+}

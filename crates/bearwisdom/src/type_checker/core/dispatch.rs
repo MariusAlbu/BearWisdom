@@ -27,13 +27,13 @@
 //       research/architecture/04-implementation-phases.html § Phase 4
 // =============================================================================
 
-use super::types::{TypeArena, TypeId};
+use super::types::{PrimKind, TypeArena, TypeId};
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::profile::language_profile::{DispatchAxis, LanguageProfile};
-use crate::type_checker::subtype::{is_assignable_to_typed, SubtypeResult};
+use crate::type_checker::subtype::{is_assignable_to_typed_with, SubtypeResult};
 use crate::types::EdgeKind;
 
 /// Inputs for a dispatch query — all the information a candidate selector
@@ -108,7 +108,7 @@ fn select_multi_arg(
             }
             continue;
         };
-        if args_assignable(&data.param_types, query.arg_types, arena, lookup) {
+        if args_assignable(&data.param_types, query.arg_types, arena, lookup, profile.primitive_mapping) {
             return Some(candidate);
         }
     }
@@ -133,7 +133,7 @@ fn select_return_type(
                 continue;
             };
             if matches!(
-                is_assignable_to_typed(return_ty, expected, arena, lookup),
+                is_assignable_to_typed_with(return_ty, expected, arena, lookup, profile.primitive_mapping),
                 SubtypeResult::Yes
             ) {
                 return Some(candidate);
@@ -172,12 +172,13 @@ fn args_assignable(
     args: &[TypeId],
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
+    prims: &[(&str, PrimKind)],
 ) -> bool {
     if params.len() != args.len() {
         return false;
     }
     for (param, arg) in params.iter().zip(args.iter()) {
-        match is_assignable_to_typed(*arg, *param, arena, lookup) {
+        match is_assignable_to_typed_with(*arg, *param, arena, lookup, prims) {
             SubtypeResult::Yes => continue,
             SubtypeResult::No => return false,
             // Unknown is treated as "accept" — conservative for the
