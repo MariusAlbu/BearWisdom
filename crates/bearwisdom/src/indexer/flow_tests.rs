@@ -313,6 +313,29 @@ fn rust_generic_annotation_records_bare_base() {
 }
 
 #[test]
+fn csharp_declaration_pattern_narrows_binding() {
+    use crate::languages::csharp::CSharpPlugin;
+
+    // `if (user is Admin admin) { admin.Ban(); }` — the binding `admin` is typed
+    // Admin within the block (C# declaration pattern).
+    let source = "class C {\n  void M(object user) {\n    if (user is Admin admin) {\n      admin.Ban();\n    }\n  }\n}\n";
+    let grammar = CSharpPlugin.grammar("csharp").expect("c# grammar must load");
+    let cfg = CSharpPlugin.flow_config().expect("c# flow config");
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
+
+    let n = meta
+        .narrowings
+        .iter()
+        .find(|n| n.name == "admin")
+        .expect("declaration-pattern binding `admin` should narrow");
+    assert_eq!(n.narrowed_type, "Admin");
+    assert!(n.byte_end > n.byte_start);
+}
+
+#[test]
 fn rust_try_operator_marks_binding_for_unwrap() {
     use crate::languages::rust_lang::flow::RUST_FLOW_CONFIG;
     use crate::languages::rust_lang::RustLangPlugin;

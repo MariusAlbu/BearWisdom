@@ -20,13 +20,23 @@ pub static CSHARP_FLOW_CONFIG: FlowConfig = FlowConfig {
             right: (_) @rhs)
     "#,
 
-    // `if (x is Foo) { ... }` — C# pattern-matching narrowing.
+    // C# pattern-matching narrowing. Two forms:
+    //   if (x is Foo)   — `x` narrows to Foo in the block (constant_pattern)
+    //   if (x is Foo f) — the binding `f` is typed Foo in the block; the
+    //                     declaration_pattern's children are (type, binding).
     type_guard_query: r#"
         (if_statement
             condition: (is_pattern_expression
                 (identifier) @guard.local
                 (constant_pattern
                     (identifier) @guard.type))
+            consequence: (block) @guard.body)
+
+        (if_statement
+            condition: (is_pattern_expression
+                (declaration_pattern
+                    (identifier) @guard.type
+                    (identifier) @guard.local))
             consequence: (block) @guard.body)
     "#,
 

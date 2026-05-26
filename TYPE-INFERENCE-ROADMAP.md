@@ -167,6 +167,12 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
   alias stays `Class(S)`, its flattened members key under `Class(S)`, and `s.x`
   resolves. Primitive/literal unions (`string|number`) stay `Union`. This gives
   resolution, not branch precision (the union collapses to a flat object).
+- **L2 (C# declaration-pattern narrowing)** — `if (x is Foo f) { f.Bar() }` now
+  narrows the binding `f` to `Foo` in the block (a second `type_guard_query`
+  pattern on the `declaration_pattern`, reusing the class-narrowing machinery).
+  C# previously handled only the bindingless `if (x is Foo)`. Remaining L2:
+  Kotlin smart-casts (grammar node names version-dependent, flagged in
+  `kotlin/flow.rs`), Go type-switch, Rust `if let`/`match`, Ruby `is_a?`.
 
   Remaining G7 scope, each a foundation-build:
   - **anonymous-branch precision** — narrowing an anonymous union to the *right*
