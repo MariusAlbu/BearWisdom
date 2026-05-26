@@ -213,12 +213,68 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
 
 **Remaining — each is a substantial effort gated on a per-language feed or new
 machinery, not a single-session sweep:**
-- **G4 + type-based G5** dispatch + overload — `select_method`/`args_assignable`
-  (`dispatch.rs`) and the arity path of G5 are built, but type-based selection is
-  inert until `intern_type_str` mints `Type::Primitive` for primitive names:
-  `is_assignable_to_typed`'s Class→Class arm returns Unknown for `number` vs
-  `string` (no inheritance link), so disjointness only fires on `Type::Primitive`.
-  That primitive-interning is a global change warranting its own validated pass.
 - **L1 (Haskell only)** — needs a Haskell-specific path to extract type vars +
-  their `(C a) =>` constraint context (no bracket clause to key off);
-  **L2** guard vocabulary across the 14 flow languages.
+  their `(C a) =>` constraint context (no bracket clause to key off).
+
+---
+
+## Session 2026-05-26 — dispatch front + narrowing vocab + closures landed
+
+**Landed (with commits):**
+- **F1** (`085f3f24`) — per-language primitive disjointness, compare-time in
+  `is_assignable_to_typed_with(.., prims)` bridging `Primitive` and nominal
+  primitive-named `Class` via the profile `primitive_mapping`. Chosen over the
+  roadmap's intern-time minting to avoid touching every extractor + the
+  Class/Primitive dedup/round-trip risk. This is the unblock the prior
+  "Remaining" note demanded (no `Type::Primitive` interning needed).
+- **L4** (`00c48cb2`) — `resolve_arg_types` maps `call_args` → TypeId (literals →
+  primitive, ident → `local_type`, else Unknown).
+- **G4** (`00c48cb2`) — non-receiver axes route the final call segment through
+  `select_method`; receiver axis stays on direct lookup (no big-corpus reroute
+  risk). `select_multi_arg` falls back to receiver dispatch on no arg-type match.
+- **G5-typed** (`00c48cb2`) — `find_on_chain` picks the same-arity overload whose
+  param types accept the arg types (`type_hit > arity_hit > first`); additive,
+  single-candidate sites unchanged. `args_assignable` moved to `subtype.rs`.
+- **L5** (`134cfaad`) — generic most-specific multi-arg selection (CLOS-style),
+  not per-language hooks (the algorithm is language-agnostic).
+- **L2** (`637ea5f5`) — Java `instanceof Foo f` pattern binding, Ruby `kind_of?`,
+  TS `typeof x === "…"`, Go `switch v := x.(type)`. TS/Go flow are gated off in
+  prod (BW_TS_FLOW / Go OOM) so those two are dormant-but-ready; their flow
+  modules are now `pub(crate)` for direct-static tests.
+- **L6** (`2c20e746`) — root-call form `f().x`; `is_call` marked in Go/C#/Kotlin/
+  Scala/Swift chain builders; `intern_type_str` parses `->` (Rust `Fn()->T`,
+  Kotlin/Swift `(T)->R`; Scala `=>` already worked).
+- **TS1** (`36a839a2`) — `keyof T` expands to a string-literal union from the
+  target's member names.
+
+**Remaining — gated; needs an architect decision, a foundation, a lifted prod
+gate, or the closeout recapture (NOT autonomous single-session work):**
+- **G1 (D7) — design-gated.** Confirmed: the primary yield path
+  (`yield_type_of` `data_raw`) reads `symbol_types.return_type` = `Class("U")`
+  (build.rs never rebinds it to `Generic`); `substitute` is a no-op on `Class`,
+  so inherited-generic substitution flows only through the *string* fallback's
+  `owner_param_type_map` rebind. Making turbofish (and LHS-annotation / `as T`)
+  bind method-own generics requires canonicalizing method params across BOTH
+  paths + a `Cast` SegmentKind — the U2a interaction the deferral named. Needs a
+  design decision on the canonicalization model.
+- **G7 anonymous-branch precision / early-return narrowing — dormant + foundation.**
+  Both extend the discriminant-narrowing path fed by TS `flow_config`, which is
+  gated off in prod (BW_TS_FLOW, ts-immich hang). Early-return also needs new
+  negation + post-block-scope narrowing semantics; anonymous-branch needs
+  synthetic per-branch type identities (extractor change). Dormant until the TS
+  flow gate lifts.
+- **TS2 mapped beyond transparent — foundation.** Record value-type / key-remap /
+  value-template need an index-signature type in the arena + extractor capture +
+  member-lookup support. New machinery for a case (mapped types as chain
+  receivers) that's rare in real code.
+- **L3 non-TS discriminant — grammar-uncertain / low value.** Rust enums are a
+  different shape (variants, not a kind field; `declared_type` already precise);
+  Kotlin/Scala pattern-match guards face the same version-dependent grammar
+  uncertainty as the deferred L2 Kotlin smart-cast.
+- **R1 external arrow-return ungate — closeout-coupled.** `build.rs:370` /
+  `augment.rs:190` gate hydration that "shifts the type maps" corpus-wide,
+  deliberately behind `BEARWISDOM_COMPILER_RESOLVE` for A/B. Flipping it blind
+  (mid-flight, unmeasurable) defeats the A/B; do it *with* the closeout recapture
+  so its delta is observable.
+- **L2 (Kotlin smart-cast, Rust if-let/match) / L1 (Haskell)** — grammar-uncertain
+  or near-zero corpus payoff; left with their existing in-code rationale.
