@@ -146,19 +146,20 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
   stays first-match, no regression). The public `lookup` passes `None`. Type-based
   G5 (same arity, different param types) and **G4** (axis dispatch via
   `select_method`) still need full **L4** call-arg type inference.
-- **G7 (TS, string-equality guards, named branches)** — discriminated-union
-  branch selection now works end-to-end; the absent foundation was built. (1)
-  `push_ts_field` stores a `literal_type` annotation (`kind: "circle"`) on the
-  field's *signature* (no unresolvable TypeRef). (2) A `discriminant_guard_query`
-  on `FlowConfig` extracts `if (x.kind === "lit")` into a new
-  `DiscriminantNarrowing` (separate `FlowMeta` channel, so no `Narrowing`-struct
-  ripple; `!==` is intentionally unmatched). (3) `LocalTypeCache` carries them;
-  `SymbolLookup::local_discriminant` surfaces the active `(prop, literal)`. (4)
-  The walker's `narrow_union_by_discriminant` replaces a `Type::Union` receiver
-  with the branch whose discriminant member's signature equals the literal,
-  before the segment loop. Remaining G7 scope: anonymous-object-type union
-  branches (`type S = {kind:"a"}|{kind:"b"}`), `switch (x.kind)` cases, early-
-  return narrowing, and non-TS languages (Rust/Kotlin/Scala) via their own
+- **G7 (TS, `if`/`switch` equality guards, named branches)** —
+  discriminated-union branch selection now works end-to-end; the absent
+  foundation was built. (1) `push_ts_field` stores a `literal_type` annotation
+  (`kind: "circle"`) on the field's *signature* (no unresolvable TypeRef). (2) A
+  `discriminant_guard_query` on `FlowConfig` extracts both `if (x.kind === "lit")`
+  and `switch (x.kind) { case "lit": }` into a new `DiscriminantNarrowing`
+  (separate `FlowMeta` channel, so no `Narrowing`-struct ripple; `!==` is
+  intentionally unmatched; a `switch_case` node's range scopes each case). (3)
+  `LocalTypeCache` carries them; `SymbolLookup::local_discriminant` surfaces the
+  active `(prop, literal)`. (4) The walker's `narrow_union_by_discriminant`
+  replaces a `Type::Union` receiver with the branch whose discriminant member's
+  signature equals the literal, before the segment loop. Remaining G7 scope:
+  anonymous-object-type union branches (`type S = {kind:"a"}|{kind:"b"}`),
+  early-return narrowing, and non-TS languages (Rust/Kotlin/Scala) via their own
   `discriminant_guard_query` + literal-field capture.
 
 **Deferred with reasons:**

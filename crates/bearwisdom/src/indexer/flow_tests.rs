@@ -38,6 +38,15 @@ const TS_TEST_FLOW: FlowConfig = FlowConfig {
                     operator: ["===" "=="]
                     right: (string) @guard.literal))
             consequence: (statement_block) @guard.body)
+
+        (switch_statement
+            value: (parenthesized_expression
+                (member_expression
+                    object: (identifier) @guard.local
+                    property: (property_identifier) @guard.prop))
+            body: (switch_body
+                (switch_case
+                    value: (string) @guard.literal) @guard.body))
     "#,
     type_args_query: r#"
         (call_expression
@@ -179,6 +188,26 @@ fn flow_inequality_guard_is_not_a_discriminant() {
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
     assert!(meta.discriminant_narrowings.is_empty());
+}
+
+#[test]
+fn flow_discriminant_switch_captures_each_case() {
+    let source = "function f(s: Shape) {\n  switch (s.kind) {\n    case \"circle\": s.radius; break;\n    case \"square\": s.side; break;\n  }\n}\n";
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+    assert_eq!(meta.discriminant_narrowings.len(), 2, "one narrowing per case clause");
+    let circle = meta
+        .discriminant_narrowings
+        .iter()
+        .find(|d| d.literal == "\"circle\"")
+        .expect("circle case");
+    assert_eq!(circle.name, "s");
+    assert_eq!(circle.prop, "kind");
+    assert!(meta
+        .discriminant_narrowings
+        .iter()
+        .any(|d| d.name == "s" && d.prop == "kind" && d.literal == "\"square\""));
 }
 
 #[test]
