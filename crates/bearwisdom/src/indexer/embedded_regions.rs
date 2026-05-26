@@ -42,6 +42,12 @@ pub(super) fn dispatch_embedded_regions(
 ) {
     use crate::types::EmbeddedOrigin;
     let line_starts = build_line_starts(host_content);
+    // A Svelte SFC's `<script>` is embedded TypeScript, but `$store` (auto-
+    // subscribe) is Svelte syntax the TS extractor emits verbatim. Desugar it
+    // to the underlying store identifier here, while the host is known to be
+    // Svelte — the TS sub-extraction can't tell it apart from a real `$`-named
+    // identifier in a plain `.ts` file.
+    let host_is_svelte = file_path.ends_with(".svelte");
     for region in regions {
         let region_host_byte = host_byte_for_position(
             &line_starts,
@@ -151,6 +157,9 @@ pub(super) fn dispatch_embedded_regions(
         }
 
         for mut rf in sub.refs {
+            if host_is_svelte {
+                crate::languages::svelte::hooks::desugar_store_ref_in_place(&mut rf);
+            }
             // Remap source_symbol_index through the sub→final table.
             // If the owning symbol was a synthetic wrapper that was dropped,
             // fall back to the host file's root symbol (index 0).
