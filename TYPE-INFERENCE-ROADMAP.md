@@ -146,6 +146,20 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
   stays first-match, no regression). The public `lookup` passes `None`. Type-based
   G5 (same arity, different param types) and **G4** (axis dispatch via
   `select_method`) still need full **L4** call-arg type inference.
+- **G7 (TS, string-equality guards, named branches)** — discriminated-union
+  branch selection now works end-to-end; the absent foundation was built. (1)
+  `push_ts_field` stores a `literal_type` annotation (`kind: "circle"`) on the
+  field's *signature* (no unresolvable TypeRef). (2) A `discriminant_guard_query`
+  on `FlowConfig` extracts `if (x.kind === "lit")` into a new
+  `DiscriminantNarrowing` (separate `FlowMeta` channel, so no `Narrowing`-struct
+  ripple; `!==` is intentionally unmatched). (3) `LocalTypeCache` carries them;
+  `SymbolLookup::local_discriminant` surfaces the active `(prop, literal)`. (4)
+  The walker's `narrow_union_by_discriminant` replaces a `Type::Union` receiver
+  with the branch whose discriminant member's signature equals the literal,
+  before the segment loop. Remaining G7 scope: anonymous-object-type union
+  branches (`type S = {kind:"a"}|{kind:"b"}`), `switch (x.kind)` cases, early-
+  return narrowing, and non-TS languages (Rust/Kotlin/Scala) via their own
+  `discriminant_guard_query` + literal-field capture.
 
 **Deferred with reasons:**
 - **G1 (D7)** — segment types intern nominal (`canonical_form.rs:197`), no
@@ -159,20 +173,6 @@ machinery, not a single-session sweep:**
 - **G4 + type-based G5** dispatch + overload — gated on **L4** (typing
   call-argument expressions), itself a real inference task; the selector
   (`dispatch.rs`) and the arity path of G5 are already built.
-- **G7** discriminated-union — the largest non-HKT item, 5 subsystems, and its
-  foundation is absent. (1) Literal-field capture: `push_ts_field`
-  (`typescript/symbols_fields.rs`) sets `declared_type: None` and only emits a
-  TypeRef edge from the annotation — a string-literal type `kind: "circle"` is
-  not a type name, so nothing comparable is stored; `intern_type_str` also falls
-  back to `Class(input)` and `Type::Literal` is minted only for call-args
-  (`inference.rs:105`). A real win needs ALL of: literal discriminant-field
-  capture (extractor + a literal field-value map or `Type::Literal` field types),
-  **L3** flow discriminant-guard extraction, a discriminant-carrying `Narrowing`
-  (today `narrowed_type` is a flat `String`; ripples to all construction sites),
-  and branch selection (walker Union arm — `members.rs:225` — or resolve-loop
-  narrowing seeding in `loop_body.rs:336`). Partial = inert. The `instanceof`/
-  class-narrowing case already works via the existing narrowing path — the gap is
-  specifically property-discriminant guards (`s.kind === "..."`).
 - **G9 / L6** closures — needs a foundation that's absent: `SegmentKind` has no
   `Call` variant (`types.rs:370`), so the walker can't tell `obj.handler` (a
   function value) from `obj.handler()` (invoking it) — method-call yield only

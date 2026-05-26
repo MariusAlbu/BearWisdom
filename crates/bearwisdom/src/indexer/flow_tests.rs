@@ -28,6 +28,17 @@ const TS_TEST_FLOW: FlowConfig = FlowConfig {
                     right: (identifier) @guard.type))
             consequence: (statement_block) @guard.body)
     "#,
+    discriminant_guard_query: r#"
+        (if_statement
+            condition: (parenthesized_expression
+                (binary_expression
+                    left: (member_expression
+                        object: (identifier) @guard.local
+                        property: (property_identifier) @guard.prop)
+                    operator: ["===" "=="]
+                    right: (string) @guard.literal))
+            consequence: (statement_block) @guard.body)
+    "#,
     type_args_query: r#"
         (call_expression
             function: (member_expression
@@ -138,6 +149,36 @@ fn flow_narrowing_captures_instanceof_body() {
     assert_eq!(n.name, "x");
     assert_eq!(n.narrowed_type, "Derived");
     assert!(n.byte_end > n.byte_start);
+}
+
+#[test]
+fn flow_discriminant_guard_captures_prop_and_literal() {
+    let source = "function f(s: Shape) {\n  if (s.kind === \"circle\") {\n    s.radius;\n  }\n}\n";
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.discriminant_narrowings.len(),
+        1,
+        "discriminant-guard query should capture one narrowing"
+    );
+    let d = &meta.discriminant_narrowings[0];
+    assert_eq!(d.name, "s");
+    assert_eq!(d.prop, "kind");
+    assert_eq!(d.literal, "\"circle\"");
+    assert!(d.byte_end > d.byte_start);
+}
+
+#[test]
+fn flow_inequality_guard_is_not_a_discriminant() {
+    // `!==` narrows the else-branch, not the consequent — must not be captured.
+    let source = "function f(s: Shape) {\n  if (s.kind !== \"circle\") {\n    return;\n  }\n}\n";
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+    assert!(meta.discriminant_narrowings.is_empty());
 }
 
 #[test]

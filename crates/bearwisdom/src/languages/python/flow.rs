@@ -32,5 +32,6 @@ pub static PY_FLOW_CONFIG: FlowConfig = FlowConfig {
     "#,
 
     // Python has no call-site generic arguments.
+    discriminant_guard_query: "",
     type_args_query: "",
 };

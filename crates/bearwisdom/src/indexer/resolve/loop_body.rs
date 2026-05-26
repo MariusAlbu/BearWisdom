@@ -335,7 +335,9 @@ fn resolve_iteration_body(
         // cursor-based lookup picks the most specific scope on ties.
         let mut narrowings = pf.flow.narrowings.clone();
         narrowings.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
-        index.install_local_cache(narrowings);
+        let mut discriminants = pf.flow.discriminant_narrowings.clone();
+        discriminants.sort_by_key(|d| d.byte_end.saturating_sub(d.byte_start));
+        index.install_local_cache(narrowings, discriminants);
 
         // R5: seed local types from explicit annotations (`let x: T`). Unlike
         // forward inference these need no RHS to resolve — the annotation is

@@ -114,6 +114,18 @@ fn coverage_property_signature() {
 }
 
 #[test]
+fn discriminant_literal_field_stored_as_declared_type() {
+    // A string-literal type on a property is stored as the field's signature
+    // (the discriminant value, with quotes), feeding union branch selection;
+    // a nominal type keeps signature None (the TypeRef path).
+    let r = extract::extract(r#"interface Circle { kind: "circle"; radius: number; }"#, false);
+    let kind = r.symbols.iter().find(|s| s.name == "kind").expect("kind property");
+    assert_eq!(kind.signature.as_deref(), Some("\"circle\""));
+    let radius = r.symbols.iter().find(|s| s.name == "radius").expect("radius property");
+    assert_eq!(radius.signature, None);
+}
+
+#[test]
 fn coverage_field_definition() {
     // Private field (no accessibility modifier) — standard field_definition.
     let r = extract::extract("class Svc { count = 0; }", false);

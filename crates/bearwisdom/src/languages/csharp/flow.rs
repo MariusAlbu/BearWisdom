@@ -32,6 +32,7 @@ pub static CSHARP_FLOW_CONFIG: FlowConfig = FlowConfig {
 
     // Generic method invocation: `repo.FindOne<User>()` — `generic_name`
     // holds the identifier and type_argument_list.
+    discriminant_guard_query: "",
     type_args_query: r#"
         (invocation_expression
             function: (member_access_expression

@@ -32,5 +32,6 @@ pub static GROOVY_FLOW_CONFIG: FlowConfig = FlowConfig {
 
     // Groovy does not have call-site type arguments in the Java
     // `obj.<T>method()` style; leave this empty.
+    discriminant_guard_query: "",
     type_args_query: "",
 };

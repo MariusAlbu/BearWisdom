@@ -40,6 +40,7 @@ pub static RUST_FLOW_CONFIG: FlowConfig = FlowConfig {
     // Turbofish: `foo::<T>()`, `Vec::<String>::new()`. The extractor emits
     // the call ref on the `generic_function` node; the chain segment is the
     // method/function name (`foo`, `new`). Capture the turbofish type args.
+    discriminant_guard_query: "",
     type_args_query: r#"
         (call_expression
             function: (generic_function

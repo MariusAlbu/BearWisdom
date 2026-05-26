@@ -34,6 +34,7 @@ pub static JAVA_FLOW_CONFIG: FlowConfig = FlowConfig {
 
     // `obj.<T>method()` / `Collections.<T>emptyList()` — Java's call-site
     // type arguments come before the method name.
+    discriminant_guard_query: "",
     type_args_query: r#"
         (method_invocation
             type_arguments: (type_arguments

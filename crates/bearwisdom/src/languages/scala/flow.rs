@@ -29,6 +29,7 @@ pub static SCALA_FLOW_CONFIG: FlowConfig = FlowConfig {
     type_guard_query: "",
 
     // `repo.findOne[User]()` — Scala type arguments on calls.
+    discriminant_guard_query: "",
     type_args_query: r#"
         (generic_function
             function: (field_expression

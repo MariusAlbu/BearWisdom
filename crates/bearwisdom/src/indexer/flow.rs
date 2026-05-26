@@ -38,7 +38,9 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::strip_generic_args;
-use crate::types::{ChainSegment, ExtractedRef, ExtractedSymbol, FlowMeta, Narrowing};
+use crate::types::{
+    ChainSegment, DiscriminantNarrowing, ExtractedRef, ExtractedSymbol, FlowMeta, Narrowing,
+};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
 
 /// Per-language flow-typing configuration. Language plugins expose a
@@ -52,6 +54,12 @@ pub struct FlowConfig {
     /// Tree-sitter query matching type-guard expressions whose true-branch
     /// narrows a local. Captures `@guard.local`, `@guard.type`, `@guard.body`.
     pub type_guard_query: &'static str,
+    /// Tree-sitter query matching discriminated-union guards
+    /// (`if (x.kind === "circle") { ... }`) whose true-branch narrows `x` to the
+    /// union branch carrying that discriminant literal. Captures `@guard.local`
+    /// (receiver), `@guard.prop` (discriminant property), `@guard.literal`
+    /// (matched literal), and `@guard.body` (narrowed block). Empty = opt out.
+    pub discriminant_guard_query: &'static str,
     /// Tree-sitter query matching explicit call-site type arguments.
     /// Captures `@call.method` and one `@call.type_arg` per generic argument.
     pub type_args_query: &'static str,
@@ -104,6 +112,7 @@ pub fn run_flow_queries(
 
     run_assignment_query(&root, src_bytes, cfg, symbols, refs, &mut meta);
     run_type_guard_query(&root, src_bytes, cfg, &mut meta);
+    run_discriminant_guard_query(&root, src_bytes, cfg, &mut meta);
     run_type_args_query(&root, src_bytes, cfg, refs);
 
     meta
@@ -267,6 +276,74 @@ fn run_type_guard_query(
         meta.narrowings.push(Narrowing {
             name,
             narrowed_type: narrowed,
+            byte_start: body.start_byte() as u32,
+            byte_end: body.end_byte() as u32,
+        });
+    }
+}
+
+fn run_discriminant_guard_query(
+    root: &Node,
+    src: &[u8],
+    cfg: &FlowConfig,
+    meta: &mut FlowMeta,
+) {
+    if cfg.discriminant_guard_query.trim().is_empty() {
+        return;
+    }
+    let Ok(query) = Query::new(&root.language(), cfg.discriminant_guard_query) else {
+        return;
+    };
+    let local_cap = query.capture_index_for_name("guard.local");
+    let prop_cap = query.capture_index_for_name("guard.prop");
+    let lit_cap = query.capture_index_for_name("guard.literal");
+    let body_cap = query.capture_index_for_name("guard.body");
+    let (Some(local_cap), Some(prop_cap), Some(lit_cap), Some(body_cap)) =
+        (local_cap, prop_cap, lit_cap, body_cap)
+    else {
+        return;
+    };
+
+    let mut cursor = QueryCursor::new();
+    let mut it = cursor.matches(&query, *root, src);
+    while let Some(m) = it.next() {
+        let mut local: Option<Node> = None;
+        let mut prop: Option<Node> = None;
+        let mut lit: Option<Node> = None;
+        let mut body: Option<Node> = None;
+        for cap in m.captures {
+            if cap.index == local_cap {
+                local = Some(cap.node);
+            } else if cap.index == prop_cap {
+                prop = Some(cap.node);
+            } else if cap.index == lit_cap {
+                lit = Some(cap.node);
+            } else if cap.index == body_cap {
+                body = Some(cap.node);
+            }
+        }
+        let (Some(local), Some(prop), Some(lit), Some(body)) = (local, prop, lit, body) else {
+            continue;
+        };
+        let name = match local.utf8_text(src) {
+            Ok(t) => t.to_string(),
+            Err(_) => continue,
+        };
+        let prop = match prop.utf8_text(src) {
+            Ok(t) => t.to_string(),
+            Err(_) => continue,
+        };
+        let literal = match lit.utf8_text(src) {
+            Ok(t) => t.to_string(),
+            Err(_) => continue,
+        };
+        if name.is_empty() || prop.is_empty() || literal.is_empty() {
+            continue;
+        }
+        meta.discriminant_narrowings.push(DiscriminantNarrowing {
+            name,
+            prop,
+            literal,
             byte_start: body.start_byte() as u32,
             byte_end: body.end_byte() as u32,
         });

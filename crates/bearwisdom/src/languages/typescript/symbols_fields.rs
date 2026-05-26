@@ -53,7 +53,15 @@ pub(super) fn push_ts_field(
 
     // Extract TypeRef from field type annotation: `db: DatabaseRepository`
     if let Some(type_ann) = node.child_by_field_name("type") {
-        extract_type_ref_from_annotation(&type_ann, src, idx, refs);
+        // A literal-type annotation (`kind: "circle"`) is a discriminant value,
+        // not a type name. Store it (with source quotes) as the field's
+        // signature so discriminated-union branch selection can match a guard
+        // literal against it, and emit no unresolvable TypeRef.
+        if let Some(lit) = literal_type_text(&type_ann, src) {
+            symbols[idx].signature = Some(lit);
+        } else {
+            extract_type_ref_from_annotation(&type_ann, src, idx, refs);
+        }
     } else if let Some(init) = node.child_by_field_name("value") {
         // No explicit annotation — infer the field's type from its
         // initializer the same way `push_variable_decl` does for locals.
@@ -62,6 +70,22 @@ pub(super) fn push_ts_field(
         // at Phase 2 before reaching the method lookup.
         infer_field_type_from_initializer(init, src, idx, refs);
     }
+}
+
+/// Source text of a literal-type annotation (`"circle"`, `1`, `true`) when the
+/// field's type is exactly a literal — directly or wrapped in a
+/// `type_annotation`. `None` for every nominal or structural type.
+fn literal_type_text(type_ann: &Node, src: &[u8]) -> Option<String> {
+    if type_ann.kind() == "literal_type" {
+        return Some(node_text(*type_ann, src));
+    }
+    let mut cursor = type_ann.walk();
+    for child in type_ann.children(&mut cursor) {
+        if child.kind() == "literal_type" {
+            return Some(node_text(child, src));
+        }
+    }
+    None
 }
 
 fn infer_field_type_from_initializer(

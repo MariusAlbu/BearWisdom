@@ -31,5 +31,6 @@ pub static R_FLOW_CONFIG: FlowConfig = FlowConfig {
     type_guard_query: "",
 
     // R has no call-site generic type arguments.
+    discriminant_guard_query: "",
     type_args_query: "",
 };

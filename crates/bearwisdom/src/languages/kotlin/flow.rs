@@ -19,5 +19,6 @@ pub static KOTLIN_FLOW_CONFIG: FlowConfig = FlowConfig {
     "#,
 
     type_guard_query: "",
+    discriminant_guard_query: "",
     type_args_query: "",
 };

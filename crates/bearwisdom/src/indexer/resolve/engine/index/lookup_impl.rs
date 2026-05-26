@@ -334,11 +334,21 @@ impl SymbolLookup for SymbolIndex {
         LOCAL_TYPE_CACHE.with(|c| c.borrow().lookup(name).map(|s| s.to_string()))
     }
 
-    fn install_local_cache(&self, narrowings: Vec<crate::types::Narrowing>) {
+    fn local_discriminant(&self, name: &str) -> Option<(String, String)> {
+        LOCAL_TYPE_CACHE
+            .with(|c| c.borrow().discriminant(name).map(|(p, l)| (p.to_string(), l.to_string())))
+    }
+
+    fn install_local_cache(
+        &self,
+        narrowings: Vec<crate::types::Narrowing>,
+        discriminants: Vec<crate::types::DiscriminantNarrowing>,
+    ) {
         LOCAL_TYPE_CACHE.with(|c| {
             let mut cache = c.borrow_mut();
             cache.forward.clear();
             cache.narrowings = narrowings;
+            cache.discriminants = discriminants;
             cache.cursor = 0;
         });
     }
@@ -356,6 +366,7 @@ impl SymbolLookup for SymbolIndex {
             let mut cache = c.borrow_mut();
             cache.forward.clear();
             cache.narrowings.clear();
+            cache.discriminants.clear();
             cache.cursor = 0;
         });
     }

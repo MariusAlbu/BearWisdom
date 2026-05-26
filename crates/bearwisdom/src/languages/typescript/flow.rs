@@ -51,6 +51,23 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
             consequence: (statement_block) @guard.body)
     "#,
 
+    // Matches `if (x.kind === "circle") { ... }` — a discriminated-union guard.
+    // @guard.local is the receiver, @guard.prop the discriminant property,
+    // @guard.literal the matched literal (with quotes), @guard.body the block
+    // in which `x` narrows to the branch whose `kind` equals that literal.
+    // `!==` is intentionally unmatched — it narrows the else-branch, not here.
+    discriminant_guard_query: r#"
+        (if_statement
+            condition: (parenthesized_expression
+                (binary_expression
+                    left: (member_expression
+                        object: (identifier) @guard.local
+                        property: (property_identifier) @guard.prop)
+                    operator: ["===" "=="]
+                    right: (string) @guard.literal))
+            consequence: (statement_block) @guard.body)
+    "#,
+
     // Matches call sites carrying explicit type arguments:
     //   obj.findOne<User>()
     //   repo.get<Item, Key>()

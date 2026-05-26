@@ -235,6 +235,10 @@ pub struct LocalTypeCache {
     /// Conditional-narrowing scopes, pre-sorted innermost-first so the
     /// first matching entry wins naturally.
     narrowings: Vec<crate::types::Narrowing>,
+    /// Discriminated-union guard scopes (`if (x.kind === "circle")`). Kept
+    /// separate from `narrowings` because the narrowed type is a union branch
+    /// the chain walker resolves at lookup time, not a fixed type name.
+    discriminants: Vec<crate::types::DiscriminantNarrowing>,
     /// Current ref's byte position. Set by the resolver before each
     /// chain-walker call via `SymbolLookup::set_cursor`.
     cursor: u32,
@@ -245,6 +249,7 @@ impl Default for LocalTypeCache {
         Self {
             forward: FxHashMap::default(),
             narrowings: Vec::new(),
+            discriminants: Vec::new(),
             cursor: 0,
         }
     }
@@ -264,5 +269,17 @@ impl LocalTypeCache {
             }
         }
         self.forward.get(name).map(|s| s.as_str())
+    }
+
+    /// The active discriminant guard for `name` at the cursor — `(prop,
+    /// literal)`. The chain walker uses it to pick a union branch when the
+    /// receiver resolves to a `Type::Union`.
+    pub fn discriminant(&self, name: &str) -> Option<(&str, &str)> {
+        for d in &self.discriminants {
+            if d.name == name && d.byte_start <= self.cursor && self.cursor < d.byte_end {
+                return Some((d.prop.as_str(), d.literal.as_str()));
+            }
+        }
+        None
     }
 }

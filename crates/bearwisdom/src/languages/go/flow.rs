@@ -46,5 +46,6 @@ pub static GO_FLOW_CONFIG: FlowConfig = FlowConfig {
     // Go's generic type-argument node structure varies between grammar
     // releases; leave empty in v1 to avoid compilation failures. The chain
     // walker already honors seg.type_args if extractors populate them.
+    discriminant_guard_query: "",
     type_args_query: "",
 };

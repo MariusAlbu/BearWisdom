@@ -786,6 +786,25 @@ pub struct Narrowing {
     pub byte_end: u32,
 }
 
+/// A discriminated-union narrowing captured at extraction time.
+///
+/// `if (shape.kind === "circle") { ... }` narrows `shape` to the union branch
+/// whose `prop` discriminant property carries the literal `literal`. Only the
+/// resolver — which has the type index — can map a literal to a branch, so
+/// extraction records the receiver `name`, the discriminant property `prop`,
+/// the matched `literal` (with its source quotes, as the branch's literal-typed
+/// field is stored), and the half-open byte range `[byte_start, byte_end)` of
+/// the guarded block. The chain walker selects the branch when it resolves a
+/// union-typed receiver whose ref cursor falls in range.
+#[derive(Debug, Clone)]
+pub struct DiscriminantNarrowing {
+    pub name: String,
+    pub prop: String,
+    pub literal: String,
+    pub byte_start: u32,
+    pub byte_end: u32,
+}
+
 /// Per-file flow-typing metadata, produced by the shared `indexer::flow`
 /// query runner and consumed by the resolver/chain-walker pair.
 ///
@@ -813,6 +832,7 @@ pub struct Narrowing {
 #[derive(Debug, Default, Clone)]
 pub struct FlowMeta {
     pub narrowings: Vec<Narrowing>,
+    pub discriminant_narrowings: Vec<DiscriminantNarrowing>,
     pub flow_binding_lhs: HashMap<usize, usize>,
     pub flow_binding_decl_type: HashMap<usize, String>,
     pub flow_binding_unwrap: std::collections::HashSet<usize>,

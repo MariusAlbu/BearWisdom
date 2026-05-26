@@ -381,9 +381,20 @@ pub trait SymbolLookup {
         None
     }
 
+    /// The active discriminated-union guard for `name` — `(prop, literal)` —
+    /// at the current cursor. The chain walker uses it to select a union branch.
+    fn local_discriminant(&self, _name: &str) -> Option<(String, String)> {
+        None
+    }
+
     /// Install a fresh local-type cache for the next file's resolution pass.
     /// `narrowings` should be pre-sorted innermost-first (smallest range first).
-    fn install_local_cache(&self, _narrowings: Vec<crate::types::Narrowing>) {}
+    fn install_local_cache(
+        &self,
+        _narrowings: Vec<crate::types::Narrowing>,
+        _discriminants: Vec<crate::types::DiscriminantNarrowing>,
+    ) {
+    }
 
     /// Move the cache cursor to the given byte offset. The resolver calls
     /// this before each ref so narrowing lookups see the correct byte range.

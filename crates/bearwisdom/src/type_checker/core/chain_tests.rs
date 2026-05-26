@@ -47,6 +47,20 @@ fn sym_info(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -
     }
 }
 
+fn sym_info_sig(
+    id: i64,
+    name: &str,
+    qname: &str,
+    kind: &str,
+    scope: Option<&str>,
+    sig: &str,
+) -> SymbolInfo {
+    SymbolInfo {
+        signature: Some(sig.to_string()),
+        ..sym_info(id, name, qname, kind, scope)
+    }
+}
+
 fn dummy_extracted_ref(target: &str) -> ExtractedRef {
     ExtractedRef {
         source_symbol_index: 0,
@@ -103,6 +117,7 @@ struct EmptyLookup {
     by_qname: rustc_hash::FxHashMap<String, SymbolInfo>,
     parents: rustc_hash::FxHashMap<String, String>,
     generic_param_type_ids: rustc_hash::FxHashMap<String, Vec<TypeId>>,
+    discriminants: rustc_hash::FxHashMap<String, (String, String)>,
 }
 
 impl EmptyLookup {
@@ -117,7 +132,13 @@ impl EmptyLookup {
             by_qname: Default::default(),
             parents: Default::default(),
             generic_param_type_ids: Default::default(),
+            discriminants: Default::default(),
         }
+    }
+    fn with_discriminant(mut self, name: &str, prop: &str, literal: &str) -> Self {
+        self.discriminants
+            .insert(name.to_string(), (prop.to_string(), literal.to_string()));
+        self
     }
     fn with_type(mut self, name: &str, qname: &str) -> Self {
         let info = sym_info(1, name, qname, "class", None);
@@ -176,6 +197,9 @@ impl SymbolLookup for EmptyLookup {
     }
     fn local_type(&self, name: &str) -> Option<String> {
         self.locals.get(name).cloned()
+    }
+    fn local_discriminant(&self, name: &str) -> Option<(String, String)> {
+        self.discriminants.get(name).cloned()
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -927,6 +951,88 @@ fn f_bounded_param_resolves_member_on_generic_bound() {
         .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: generic_t })
         .expect("f-bounded member resolves via generic bound");
     assert_eq!(result.target_symbol_id, 1);
+}
+
+#[test]
+fn discriminated_union_narrows_to_matching_branch() {
+    // type Shape = Circle | Square; if (s.kind === "circle") { s.radius }
+    // The active discriminant guard selects Circle, whose `radius` resolves.
+    // Without narrowing, `radius` is absent from the Square branch, so the union
+    // arm would miss — a successful resolution proves branch selection fired.
+    use crate::type_checker::core::types::Type;
+
+    let mut arena = TypeArena::new();
+    let circle = arena.class("Circle");
+    let square = arena.class("Square");
+    let union = arena.intern(Type::Union(vec![circle, square]));
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        circle,
+        sym_info_sig(1, "kind", "Circle.kind", "property", Some("Circle"), "\"circle\""),
+    );
+    members.add_direct(
+        circle,
+        sym_info(2, "radius", "Circle.radius", "property", Some("Circle")),
+    );
+    members.add_direct(
+        square,
+        sym_info_sig(3, "kind", "Square.kind", "property", Some("Square"), "\"square\""),
+    );
+    members.add_direct(
+        square,
+        sym_info(4, "side", "Square.side", "property", Some("Square")),
+    );
+
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_discriminant("s", "kind", "\"circle\"");
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("s", SegmentKind::Identifier),
+            seg("radius", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("radius");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: union })
+        .expect("radius resolves on the narrowed Circle branch");
+    assert_eq!(result.target_symbol_id, 2);
 }
 
 #[test]

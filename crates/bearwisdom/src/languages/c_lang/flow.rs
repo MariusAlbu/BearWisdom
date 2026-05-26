@@ -29,5 +29,6 @@ pub static C_FLOW_CONFIG: FlowConfig = FlowConfig {
     // C++ template args require tree-sitter-cpp (not tree-sitter-c); we use
     // tree-sitter-c for `.c`/`.h` files where templates don't apply. Leave
     // this empty — cross-dialect query support is future work.
+    discriminant_guard_query: "",
     type_args_query: "",
 };

@@ -317,6 +317,7 @@ impl<'a> ChainWalker<'a> {
         let root_seg = &chain.segments[0];
         let mut current_ty = root.resolve(root_seg, ref_ctx, file_ctx, self.arena, self.lookup)?;
         current_ty = self.expand_aliases(current_ty);
+        current_ty = self.narrow_union_by_discriminant(current_ty, root_seg);
 
         let mut env = GenericEnv::new();
         self.bind_apply_args(current_ty, &mut env);
@@ -617,6 +618,40 @@ impl<'a> ChainWalker<'a> {
                     ty = next;
                 }
                 _ => break,
+            }
+        }
+        ty
+    }
+
+    /// Narrow a discriminated-union receiver to the branch selected by an active
+    /// discriminant guard. When `root_seg` is an identifier with a guard like
+    /// `if (x.kind === "circle")` in scope and `ty` is a `Type::Union`, return
+    /// the branch whose discriminant property (`kind`) carries that literal
+    /// (stored on the property's signature for literal-typed fields). Returns
+    /// `ty` unchanged when there's no union, no active guard, or no branch
+    /// matches — the union arm then falls back to its first-branch behavior.
+    fn narrow_union_by_discriminant(&self, ty: TypeId, root_seg: &ChainSegment) -> TypeId {
+        if root_seg.kind != SegmentKind::Identifier {
+            return ty;
+        }
+        let Type::Union(branches) = self.arena.get(ty) else {
+            return ty;
+        };
+        let Some((prop, literal)) = self.lookup.local_discriminant(&root_seg.name) else {
+            return ty;
+        };
+        for branch in branches {
+            if let Some(member) = self.members.lookup(
+                branch,
+                &prop,
+                EdgeKind::TypeRef,
+                self.supertypes,
+                self.arena,
+                self.profile,
+            ) {
+                if member.signature.as_deref() == Some(literal.as_str()) {
+                    return branch;
+                }
             }
         }
         ty
