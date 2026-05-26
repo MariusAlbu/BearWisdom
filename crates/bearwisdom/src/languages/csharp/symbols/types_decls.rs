@@ -6,7 +6,10 @@
 // extract_record_primary_params, called from extract.rs after push_type_decl.
 // =============================================================================
 
-use super::super::helpers::{detect_visibility, extract_doc_comment, find_child_kind, node_text};
+use super::super::helpers::{
+    collect_type_param_constraints, detect_visibility, extract_doc_comment, find_child_kind,
+    node_text,
+};
 use crate::parser::scope_tree::{self, ScopeTree};
 use crate::types::{ExtractedSymbol, SymbolKind};
 use tree_sitter::Node;
@@ -87,6 +90,7 @@ pub(in super::super) fn push_type_decl(
         .child_by_field_name("type_parameters")
         .map(|tp| node_text(tp, src))
         .unwrap_or_default();
+    let constraints = collect_type_param_constraints(node, src);
 
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
@@ -98,7 +102,7 @@ pub(in super::super) fn push_type_decl(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: Some(format!("{keyword} {name}{type_params}")),
+        signature: Some(format!("{keyword} {name}{type_params}{constraints}")),
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,

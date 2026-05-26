@@ -31,7 +31,7 @@ use super::super::{
 };
 use super::{
     common_prefix_len, find_matching_bracket, is_ambient_global_lib_path, is_type_like_kind,
-    parse_generic_param_clause,
+    merge_where_bounds, parse_generic_param_clause,
 };
 use super::SymbolIndex;
 use crate::indexer::resolve::engine::{ChainMiss, ImportEntry, SymbolInfo, TypeInfo};
@@ -437,7 +437,8 @@ impl SymbolIndex {
                                 find_matching_bracket(&sig[start..], open, close)
                             {
                                 let end = start + relative_end;
-                                let parsed = parse_generic_param_clause(&sig[start + 1..end]);
+                                let mut parsed = parse_generic_param_clause(&sig[start + 1..end]);
+                                merge_where_bounds(&mut parsed, sig);
                                 if !parsed.is_empty() {
                                     let (params, bounds): (Vec<String>, Vec<Option<String>>) =
                                         parsed.into_iter().unzip();

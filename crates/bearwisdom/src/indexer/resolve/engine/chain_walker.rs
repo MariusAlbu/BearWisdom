@@ -79,20 +79,33 @@ pub(crate) fn find_matching_bracket(s: &str, open: char, close: char) -> Option<
 /// Parse the body of a generic-parameter clause — the text between the
 /// `<>` / `[]` brackets — into `(name, optional-upper-bound)` pairs.
 ///
-/// Recognizes both bound spellings: `T extends Animal` (TS, Java, ...) and
-/// `T: Animal` (Rust, Scala, ...). The first nominal token is the bound;
-/// multi-bounds (`T: A + B`) and defaults (`T extends X = Y`) collapse to the
-/// first segment, and higher-kinded markers (`F[_]`) carry no bound. Params
-/// are split on plain commas — a bound that itself contains a comma
-/// (`T extends Map<K, V>`) truncates, which fails closed at lookup rather
-/// than producing a wrong member. The name output is identical to a name-only
-/// parse so generic-param positions stay aligned with `type_args`.
+/// Recognizes three bound spellings: `T extends Animal` (TS, Java, ...),
+/// `T: Animal` (Rust, Scala `<:`, ...), and Go's space-separated
+/// `[T Constraint]`. The first nominal token is the bound; multi-bounds
+/// (`T: A + B`) and defaults (`T extends X = Y`) collapse to the first segment,
+/// and higher-kinded markers (`F[_]`) carry no bound. Declaration-site variance
+/// (`out T` / `in T`, C#/Kotlin) drops the keyword so the name is the parameter
+/// and the param stays unbounded. Params are split on plain commas — a bound
+/// that itself contains a comma (`T extends Map<K, V>`) truncates, which fails
+/// closed at lookup rather than producing a wrong member. The name output is
+/// identical to a name-only parse so generic-param positions stay aligned with
+/// `type_args`. A `where`-clause bound (C#, Rust) lives outside this clause; see
+/// `merge_where_bounds`.
 pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<String>)> {
     clause
         .split(',')
         .filter_map(|part| {
             let part = part.trim();
-            let name = part
+            // Strip a leading variance keyword: `out T` / `in T` name the param
+            // after the keyword and carry no bound.
+            let (body, variance) = match part
+                .strip_prefix("out ")
+                .or_else(|| part.strip_prefix("in "))
+            {
+                Some(rest) => (rest.trim_start(), true),
+                None => (part, false),
+            };
+            let name = body
                 .split(|c: char| c == '[' || c == '<' || c == ':')
                 .next()
                 .unwrap_or("")
@@ -103,16 +116,112 @@ pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<St
             if name.is_empty() {
                 return None;
             }
-            let bound = part
+            if variance {
+                return Some((name, None));
+            }
+            let bound = body
                 .find(" extends ")
-                .map(|i| &part[i + " extends ".len()..])
-                .or_else(|| part.find(':').map(|i| &part[i + 1..]))
+                .map(|i| &body[i + " extends ".len()..])
+                .or_else(|| body.find(':').map(|i| &body[i + 1..]))
                 .map(|b| b.split(|c: char| c == '=' || c == '+').next().unwrap_or(b).trim())
                 .filter(|b| !b.is_empty())
-                .map(|b| b.to_string());
+                .map(|b| b.to_string())
+                // Go `[T Constraint]`: the constraint is a space-separated
+                // second token, with no `extends`/`:` separator. Require an
+                // identifier start so a TS default (`T = string`) doesn't read
+                // its `=` as the bound.
+                .or_else(|| {
+                    body.split_whitespace()
+                        .nth(1)
+                        .filter(|t| t.starts_with(|c: char| c.is_alphabetic() || c == '_'))
+                        .map(str::to_string)
+                });
             Some((name, bound))
         })
         .collect()
+}
+
+/// Fold `where T : B` / `where T: B` constraint-clause bounds into params
+/// already parsed from the bracket clause. C# and Rust place a generic
+/// parameter's bound in a trailing `where` clause that sits outside the
+/// `<>`/`[]` the bracket parser sees. A `where` bound only fills a param whose
+/// inline bound was absent — an inline bound is the more local declaration and
+/// wins. C# special constraints (`class`, `struct`, `new()`, `unmanaged`,
+/// `notnull`) and lifetimes are not member-bearing types and are skipped, so
+/// such a param stays unbounded (member lookup then fails closed).
+pub(crate) fn merge_where_bounds(params: &mut [(String, Option<String>)], sig: &str) {
+    let Some(region) = where_clause_region(sig) else {
+        return;
+    };
+    for (name, bound) in params.iter_mut() {
+        if bound.is_none() {
+            *bound = where_bound_for(region, name);
+        }
+    }
+}
+
+/// The text following the first standalone `where` keyword in a signature, or
+/// `None` when there is no `where` clause. The keyword must sit at identifier
+/// boundaries so a substring (`somewhere`) or a type named `Where` is not
+/// mistaken for the clause.
+fn where_clause_region(sig: &str) -> Option<&str> {
+    let bytes = sig.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = sig[from..].find("where") {
+        let idx = from + rel;
+        let after = idx + "where".len();
+        let before_boundary = idx == 0 || !is_ident_byte(bytes[idx - 1]);
+        let after_boundary = bytes.get(after).map_or(true, |&b| !is_ident_byte(b));
+        if before_boundary && after_boundary {
+            return Some(sig[after..].trim_start());
+        }
+        from = after;
+    }
+    None
+}
+
+/// First nominal bound declared for `name` within a `where` region.
+fn where_bound_for(region: &str, name: &str) -> Option<String> {
+    let constraints = constraints_for(region, name)?;
+    for seg in constraints.split(|c| c == ',' || c == '+') {
+        let t = seg.trim();
+        if t.is_empty() || t.starts_with('\'') || is_special_constraint(t) {
+            continue;
+        }
+        return Some(t.to_string());
+    }
+    None
+}
+
+/// The constraint list declared for `name` in a `where` region: the text after
+/// `name :`, up to the next `where` clause (C# uses one `where` per param) or
+/// the region end. `None` when `name` heads no predicate. `name` must appear at
+/// identifier boundaries followed by `:` so a bound mention of the same text
+/// (`U : T`, `IList<T>`) is not mistaken for `T`'s own predicate.
+fn constraints_for<'a>(region: &'a str, name: &str) -> Option<&'a str> {
+    let bytes = region.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = region[from..].find(name) {
+        let idx = from + rel;
+        let after = idx + name.len();
+        let before_boundary = idx == 0 || !is_ident_byte(bytes[idx - 1]);
+        let rest = region[after..].trim_start();
+        if before_boundary && rest.starts_with(':') {
+            let list = rest[1..].trim_start();
+            let end = list.find(" where ").unwrap_or(list.len());
+            return Some(list[..end].trim_end());
+        }
+        from = after;
+    }
+    None
+}
+
+fn is_special_constraint(t: &str) -> bool {
+    matches!(t, "class" | "struct" | "unmanaged" | "notnull" | "default") || t.starts_with("new(")
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
 }
 
 

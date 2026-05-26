@@ -112,7 +112,26 @@ pub(super) fn build_method_signature(node: &Node, src: &[u8]) -> Option<String> 
     if let Some(p) = params.as_deref() {
         sig.push_str(p);
     }
+    sig.push_str(&collect_type_param_constraints(node, src));
     Some(sig)
+}
+
+/// Collect a generic declaration's `where` constraint clauses into a single
+/// ` where T : A where U : B` suffix, normalizing internal whitespace so the
+/// resolver's where-clause parser reads them off one line. Empty when the
+/// declaration has no constraints. The clause is dropped from the bare
+/// `name<T>` signature otherwise, so a constrained parameter's bound is the
+/// only place a `where T : IFoo` constraint can reach generic resolution.
+pub(super) fn collect_type_param_constraints(node: &Node, src: &[u8]) -> String {
+    let mut out = String::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_parameter_constraints_clause" {
+            out.push(' ');
+            out.push_str(&node_text(child, src).split_whitespace().collect::<Vec<_>>().join(" "));
+        }
+    }
+    out
 }
 
 pub(super) fn find_child_kind<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {

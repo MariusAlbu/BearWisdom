@@ -23,7 +23,7 @@ use rustc_hash::FxHashMap;
 use crate::types::{EdgeKind, ParsedFile, SymbolKind, Visibility};
 
 use super::super::{
-    find_matching_bracket, parse_arrow_return_type, parse_generic_param_clause,
+    find_matching_bracket, merge_where_bounds, parse_arrow_return_type, parse_generic_param_clause,
     parse_return_type_from_signature, resolve_type_name_in_scope,
 };
 use super::{common_prefix_len, is_type_like_kind};
@@ -235,7 +235,8 @@ impl SymbolIndex {
                             find_matching_bracket(&sig[start..], open, close)
                         {
                             let end = start + relative_end;
-                            let parsed = parse_generic_param_clause(&sig[start + 1..end]);
+                            let mut parsed = parse_generic_param_clause(&sig[start + 1..end]);
+                            merge_where_bounds(&mut parsed, sig);
                             if !parsed.is_empty() {
                                 let (params, bounds): (Vec<String>, Vec<Option<String>>) =
                                     parsed.into_iter().unzip();

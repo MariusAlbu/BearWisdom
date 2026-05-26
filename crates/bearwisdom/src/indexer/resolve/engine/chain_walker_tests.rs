@@ -1,4 +1,4 @@
-use super::parse_generic_param_clause;
+use super::{merge_where_bounds, parse_generic_param_clause};
 
 #[test]
 fn names_only_when_unbounded() {
@@ -67,4 +67,98 @@ fn generic_bound_preserved() {
         parsed,
         vec![("T".to_string(), Some("Repository<User>".to_string()))]
     );
+}
+
+#[test]
+fn go_space_separated_constraint() {
+    // Go `[T Ordered]` — the constraint is a space-separated second token.
+    let parsed = parse_generic_param_clause("T Ordered");
+    assert_eq!(parsed, vec![("T".to_string(), Some("Ordered".to_string()))]);
+}
+
+#[test]
+fn go_mixed_constrained_and_bare() {
+    let parsed = parse_generic_param_clause("S, T Stringer");
+    assert_eq!(
+        parsed,
+        vec![
+            ("S".to_string(), None),
+            ("T".to_string(), Some("Stringer".to_string())),
+        ]
+    );
+}
+
+#[test]
+fn ts_default_without_extends_has_no_bound() {
+    // `<T = string>` — the `=` default is not a bound.
+    let parsed = parse_generic_param_clause("T = string");
+    assert_eq!(parsed, vec![("T".to_string(), None)]);
+}
+
+#[test]
+fn declaration_variance_keyword_is_not_the_name() {
+    // C#/Kotlin `<out T>` / `<in T>` — the variance keyword is dropped and the
+    // parameter carries no bound.
+    assert_eq!(parse_generic_param_clause("out T"), vec![("T".to_string(), None)]);
+    assert_eq!(parse_generic_param_clause("in T"), vec![("T".to_string(), None)]);
+}
+
+#[test]
+fn where_clause_fills_unbounded_param() {
+    // C#: `class Box<T> where T : IComparable` — `<T>` has no inline bound.
+    let mut params = parse_generic_param_clause("T");
+    merge_where_bounds(&mut params, "class Box<T> where T : IComparable");
+    assert_eq!(params, vec![("T".to_string(), Some("IComparable".to_string()))]);
+}
+
+#[test]
+fn where_clause_skips_special_constraints() {
+    // C#: `where T : class, IFoo, new()` — keyword constraints aren't types;
+    // the first nominal interface wins.
+    let mut params = parse_generic_param_clause("T");
+    merge_where_bounds(&mut params, "void M<T>() where T : class, IFoo, new()");
+    assert_eq!(params, vec![("T".to_string(), Some("IFoo".to_string()))]);
+}
+
+#[test]
+fn where_clause_per_param_multiple_clauses() {
+    // C# uses one `where` per parameter.
+    let mut params = parse_generic_param_clause("T, U");
+    merge_where_bounds(&mut params, "void M<T, U>() where T : IA where U : IB");
+    assert_eq!(
+        params,
+        vec![
+            ("T".to_string(), Some("IA".to_string())),
+            ("U".to_string(), Some("IB".to_string())),
+        ]
+    );
+}
+
+#[test]
+fn rust_single_line_where_clause() {
+    // Rust `where T: Clone + Send, U: Debug` — first nominal bound per param.
+    let mut params = parse_generic_param_clause("T, U");
+    merge_where_bounds(&mut params, "fn f<T, U>(x: T, y: U) where T: Clone + Send, U: Debug");
+    assert_eq!(
+        params,
+        vec![
+            ("T".to_string(), Some("Clone".to_string())),
+            ("U".to_string(), Some("Debug".to_string())),
+        ]
+    );
+}
+
+#[test]
+fn inline_bound_wins_over_where() {
+    // An inline bound is the more local declaration; `where` does not override.
+    let mut params = parse_generic_param_clause("T extends Animal");
+    merge_where_bounds(&mut params, "class C<T extends Animal> where T : Other");
+    assert_eq!(params, vec![("T".to_string(), Some("Animal".to_string()))]);
+}
+
+#[test]
+fn no_where_clause_leaves_params_untouched() {
+    let mut params = parse_generic_param_clause("T");
+    merge_where_bounds(&mut params, "class Box<T>");
+    assert_eq!(params, vec![("T".to_string(), None)]);
 }

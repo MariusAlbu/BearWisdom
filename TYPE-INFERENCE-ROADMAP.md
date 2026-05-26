@@ -130,6 +130,14 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
   Fires for `extends`/`:`-bound languages.
 - **TS3** — `instanceof` guard query no longer matches `===` (`a05235f5`).
 - **C1** — stale comments corrected (`a05235f5`).
+- **L1 (C# / Go / Rust `where`)** — bound capture extended past the inline
+  `<T extends B>`/`<T: B>` clause so G6 fires for these too. `merge_where_bounds`
+  reads a trailing `where T : B` clause (C#, Rust single-line); the C# extractor
+  now appends its dropped `type_parameter_constraints_clause`; the bracket parser
+  reads Go's space-separated `[T Constraint]` and ignores `out`/`in` variance and
+  `<T = Default>`. Haskell deferred — its params live outside any `<>`/`[]`
+  clause (`(Ord a) =>` context), needing a separate extraction path for near-zero
+  corpus payoff.
 
 **Deferred with reasons:**
 - **G1 (D7)** — segment types intern nominal (`canonical_form.rs:197`), no
@@ -148,5 +156,6 @@ machinery, not a single-session sweep:**
 - **G9 / L6** closures — corpus-wide function-type parsing + a call-yield arm;
   yield-precision payoff (rarely new edges).
 - **G10 / L7** HKT — new kinded `Type` variant; largest, rarest.
-- **L1** bound syntax for **C# / Go / Haskell** (extends G6 to them; Scala
-  already works via `<:`); **L2** guard vocabulary across the 14 flow languages.
+- **L1 (Haskell only)** — needs a Haskell-specific path to extract type vars +
+  their `(C a) =>` constraint context (no bracket clause to key off);
+  **L2** guard vocabulary across the 14 flow languages.

@@ -48,6 +48,32 @@ namespace Catalog {
     }
 
     #[test]
+    fn generic_constraints_appear_in_signature() {
+        // The `where` constraint clause is dropped from the bare `name<T>`
+        // signature unless explicitly collected; it is the only place a
+        // bounded type parameter's bound reaches generic resolution.
+        let src = r#"
+namespace App {
+    public class Box<T> where T : IComparable {
+        public U Convert<U>(T input) where U : IFormattable { return default; }
+    }
+}"#;
+        let symbols = sym(src);
+        let box_ty = symbols.iter().find(|s| s.name == "Box").unwrap();
+        assert!(
+            box_ty.signature.as_ref().unwrap().contains("where T : IComparable"),
+            "class signature should carry the where constraint: {:?}",
+            box_ty.signature
+        );
+        let convert = symbols.iter().find(|s| s.name == "Convert").unwrap();
+        assert!(
+            convert.signature.as_ref().unwrap().contains("where U : IFormattable"),
+            "method signature should carry the where constraint: {:?}",
+            convert.signature
+        );
+    }
+
+    #[test]
     fn extracts_constructor() {
         let src = "class Svc { public Svc(string name) {} }";
         let symbols = sym(src);
