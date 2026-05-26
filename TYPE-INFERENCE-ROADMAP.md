@@ -138,6 +138,14 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
   `<T = Default>`. Haskell deferred — its params live outside any `<>`/`[]`
   clause (`(Ord a) =>` context), needing a separate extraction path for near-zero
   corpus payoff.
+- **G5 (arity path)** — same-name overloads on one type are disambiguated by the
+  call's argument count: `find_on_chain` prefers the candidate whose
+  `signature_arity` matches an `arg_count` threaded down from the walker. The
+  count comes from `ref_ctx.extracted_ref.call_args` on the final segment, used
+  only when non-empty (empty is ambiguous — zero args vs. not extracted — so it
+  stays first-match, no regression). The public `lookup` passes `None`. Type-based
+  G5 (same arity, different param types) and **G4** (axis dispatch via
+  `select_method`) still need full **L4** call-arg type inference.
 
 **Deferred with reasons:**
 - **G1 (D7)** — segment types intern nominal (`canonical_form.rs:197`), no
@@ -148,11 +156,19 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
 
 **Remaining — each is a substantial effort gated on a per-language feed or new
 machinery, not a single-session sweep:**
-- **G4/G5** dispatch + overload — gated on **L4** (typing call-argument
-  expressions), itself a real inference task; the selector (`dispatch.rs`) is
-  already built.
-- **G7** discriminated-union — gated on **L3** (per-language discriminant
-  extraction) before the generic Union-arm selection can fire.
+- **G4 + type-based G5** dispatch + overload — gated on **L4** (typing
+  call-argument expressions), itself a real inference task; the selector
+  (`dispatch.rs`) and the arity path of G5 are already built.
+- **G7** discriminated-union — the largest non-HKT item, 5 subsystems. The
+  foundational gap: `intern_type_str` falls back to `Class(input)`, so a union
+  branch's discriminant field (`kind: "circle"`) is NOT a `Type::Literal` today
+  (`Type::Literal` is minted only for call-args, `inference.rs:105`). A real win
+  needs all of: literal-field capture (extractor + intern), **L3** flow
+  discriminant extraction, a discriminant-carrying `Narrowing` (today
+  `narrowed_type` is a flat `String`), walker threading, and Union-arm selection.
+  Partial = inert. Note the `instanceof`/class narrowing case already works via
+  the existing narrowing path — the gap is specifically property-discriminant
+  guards (`s.kind === "..."`).
 - **G9 / L6** closures — corpus-wide function-type parsing + a call-yield arm;
   yield-precision payoff (rarely new edges).
 - **G10 / L7** HKT — new kinded `Type` variant; largest, rarest.

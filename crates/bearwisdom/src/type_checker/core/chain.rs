@@ -346,6 +346,20 @@ impl<'a> ChainWalker<'a> {
                 EdgeKind::TypeRef
             };
 
+            // Overload disambiguation by arity. The call's argument count is
+            // reliable only on the final segment (the resolved ref carries the
+            // args) and only when the extractor populated `call_args` — an
+            // empty list is ambiguous (zero args vs. args not extracted), so it
+            // stays `None` and lookup keeps first-match behavior.
+            let arg_count = if i == last_idx
+                && matches!(kind_filter, EdgeKind::Calls | EdgeKind::Instantiates)
+                && !ref_ctx.extracted_ref.call_args.is_empty()
+            {
+                Some(ref_ctx.extracted_ref.call_args.len())
+            } else {
+                None
+            };
+
             let member = match self.members.lookup_with_binding(
                 current_ty,
                 &seg.name,
@@ -353,6 +367,7 @@ impl<'a> ChainWalker<'a> {
                 self.supertypes,
                 self.arena,
                 self.profile,
+                arg_count,
             ) {
                 Some((m, owner, owner_args)) => {
                     // Inherited generic method: bind the ancestor's generic

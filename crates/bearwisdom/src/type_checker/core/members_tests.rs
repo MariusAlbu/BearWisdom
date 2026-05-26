@@ -23,8 +23,47 @@ fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> Sym
     }
 }
 
+fn sym_sig(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>, sig: &str) -> SymbolInfo {
+    SymbolInfo {
+        signature: Some(sig.to_string()),
+        ..sym(id, name, qname, kind, scope)
+    }
+}
+
 fn empty_supertypes() -> SupertypeGraph {
     SupertypeGraph::new()
+}
+
+#[test]
+fn overload_selected_by_arity() {
+    let mut arena = TypeArena::new();
+    let svc = arena.class("Svc");
+    let mut index = MembersIndex::new();
+    // Two `process` overloads on the same type, distinct arities.
+    index.add_direct(svc, sym_sig(1, "process", "Svc.process", "method", Some("Svc"), "process(x)"));
+    index.add_direct(svc, sym_sig(2, "process", "Svc.process", "method", Some("Svc"), "process(x, y)"));
+    let graph = empty_supertypes();
+
+    let two = index
+        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(2))
+        .expect("hit");
+    assert_eq!(two.0.id, 2, "two args should pick the two-param overload");
+
+    let one = index
+        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(1))
+        .expect("hit");
+    assert_eq!(one.0.id, 1, "one arg should pick the one-param overload");
+
+    // Unknown arity, and an arity that matches no overload, both fall back to
+    // the first declared — the pre-arity behavior.
+    let unknown = index
+        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, None)
+        .expect("hit");
+    assert_eq!(unknown.0.id, 1);
+    let no_match = index
+        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(3))
+        .expect("hit");
+    assert_eq!(no_match.0.id, 1);
 }
 
 #[test]

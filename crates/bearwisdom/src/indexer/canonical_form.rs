@@ -1014,8 +1014,10 @@ fn check_sym_006(
 
 /// Count comma-separated arguments inside the first parenthesized group of
 /// a signature string. Returns None when the string has no balanced parens
-/// (synthesized signatures, free-form descriptions).
-fn signature_arity(sig: &str) -> Option<usize> {
+/// (synthesized signatures, free-form descriptions). Counts every declared
+/// parameter — including an explicit receiver (`self`/`this`) where the
+/// language writes one in the signature.
+pub(crate) fn signature_arity(sig: &str) -> Option<usize> {
     let open = sig.find('(')?;
     let after = &sig[open + 1..];
     let mut depth: u32 = 1;

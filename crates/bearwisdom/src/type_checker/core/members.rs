@@ -13,6 +13,7 @@
 // =============================================================================
 
 use super::types::{Type, TypeArena, TypeId};
+use crate::indexer::canonical_form::signature_arity;
 use crate::indexer::resolve::engine::{strip_generic_args, SymbolInfo};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::profile::language_profile::{
@@ -199,7 +200,7 @@ impl MembersIndex {
         arena: &TypeArena,
         profile: &LanguageProfile,
     ) -> Option<SymbolInfo> {
-        self.lookup_with_binding(ty, name, kind_filter, supertypes, arena, profile)
+        self.lookup_with_binding(ty, name, kind_filter, supertypes, arena, profile, None)
             .map(|(sym, _, _)| sym)
     }
 
@@ -209,6 +210,10 @@ impl MembersIndex {
     /// non-generic). The chain walker uses these to bind an inherited generic
     /// method's parameters — `class UserRepo: Repository<User>` calling
     /// `Repository::find_one(): T` yields `User`, not unbound `T`.
+    ///
+    /// `arg_count` is the argument count at a call site (`Some(n)`), used to
+    /// disambiguate same-name overloads on one type by arity; `None` (property
+    /// access, or arity not extracted) preserves first-match behavior.
     pub fn lookup_with_binding(
         &self,
         ty: TypeId,
@@ -217,10 +222,11 @@ impl MembersIndex {
         supertypes: &SupertypeGraph,
         arena: &TypeArena,
         profile: &LanguageProfile,
+        arg_count: Option<usize>,
     ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
         match arena.get(ty) {
             Type::Apply { base, .. } => {
-                self.lookup_with_binding(base, name, kind_filter, supertypes, arena, profile)
+                self.lookup_with_binding(base, name, kind_filter, supertypes, arena, profile, arg_count)
             }
             Type::Union(branches) => {
                 // Every branch must carry the member — partial union members
@@ -229,7 +235,7 @@ impl MembersIndex {
                 // match; the walker does not yet select a branch by a guard.
                 let mut first: Option<(SymbolInfo, TypeId, Vec<TypeId>)> = None;
                 for b in branches {
-                    match self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile) {
+                    match self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile, arg_count) {
                         Some(s) => {
                             if first.is_none() {
                                 first = Some(s);
@@ -243,7 +249,7 @@ impl MembersIndex {
             Type::Intersection(branches) => {
                 for b in branches {
                     if let Some(s) =
-                        self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile)
+                        self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile, arg_count)
                     {
                         return Some(s);
                     }
@@ -251,16 +257,16 @@ impl MembersIndex {
                 None
             }
             Type::Optional(inner) if profile.look_through_optional => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count)
             }
             Type::AsyncWrapper(inner) => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count)
             }
             Type::Iterator(inner) => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile)
+                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count)
             }
             Type::Class(_) | Type::Primitive(_) => {
-                self.find_on_chain(ty, name, kind_filter, supertypes, arena, profile)
+                self.find_on_chain(ty, name, kind_filter, supertypes, arena, profile, arg_count)
             }
             // A bare generic parameter carries members only through its
             // declared upper bound: `T: Animal` resolves `T`'s members on
@@ -268,7 +274,7 @@ impl MembersIndex {
             // in every realistic declaration; an unbounded `T` has no members.
             Type::Generic { param } => match arena.generic_param(param).bound {
                 Some(bound) => {
-                    self.lookup_with_binding(bound, name, kind_filter, supertypes, arena, profile)
+                    self.lookup_with_binding(bound, name, kind_filter, supertypes, arena, profile, arg_count)
                 }
                 None => None,
             },
@@ -280,12 +286,16 @@ impl MembersIndex {
         }
     }
 
-    /// Walk the supertype chain starting at `ty` and find the first
-    /// kind-compatible member named `name`. Direct members win over
-    /// extension members at the same supertype level — extensions extend
-    /// but do not override the body. Returns the member, the ancestor it was
-    /// found on, and the generic arguments bound on the edge that reached
-    /// that ancestor (for the chain walker's generic substitution).
+    /// Walk the supertype chain starting at `ty` and find a kind-compatible
+    /// member named `name`. Direct members win over extension members at the
+    /// same supertype level — extensions extend but do not override the body.
+    /// When `arg_count` is `Some(n)`, a same-name overload on the matched
+    /// ancestor whose signature declares `n` parameters is preferred; with no
+    /// arity match (or `None`) the first kind-compatible member wins, which is
+    /// the behavior for non-call segments and languages that don't extract call
+    /// arguments. Selection stays within one ancestor so inheritance overrides
+    /// are unaffected. Returns the member, the ancestor it was found on, and
+    /// the generic arguments bound on the edge that reached that ancestor.
     fn find_on_chain(
         &self,
         ty: TypeId,
@@ -294,14 +304,30 @@ impl MembersIndex {
         supertypes: &SupertypeGraph,
         arena: &TypeArena,
         profile: &LanguageProfile,
+        arg_count: Option<usize>,
     ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
         for (ancestor, args) in supertypes.walk_up_with_args(ty, arena) {
-            if let Some(found) = self
+            let mut first: Option<&SymbolInfo> = None;
+            let mut arity_hit: Option<&SymbolInfo> = None;
+            for s in self
                 .direct_of(ancestor)
                 .iter()
                 .chain(self.extensions_of(ancestor).iter())
-                .find(|s| s.name == name && kind_matches(profile, kind_filter, &s.kind))
             {
+                if s.name != name || !kind_matches(profile, kind_filter, &s.kind) {
+                    continue;
+                }
+                if first.is_none() {
+                    first = Some(s);
+                }
+                if arity_hit.is_none()
+                    && arg_count.is_some()
+                    && s.signature.as_deref().and_then(signature_arity) == arg_count
+                {
+                    arity_hit = Some(s);
+                }
+            }
+            if let Some(found) = arity_hit.or(first) {
                 return Some((found.clone(), ancestor, args));
             }
         }
