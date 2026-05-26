@@ -919,25 +919,47 @@ pub(super) fn build_chain_inner(
             build_chain_inner(target, src, segments)
         }
 
-        // `(x as Foo).bar()` / `(x satisfies Foo).bar()` — peel the cast.
+        // `(x as Foo).bar()` — `x` is the underlying expression, `Foo` the
+        // asserted type. `as` / `<T>x` assert it (recorded as the inner
+        // segment's `declared_type`, which the chain walker adopts); `satisfies`
+        // checks without changing the type, so it only peels.
         "as_expression" | "satisfies_expression" | "type_assertion" => {
-            // First non-type child is the underlying expression.
+            let asserts = node.kind() != "satisfies_expression";
             let mut cursor = node.walk();
+            let mut inner: Option<Node> = None;
+            let mut target: Option<Node> = None;
             for child in node.children(&mut cursor) {
-                let k = child.kind();
-                if !matches!(k, "as" | "satisfies" | "<" | ">" | "type_identifier"
-                    | "predefined_type" | "generic_type" | "union_type"
-                    | "intersection_type" | "literal_type" | "tuple_type"
-                    | "array_type" | "object_type" | "type_predicate"
+                match child.kind() {
+                    "as" | "satisfies" | "<" | ">" | "readonly" => {}
+                    "type_identifier" | "predefined_type" | "generic_type"
+                    | "union_type" | "intersection_type" | "literal_type"
+                    | "tuple_type" | "array_type" | "object_type" | "type_predicate"
                     | "function_type" | "constructor_type" | "conditional_type"
                     | "indexed_access_type" | "lookup_type" | "mapped_type"
-                    | "template_literal_type" | "type_query" | "this_type"
-                    | "readonly")
-                {
-                    return build_chain_inner(child, src, segments);
+                    | "template_literal_type" | "type_query" | "this_type" => {
+                        if target.is_none() {
+                            target = Some(child);
+                        }
+                    }
+                    _ => {
+                        if inner.is_none() {
+                            inner = Some(child);
+                        }
+                    }
                 }
             }
-            None
+            let inner = inner?;
+            build_chain_inner(inner, src, segments)?;
+            if asserts {
+                if let Some(t) = target {
+                    if let Some(last) = segments.last_mut() {
+                        if last.declared_type.is_none() {
+                            last.declared_type = Some(node_text(t, src));
+                        }
+                    }
+                }
+            }
+            Some(())
         }
 
         // Unknown node — can't build a chain from this.

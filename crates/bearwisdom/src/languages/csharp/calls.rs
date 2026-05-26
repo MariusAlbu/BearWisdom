@@ -556,6 +556,33 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
             Some(())
         }
 
+        // `((Admin)x).Ban()` / `(x as Admin).Ban()` — the cast asserts the
+        // type; the chain walker adopts the inner segment's `declared_type`.
+        "cast_expression" => {
+            let value = node.child_by_field_name("value")?;
+            build_chain_inner(value, src, segments)?;
+            if let Some(type_node) = node.child_by_field_name("type") {
+                if let Some(last) = segments.last_mut() {
+                    if last.declared_type.is_none() {
+                        last.declared_type = Some(node_text(type_node, src));
+                    }
+                }
+            }
+            Some(())
+        }
+        "as_expression" => {
+            let value = node.child_by_field_name("left")?;
+            build_chain_inner(value, src, segments)?;
+            if let Some(type_node) = node.child_by_field_name("right") {
+                if let Some(last) = segments.last_mut() {
+                    if last.declared_type.is_none() {
+                        last.declared_type = Some(node_text(type_node, src));
+                    }
+                }
+            }
+            Some(())
+        }
+
         // Unknown node — can't build a chain.
         _ => None,
     }

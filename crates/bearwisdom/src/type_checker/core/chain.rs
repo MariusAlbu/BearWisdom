@@ -316,7 +316,13 @@ impl<'a> ChainWalker<'a> {
             return None;
         }
         let root_seg = &chain.segments[0];
-        let mut current_ty = root.resolve(root_seg, ref_ctx, file_ctx, self.arena, self.lookup)?;
+        // A root segment's `declared_type` is a type assertion: a `(x as Foo)`
+        // cast, or a synthetic-root type (`[]` → Array, `import()` → Promise).
+        // It wins over scope-based root resolution — adopt the asserted type.
+        let mut current_ty = match root_seg.declared_type.as_deref().filter(|s| !s.is_empty()) {
+            Some(dt) => self.arena.intern_type_str(dt),
+            None => root.resolve(root_seg, ref_ctx, file_ctx, self.arena, self.lookup)?,
+        };
         current_ty = self.expand_aliases(current_ty);
         current_ty = self.narrow_union_by_discriminant(current_ty, root_seg);
 
@@ -350,6 +356,15 @@ impl<'a> ChainWalker<'a> {
         for (i, seg) in chain.segments.iter().enumerate().skip(1) {
             // Re-expand aliases in case the previous yield landed on one.
             current_ty = self.expand_aliases(current_ty);
+
+            // Cast / type-assertion mid-chain (`(a.x() as Foo).y`): the
+            // `declared_type` asserts the value's type — adopt it and skip
+            // member resolution on this segment.
+            if let Some(dt) = seg.declared_type.as_deref().filter(|s| !s.is_empty()) {
+                current_ty = self.expand_aliases(self.arena.intern_type_str(dt));
+                self.bind_apply_args(current_ty, &mut env);
+                continue;
+            }
 
             let kind_filter = if i == last_idx {
                 ref_ctx.extracted_ref.kind

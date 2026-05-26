@@ -971,6 +971,24 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
             build_chain_inner(func, source, segments)
         }
 
+        // `(x as Foo).bar()` — `x` is the value, `Foo` the asserted type. The
+        // chain walker adopts the inner segment's `declared_type`.
+        "type_cast_expression" => {
+            let value = node.child_by_field_name("value")?;
+            build_chain_inner(value, source, segments)?;
+            if let Some(type_node) = node.child_by_field_name("type") {
+                let name = rust_type_node_name(&type_node, source);
+                if !name.is_empty() {
+                    if let Some(last) = segments.last_mut() {
+                        if last.declared_type.is_none() {
+                            last.declared_type = Some(name);
+                        }
+                    }
+                }
+            }
+            Some(())
+        }
+
         _ => None,
     }
 }

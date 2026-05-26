@@ -667,6 +667,71 @@ fn turbofish_binds_method_own_generic() {
 }
 
 #[test]
+fn cast_segment_adopts_asserted_type() {
+    // (x as Admin).ban() — the cast asserts Admin, so `ban` resolves on Admin
+    // regardless of x's own (here irrelevant) type.
+    let mut arena = TypeArena::new();
+    let unknown_ty = arena.class("Whatever");
+    let admin_ty = arena.class("Admin");
+
+    let symbol_types = SymbolTypeMap::new();
+    let mut members = MembersIndex::new();
+    members.add_direct(admin_ty, sym_info(5, "ban", "Admin.ban", "method", Some("Admin")));
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            ChainSegment {
+                declared_type: Some("Admin".to_string()),
+                ..seg("x", SegmentKind::Identifier)
+            },
+            seg("ban", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("ban");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: unknown_ty })
+        .expect("ban resolves on the asserted Admin type");
+    assert_eq!(result.target_symbol_id, 5);
+}
+
+#[test]
 fn generic_arg_substitutes_through_inheritance() {
     // class Repository<T> { find_one(): T }
     // class UserRepo: Repository<User> {}
