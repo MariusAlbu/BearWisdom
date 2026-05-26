@@ -159,18 +159,27 @@ machinery, not a single-session sweep:**
 - **G4 + type-based G5** dispatch + overload — gated on **L4** (typing
   call-argument expressions), itself a real inference task; the selector
   (`dispatch.rs`) and the arity path of G5 are already built.
-- **G7** discriminated-union — the largest non-HKT item, 5 subsystems. The
-  foundational gap: `intern_type_str` falls back to `Class(input)`, so a union
-  branch's discriminant field (`kind: "circle"`) is NOT a `Type::Literal` today
-  (`Type::Literal` is minted only for call-args, `inference.rs:105`). A real win
-  needs all of: literal-field capture (extractor + intern), **L3** flow
-  discriminant extraction, a discriminant-carrying `Narrowing` (today
-  `narrowed_type` is a flat `String`), walker threading, and Union-arm selection.
-  Partial = inert. Note the `instanceof`/class narrowing case already works via
-  the existing narrowing path — the gap is specifically property-discriminant
-  guards (`s.kind === "..."`).
-- **G9 / L6** closures — corpus-wide function-type parsing + a call-yield arm;
-  yield-precision payoff (rarely new edges).
+- **G7** discriminated-union — the largest non-HKT item, 5 subsystems, and its
+  foundation is absent. (1) Literal-field capture: `push_ts_field`
+  (`typescript/symbols_fields.rs`) sets `declared_type: None` and only emits a
+  TypeRef edge from the annotation — a string-literal type `kind: "circle"` is
+  not a type name, so nothing comparable is stored; `intern_type_str` also falls
+  back to `Class(input)` and `Type::Literal` is minted only for call-args
+  (`inference.rs:105`). A real win needs ALL of: literal discriminant-field
+  capture (extractor + a literal field-value map or `Type::Literal` field types),
+  **L3** flow discriminant-guard extraction, a discriminant-carrying `Narrowing`
+  (today `narrowed_type` is a flat `String`; ripples to all construction sites),
+  and branch selection (walker Union arm — `members.rs:225` — or resolve-loop
+  narrowing seeding in `loop_body.rs:336`). Partial = inert. The `instanceof`/
+  class-narrowing case already works via the existing narrowing path — the gap is
+  specifically property-discriminant guards (`s.kind === "..."`).
+- **G9 / L6** closures — needs a foundation that's absent: `SegmentKind` has no
+  `Call` variant (`types.rs:370`), so the walker can't tell `obj.handler` (a
+  function value) from `obj.handler()` (invoking it) — method-call yield only
+  works because the member's *kind* is `"method"`. A real win needs a call
+  marker on `ChainSegment` (cross-language extractor change), function-type
+  parsing in `intern_type_str` into `Type::Function { return_ }` (the variant
+  already carries `return_`), and a yield arm. Low payoff (rarely new edges).
 - **G10 / L7** HKT — new kinded `Type` variant; largest, rarest.
 - **L1 (Haskell only)** — needs a Haskell-specific path to extract type vars +
   their `(C a) =>` constraint context (no bracket clause to key off);
