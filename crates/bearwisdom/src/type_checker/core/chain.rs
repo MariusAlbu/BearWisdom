@@ -750,24 +750,37 @@ impl<'a> ChainWalker<'a> {
         let Type::Union(branches) = self.arena.get(ty) else {
             return ty;
         };
-        let Some((prop, literal)) = self.lookup.local_discriminant(&root_seg.name) else {
+        let Some((prop, literal, negate)) = self.lookup.local_discriminant(&root_seg.name) else {
             return ty;
         };
-        for branch in branches {
-            if let Some(member) = self.members.lookup(
-                branch,
-                &prop,
-                EdgeKind::TypeRef,
-                self.supertypes,
-                self.arena,
-                self.profile,
-            ) {
-                if member.signature.as_deref() == Some(literal.as_str()) {
-                    return branch;
-                }
+        let matches_literal = |branch: TypeId| -> bool {
+            self.members
+                .lookup(
+                    branch,
+                    &prop,
+                    EdgeKind::TypeRef,
+                    self.supertypes,
+                    self.arena,
+                    self.profile,
+                )
+                .and_then(|m| m.signature)
+                .as_deref()
+                == Some(literal.as_str())
+        };
+        if negate {
+            // Early-exit guard (`if (x.kind !== "lit") return;`): keep the
+            // branches whose discriminant is NOT the literal. One survivor
+            // narrows to it; several keep a sub-union; excluding none or all
+            // leaves the union unchanged.
+            let kept: Vec<TypeId> = branches.iter().copied().filter(|&b| !matches_literal(b)).collect();
+            match kept.len() {
+                1 => kept[0],
+                n if n == 0 || n == branches.len() => ty,
+                _ => self.arena.intern(Type::Union(kept)),
             }
+        } else {
+            branches.into_iter().find(|&b| matches_literal(b)).unwrap_or(ty)
         }
-        ty
     }
 
     /// When `ty` is `Type::Apply { base, args }`, bind the base's declared

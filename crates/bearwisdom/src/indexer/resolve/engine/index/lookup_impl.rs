@@ -334,9 +334,12 @@ impl SymbolLookup for SymbolIndex {
         LOCAL_TYPE_CACHE.with(|c| c.borrow().lookup(name).map(|s| s.to_string()))
     }
 
-    fn local_discriminant(&self, name: &str) -> Option<(String, String)> {
-        LOCAL_TYPE_CACHE
-            .with(|c| c.borrow().discriminant(name).map(|(p, l)| (p.to_string(), l.to_string())))
+    fn local_discriminant(&self, name: &str) -> Option<(String, String, bool)> {
+        LOCAL_TYPE_CACHE.with(|c| {
+            c.borrow()
+                .discriminant(name)
+                .map(|(p, l, n)| (p.to_string(), l.to_string(), n))
+        })
     }
 
     fn install_local_cache(

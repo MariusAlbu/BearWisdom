@@ -452,3 +452,31 @@ fn ts_typeof_string_guard_narrows() {
         meta.narrowings
     );
 }
+
+#[test]
+fn flow_early_return_guard_negates_and_scopes_after_block() {
+    use crate::languages::typescript::flow::TS_FLOW_CONFIG;
+    // `if (s.kind !== "circle") return;` — `s` narrows to NOT-circle for the
+    // rest of the enclosing block (the early `return` makes the negation hold).
+    let source =
+        "function f(s: Shape) {\n  if (s.kind !== \"circle\") return;\n  s.radius;\n}\n";
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_FLOW_CONFIG, &symbols, &mut refs);
+
+    let d = meta
+        .discriminant_narrowings
+        .iter()
+        .find(|d| d.name == "s" && d.negate)
+        .expect("negated early-return guard should produce a narrowing");
+    assert_eq!(d.prop, "kind");
+    assert_eq!(d.literal, "\"circle\"");
+    // The narrowing scopes AFTER the guard — `s.radius;` falls inside its range.
+    let radius_pos = source.find("s.radius").unwrap() as u32;
+    assert!(
+        d.byte_start <= radius_pos && radius_pos < d.byte_end,
+        "range [{}, {}) should cover s.radius at {radius_pos}",
+        d.byte_start,
+        d.byte_end
+    );
+}

@@ -383,7 +383,7 @@ pub trait SymbolLookup {
 
     /// The active discriminated-union guard for `name` — `(prop, literal)` —
     /// at the current cursor. The chain walker uses it to select a union branch.
-    fn local_discriminant(&self, _name: &str) -> Option<(String, String)> {
+    fn local_discriminant(&self, _name: &str) -> Option<(String, String, bool)> {
         None
     }
 

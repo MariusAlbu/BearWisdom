@@ -88,6 +88,15 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
             body: (switch_body
                 (switch_case
                     value: (string) @guard.literal) @guard.body))
+
+        (if_statement
+            condition: (parenthesized_expression
+                (binary_expression
+                    left: (member_expression
+                        object: (identifier) @guard.local
+                        property: (property_identifier) @guard.prop)
+                    operator: ["!==" "!="]
+                    right: (string) @guard.literal))) @guard.early_exit
     "#,
 
     // Matches call sites carrying explicit type arguments:

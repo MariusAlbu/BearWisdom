@@ -807,6 +807,10 @@ pub struct DiscriminantNarrowing {
     pub literal: String,
     pub byte_start: u32,
     pub byte_end: u32,
+    /// When true the guard is negated (`if (x.kind !== "lit") return;`): the
+    /// narrowing holds for the range AFTER the early-exit guard, and selects
+    /// the union branches whose discriminant is NOT `literal`.
+    pub negate: bool,
 }
 
 /// Per-file flow-typing metadata, produced by the shared `indexer::flow`

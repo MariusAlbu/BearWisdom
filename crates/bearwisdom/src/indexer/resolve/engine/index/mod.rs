@@ -272,12 +272,13 @@ impl LocalTypeCache {
     }
 
     /// The active discriminant guard for `name` at the cursor — `(prop,
-    /// literal)`. The chain walker uses it to pick a union branch when the
-    /// receiver resolves to a `Type::Union`.
-    pub fn discriminant(&self, name: &str) -> Option<(&str, &str)> {
+    /// literal, negate)`. The chain walker uses it to pick a union branch when
+    /// the receiver resolves to a `Type::Union`; `negate` flips the selection
+    /// to the branches whose discriminant is NOT `literal` (early-exit guards).
+    pub fn discriminant(&self, name: &str) -> Option<(&str, &str, bool)> {
         for d in &self.discriminants {
             if d.name == name && d.byte_start <= self.cursor && self.cursor < d.byte_end {
-                return Some((d.prop.as_str(), d.literal.as_str()));
+                return Some((d.prop.as_str(), d.literal.as_str(), d.negate));
             }
         }
         None

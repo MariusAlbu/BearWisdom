@@ -297,12 +297,15 @@ fn run_discriminant_guard_query(
     let local_cap = query.capture_index_for_name("guard.local");
     let prop_cap = query.capture_index_for_name("guard.prop");
     let lit_cap = query.capture_index_for_name("guard.literal");
-    let body_cap = query.capture_index_for_name("guard.body");
-    let (Some(local_cap), Some(prop_cap), Some(lit_cap), Some(body_cap)) =
-        (local_cap, prop_cap, lit_cap, body_cap)
-    else {
+    let (Some(local_cap), Some(prop_cap), Some(lit_cap)) = (local_cap, prop_cap, lit_cap) else {
         return;
     };
+    // `@guard.body` scopes a positive guard (`if (x.kind === "lit") { ... }`);
+    // `@guard.early_exit` (the `if` node of `if (x.kind !== "lit") return;`)
+    // scopes a negated guard over the rest of the enclosing block. Either may
+    // be absent depending on which arms a language's query ships.
+    let body_cap = query.capture_index_for_name("guard.body");
+    let exit_cap = query.capture_index_for_name("guard.early_exit");
 
     let mut cursor = QueryCursor::new();
     let mut it = cursor.matches(&query, *root, src);
@@ -311,6 +314,7 @@ fn run_discriminant_guard_query(
         let mut prop: Option<Node> = None;
         let mut lit: Option<Node> = None;
         let mut body: Option<Node> = None;
+        let mut exit: Option<Node> = None;
         for cap in m.captures {
             if cap.index == local_cap {
                 local = Some(cap.node);
@@ -318,11 +322,13 @@ fn run_discriminant_guard_query(
                 prop = Some(cap.node);
             } else if cap.index == lit_cap {
                 lit = Some(cap.node);
-            } else if cap.index == body_cap {
+            } else if Some(cap.index) == body_cap {
                 body = Some(cap.node);
+            } else if Some(cap.index) == exit_cap {
+                exit = Some(cap.node);
             }
         }
-        let (Some(local), Some(prop), Some(lit), Some(body)) = (local, prop, lit, body) else {
+        let (Some(local), Some(prop), Some(lit)) = (local, prop, lit) else {
             continue;
         };
         let name = match local.utf8_text(src) {
@@ -340,14 +346,58 @@ fn run_discriminant_guard_query(
         if name.is_empty() || prop.is_empty() || literal.is_empty() {
             continue;
         }
+
+        // Negated early-exit guard scopes AFTER the `if`, over the rest of the
+        // enclosing block, and only when the consequence actually exits.
+        let (byte_start, byte_end, negate) = if let Some(exit) = exit {
+            if !is_early_exit_consequence(&exit) {
+                continue;
+            }
+            let start = exit.end_byte() as u32;
+            let end = exit.parent().map(|p| p.end_byte() as u32).unwrap_or(start);
+            if end <= start {
+                continue;
+            }
+            (start, end, true)
+        } else if let Some(body) = body {
+            (body.start_byte() as u32, body.end_byte() as u32, false)
+        } else {
+            continue;
+        };
+
         meta.discriminant_narrowings.push(DiscriminantNarrowing {
             name,
             prop,
             literal,
-            byte_start: body.start_byte() as u32,
-            byte_end: body.end_byte() as u32,
+            byte_start,
+            byte_end,
+            negate,
         });
     }
+}
+
+/// True when an `if` node's consequence is an early exit (`return` / `throw` /
+/// `break` / `continue`), bare or as the sole statement of a block. Gates the
+/// negated discriminant guard: only an exit makes the guard's negation hold for
+/// the rest of the enclosing block.
+fn is_early_exit_consequence(if_node: &Node) -> bool {
+    fn is_exit(kind: &str) -> bool {
+        matches!(
+            kind,
+            "return_statement" | "throw_statement" | "break_statement" | "continue_statement"
+        )
+    }
+    let Some(cons) = if_node.child_by_field_name("consequence") else {
+        return false;
+    };
+    if is_exit(cons.kind()) {
+        return true;
+    }
+    if cons.kind() == "statement_block" {
+        let mut c = cons.walk();
+        return cons.named_children(&mut c).any(|n| is_exit(n.kind()));
+    }
+    false
 }
 
 fn run_type_args_query(
