@@ -580,6 +580,93 @@ fn generic_apply_substitutes_yield_type() {
 }
 
 #[test]
+fn turbofish_binds_method_own_generic() {
+    // class Repo { find<U>(): U }  — repo.find<User>().name resolves `name` on
+    // User. The return is stored param-blind as Class("U") (the production
+    // shape from intern_type_str); the turbofish binds U and the primary-path
+    // rebind canonicalizes Class("U") → Generic(U) so substitution fires.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let repo_ty = arena.class("Repo");
+    let user_ty = arena.class("User");
+    let class_u = arena.class("U");
+    let u_param = arena.intern_generic(GenericParamData {
+        name: "U".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_u = arena.intern(Type::Generic { param: u_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_u), // nominal Class("U"), the prod shape
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(repo_ty, sym_info(1, "find", "Repo.find", "method", Some("Repo")));
+    members.add_direct(user_ty, sym_info(2, "name", "User.name", "property", Some("User")));
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_generic_param_type_ids("Repo.find", vec![gen_u]);
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("repo", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                type_args: vec!["User".to_string()],
+                ..seg("find", SegmentKind::Property)
+            },
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: repo_ty })
+        .expect("name resolves on the turbofish-bound return type");
+    assert_eq!(result.target_symbol_id, 2);
+}
+
+#[test]
 fn generic_arg_substitutes_through_inheritance() {
     // class Repository<T> { find_one(): T }
     // class UserRepo: Repository<User> {}

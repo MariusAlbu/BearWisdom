@@ -431,6 +431,32 @@ impl<'a> ChainWalker<'a> {
                 None => self.qualified_member_lookup(current_ty, &seg.name, file_ctx)?,
             };
 
+            // G1: explicit call-site type arguments (turbofish `m<User>()`) bind
+            // the called method's own generic parameters, so a method returning
+            // one of them yields the concrete type. The param ids come from
+            // `generic_param_type_ids` — the same source `owner_param_type_map`
+            // canonicalizes the return to — so the binding and the rebound
+            // return agree on the `GenericParamId`.
+            if !seg.type_args.is_empty() {
+                if let Some(param_tys) = self.lookup.generic_param_type_ids(&member.qualified_name) {
+                    let params: Vec<GenericParamId> = param_tys
+                        .iter()
+                        .filter_map(|&id| match self.arena.get(id) {
+                            Type::Generic { param } => Some(param),
+                            _ => None,
+                        })
+                        .collect();
+                    if !params.is_empty() {
+                        let arg_ids: Vec<TypeId> = seg
+                            .type_args
+                            .iter()
+                            .map(|s| self.arena.intern_type_str(s))
+                            .collect();
+                        env.bind_positional(&params, &arg_ids);
+                    }
+                }
+            }
+
             match self.yield_type_of(&member, seg, &env, current_ty) {
                 Some(next_ty) => {
                     current_ty = next_ty;
@@ -499,6 +525,19 @@ impl<'a> ChainWalker<'a> {
             }
         });
         if let Some(raw) = data_raw {
+            // Canonicalize nominal param tokens (`Class("T")`/`Class("U")`) in
+            // the stored return to the owner's / method's `Generic` ids before
+            // substituting. The SymbolTypeMap return is interned param-blind
+            // (`intern_type_str` yields `Class`), so without this an inherited
+            // or turbofish-bound generic stays unresolved on this path — only
+            // the string-fallback path below rebinds. Already-`Generic` returns
+            // are untouched (`rebind_class_params` rewrites only `Class`).
+            let params = self.owner_param_type_map(&sym.qualified_name);
+            let raw = if params.is_empty() {
+                raw
+            } else {
+                self.arena.rebind_class_params(raw, &params)
+            };
             return Some(self.unwrap_if_called(substitute(raw, env, self.arena), seg, &sym.kind));
         }
 
@@ -760,20 +799,27 @@ impl<'a> ChainWalker<'a> {
             .collect()
     }
 
-    /// `{param-name → Type::Generic id}` for the type owning `member_qname`
-    /// (its qname minus the trailing member segment). Drives the rebind of a
-    /// member's declared-type string from nominal `Class("T")` to the owner's
-    /// canonical `Generic(T)`.
+    /// `{param-name → Type::Generic id}` for both the member's own type
+    /// parameters (`find<U>`) and its owning type's (`class Repo<T>`). Drives
+    /// the rebind of a member's declared/return type from nominal `Class("T")`
+    /// to the canonical `Generic(T)` so `substitute` resolves it against the
+    /// receiver's bound args and any call-site turbofish. A method param
+    /// shadows a same-named owning-type param.
     fn owner_param_type_map(&self, member_qname: &str) -> FxHashMap<String, TypeId> {
-        let Some((owner, _)) = member_qname.rsplit_once('.') else {
-            return FxHashMap::default();
-        };
-        let Some(ids) = self.lookup.generic_param_type_ids(owner) else {
-            return FxHashMap::default();
-        };
-        ids.iter()
-            .map(|&id| (self.arena.format_type(id), id))
-            .collect()
+        let mut map = FxHashMap::default();
+        if let Some(ids) = self.lookup.generic_param_type_ids(member_qname) {
+            for &id in ids {
+                map.insert(self.arena.format_type(id), id);
+            }
+        }
+        if let Some((owner, _)) = member_qname.rsplit_once('.') {
+            if let Some(ids) = self.lookup.generic_param_type_ids(owner) {
+                for &id in ids {
+                    map.entry(self.arena.format_type(id)).or_insert(id);
+                }
+            }
+        }
+        map
     }
 }
 
