@@ -45,6 +45,38 @@ fn intern_type_str_parses_function_type() {
 }
 
 #[test]
+fn rebind_canonicalizes_higher_kinded_base() {
+    use rustc_hash::FxHashMap;
+    // `F<A>` interned nominally rebinds BOTH the base and the arg to their
+    // canonical generic params, so a higher-kinded return type substitutes.
+    let mut arena = TypeArena::new();
+    let f_param = arena.intern_generic(GenericParamData {
+        name: "F".into(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let a_param = arena.intern_generic(GenericParamData {
+        name: "A".into(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_f = arena.intern(Type::Generic { param: f_param });
+    let gen_a = arena.intern(Type::Generic { param: a_param });
+    let nominal = arena.intern_type_str("F<A>");
+    let mut map = FxHashMap::default();
+    map.insert("F".to_string(), gen_f);
+    map.insert("A".to_string(), gen_a);
+    let out = arena.rebind_class_params(nominal, &map);
+    assert_eq!(
+        arena.get(out),
+        Type::Apply {
+            base: gen_f,
+            args: vec![gen_a]
+        }
+    );
+}
+
+#[test]
 fn class_returns_stable_id_per_qname() {
     let mut arena = TypeArena::new();
     let a = arena.class("com.foo.User");

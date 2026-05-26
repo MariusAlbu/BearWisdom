@@ -211,6 +211,35 @@ fn substitute_inside_tuple_union_intersection() {
 }
 
 #[test]
+fn substitute_higher_kinded_application() {
+    // Higher-kinded resolution needs no dedicated `Type` variant: `F[Item]`,
+    // where `F` is a type-constructor parameter, is `Apply { base: Generic(F),
+    // args: [Item] }`. Binding `F → List` substitutes the Apply's base, yielding
+    // `List[Item]`. Arity (`F[_]`) matters only for kind-checking, not for this.
+    let mut arena = TypeArena::new();
+    let f_param = make_param(&mut arena, "F");
+    let generic_f = arena.intern(Type::Generic { param: f_param });
+    let item = arena.class("Item");
+    let list = arena.class("List");
+    let hkt = arena.intern(Type::Apply {
+        base: generic_f,
+        args: vec![item],
+    });
+
+    let mut env = GenericEnv::new();
+    env.bind(f_param, list);
+
+    let out = substitute(hkt, &env, &mut arena);
+    assert_eq!(
+        arena.get(out),
+        Type::Apply {
+            base: list,
+            args: vec![item]
+        }
+    );
+}
+
+#[test]
 fn substitute_leaves_class_primitive_literal_unknown_untouched() {
     let mut arena = TypeArena::new();
     let t_param = make_param(&mut arena, "T");

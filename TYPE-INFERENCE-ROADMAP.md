@@ -196,6 +196,13 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
   (Go/Kotlin/Scala/Swift/C#), the root-call form (`f().x` — root resolver interns
   via `class`, not `intern_type_str`), and non-arrow syntaxes (Rust `Fn`,
   Kotlin `(T)->R`).
+- **G10 (HKT resolution)** — already works via the existing machinery; no kinded
+  `Type` variant needed. A higher-kinded application `F[A]` is just
+  `Apply { base: Generic(F), args: [A] }`: `rebind_class_params` canonicalizes
+  the Apply *base* to `Generic(F)`, and `substitute` rewrites that base, so
+  `F[A]` with `F → List` becomes `List[A]`. Verified by tests. Arity (`F[_]`,
+  the L7 piece) matters only for *kind-checking* (is `List` a valid `F[_]`?),
+  not for resolution — so it stays out of scope.
 
 **Deferred with reasons:**
 - **G1 (D7)** — segment types intern nominal (`canonical_form.rs:197`), no
@@ -206,10 +213,12 @@ Prior to this roadmap: bounded-generic / forward-inference / string-hop
 
 **Remaining — each is a substantial effort gated on a per-language feed or new
 machinery, not a single-session sweep:**
-- **G4 + type-based G5** dispatch + overload — gated on **L4** (typing
-  call-argument expressions), itself a real inference task; the selector
-  (`dispatch.rs`) and the arity path of G5 are already built.
-- **G10 / L7** HKT — new kinded `Type` variant; largest, rarest.
+- **G4 + type-based G5** dispatch + overload — `select_method`/`args_assignable`
+  (`dispatch.rs`) and the arity path of G5 are built, but type-based selection is
+  inert until `intern_type_str` mints `Type::Primitive` for primitive names:
+  `is_assignable_to_typed`'s Class→Class arm returns Unknown for `number` vs
+  `string` (no inheritance link), so disjointness only fires on `Type::Primitive`.
+  That primitive-interning is a global change warranting its own validated pass.
 - **L1 (Haskell only)** — needs a Haskell-specific path to extract type vars +
   their `(C a) =>` constraint context (no bracket clause to key off);
   **L2** guard vocabulary across the 14 flow languages.
