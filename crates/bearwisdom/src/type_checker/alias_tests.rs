@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
-use crate::type_checker::core::types::{Type, TypeArena};
+use crate::type_checker::core::types::{LitValue, Type, TypeArena};
 use crate::types::AliasTarget;
 use std::collections::HashMap;
 
@@ -21,6 +21,7 @@ struct AliasFixture {
     generic_params: HashMap<String, Vec<String>>,
     field_types: HashMap<String, String>,
     return_types: HashMap<String, String>,
+    members: HashMap<String, Vec<SymbolInfo>>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -32,6 +33,7 @@ impl AliasFixture {
             generic_params: HashMap::new(),
             field_types: HashMap::new(),
             return_types: HashMap::new(),
+            members: HashMap::new(),
             empty: Vec::new(),
             empty_reexports: Vec::new(),
         }
@@ -39,6 +41,21 @@ impl AliasFixture {
 
     fn with_alias(mut self, name: &str, target: AliasTarget) -> Self {
         self.aliases.insert(name.to_string(), target);
+        self
+    }
+
+    fn with_member(mut self, owner: &str, member: &str) -> Self {
+        self.members.entry(owner.to_string()).or_default().push(SymbolInfo {
+            id: 0,
+            name: member.to_string(),
+            qualified_name: format!("{owner}.{member}"),
+            kind: "property".to_string(),
+            visibility: None,
+            file_path: std::sync::Arc::from("t.ts"),
+            scope_path: Some(owner.to_string()),
+            package_id: None,
+            signature: None,
+        });
         self
     }
 
@@ -68,8 +85,8 @@ impl SymbolLookup for AliasFixture {
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, name: &str) -> &[SymbolInfo] {
+        self.members.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
     }
     fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
         &self.empty
@@ -857,6 +874,35 @@ fn typed_keyof_object_other_return_none() {
     assert_eq!(expand_alias_typed(k1, &mut arena, &aliases, &lookup), None);
     assert_eq!(expand_alias_typed(k2, &mut arena, &aliases, &lookup), None);
     assert_eq!(expand_alias_typed(k3, &mut arena, &aliases, &lookup), None);
+}
+
+#[test]
+fn typed_keyof_expands_to_string_literal_union() {
+    // `type Keys = keyof User` with User.{id,name} → "id" | "name".
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new()
+        .with_member("User", "id")
+        .with_member("User", "name");
+    let pairs = vec![("Keys".to_string(), AliasTarget::Keyof("User".to_string()))];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let keys = arena.class("Keys");
+    let out = expand_alias_typed(keys, &mut arena, &aliases, &lookup).expect("keyof expands");
+    match arena.get(out) {
+        Type::Union(branches) => {
+            let lits: Vec<String> = branches
+                .iter()
+                .filter_map(|b| match arena.get(*b) {
+                    Type::Literal(LitValue::Str(s)) => Some(s),
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                lits.contains(&"id".to_string()) && lits.contains(&"name".to_string()),
+                "expected id|name string literals, got {lits:?}"
+            );
+        }
+        other => panic!("expected Union of literals, got {other:?}"),
+    }
 }
 
 #[test]

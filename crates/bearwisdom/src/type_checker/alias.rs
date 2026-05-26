@@ -17,7 +17,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::SymbolLookup;
-use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::core::types::{LitValue, Type, TypeArena, TypeId};
 use crate::type_checker::subtype::{
     is_assignable_to, is_assignable_to_typed, SubtypeResult,
 };
@@ -391,7 +391,23 @@ pub fn expand_alias_typed(
                 SubtypeResult::Unknown => None,
             }
         }
-        AliasTarget::Keyof(_) | AliasTarget::Object | AliasTarget::Other => None,
+        AliasTarget::Keyof(target) => {
+            // `keyof T` is the union of T's property names as string-literal
+            // types. With no known members the alias has nothing to expand to —
+            // miss against the name rather than invent an empty union.
+            let members = lookup.members_of(&target);
+            if members.is_empty() {
+                return None;
+            }
+            let mut seen = std::collections::HashSet::new();
+            let lits: Vec<TypeId> = members
+                .iter()
+                .filter(|m| seen.insert(m.name.clone()))
+                .map(|m| arena.intern(Type::Literal(LitValue::Str(m.name.clone()))))
+                .collect();
+            Some(arena.intern(Type::Union(lits)))
+        }
+        AliasTarget::Object | AliasTarget::Other => None,
     }
 }
 
