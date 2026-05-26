@@ -458,69 +458,6 @@ fn resolve_iteration_body(
                     .map(|r| (r, true));
 
                 if let Some((resolution, came_from_engine)) = resolution {
-                    // Compiler-resolve routing (gated): a coincidental
-                    // same-name bind on a ref whose head an import or manifest
-                    // places in a dependency is a false call-graph edge. Reject
-                    // it and record the ref as external + demand, so a later
-                    // expand pass can pull the dependency that actually
-                    // declares the name and turn it into a real edge — rather
-                    // than asserting a call into a same-named local symbol.
-                    //
-                    // Exception: when the coincidental bind already landed on
-                    // an `origin='external'` symbol, the grep found the real
-                    // declaration. That IS the origin-blind edge we want — keep
-                    // it. Diverting it to an external_ref would drop a correct
-                    // edge to a hydrated dependency symbol.
-                    let reroute_ns = if super::compiler_resolve_enabled()
-                        && is_coincidental_name_strategy(resolution.strategy)
-                        && !target_symbol_is_external(resolution.target_symbol_id, &r.target_name, index)
-                    {
-                        classify_external_ns(
-                            r,
-                            &ref_ctx,
-                            Some(file_ctx),
-                            file_imports,
-                            &module_to_files,
-                            &type_engine,
-                            project_ctx,
-                            index,
-                            effective_lang,
-                            true,
-                            // Authoritative signals only — the chain-root
-                            // heuristic must not divert a grep edge that found
-                            // a real internal target.
-                            false,
-                        )
-                    } else {
-                        None
-                    };
-                    if let Some(ns) = reroute_ns {
-                        buf.externals.push((
-                            source_id,
-                            r.target_name.clone(),
-                            r.kind.as_str(),
-                            r.line,
-                            ns,
-                            pf.package_id,
-                        ));
-                        local_stats.external += 1;
-                        // Seed demand for the at-the-ref pull: a bare,
-                        // chain-less name records an empty-receiver miss so
-                        // `locate_via_symbol_index` Phase B can probe the
-                        // external symbol index and hydrate the declaring file.
-                        if r.module.is_none()
-                            && r.chain.is_none()
-                            && !r.target_name.is_empty()
-                            && !r.target_name.contains('.')
-                        {
-                            index.record_chain_miss(engine::ChainMiss {
-                                current_type: String::new(),
-                                target_name: r.target_name.clone(),
-                            });
-                        }
-                        continue;
-                    }
-
                     // R5 forward-inference cache write. Engine yields are
                     // recorded only when the engine path provided them;
                     // legacy resolutions still drive the cache as before.
@@ -637,40 +574,12 @@ fn resolve_iteration_body(
                 project_ctx,
                 index,
                 effective_lang,
-                super::compiler_resolve_enabled(),
                 // Tier-1.5 has no edge at stake — the chain heuristic is a
                 // reasonable last-resort classification here.
                 true,
             );
 
             if let Some(ns) = &inferred_ns {
-                // Origin-blind bind (gated): the ref is external-bound and a
-                // single kind-compatible external symbol carries this name —
-                // that's the declaring symbol. Emit the edge instead of an
-                // external_ref so a hydrated dependency reference resolves like
-                // any internal one. Covers the grep-declined case (a name that
-                // exists both internally and externally bails out of the
-                // unique-candidate grep) where the import names the dependency.
-                if super::compiler_resolve_enabled() {
-                    if let Some(target_id) = resolve_unique_external_symbol(
-                        &r.target_name,
-                        r.kind,
-                        index,
-                        type_engine.profile_for(effective_lang),
-                    ) {
-                        buf.edges.push((
-                            source_id,
-                            target_id,
-                            r.kind.as_str(),
-                            r.line,
-                            1.0,
-                            "external_unique_symbol",
-                        ));
-                        local_stats.resolved += 1;
-                        local_stats.engine_resolved += 1;
-                        continue;
-                    }
-                }
                 buf.externals.push((
                     source_id,
                     r.target_name.clone(),
@@ -893,94 +802,6 @@ fn resolve_iteration_body(
     Ok(stats)
 }
 
-/// `true` when a module/import path is rooted at a crate-internal keyword
-/// (`crate`, `super`, `self`, `Self`). Such a path resolves inside the
-/// project by definition — no language has an external dependency whose
-/// module is literally one of these. Separators handled: `::` (Rust) and
-/// `.` (dotted languages).
-fn is_crate_internal_module(module_path: &str) -> bool {
-    let first_seg = module_path
-        .split(|c| c == ':' || c == '.')
-        .find(|s| !s.is_empty())
-        .unwrap_or(module_path);
-    matches!(first_seg, "crate" | "super" | "self" | "Self")
-}
-
-/// Resolve a bare external-bound name to the single external symbol that
-/// carries it, or `None`.
-///
-/// Filters `by_name` to `origin='external'`, kind-compatible candidates and
-/// dedups on qualified name (the same logical dependency symbol indexed from
-/// duplicate files counts once). Returns the id only when exactly one remains
-/// — two distinct external symbols of the same name (`serde_json::Value` vs
-/// `toml::Value`) stay ambiguous and fall back to an external_ref. The caller
-/// has already established the ref is external-bound, so an internal symbol of
-/// the same name is correctly ignored.
-fn resolve_unique_external_symbol(
-    target_name: &str,
-    edge_kind: EdgeKind,
-    index: &SymbolIndex,
-    profile: Option<&crate::type_checker::profile::language_profile::LanguageProfile>,
-) -> Option<i64> {
-    use crate::type_checker::profile::language_profile::KindCompatibility;
-    use crate::types::SymbolKind;
-    use std::str::FromStr;
-    let mut ext: Vec<&engine::SymbolInfo> = index
-        .by_name(target_name)
-        .iter()
-        .filter(|s| index.is_external_file(&s.file_path))
-        .filter(|s| match (profile, SymbolKind::from_str(&s.kind)) {
-            (Some(p), Ok(k)) => {
-                KindCompatibility::check(p.kind_compatible_table, edge_kind, k)
-            }
-            // No profile or unrecognized kind → permissive, matching the
-            // bare-resolver's `kind_ok` default.
-            _ => true,
-        })
-        .collect();
-    ext.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name));
-    ext.dedup_by(|a, b| a.qualified_name == b.qualified_name);
-    if ext.len() == 1 {
-        Some(ext[0].id)
-    } else {
-        None
-    }
-}
-
-/// `true` when the resolved target (`target_id`) is an `origin='external'`
-/// symbol. A coincidental bind that landed on an external symbol is the
-/// real declaration — an origin-blind edge to a hydrated dependency, not a
-/// false same-name internal bind — so the router keeps it instead of
-/// diverting it to an external_ref. The id→symbol lookup goes through
-/// `by_name` (coincidental targets are bare names) and matches on id.
-fn target_symbol_is_external(target_id: i64, target_name: &str, index: &SymbolIndex) -> bool {
-    index
-        .by_name(target_name)
-        .iter()
-        .find(|s| s.id == target_id)
-        .map(|s| index.is_external_file(&s.file_path))
-        .unwrap_or(false)
-}
-
-/// `true` for resolution strategies that bind a bare name to a same-named
-/// symbol without scope/import evidence — the coincidental-name ("grep")
-/// family. A hit from one of these on a ref that an import or manifest
-/// places in a dependency is a false edge; the compiler-resolve router
-/// rejects it in favour of external classification + demand.
-fn is_coincidental_name_strategy(strategy: &str) -> bool {
-    matches!(
-        strategy,
-        "rust_global_name_fallback"
-            | "rust_global_name_scoped"
-            | "rust_same_file_name_fallback"
-            | "rust_global_typeref_fallback"
-            | "default_same_file"
-            | "default_unique_internal_name"
-            | "default_ranked_candidate"
-            | "engine_bare_same_file"
-    )
-}
-
 /// Decide the external namespace a ref belongs to, or `None`.
 ///
 /// Authoritative signals only, in priority order: the language hook's
@@ -990,9 +811,6 @@ fn is_coincidental_name_strategy(strategy: &str) -> bool {
 /// an explicit `r.module` that names no local file/namespace. A ref no
 /// authority places in a dependency returns `None` — internal or honestly
 /// unresolved, never branded external by elimination.
-///
-/// Shared by the tier-1.5 classification pass and the compiler-resolve
-/// reroute check so both decide external-ness identically.
 #[allow(clippy::too_many_arguments)]
 fn classify_external_ns(
     r: &crate::types::ExtractedRef,
@@ -1004,7 +822,6 @@ fn classify_external_ns(
     project_ctx: Option<&ProjectContext>,
     index: &SymbolIndex,
     effective_lang: &str,
-    strict: bool,
     include_chain_heuristic: bool,
 ) -> Option<String> {
     file_ctx
@@ -1049,12 +866,6 @@ fn classify_external_ns(
                 let Some(module_path) = module_path_opt.as_deref() else {
                     continue;
                 };
-                // A `crate::`/`super::`/`self::` import is project-local; only
-                // the strict (compiler-resolve) classifier knows to skip it —
-                // the legacy path leaves this to `is_module_in_project`.
-                if strict && is_crate_internal_module(module_path) {
-                    continue;
-                }
                 if is_module_in_project(module_path, module_to_files, index) {
                     continue;
                 }
@@ -1066,14 +877,6 @@ fn classify_external_ns(
         // R `dplyr::mutate`, Erlang `lists:map`, Haskell `Map.lookup`.
         .or_else(|| {
             let module = r.module.as_ref()?;
-            // A path-internal keyword prefix (`crate::`, `super::`, `self::`,
-            // `Self::`) marks a project-local reference. Branding it external
-            // mistakes an unresolved-internal ref for a dependency — the S3
-            // authority hierarchy resolves these inside the project, never to
-            // a manifest dep. Strict (compiler-resolve) only.
-            if strict && is_crate_internal_module(module) {
-                return None;
-            }
             let mod_lower = module.to_lowercase();
             let mut is_local = module_to_files.contains_key(module.as_str())
                 || module_to_files.contains_key(&mod_lower);
@@ -1092,43 +895,6 @@ fn classify_external_ns(
                 Some(format!("ext:{module}"))
             }
         })
-        // Workspace authority (S3 first rule): a namespace that names a
-        // workspace-member package, a path-dependency alias, or the project's
-        // own crate is project-internal, not a dependency — its symbols are
-        // `origin='internal'` in the index. Branding it external would drop
-        // correct cross-package edges. Strict only, so the legacy classifier's
-        // output is unchanged.
-        .filter(|ns| !strict || !names_workspace_internal(ns, index, project_ctx))
-}
-
-/// `true` when an external namespace string actually names project-internal
-/// code, by an authoritative crate-identity signal:
-///   - a workspace package declared name (the symbol index), or
-///   - a cargo path-dep alias / own crate name (the project manifests).
-///
-/// Deliberately does NOT fall back to `is_module_in_project`: a bare module/
-/// file name (`core`, `std`) frequently collides with an external crate of the
-/// same name (Rust's `src/core/` module vs the `core` stdlib crate), and that
-/// probe would misclassify the dependency as internal. Crate-identity signals
-/// don't collide — stdlib/dep names never appear as workspace package names or
-/// path-dep aliases. Strips an `ext:` prefix and any `.*` wildcard tail and
-/// probes the leading segment.
-fn names_workspace_internal(
-    ns: &str,
-    index: &SymbolIndex,
-    project_ctx: Option<&ProjectContext>,
-) -> bool {
-    if names_workspace_package(ns, index) {
-        return true;
-    }
-    let Some(ctx) = project_ctx else { return false };
-    let probe = ns.strip_prefix("ext:").unwrap_or(ns);
-    let probe = probe.strip_suffix(".*").unwrap_or(probe);
-    let first = probe
-        .split(|c| c == ':' || c == '.' || c == '/')
-        .find(|s| !s.is_empty())
-        .unwrap_or(probe);
-    !first.is_empty() && ctx.is_workspace_local_crate(first)
 }
 
 /// `true` when an external namespace string actually names a workspace-member

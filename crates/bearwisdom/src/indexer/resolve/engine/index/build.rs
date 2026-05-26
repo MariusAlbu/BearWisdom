@@ -26,7 +26,7 @@ use crate::types::{
 
 use super::super::{
     file_belongs_to_npm_package, infer_type_from_chain, npm_package_from_external_path,
-    npm_package_from_specifier, parse_arrow_return_type, parse_return_type_from_signature,
+    npm_package_from_specifier, parse_return_type_from_signature,
     resolve_type_name_in_scope,
 };
 use super::{
@@ -361,16 +361,7 @@ impl SymbolIndex {
                         // real return_type aren't overwritten.
                         if !return_type.contains_key(&sym.qualified_name) {
                             if let Some(sig) = &sym.signature {
-                                // Arrow-return signatures (`(...) -> T`, Rust/
-                                // C++) are mined only under compiler-resolve —
-                                // it widens external chain-walk reach but shifts
-                                // the type maps, so it stays behind the gate
-                                // with the rest of the routing change.
-                                let rt = parse_return_type_from_signature(sig).or_else(|| {
-                                    crate::indexer::resolve::compiler_resolve_enabled()
-                                        .then(|| parse_arrow_return_type(sig))
-                                        .flatten()
-                                });
+                                let rt = parse_return_type_from_signature(sig);
                                 if let Some(rt) = rt {
                                     let resolved = resolve_type_name_in_scope(
                                         &rt,

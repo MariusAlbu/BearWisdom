@@ -6,7 +6,7 @@ use crate::indexer::resolve::engine::{
     build_scope_chain, ChainMiss, LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup,
 };
 use crate::indexer::resolve::engine::chain_walker::{
-    parse_arrow_return_type, parse_declared_type_from_signature_for_lang,
+    parse_declared_type_from_signature_for_lang,
     parse_param_types_from_signature, parse_param_types_from_signature_for_lang,
     parse_return_type_from_signature, resolve_type_name_in_scope, tuple_element,
 };
@@ -254,48 +254,6 @@ fn parse_return_type_from_dotnet_signature() {
         Some("V".to_string())
     );
     assert_eq!(parse_return_type_from_signature(""), None);
-}
-
-#[test]
-fn parse_arrow_return_type_handles_rust_shapes() {
-    // Rust arrow return.
-    assert_eq!(
-        parse_arrow_return_type("from_str(s: &str) -> Result<T>"),
-        Some("Result<T>".to_string())
-    );
-    // Generic params before the arg list.
-    assert_eq!(
-        parse_arrow_return_type("map<T>(self, f: F) -> Vec<T>"),
-        Some("Vec<T>".to_string())
-    );
-    // Borrow markers are stripped to a bare type name.
-    assert_eq!(
-        parse_arrow_return_type("schema(&self) -> &Schema"),
-        Some("Schema".to_string())
-    );
-    assert_eq!(
-        parse_arrow_return_type("get_mut(&mut self) -> &mut Field"),
-        Some("Field".to_string())
-    );
-    // A closure parameter's own `->` must not be mistaken for the return.
-    assert_eq!(
-        parse_arrow_return_type("filter(self, f: impl Fn(X) -> bool) -> Iter"),
-        Some("Iter".to_string())
-    );
-    // Trailing where-clause is dropped.
-    assert_eq!(
-        parse_arrow_return_type("build(self) -> Index where T: Clone"),
-        Some("Index".to_string())
-    );
-    // No arrow at all.
-    assert_eq!(parse_arrow_return_type("String foo()"), None);
-    // The `): T` form is the colon parser's job, not the arrow parser's.
-    assert_eq!(parse_arrow_return_type("query(): SelectQueryBuilder"), None);
-    // ...and the colon parser still handles it.
-    assert_eq!(
-        parse_return_type_from_signature("query(): SelectQueryBuilder"),
-        Some("SelectQueryBuilder".to_string())
-    );
 }
 
 #[test]

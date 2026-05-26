@@ -625,60 +625,6 @@ pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {
     None
 }
 
-/// Extract the return type from an arrow-return signature: `(...) -> T`.
-///
-/// Returns the first top-level `->` target (paren/angle/bracket depth 0), so a
-/// closure parameter `Fn(X) -> Y` nested in the argument list is skipped and
-/// only the function's own return arrow fires. Trailing `where` clauses, block
-/// bodies, and `;` are dropped, and leading `&` / `&mut` / `mut` borrow markers
-/// are stripped so the result is a bare type name the chain walker can intern.
-///
-/// Used by the build/augment type-map population under the compiler-resolve
-/// gate as a fallback when the `): T` form yields nothing.
-pub(crate) fn parse_arrow_return_type(sig: &str) -> Option<String> {
-    let bytes = sig.as_bytes();
-    let mut depth_paren: i32 = 0;
-    let mut depth_angle: i32 = 0;
-    let mut depth_square: i32 = 0;
-    let mut arrow_at: Option<usize> = None;
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        match bytes[i] {
-            b'(' => depth_paren += 1,
-            b')' => depth_paren -= 1,
-            b'<' => depth_angle += 1,
-            // `>` closes a generic UNLESS it is the tail of `->` / `=>`.
-            b'>' if i == 0 || (bytes[i - 1] != b'-' && bytes[i - 1] != b'=') => {
-                depth_angle -= 1;
-            }
-            b'[' => depth_square += 1,
-            b']' => depth_square -= 1,
-            b'-' if bytes[i + 1] == b'>'
-                && depth_paren == 0
-                && depth_angle == 0
-                && depth_square == 0 =>
-            {
-                arrow_at = Some(i);
-                break;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    let rt = sig[arrow_at? + 2..].trim();
-    let rt = rt.split(" where ").next().unwrap_or(rt);
-    let rt = rt.split('{').next().unwrap_or(rt);
-    let rt = rt.split(';').next().unwrap_or(rt).trim();
-    let rt = rt.trim_start_matches('&').trim_start();
-    let rt = rt.strip_prefix("mut ").unwrap_or(rt).trim();
-    if rt.is_empty() {
-        None
-    } else {
-        Some(rt.to_string())
-    }
-}
-
-
 pub(crate) fn infer_type_from_chain(
     chain: &crate::types::MemberChain,
     scope_path: &Option<String>,

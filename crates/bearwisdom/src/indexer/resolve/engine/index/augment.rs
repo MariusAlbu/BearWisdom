@@ -23,7 +23,7 @@ use rustc_hash::FxHashMap;
 use crate::types::{EdgeKind, ParsedFile, SymbolKind, Visibility};
 
 use super::super::{
-    find_matching_bracket, merge_where_bounds, parse_arrow_return_type, parse_generic_param_clause,
+    find_matching_bracket, merge_where_bounds, parse_generic_param_clause,
     parse_return_type_from_signature, resolve_type_name_in_scope,
 };
 use super::{common_prefix_len, is_type_like_kind};
@@ -184,13 +184,7 @@ impl SymbolIndex {
                             .is_some();
                         if !already {
                             if let Some(sig) = &sym.signature {
-                                // Arrow-return (`(...) -> T`) mined only under
-                                // the compiler-resolve gate — see build.rs.
-                                let rt = parse_return_type_from_signature(sig).or_else(|| {
-                                    crate::indexer::resolve::compiler_resolve_enabled()
-                                        .then(|| parse_arrow_return_type(sig))
-                                        .flatten()
-                                });
+                                let rt = parse_return_type_from_signature(sig);
                                 if let Some(rt) = rt {
                                     let resolved = resolve_type_name_in_scope(
                                         &rt,

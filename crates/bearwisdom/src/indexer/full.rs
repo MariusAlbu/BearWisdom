@@ -676,11 +676,7 @@ pub fn full_index(
     // `edges` rows. Pre-pull files the user's direct import-qualified refs
     // demand so those resolutions land as edges on pass 1. Chain walker
     // still drives the loop below for deeper hops.
-    // Compiler-resolve mode skips the eager seed: with the residual grep
-    // rerouted to external + demand, the at-the-ref demand pull (the expand
-    // loop below) hydrates the dependencies that user refs reach, so the
-    // bulk pre-pull is redundant.
-    if !symbol_index.is_empty() && !resolve::compiler_resolve_enabled() {
+    if !symbol_index.is_empty() {
         let mut seeded = seed_demand_from_user_refs(
             &parsed, &symbol_index, registry, workspace_arena.as_ref(),
         );
