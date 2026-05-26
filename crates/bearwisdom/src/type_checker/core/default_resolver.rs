@@ -676,10 +676,14 @@ impl<'a> DefaultResolver<'a> {
     ///   13. same namespace — file's declared namespace + target
     ///   14. imported namespace — candidate qname is prefixed by an import
     ///   15. ambient package — candidate lives in a declared ambient pkg
-    ///   16. unique internal name — exactly one project-internal candidate
-    ///   17. wildcard import — bare target under a wildcard import's namespace
-    ///   18. generic param — bare target matches a declared generic parameter
-    ///   19. ranked candidates — multi-candidate disambiguation by signals
+    ///   16. wildcard import — bare target under a wildcard import's namespace
+    ///   17. generic param — bare target matches a declared generic parameter
+    ///
+    /// Every strategy binds through scope or import structure. There is no
+    /// global `by_name` search in this ladder — a name binds through that
+    /// structure or stays unresolved. The by-name methods
+    /// `resolve_via_unique_internal_name` and `resolve_via_ranked_candidates`
+    /// are not part of the default binder.
     ///
     /// Language hooks that want a different order or additional language-
     /// specific strategies call individual methods themselves.
@@ -699,10 +703,8 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_same_namespace())
             .or_else(|| self.resolve_via_imported_namespace())
             .or_else(|| self.resolve_via_ambient_package())
-            .or_else(|| self.resolve_via_unique_internal_name())
             .or_else(|| self.resolve_via_wildcard_import())
-            .or_else(|| self.resolve_via_generic_param())
-            .or_else(|| self.resolve_via_ranked_candidates());
+            .or_else(|| self.resolve_via_generic_param());
         if result.is_none() {
             self.record_bare_name_chain_miss();
         }
