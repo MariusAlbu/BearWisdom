@@ -271,34 +271,18 @@ gate, or the closeout recapture (NOT autonomous single-session work):**
   block, with negated branch selection. Additive (no regression when inert),
   dormant behind the TS `flow_config` gate (`BW_TS_FLOW`) like the rest of the
   discriminant path.
-- **G7 anonymous-branch precision — blocked-by-regression on the TS flow gate.**
-  An anonymous union `{kind:"a";x}|{kind:"b";y}` currently classifies as
-  `AliasTarget::Object` (one flat `Class(S)` with `{kind,x,y}`), so `s.x` and
-  `s.y` both resolve (over-permissive but resolving). Branch precision needs the
-  union represented as `Union([S$a,S$b])` with synthetic per-branch members —
-  but `MembersIndex` requires a member in EVERY branch (`members.rs:245`), so a
-  Union makes `s.x`/`s.y` MISS unless narrowing selects a branch. Narrowing is
-  gated off (BW_TS_FLOW), so the Union representation is a pure regression until
-  the gate lifts. The non-regressing alternative (a tagged-union `Type` variant
-  or a side table with a flat fallback) is speculative new machinery for a
-  dormant benefit. Correct move: lift `BW_TS_FLOW` first, then implement as
-  below and validate against the corpus.
-
-  **Turn-key plan (do at gate-lift):**
-  1. `narrow_union_by_discriminant` — handle `Type::Intersection` the same way
-     it handles `Type::Union` (select the branch whose discriminant member's
-     signature equals the literal; negate keeps the non-matching branches).
-     This is the generic-engine half — small and safe.
-  2. TS extractor (`recurse_for_object_types` / `classify_alias_target`) — for a
-     union of anonymous `object_type` branches, emit per-branch synthetic types
-     (members re-parented under `{alias}$<idx>` instead of flattened under the
-     alias) and classify the alias as `AliasTarget::Intersection([$0,$1])`.
-     Intersection member lookup is any-branch (`members.rs:249`), so the
-     no-narrowing case still resolves every member (= today's flat behavior, no
-     regression); narrowing then selects one branch for precision.
-  3. Validate: the synthetic per-branch symbols change the TS symbol table
-     (new qnames, discriminant member duplicated per branch) — the corpus
-     recapture confirms no search/count regressions and that narrowing fires.
+- **G7 anonymous-branch precision — landed (`d4fff83a`) via Intersection of
+  synthetic branches.** An anonymous union `{kind:"a";x}|{kind:"b";y}` now
+  emits a synthetic per-branch type (members parented under `{alias}\u{1}<i>`)
+  and classifies the alias `AliasTarget::Intersection([$0,$1])`. Intersection
+  member lookup is any-branch (`members.rs`), so with no guard active every
+  member still resolves (= the prior flat behavior, no regression);
+  `narrow_union_by_discriminant` now narrows a `Type::Intersection` to one
+  branch under a guard, giving precision. The branch-selection precision is
+  dormant until `BW_TS_FLOW` lifts (narrowing is flow-fed); the non-regressing
+  flat resolution is active now. The synthetic branch types change the TS
+  symbol table (sentinel qnames, discriminant member per branch) — flagged for
+  the closeout recapture to confirm no search/count regressions.
 - **TS2 mapped beyond transparent — foundation.** Record value-type / key-remap /
   value-template need an index-signature type in the arena + extractor capture +
   member-lookup support. New machinery for a case (mapped types as chain
