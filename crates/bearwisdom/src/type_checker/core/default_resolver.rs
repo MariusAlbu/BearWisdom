@@ -753,6 +753,7 @@ impl<'a> DefaultResolver<'a> {
             crate::indexer::resolve::engine::ChainMiss {
                 current_type: String::new(),
                 target_name: target.to_string(),
+                module: None,
             },
         );
     }

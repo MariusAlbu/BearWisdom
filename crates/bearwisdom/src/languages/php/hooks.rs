@@ -351,6 +351,7 @@ pub(crate) fn walk_php_chain(
         lookup.record_chain_miss(ChainMiss {
             current_type: miss_type,
             target_name: seg.name.clone(),
+            module: None,
         });
         return None;
     }
@@ -445,6 +446,7 @@ pub(crate) fn walk_php_chain(
     lookup.record_chain_miss(ChainMiss {
         current_type: effective_type,
         target_name: last.name.clone(),
+        module: None,
     });
     None
 }

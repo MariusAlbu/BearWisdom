@@ -272,6 +272,18 @@ fn locate_via_symbol_index(
     index: &SymbolLocationIndex,
     miss: &ChainMiss,
 ) -> Vec<std::path::PathBuf> {
+    // EXT-1 — module-scoped demand. An import-qualified external carries the
+    // module its name was imported from, so locate the defining file *inside*
+    // that module. No `find_by_name` fallback: a name absent under its own
+    // module is a genuine gap (the demand index didn't reach it), not licence
+    // to pull a coincidental same-name symbol from another package.
+    if let Some(module) = &miss.module {
+        return index
+            .locate(module, &miss.target_name)
+            .map(|p| vec![p.to_path_buf()])
+            .unwrap_or_default();
+    }
+
     let mut out: Vec<std::path::PathBuf> = Vec::new();
     let push_all = |name: &str, out: &mut Vec<std::path::PathBuf>| {
         for (_, path) in index.find_by_name(name) {

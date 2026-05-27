@@ -56,6 +56,7 @@ inference to bind every reference to its declaring symbol.
 | QUAL-3 (H.1) | Delete the import-blind `*_synthetic_global` ext-bare-name grep family (Option A — honest floor) | `bf46353b` |
 | EXT-4 | Delete the eager `seed_demand_from_user_refs` — externals load lazily via the expand loop | `aad62601` |
 | — | Large-stack parse pool (`build_parse_pool`, 128MB) + iterative `scope_tree`/`recurse_for_object_types` so deep generated `.d.ts` unions don't overflow; full-corpus recapture (honest floor) | `c25ff7d9` |
+| EXT-1 | Scope-directed external routing: module-scoped demand for import-qualified externals (`ChainMiss.module` → `SymbolLocationIndex::locate`), recovers the externals EXT-4 dropped, no cross-package grep | _(this change)_ |
 
 ts-immich: grep-baseline 6,179 → **4,627** unresolved, with honest structural edges.
 
@@ -140,11 +141,11 @@ Re-anchors the routing doc's D2/D4/D5/S5b on the binder-first path. **This is th
 #1 corpus-leverage block** — chain-walking through Prisma/ORM/tidyverse/Flutter
 return types is gated here, and it is what makes external types ordinary table rows.
 
-### EXT-1 — Scope-directed external routing (D2)  ·  [generic]  ·  ❌
+### EXT-1 — Scope-directed external routing (D2)  ·  [generic]  ·  ✅
 **Compiler feature:** decide external-ness *first* by scope/import, not as the residual.
-**Gap:** external is tier-1.5 residual (`classify_external_ns`) after internal resolution.
-**Fix (target form, not the deleted reroute):** thread a scoped resolution request into the engine so an import-determined-external ref short-circuits the internal strategies and records demand. No env gate.
-**Deps:** QUAL-1 (no grep to pre-empt)
+**Done.** `ChainMiss` gained an optional `module`; at the Tier-1.5 external classification (`loop_body.rs`), an `ext:<module>`-classified ref now records a **module-scoped demand** (`ChainMiss { current_type:"", target_name: <leaf>, module: Some(<module>) }`). `expand::locate_via_symbol_index` resolves a module-scoped miss via `SymbolLocationIndex::locate(module, name)` — the file defining the name *inside that package*, with **no `find_by_name` cross-package fallback** (a miss under the module is a genuine gap, not licence to grep). A re-resolve upgrades the opaque `external_ref` into a real edge. The pull is reachability-bounded for free: `locate` only answers for `(module, name)` pairs the demand-driven index already carries (npm/cargo/go_mod/etc. `build_symbol_index`), so builtin/primitive namespaces and unscanned modules locate to nothing and stay `external_ref`, exactly as before. No env gate. Recovers the import-qualified externals EXT-4 dropped. Verified: ts-rallly +29 binds (no regression); go-fiber rate flat.
+**Scope note (intentional):** only the *records-demand* half landed. The *short-circuit-internal-strategies* half is intentionally NOT done — post-QUAL-1 the internal strategies are scope-directed and cannot coincidentally bind an import name, so running them first then classifying external as residual is functionally equivalent AND avoids the lexical-shadowing risk a blind short-circuit would carry (a true inner-scope binding must still win over the import per BIND-1).
+**Deps:** QUAL-1 (no grep to pre-empt) ✅
 
 ### EXT-2 — Emit external return/field types (D4 / S5)  ·  [generic]+[profile]  ·  ⚠️ (slice 1 ✅)
 **Slice 1 done (`1f03bec9`):** `parse_return_type_from_signature` (`chain_walker.rs:591`) now recognizes `-> T` (Python/Rust) and `=> T` (TS-arrow) on top of `): T`, with angle-depth guard, Rust `where`/block stripping, and trailing-`:` handling. External methods using those forms populate the return/field maps through the signature fallback build.rs/augment.rs already run. Covered by `chain_walker_tests.rs` (colon/arrow/generic/where/block) + end-to-end `mod_tests.rs::signature_derived_return_type_arrow_form` (Python `-> User` external → `return_type_name` via `build_with_context`).
@@ -281,9 +282,9 @@ The baseline (`baseline-all.json`, 2026-05-24) predates this session — svelte 
 6. **EXT-5, CORPUS-1/2, INFER-2/3/4/5, remaining LANG-*** — breadth.
 7. **DOC-1..4** — in passing / at closeout.
 
-**State (2026-05-27):** sequence #1's EXT-2 slice-1 ✅ (`1f03bec9`), #2's QUAL-1b H.1+H.2 ✅ (`bf46353b`/`c4252e8b`) and BIND-1 ✅, EXT-4 ✅ (`aad62601`). The remaining top of the stack: **EXT-3** (finish the #1 block — carry generics through external chains + supertype walk over external bases) and **EXT-1** (scope-directed external routing — the explicit recovery path for the import-qualified externals EXT-4's honest floor dropped). INFER-1 (CFG) is the foundational-but-largest item gating INFER-2/3/4.
+**State (2026-05-27):** sequence #1's EXT-2 slice-1 ✅ (`1f03bec9`) + EXT-1 ✅ (this change), #2's QUAL-1b H.1+H.2 ✅ (`bf46353b`/`c4252e8b`) and BIND-1 ✅, EXT-4 ✅ (`aad62601`). The remaining top of the stack: **EXT-3** (finish the #1 block — carry generics through external chains + supertype walk over external bases) and **QUAL-5** (three-state external model — pairs with EXT-1 to make external precision measurable: resolved / known-unhydrated / unknown). INFER-1 (CFG) is the foundational-but-largest item gating INFER-2/3/4.
 
-**Single best next move:** EXT-1 (scope-directed external routing) — it directly recovers the coverage EXT-4 deliberately dropped (import-qualified externals on npm/TS that surface no chain miss), its only dep (QUAL-1 "no grep to pre-empt") is now satisfied, and it pairs with QUAL-5's three-state metric to make external precision measurable. EXT-3 is the alternative if finishing the type-aware external chain block is preferred first.
+**Single best next move:** EXT-3 — finish the type-aware external-chain block now that EXT-1/EXT-2 land the externals as real rows: carry generics through external chains and walk supertypes over external bases (reachability-bounded). QUAL-5's three-state metric is the alternative — it makes EXT-1's import-known-but-unhydrated case measurable instead of hidden in the coverage rate.
 
 ---
 

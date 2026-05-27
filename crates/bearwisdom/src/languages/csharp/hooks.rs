@@ -816,6 +816,7 @@ pub(crate) fn walk_csharp_chain(
         lookup.record_chain_miss(ChainMiss {
             current_type: current_type.clone(),
             target_name: seg.name.clone(),
+            module: None,
         });
         return None;
     }
@@ -902,6 +903,7 @@ pub(crate) fn walk_csharp_chain(
     lookup.record_chain_miss(ChainMiss {
         current_type: current_type.clone(),
         target_name: last.name.clone(),
+        module: None,
     });
     None
 }

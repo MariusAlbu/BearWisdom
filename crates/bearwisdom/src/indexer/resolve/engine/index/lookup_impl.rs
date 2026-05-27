@@ -323,6 +323,9 @@ impl SymbolLookup for SymbolIndex {
         let miss = ChainMiss {
             current_type: strip_generic_args(&miss.current_type),
             target_name: strip_generic_args(&miss.target_name),
+            // Preserve the import-qualified module (EXT-1) through the strip —
+            // it's the key `expand` uses for the module-scoped locate.
+            module: miss.module,
         };
         self.chain_misses
             .lock()

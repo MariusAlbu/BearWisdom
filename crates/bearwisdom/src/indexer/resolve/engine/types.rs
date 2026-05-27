@@ -30,11 +30,20 @@ use super::SymbolLookup;
 pub struct ChainMiss {
     /// The fully-qualified type the walker resolved up to but couldn't
     /// step past. Either a project-relative qname or an external one
-    /// (e.g., `chai.Assertion`).
+    /// (e.g., `chai.Assertion`). Empty for a bare-name / import-qualified
+    /// demand that carries no receiver type.
     pub current_type: String,
     /// The next segment name the walker tried to look up against
     /// `current_type` (e.g., `to` for `expect(x).to.equal(y)`).
     pub target_name: String,
+    /// EXT-1: when the miss is an import-qualified external (the ref's name
+    /// binds to an import whose specifier resolves to a dependency root), the
+    /// resolved external module. `expand` then locates `target_name` *inside
+    /// this module* via `SymbolLocationIndex::locate` — never a coincidental
+    /// same-name symbol in another package, and with no whole-index
+    /// `find_by_name` fallback. `None` for chain-walker bail-outs and bare
+    /// ambient names, which keep the type-scoped / `find_by_name` probes.
+    pub module: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

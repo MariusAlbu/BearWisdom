@@ -580,6 +580,31 @@ fn resolve_iteration_body(
             );
 
             if let Some(ns) = &inferred_ns {
+                // EXT-1 — scope-directed external routing. The classifier
+                // resolved this ref to a concrete external module (`ext:<mod>`).
+                // Record a module-scoped demand so the Stage-2 expand loop pulls
+                // the file that defines `target_name` *inside* that module and a
+                // re-resolve upgrades this opaque `external_ref` into a real edge.
+                // The pull is bounded: `SymbolLocationIndex::locate` only answers
+                // for (module, name) pairs the demand-driven index actually
+                // carries — builtin/primitive namespaces and modules the index
+                // never scanned locate to nothing and stay external_refs, exactly
+                // as today. The leaf of a dotted target (`Stripe.Event` → `Event`)
+                // is the name the package exports.
+                if let Some(module) = ns.strip_prefix("ext:").filter(|m| !m.is_empty()) {
+                    let leaf = r
+                        .target_name
+                        .rsplit(['.', ':'])
+                        .next()
+                        .unwrap_or(r.target_name.as_str());
+                    if !leaf.is_empty() {
+                        index.record_chain_miss(engine::ChainMiss {
+                            current_type: String::new(),
+                            target_name: leaf.to_string(),
+                            module: Some(module.to_string()),
+                        });
+                    }
+                }
                 buf.externals.push((
                     source_id,
                     r.target_name.clone(),
@@ -708,6 +733,7 @@ fn resolve_iteration_body(
                         index.record_chain_miss(engine::ChainMiss {
                             current_type: String::new(),
                             target_name: r.target_name.clone(),
+                            module: None,
                         });
                     }
                     let module_value = r.module.as_deref().map(|s| s.to_string());

@@ -235,6 +235,7 @@ impl LanguageEngineHooks for CHooks {
                     crate::indexer::resolve::engine::ChainMiss {
                         current_type: String::new(),
                         target_name: target.clone(),
+                        module: None,
                     },
                 );
             }
@@ -337,6 +338,7 @@ pub(crate) fn walk_c_lang_chain(
         lookup.record_chain_miss(ChainMiss {
             current_type: current_type.clone(),
             target_name: seg.name.clone(),
+            module: None,
         });
         return None;
     }
@@ -380,6 +382,7 @@ pub(crate) fn walk_c_lang_chain(
             lookup.record_chain_miss(ChainMiss {
                 current_type: current_type.clone(),
                 target_name: last.name.clone(),
+                module: None,
             });
             None
         }
