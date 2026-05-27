@@ -15,6 +15,44 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 
+/// Per-thread stack for parse pools. Sized large because the extractors walk
+/// the tree-sitter CST recursively, and generated sources nest CST nodes far
+/// deeper than hand-written code — a `type X = 'a' | 'b' | …` union with tens
+/// of thousands of members parses as that many nested `union_type` nodes, deep
+/// enough to overflow an ordinary thread stack. The reservation is virtual;
+/// only the pages a deep walk actually touches commit.
+pub(crate) const PARSE_STACK_SIZE: usize = 128 * 1024 * 1024;
+
+/// Build the rayon pool used for parsing files — both the main streaming pass
+/// and the external chain-expansion pass parse on a pool from here so they
+/// share one stack budget.
+///
+/// Thread count is capped at `min(logical_cores, 8)`: the default global pool
+/// spawns one worker per logical core, and each active worker concurrently
+/// holds a tree-sitter Tree + String content + in-flight `ParsedFile`, which
+/// on a large project stacks into GB of transient RAM. The cap keeps ~95% of
+/// parse throughput (parsing scales only modestly past 8 threads given
+/// shared-grammar contention) and cuts peak memory roughly 3x. Override with
+/// `BEARWISDOM_PARSE_THREADS` when a dedicated CI runner wants every core.
+pub(crate) fn build_parse_pool() -> Result<rayon::ThreadPool> {
+    let parse_threads = std::env::var("BEARWISDOM_PARSE_THREADS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or_else(|| {
+            let cores = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4);
+            cores.min(8)
+        });
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(parse_threads)
+        .thread_name(|i| format!("bw-parse-{i}"))
+        .stack_size(PARSE_STACK_SIZE)
+        .build()
+        .context("Failed to build parse thread pool")
+}
+
 
 pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Result<ParsedFile> {
     parse_file_with_demand(walked, registry, None)

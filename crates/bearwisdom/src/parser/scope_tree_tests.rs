@@ -69,3 +69,24 @@ fn qualify_with_no_scope_returns_bare_name() {
     let qname = qualify("GlobalFunc", None);
     assert_eq!(qname, "GlobalFunc");
 }
+
+#[test]
+fn deeply_nested_ast_does_not_overflow() {
+    // A pathologically deep but scope-free subtree: 50k nested parens nest
+    // one CST node per level, the same shape a generated `.d.ts` produces for
+    // a `type X = 'a' | 'b' | …` union with tens of thousands of members. A
+    // recursive walk overflows the thread stack on this; the iterative walk
+    // must build the (shallow) scope set without crashing and still qualify
+    // the enclosing scopes correctly.
+    let depth = 50_000;
+    let expr = format!("{}1{}", "(".repeat(depth), ")".repeat(depth));
+    let source = format!("namespace N {{ class C {{ void M() {{ var x = {expr}; }} }} }}");
+    let tree = parse_csharp(&source);
+    let scopes = build(tree.root_node(), source.as_bytes(), CSHARP_CONFIG);
+
+    let m = scopes
+        .iter()
+        .find(|s| s.name == "M")
+        .expect("enclosing method scope must survive deep nesting");
+    assert_eq!(m.qualified_name, "N.C.M");
+}

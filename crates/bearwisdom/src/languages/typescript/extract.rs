@@ -997,28 +997,34 @@ fn recurse_for_object_types(
     alias_targets: &mut Vec<(String, AliasTarget)>,
     parent_index: Option<usize>,
 ) {
-    match node.kind() {
-        "object_type" => {
-            // Found one — extract its members as symbols. `demand = None`
-            // because this runs inside an already-kept type alias / interface.
-            extract_node(node, src, scope_tree, symbols, refs, alias_targets, parent_index, None);
-        }
-        // Type wrappers that can contain object_type members — recurse into children.
-        "union_type" | "intersection_type" | "parenthesized_type"
-        | "conditional_type" | "tuple_type" | "array_type"
-        | "generic_type" | "type_arguments" | "readonly_type" => {
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.is_named() {
-                    recurse_for_object_types(
-                        child, src, scope_tree, symbols, refs, alias_targets, parent_index,
-                    );
+    // Explicit-stack walk. A recursive descent overflows on a pathologically
+    // deep type-value node — e.g. a generated `.d.ts` whose alias is a union
+    // of tens of thousands of string literals nests `union_type` that many
+    // levels deep. Children are pushed in reverse so `object_type` members
+    // are extracted in source order.
+    let mut stack = vec![node];
+    while let Some(node) = stack.pop() {
+        match node.kind() {
+            "object_type" => {
+                // Found one — extract its members as symbols. `demand = None`
+                // because this runs inside an already-kept type alias / interface.
+                extract_node(node, src, scope_tree, symbols, refs, alias_targets, parent_index, None);
+            }
+            // Type wrappers that can contain object_type members — descend into children.
+            "union_type" | "intersection_type" | "parenthesized_type"
+            | "conditional_type" | "tuple_type" | "array_type"
+            | "generic_type" | "type_arguments" | "readonly_type" => {
+                let mut cursor = node.walk();
+                let children: Vec<tree_sitter::Node> =
+                    node.children(&mut cursor).filter(|c| c.is_named()).collect();
+                for child in children.into_iter().rev() {
+                    stack.push(child);
                 }
             }
+            // All other type nodes (type_identifier, primitive_type, function_type, etc.)
+            // cannot contain object_type members — stop descent here.
+            _ => {}
         }
-        // All other type nodes (type_identifier, primitive_type, function_type, etc.)
-        // cannot contain object_type members — stop recursion here.
-        _ => {}
     }
 }
 

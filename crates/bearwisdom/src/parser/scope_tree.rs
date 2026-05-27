@@ -238,60 +238,74 @@ pub fn prefix_top_level_qnames(
 // ---------------------------------------------------------------------------
 
 fn walk(
-    node: Node,
+    root: Node,
     source: &[u8],
     config: &[ScopeKind],
-    parent_chain: &[String], // qualified_name components of all ancestor scopes
+    root_chain: &[String], // qualified_name components of all ancestor scopes
     tree: &mut ScopeTree,
-    depth: usize,
+    root_depth: usize,
 ) {
-    // Check if this node opens a new scope.
-    if let Some(scope_kind) = config.iter().find(|k| k.node_kind == node.kind()) {
-        // Extract the name from the designated field.
-        if let Some(name_node) = node.child_by_field_name(scope_kind.name_field) {
-            let raw_name = node_text(name_node, source);
-            // For C# `qualified_name` nodes (namespace "Foo.Bar"), keep the full text.
-            let name = raw_name.clone();
+    use std::rc::Rc;
 
-            // Build the full qualified name.
-            let qualified_name = if parent_chain.is_empty() {
+    // Explicit-stack pre-order DFS. A recursive walk overflows on
+    // pathologically deep CSTs — a generated `.d.ts` whose single
+    // `type X = 'a' | 'b' | …` union nests `union_type` tens of thousands
+    // of levels deep is enough to blow the thread stack. The parent chain
+    // is shared via `Rc`, so the common non-scope descent clones only a
+    // pointer; a fresh chain is built only when a scope node is entered.
+    //
+    // Children are pushed in reverse so they pop in source order, preserving
+    // the DFS pre-order that `find_scope_at` / `find_enclosing_scope` rely on
+    // (both pick the *last* matching entry as the deepest scope).
+    let mut stack: Vec<(Node, Rc<Vec<String>>, usize)> =
+        vec![(root, Rc::new(root_chain.to_vec()), root_depth)];
+
+    while let Some((node, chain, depth)) = stack.pop() {
+        // A scope-opening node with a readable name field extends the chain
+        // and bumps depth for its children; everything else passes both
+        // through unchanged (including a configured scope node missing its
+        // name field — mirrors the original fall-through).
+        let scope_match = config
+            .iter()
+            .find(|k| k.node_kind == node.kind())
+            .and_then(|k| node.child_by_field_name(k.name_field).map(|n| (k.node_kind, n)));
+
+        let (child_chain, child_depth) = if let Some((node_kind, name_node)) = scope_match {
+            // For C# `qualified_name` nodes (namespace "Foo.Bar"), keep the full text.
+            let name = node_text(name_node, source);
+
+            let qualified_name = if chain.is_empty() {
                 name.clone()
             } else {
-                format!("{}.{name}", parent_chain.join("."))
+                format!("{}.{name}", chain.join("."))
             };
 
             tree.push(ScopeEntry {
                 name: name.clone(),
-                qualified_name: qualified_name.clone(),
-                node_kind: scope_kind.node_kind,
+                qualified_name,
+                node_kind,
                 start_byte: node.start_byte(),
                 end_byte: node.end_byte(),
                 depth,
             });
 
-            // Build the new parent chain for children.
-            // For dotted namespace names ("Foo.Bar") we need to split so
-            // children inherit all parts.
-            let mut new_chain = parent_chain.to_vec();
-            // Push each dot-segment of the name individually so that
+            // Build the new parent chain for children. For dotted namespace
+            // names ("Foo.Bar") push each dot-segment individually so that
             // `qualify("Baz", scope)` gives "Foo.Bar.Baz" not "Foo.Bar.Bar.Baz".
+            let mut new_chain = (*chain).clone();
             for part in name.split('.') {
                 new_chain.push(part.to_string());
             }
+            (Rc::new(new_chain), depth + 1)
+        } else {
+            (chain, depth)
+        };
 
-            // Recurse into children with the new parent chain.
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                walk(child, source, config, &new_chain, tree, depth + 1);
-            }
-            return;
+        let mut cursor = node.walk();
+        let children: Vec<Node> = node.children(&mut cursor).collect();
+        for child in children.into_iter().rev() {
+            stack.push((child, Rc::clone(&child_chain), child_depth));
         }
-    }
-
-    // Not a scope-creating node — recurse normally without changing the chain.
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        walk(child, source, config, parent_chain, tree, depth);
     }
 }
 

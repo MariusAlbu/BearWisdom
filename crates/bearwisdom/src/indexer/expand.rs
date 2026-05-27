@@ -207,26 +207,35 @@ fn expand_chain_reachability_inner(
     // Apply the TS external post-parse hook so pulled externals get their
     // symbols prefixed with `<pkg>.` before the index sees them — keeping
     // qnames consistent for the same file across expand iterations.
-    let new_parsed: Vec<ParsedFile> = new_walked
-        .par_iter()
-        .filter_map(|w| {
-            let demand = per_file_demand.get(&w.absolute_path);
-            let result = match type_arena {
-                Some(a) => parse_file_with_arena_and_demand(w, registry, demand, a),
-                None => parse_file_with_demand(w, registry, demand),
-            };
-            match result {
-                Ok(mut pf) => {
-                    crate::ecosystem::npm::ts_post_process_external(&mut pf);
-                    Some(pf)
+    //
+    // Parsing runs on the shared large-stack parse pool rather than the
+    // default global pool: pulled externals are generated `.d.ts` files whose
+    // CSTs nest deeper than app code, and the extractors walk them
+    // recursively. The main pass already parses on this pool; external parsing
+    // must match its stack budget or a deep union overflows the default stack.
+    let parse_pool = crate::indexer::parse_file::build_parse_pool()?;
+    let new_parsed: Vec<ParsedFile> = parse_pool.install(|| {
+        new_walked
+            .par_iter()
+            .filter_map(|w| {
+                let demand = per_file_demand.get(&w.absolute_path);
+                let result = match type_arena {
+                    Some(a) => parse_file_with_arena_and_demand(w, registry, demand, a),
+                    None => parse_file_with_demand(w, registry, demand),
+                };
+                match result {
+                    Ok(mut pf) => {
+                        crate::ecosystem::npm::ts_post_process_external(&mut pf);
+                        Some(pf)
+                    }
+                    Err(e) => {
+                        debug!("expand: parse failed for {}: {e}", w.relative_path);
+                        None
+                    }
                 }
-                Err(e) => {
-                    debug!("expand: parse failed for {}: {e}", w.relative_path);
-                    None
-                }
-            }
-        })
-        .collect();
+            })
+            .collect()
+    });
 
     if new_parsed.is_empty() {
         return Ok(stats);

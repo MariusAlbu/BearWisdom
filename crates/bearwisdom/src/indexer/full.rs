@@ -162,35 +162,11 @@ pub fn full_index(
     let files = cs.added; // FullScan puts everything in `added`
     emit("parsing", 0.0, Some(&format!("0/{} files", files.len())));
 
-    // Parsing runs on a dedicated rayon pool with a capped thread count.
-    // The default global pool spawns one worker per logical core (24 on a
-    // Ryzen 7900), and each active worker concurrently holds a tree-sitter
-    // Tree + String content + in-flight ParsedFile — on a 7k-file project
-    // that stacks into GB of transient RAM and can make the user's machine
-    // unresponsive. Capping at `min(logical_cores, 8)` keeps ~95% of the
-    // parse throughput (parsing is CPU-bound but only modestly
-    // parallel-scalable past 8 threads given shared-grammar contention)
-    // and cuts peak memory roughly 3x.
-    //
-    // Override via `BEARWISDOM_PARSE_THREADS` env var when a dedicated
-    // CI runner wants to use every core.
-    let parse_threads = std::env::var("BEARWISDOM_PARSE_THREADS")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .filter(|&n| n > 0)
-        .unwrap_or_else(|| {
-            let cores = std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(4);
-            cores.min(8)
-        });
-    let parse_pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(parse_threads)
-        .thread_name(|i| format!("bw-parse-{i}"))
-        .stack_size(16 * 1024 * 1024)
-        .build()
-        .context("Failed to build parse thread pool")?;
-    debug!("Parsing with {parse_threads} threads (cap for memory discipline)");
+    // Parsing runs on a dedicated, thread-capped, large-stack rayon pool.
+    // See `parse_file::build_parse_pool` for the thread-cap and stack-size
+    // rationale; the external chain-expansion pass parses on a pool from the
+    // same builder so both share one stack budget.
+    let parse_pool = super::parse_file::build_parse_pool()?;
 
     // --- Step 3b: Detect workspace packages (filesystem-only, no parse needed) ---
     //
