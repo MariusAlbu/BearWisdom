@@ -50,6 +50,12 @@ inference to bind every reference to its declaring symbol.
 | LANG-SVELTE-1 | Svelte `$store` auto-subscribe desugar at embedded splice (`$t` 370→13) | `2b4a08cf` |
 | LANG-DART-1a | Drop bare Dart library-prefix refs (`i0`/`i4`) across all usage kinds (Dart unresolved 4,291→3,216) | `4be1cb83` |
 | QUAL-2a | Delete the dormant `BEARWISDOM_COMPILER_RESOLVE` internal/external reroute apparatus | `a3815b4e` |
+| BIND-2b | tsconfig `extends` chains for path aliases | `1471eab7` |
+| EXT-2 (slice 1) | `parse_return_type_from_signature` handles `-> T` / `=> T` (Python/Rust/TS-arrow) in addition to `): T`; arrow externals populate return/field maps via the build.rs/augment.rs signature fallback. Unit-tested (`chain_walker_tests.rs`) + end-to-end through `build_with_context` (`mod_tests.rs::signature_derived_return_type_arrow_form`) | `1f03bec9` |
+| QUAL-1b (H.2) | Remove the internal whole-program `by_name` family (`{c,kotlin,swift,dart,elixir}_by_name`, `rust_global_name_*`, …) | `c4252e8b` |
+| QUAL-3 (H.1) | Delete the import-blind `*_synthetic_global` ext-bare-name grep family (Option A — honest floor) | `bf46353b` |
+| EXT-4 | Delete the eager `seed_demand_from_user_refs` — externals load lazily via the expand loop | `aad62601` |
+| — | Large-stack parse pool (`build_parse_pool`, 128MB) + iterative `scope_tree`/`recurse_for_object_types` so deep generated `.d.ts` unions don't overflow; full-corpus recapture (honest floor) | `c25ff7d9` |
 
 ts-immich: grep-baseline 6,179 → **4,627** unresolved, with honest structural edges.
 
@@ -140,7 +146,9 @@ return types is gated here, and it is what makes external types ordinary table r
 **Fix (target form, not the deleted reroute):** thread a scoped resolution request into the engine so an import-determined-external ref short-circuits the internal strategies and records demand. No env gate.
 **Deps:** QUAL-1 (no grep to pre-empt)
 
-### EXT-2 — Emit external return/field types (D4 / S5)  ·  [generic]+[profile]  ·  ❌
+### EXT-2 — Emit external return/field types (D4 / S5)  ·  [generic]+[profile]  ·  ⚠️ (slice 1 ✅)
+**Slice 1 done (`1f03bec9`):** `parse_return_type_from_signature` (`chain_walker.rs:591`) now recognizes `-> T` (Python/Rust) and `=> T` (TS-arrow) on top of `): T`, with angle-depth guard, Rust `where`/block stripping, and trailing-`:` handling. External methods using those forms populate the return/field maps through the signature fallback build.rs/augment.rs already run. Covered by `chain_walker_tests.rs` (colon/arrow/generic/where/block) + end-to-end `mod_tests.rs::signature_derived_return_type_arrow_form` (Python `-> User` external → `return_type_name` via `build_with_context`).
+**Remaining:** (a) verify real external method symbols actually carry signatures across ecosystems (extractor coverage — measurable only at closeout recapture, not now); (b) the `r.module.is_some()` TypeRef filter (`build.rs:238`, `augment.rs:128`) still drops module-tagged external TypeRefs — the signature fallback sidesteps it but a direct fix would widen coverage.
 **Compiler feature:** `repo.find().email` walks past the first hop because the external method's return type is known.
 **Gap (re-scoped after tracing the pipeline — most of the infrastructure already exists):**
 - TypeRef-derived return/field types: `build.rs:223-391` (full) + `augment.rs:121-209` (incremental/hydrated). The demand loop (`full.rs:743-790`) **does** augment the cached index with hydrated files via `augment.rs` before re-resolving, so hydrated externals *do* flow through the map-build. The earlier "demand-hydrated files don't enter the maps" claim was wrong.
@@ -208,17 +216,19 @@ Structural matching (INFER-5); conditional-beyond-decidable; mapped-beyond-trans
 
 ## E. Correctness — grep family, synthetics, confidence
 
-### QUAL-1 — Bar the whole grep family (D1/D9)  ·  [generic]+[hook]  ·  ⚠️
+### QUAL-1 — Bar the whole grep family (D1/D9)  ·  [generic]+[hook]  ·  ⚠️ (H.1+H.2 ✅, H.3 remains)
 **Invariant:** never bind a bare name to a coincidental same-name symbol.
 - **1a** `ranked_candidates` + `unique_internal_name` removed from default ladder — ✅ (`019fc8a7`).
-- **1b** Remaining family still fires (~10.6k+ edges on ts-immich). **Full inventory in the Appendix** (strategy-classification pass over every `strategy:` literal across 45 language hooks + the generic resolver): **~38 grep + ~20 borderline** strategies across ~30 languages — the old short list (`*_by_name`, `default_same_file`, `engine_bare_same_file`, `rust_global_name_fallback`) was ~6× incomplete. Remove/justify each; a genuine same-file *module-scope* hit is legitimate, a whole-program by_name is not. **Several fire BEFORE the scope/import strategy** (elixir/erlang/scala/c synthetic-or-ext fallbacks + the generic `default_same_file`/`engine_bare_same_file` = the BIND-1 shadowing bug) — those actively mis-resolve, not merely over-resolve, so they are the priority within 1b.
-**Deps:** BIND-1 (so removing same-file grep doesn't drop legitimate scope hits)
+- **1b** ✅ for the two grep buckets: the ordering bugs are fixed (Appendix), **H.2** (internal whole-program `by_name` — `{c,kotlin,swift,dart,elixir}_by_name`, `rust_global_name_*`, …) deleted in `c4252e8b`, and **H.1** (the `*_synthetic_global` ext-bare-name family) deleted in `bf46353b` (= QUAL-3). Verified: 0 occurrences of any of those strategy literals remain. **Remaining = H.3 only** (~20 borderline: same-file/module fallbacks whose risk is ladder order, or `by_name` scoped by a coarse path/prefix rather than a qualified-name lookup). Each needs reorder-after-imports or a tighter filter — none is a whole-program bare grep, so this is precision-tuning, not invariant-breaking.
+**Deps:** BIND-1 ✅ (so removing same-file grep doesn't drop legitimate scope hits)
 
 ### QUAL-2 — Single engine, no per-language grep (D9)  ·  [generic]  ·  ⚠️
 - **2a** reroute apparatus deleted — ✅ (`a3815b4e`).
 - **2b** per-language hooks still run their own Step-5 grep fallbacks; consolidate resolution into one engine algorithm + data. Largest structural refactor; do after QUAL-1b.
 
-### QUAL-3 — `*_synthetic_global` is import-blind external grep  ·  [generic]+[profile]  ·  ⚠️
+### QUAL-3 — `*_synthetic_global` is import-blind external grep  ·  [generic]+[profile]  ·  ✅
+**Done (`bf46353b`).** Option A executed: the whole `*_synthetic_global` ext-bare-name family is deleted (0 strategy literals remain). A bare external name now resolves only via scope/import or a curated prelude, or stays unresolved. This is the honest-floor crater behind the corpus drop (kept: `rust_prelude`, `scala_implicit_import`, `php_global_function`, `ada_modular_primitive`). True-globals like `print`/`len` will be recovered later via curated per-language **prelude strategies** (EXT-5-adjacent), not by name grep. Original audit/decision below.
+
 **Resolved (was 🔬).** Audited the 17 `*_synthetic_global` strategies: they bind to **real** symbols parsed from real SDKs by real walkers (`dart_sdk.rs`, `flutter_sdk.rs` ~700 files, `ext:cpython-stdlib:`, `kotlin_stdlib`/`jdk_src`/`android_sdk`/maven sources jars). **Not** fabricated stubs — `ecosystem files are locators only` is honored; the "synthetic" name is a misnomer. The stub-crutch framing is dead.
 **Real defect:** the binding is whole-program bare-name `by_name` with first-`ext:`-match-wins and **no import/scope check** (`<lang>/hooks.rs` `resolve_ref`; `by_name` is a flat map, `lookup_impl.rs:18`). That is Invariant #2's grep, filtered to `ext:` rows — real target, unjustified claim. `dart_synthetic_global` = 176k edges (55% of ts-immich) is mostly import-gated Flutter widgets (`ListTile`/`Widget`/`BuildContext`) bound by coincidence.
 **Decision (Option A — honest floor):** **delete** the whole `*_synthetic_global` ext-bare-name family outright (the import-blind `by_name`-into-`ext:` grep). A bare external name now resolves only via a scope/import strategy, a curated prelude check, or stays unresolved — never by coincidental name match. This drops the import-gated coincidences (the ~176k Dart Flutter binds and equivalents) AND the true-globals (`print`/`len`) until per-language **prelude strategies** (curated, scope-directed — like `rust_prelude`) are rebuilt to recover the latter legitimately. The baseline will fall to the honest scope-directed floor first, then climb back on real binds. Kept: `rust_prelude`, `scala_implicit_import`, `php_global_function`, `ada_modular_primitive` (these are curated/qualified-name, not by_name grep).
@@ -271,7 +281,9 @@ The baseline (`baseline-all.json`, 2026-05-24) predates this session — svelte 
 6. **EXT-5, CORPUS-1/2, INFER-2/3/4/5, remaining LANG-*** — breadth.
 7. **DOC-1..4** — in passing / at closeout.
 
-**Single best next move:** EXT-2 (external return types) — it is simultaneously the routing doc's D4/S5, the corpus #1 leverage, and the prerequisite for INFER-6 and most external chain resolution.
+**State (2026-05-27):** sequence #1's EXT-2 slice-1 ✅ (`1f03bec9`), #2's QUAL-1b H.1+H.2 ✅ (`bf46353b`/`c4252e8b`) and BIND-1 ✅, EXT-4 ✅ (`aad62601`). The remaining top of the stack: **EXT-3** (finish the #1 block — carry generics through external chains + supertype walk over external bases) and **EXT-1** (scope-directed external routing — the explicit recovery path for the import-qualified externals EXT-4's honest floor dropped). INFER-1 (CFG) is the foundational-but-largest item gating INFER-2/3/4.
+
+**Single best next move:** EXT-1 (scope-directed external routing) — it directly recovers the coverage EXT-4 deliberately dropped (import-qualified externals on npm/TS that surface no chain miss), its only dep (QUAL-1 "no grep to pre-empt") is now satisfied, and it pairs with QUAL-5's three-state metric to make external precision measurable. EXT-3 is the alternative if finishing the type-aware external chain block is preferred first.
 
 ---
 
