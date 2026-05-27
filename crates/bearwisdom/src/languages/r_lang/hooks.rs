@@ -166,25 +166,6 @@ impl LanguageEngineHooks for RHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if !target.contains("::") {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "r_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if file_ctx
                 .imports

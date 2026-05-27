@@ -6,7 +6,7 @@ use crate::indexer::resolve::engine::{
 };
 use crate::languages::elixir;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::ParsedFile;
 
 pub struct HeexHooks;
 
@@ -44,32 +44,9 @@ impl LanguageEngineHooks for HeexHooks {
     fn resolve_ref(
         &self,
         _file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
+        _ref_ctx: &RefContext<'_>,
+        _lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind != EdgeKind::Calls {
-            return None;
-        }
-        if target.contains('.') {
-            return None;
-        }
-        for sym in lookup.by_name(target) {
-            if !sym.file_path.starts_with("ext:") {
-                continue;
-            }
-            if !elixir::predicates::kind_compatible(edge_kind, &sym.kind) {
-                continue;
-            }
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.90,
-                strategy: "heex_ext_component",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
-        }
         None
     }
 }

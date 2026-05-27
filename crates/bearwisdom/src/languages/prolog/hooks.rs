@@ -3,19 +3,13 @@
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
 pub struct PrologHooks;
-
-fn is_prolog_runtime_path(path: &str) -> bool {
-    let p = path.replace('\\', "/").to_ascii_lowercase();
-    (p.contains("/library/") || p.contains("/boot/"))
-        && (p.contains("swipl") || p.contains("swi-prolog") || p.contains("prolog"))
-}
 
 impl LanguageEngineHooks for PrologHooks {
     fn build_file_context(
@@ -83,36 +77,13 @@ impl LanguageEngineHooks for PrologHooks {
             }
             return None;
         }
-        if let Some(res) = (DefaultResolver {
+        (DefaultResolver {
             file_ctx,
             ref_ctx,
             lookup,
             kind_compatible: predicates::kind_compatible,
         })
-        .resolve_all() {
-            return Some(res);
-        }
-        let mut runtime_hit: Option<&SymbolInfo> = None;
-        for sym in lookup.by_name(target) {
-            if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                continue;
-            }
-            if sym.file_path.starts_with("ext:") || is_prolog_runtime_path(&sym.file_path) {
-                if runtime_hit.is_none() {
-                    runtime_hit = Some(sym);
-                }
-            }
-        }
-        if let Some(sym) = runtime_hit {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "prolog_runtime_fallback",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
-        }
-        None
+        .resolve_all()
     }
 }
 

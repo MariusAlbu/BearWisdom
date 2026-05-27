@@ -1,19 +1,16 @@
 // =============================================================================
 // languages/php/hooks.rs — PhpHooks impl plus the concrete PhpResolver (chain
-// via PhpChecker, synthetic-global preference for php_stubs / SPL / bundled
-// extensions, `$this->` / `this.` stripping with PHP-namespace
-// normalization, scope-chain walk, same-namespace, use-statement
-// resolution, fully-qualified-name with `\\` ↔ `.` normalization, global
-// bare-name lookup for `route()` / `trans()` / `auth()` / `view()` /
-// `config()`, inheritance-via-`$this` walk with depth-10 cycle guard,
-// `.php`/`.phtml`/`.phpt` bare-name fallback for autoloaded globals and
-// PHPUnit assertions) plus 7 flow detectors (Eloquent static + Doctrine
-// entity-manager DB queries, Laravel Mail / Notification facade,
-// Laravel Bus / Queue / MessageBus dispatch, Ratchet WS interfaces,
-// Symfony #[Route] attribute Consumer) plus external classifier with
-// composer.json package match (vendor + package segments) and namespace-
-// negative structural fallback plus build_file_context with backslash
-// normalization.
+// via PhpChecker, `$this->` / `this.` stripping with PHP-namespace
+// normalization, scope-chain walk, same-namespace, use-statement resolution,
+// fully-qualified-name with `\\` ↔ `.` normalization, global bare-name
+// lookup for `route()` / `trans()` / `auth()` / `view()` / `config()`,
+// inheritance-via-`$this` walk with depth-10 cycle guard) plus 7 flow
+// detectors (Eloquent static + Doctrine entity-manager DB queries, Laravel
+// Mail / Notification facade, Laravel Bus / Queue / MessageBus dispatch,
+// Ratchet WS interfaces, Symfony #[Route] attribute Consumer) plus external
+// classifier with composer.json package match (vendor + package segments) and
+// namespace-negative structural fallback plus build_file_context with
+// backslash normalization.
 // =============================================================================
 
 pub(crate) use super::predicates::normalize_php_ns;
@@ -53,27 +50,6 @@ impl PhpResolver {
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = walk_php_chain(chain_val, edge_kind, file_ctx, ref_ctx, lookup) {
                 return Some(res);
-            }
-        }
-
-        // Synthetic-global lookup. php_stubs emits real symbols for PHP
-        // core, SPL, and bundled extensions (str_*, array_*, json_*,
-        // DateTime, Exception hierarchy, …).
-        if !target.contains('\\') && !target.contains('.') {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "php_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
             }
         }
 

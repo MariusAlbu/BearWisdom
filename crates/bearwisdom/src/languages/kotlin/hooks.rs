@@ -1,8 +1,7 @@
 // =============================================================================
 // languages/kotlin/hooks.rs — KotlinHooks impl plus the concrete
 // KotlinResolver (chain via generic ChainConfig walker over class/interface/
-// object enclosing types with WildcardOnly NamespaceLookup, synthetic-global
-// preference for kotlin_stdlib / JDK / android SDK / Maven, scope-chain
+// object enclosing types with WildcardOnly NamespaceLookup, scope-chain
 // walk, same-package, exact + wildcard imports with alias support, fully-
 // qualified names, inheritance via implicit `this`, by-name lookup for
 // DSL-lambda receivers and synthesized stubs, `.kt`/`.kts` bare-name
@@ -45,29 +44,6 @@ impl KotlinResolver {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-
-
-        // Synthetic-global lookup. kotlin_stdlib + jdk_src + android_sdk +
-        // maven (sources jars) emit real symbols for stdlib functions
-        // (apply, let, listOf, …), JVM types, Android SDK types, and
-        // declared Maven/Gradle deps including the Compose test DSL.
-        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "kotlin_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
 
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             let config = ChainConfig {

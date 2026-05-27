@@ -1,15 +1,13 @@
 // =============================================================================
 // languages/python/hooks.rs — PythonHooks impl plus the concrete
-// PythonResolver (chain-aware via PythonChecker, synthetic-global lookup for
-// cpython stdlib symbols, module-qualified Inherits/TypeRef like
-// `class Foo(models.TextChoices)`, scope-chain walk with `self.` stripping,
-// same-file lookup, fully-qualified-name with module-alias resolution,
-// from-import resolution covering exact match + module-prefix-by-name with
-// __init__.py re-exports, file-extension-gated bare-name fallback for
-// unittest mixins through Django TestCase deep hierarchies) plus the
-// detect_flow detectors (route decorators / Django Channels / GraphQL /
-// path() / sqlalchemy select / HTTP chain / DB query / cursor.execute /
-// gRPC stub / mailer / bgjob / redis) and file-context builder.
+// PythonResolver (chain-aware via PythonChecker, module-qualified
+// Inherits/TypeRef like `class Foo(models.TextChoices)`, scope-chain walk
+// with `self.` stripping, same-file lookup, fully-qualified-name with
+// module-alias resolution, from-import resolution covering exact match +
+// module-prefix-by-name with __init__.py re-exports) plus the detect_flow
+// detectors (route decorators / Django Channels / GraphQL / path() /
+// sqlalchemy select / HTTP chain / DB query / cursor.execute / gRPC stub /
+// mailer / bgjob / redis) and file-context builder.
 // =============================================================================
 
 use super::externals;
@@ -51,30 +49,6 @@ impl PythonResolver {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-
-
-        // Bare-name walker lookup. cpython_stdlib emits real symbols for
-        // `print`, `len`, `dict`, exception types, str/list/dict methods,
-        // etc. under `ext:cpython-stdlib:`. Skip when the ref has a chain
-        // — the chain walker's receiver-type context is more precise.
-        if ref_ctx.extracted_ref.chain.is_none()
-            && !target.contains('.') && !target.contains("::") {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "python_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
 
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = walk_python_chain(chain_val, edge_kind, ref_ctx, lookup) {

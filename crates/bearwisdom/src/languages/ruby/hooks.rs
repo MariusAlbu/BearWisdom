@@ -1,14 +1,12 @@
 // =============================================================================
 // languages/ruby/hooks.rs — RubyHooks impl plus the concrete RubyResolver
 // (require/require_relative landing on indexed files via in_module_from,
-// chain via RubyChecker, synthetic-global preference for ruby_stdlib /
-// rubygems, scope-chain walk, same-file, same-module, fully-qualified-name
-// with `::` ↔ `.` normalization, external gem lookup gated by imported gem
-// list, `.rb`/`.rbs` bare-name fallback for open-class / mixin / monkey-
-// patched methods) plus 5 flow detectors (Net::HTTP/Faraday/HTTParty/
-// RestClient client calls, ActionCable consumer inheritance, Sidekiq /
-// ActiveJob bgjob, ActionMailer deliver_*, ActiveRecord ORM ops) plus
-// external classifier (Gemfile manifest deps + bare gem requires) plus
+// chain via RubyChecker, scope-chain walk, same-file, same-module,
+// fully-qualified-name with `::` ↔ `.` normalization, external gem lookup
+// gated by imported gem list) plus 5 flow detectors (Net::HTTP/Faraday/
+// HTTParty/RestClient client calls, ActionCable consumer inheritance,
+// Sidekiq / ActiveJob bgjob, ActionMailer deliver_*, ActiveRecord ORM ops)
+// plus external classifier (Gemfile manifest deps + bare gem requires) plus
 // build_file_context (require + require_relative + Gemfile transitive
 // requires as wildcard imports).
 // =============================================================================
@@ -70,28 +68,6 @@ impl RubyResolver {
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = walk_ruby_chain(chain_val, edge_kind, ref_ctx, lookup) {
                 return Some(res);
-            }
-        }
-
-        // Synthetic-global lookup. ruby_stdlib / rubygems emit real symbols
-        // for Kernel methods (puts, raise, lambda), Array/Hash/String
-        // instance methods, and gemfile deps. ext:-only filter so scope /
-        // same-file paths still win for project symbols.
-        if ref_ctx.extracted_ref.chain.is_none() && !target.contains("::") {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "ruby_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
             }
         }
 

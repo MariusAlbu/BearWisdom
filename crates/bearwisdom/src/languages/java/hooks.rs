@@ -54,31 +54,6 @@ impl JavaResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-
-        // Bare-name walker lookup. jdk_src + maven (sources jars) emit real
-        // symbols for java.lang types (String, Integer, Object), exception
-        // hierarchy, Object methods, Stream / Collection / List APIs, etc.
-        // ext:-only filter so chain walker / scope / same-package paths
-        // still win for project symbols. Skip when the ref has a chain so
-        // the chain walker's receiver-type context wins.
-        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "java_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = walk_java_chain(chain_val, edge_kind, file_ctx, ref_ctx, lookup) {
                 return Some(res);

@@ -119,39 +119,6 @@ impl LanguageEngineHooks for PuppetHooks {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if !target.contains("::") {
-            let target_lower = target.to_ascii_lowercase();
-            let mut synthetic_match = None;
-            for sym in lookup.by_name(target) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                if sym.file_path.starts_with("ext:") {
-                    synthetic_match = Some(sym);
-                    break;
-                }
-            }
-            if synthetic_match.is_none() && **target != target_lower {
-                for sym in lookup.by_name(&target_lower) {
-                    if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                        continue;
-                    }
-                    if sym.file_path.starts_with("ext:") {
-                        synthetic_match = Some(sym);
-                        break;
-                    }
-                }
-            }
-            if let Some(sym) = synthetic_match {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "puppet_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
         if target.contains("::") {
             if let Some(prefix) = target.split("::").next() {
                 let bare = prefix.strip_prefix('$').unwrap_or(prefix);

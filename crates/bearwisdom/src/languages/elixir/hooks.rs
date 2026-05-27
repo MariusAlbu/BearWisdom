@@ -1,11 +1,10 @@
 // =============================================================================
 // languages/elixir/hooks.rs — ElixirHooks impl plus the concrete
-// ElixirResolver (synthetic-global preference for elixir_stdlib / erlang_otp
-// / hex deps; scope-chain walk; same-module via file_namespace; alias
+// ElixirResolver (scope-chain walk; same-module via file_namespace; alias
 // resolution against ImportEntry.imported_name + module_path; fully-
-// qualified module reference; final by-name fallback) plus 6 flow detectors
-// (Ecto Repo ops on `.Repo`-suffix modules, HTTPoison/Tesla/Req/Finch/Mojito
-// chains, grpc-elixir generated stubs ending in `.Stub`, Oban bgjob,
+// qualified module reference) plus 6 flow detectors (Ecto Repo ops on
+// `.Repo`-suffix modules, HTTPoison/Tesla/Req/Finch/Mojito chains,
+// grpc-elixir generated stubs ending in `.Stub`, Oban bgjob,
 // Phoenix.Channel / Phoenix.LiveView WebSocket Consumer from `use` macro,
 // Bamboo/Swoosh mailer deliver_*) plus infer_external_inner with mix.exs
 // dep matching (CamelCase root ↔ snake_case dep atom, plus first-segment
@@ -43,7 +42,6 @@ impl ElixirResolver {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-
 
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}.{target}");
@@ -105,27 +103,6 @@ impl ElixirResolver {
                         flow_emit: None,
                     });
                 }
-            }
-        }
-
-        // External stdlib/OTP/hex globals (Kernel length/hd/tl, ExUnit
-        // assert/describe, Phoenix.ConnTest helpers). Runs after scope and
-        // import strategies so a project symbol wins over a same-named global.
-        if !target.contains('.') {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "elixir_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
             }
         }
 

@@ -117,8 +117,12 @@ fn build_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i
 // ---------------------------------------------------------------------------
 
 #[test]
-fn ext_component_resolves_via_bare_name() {
-    // Simulate a Phoenix.Component.form indexed as an external symbol.
+fn ext_component_not_grep_resolved() {
+    // A `<.form>` reference no longer binds to an external symbol merely because
+    // one named `form` exists somewhere. The import->component link (CORPUS-1)
+    // isn't modeled for HEEx, so the bare component stays unresolved rather than
+    // grep-binding to Phoenix.Component.form. The old `heex_ext_component`
+    // whole-program by-name fallback was removed (scope-directed, never grep).
     let ext_file = make_file(
         "ext:idx:/deps/phoenix_live_view/lib/phoenix_component.ex",
         "elixir",
@@ -133,25 +137,15 @@ fn ext_component_resolves_via_bare_name() {
     );
     let (index, id_map) = build_env(&[&ext_file, &heex_file]);
     let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
-        let ref_ctx = RefContext {
+    let ref_ctx = RefContext {
         extracted_ref: &heex_file.refs[0],
         source_symbol: &heex_file.symbols[0],
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
     let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
-    assert!(res.is_some(), "<.form> should resolve to external Phoenix.Component.form");
-    let res = res.unwrap();
-    assert_eq!(res.strategy, "heex_ext_component");
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map
-            .get(&(
-                "ext:idx:/deps/phoenix_live_view/lib/phoenix_component.ex".to_string(),
-                "Phoenix.Component.form".to_string()
-            ))
-            .unwrap()
-    );
+    assert!(res.is_none(), "bare external component is no longer grep-resolved");
+    let _ = id_map;
 }
 
 #[test]

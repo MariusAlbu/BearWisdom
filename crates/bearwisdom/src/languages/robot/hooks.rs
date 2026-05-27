@@ -261,7 +261,6 @@ impl LanguageEngineHooks for RobotHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
         if resolve_qualified_library(
             file_ctx,
             ref_ctx.extracted_ref.module.as_deref(),
@@ -411,57 +410,6 @@ impl LanguageEngineHooks for RobotHooks {
                         flow_emit: None,
                     });
                 }
-            }
-        }
-        let has_library_imports = file_ctx.imports.iter().any(|imp| {
-            imp.module_path.as_deref().map_or(true, |p| {
-                !p.ends_with(".robot") && !p.ends_with(".resource")
-            })
-        });
-        let pick_from =
-            |syms: &[SymbolInfo], confidence: f64, strategy: &'static str| -> Option<Resolution> {
-                let synth = syms.iter().find(|s| {
-                    s.kind == SymbolKind::Function.as_str()
-                        && predicates::normalize_robot_name(&s.name) == normalized_target
-                        && s.file_path.starts_with("ext:")
-                });
-                if let Some(sym) = synth {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence,
-                        strategy,
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-                if !has_library_imports {
-                    let internal = syms.iter().find(|s| {
-                        s.kind == SymbolKind::Function.as_str()
-                            && predicates::normalize_robot_name(&s.name) == normalized_target
-                    });
-                    if let Some(sym) = internal {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence,
-                            strategy,
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-                None
-            };
-        if let Some(res) = pick_from(lookup.by_name(target), 0.90_f64, "robot_global_name") {
-            return Some(res);
-        }
-        let normalized_snake = normalized_target.replace('_', " ");
-        if normalized_snake != target.to_ascii_lowercase() {
-            if let Some(res) = pick_from(
-                lookup.by_name(&normalized_snake),
-                0.85_f64,
-                "robot_global_normalized",
-            ) {
-                return Some(res);
             }
         }
         None

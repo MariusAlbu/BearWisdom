@@ -211,30 +211,6 @@ impl LanguageEngineHooks for CHooks {
                 });
             }
         }
-        // External stdlib globals (printf, malloc, …). Runs after scope,
-        // qualified, and same-file strategies so a project symbol wins over a
-        // same-named external.
-        if ref_ctx.extracted_ref.chain.is_none()
-            && !target.contains("::")
-            && !target.contains('.')
-            && !target.contains("->")
-        {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "c_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
         if let Some(res) = (DefaultResolver {
             file_ctx,
             ref_ctx,

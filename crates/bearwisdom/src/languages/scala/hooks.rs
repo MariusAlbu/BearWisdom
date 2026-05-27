@@ -1,10 +1,9 @@
 // =============================================================================
 // languages/scala/hooks.rs — ScalaHooks impl plus the concrete ScalaResolver
-// (chain via generic ChainConfig walker, synthetic-global preference for
-// ScalaTest DSL methods, scope-chain walk, same-package, exact + wildcard
-// imports, fully-qualified names, implicit java.lang / scala / scala.Predef
-// imports) and the external classifier + flow detectors + file-context
-// builder it dispatches.
+// (chain via generic ChainConfig walker, scope-chain walk, same-package,
+// exact + wildcard imports, fully-qualified names, implicit java.lang /
+// scala / scala.Predef imports) and the external classifier + flow detectors
+// + file-context builder it dispatches.
 // =============================================================================
 
 use super::predicates;
@@ -39,28 +38,6 @@ impl ScalaResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-
-        // Global external lookup for bare names. Prefers chain walker context
-        // when the ref has a real multi-segment chain, but falls back here
-        // when the chain is a single-segment stub (common for ScalaTest DSL
-        // calls like `equal` or `be` extracted from infix expressions) or
-        // when chain resolution fails.
-        let try_external_global = |target: &str| -> Option<Resolution> {
-            if target.contains('.') { return None; }
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") { continue; }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) { continue; }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "scala_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-            None
-        };
-
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             let config = ChainConfig {
                 strategy_prefix: "scala",
@@ -75,12 +52,6 @@ impl ScalaResolver {
             if let Some(res) = chain::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
             ) {
-                return Some(res);
-            }
-            // Chain resolution failed — fall back to external global for
-            // DSL methods whose receiver type is unavailable (ScalaTest
-            // matchers on the right-hand side of an infix chain).
-            if let Some(res) = try_external_global(target) {
                 return Some(res);
             }
         }
@@ -200,13 +171,6 @@ impl ScalaResolver {
                     }
                 }
             }
-        }
-
-        // External stdlib globals and ScalaTest DSL matchers, after all scope
-        // and import strategies so a project symbol wins over a same-named
-        // global.
-        if let Some(res) = try_external_global(target) {
-            return Some(res);
         }
 
         None
