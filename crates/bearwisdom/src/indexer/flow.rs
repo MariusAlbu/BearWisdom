@@ -115,7 +115,70 @@ pub fn run_flow_queries(
     run_discriminant_guard_query(&root, src_bytes, cfg, &mut meta);
     run_type_args_query(&root, src_bytes, cfg, refs);
 
+    let reassignments = collect_reassignment_sites(&root, src_bytes, cfg);
+    kill_narrowings_at_reassignments(&mut meta, &reassignments);
+
     meta
+}
+
+/// All assignment-LHS sites, as `(variable_name, byte_offset)`. Reuses the
+/// `assignment_query`'s `@lhs` capture — the same node the binding correlation
+/// reads — but keeps only the variable name and its byte offset. A site whose
+/// offset falls strictly inside a narrowing range marks where a re-definition
+/// kills that narrowing; an offset at the binding's own declaration sits before
+/// any guard range, so it is filtered out by the strict-interior test in
+/// `kill_narrowings_at_reassignments` rather than by node kind.
+fn collect_reassignment_sites(root: &Node, src: &[u8], cfg: &FlowConfig) -> Vec<(String, u32)> {
+    let Ok(query) = Query::new(&root.language(), cfg.assignment_query) else {
+        return Vec::new();
+    };
+    let Some(lhs_cap) = query.capture_index_for_name("lhs") else {
+        return Vec::new();
+    };
+
+    let mut sites = Vec::new();
+    let mut cursor = QueryCursor::new();
+    let mut it = cursor.matches(&query, *root, src);
+    while let Some(m) = it.next() {
+        for cap in m.captures {
+            if cap.index != lhs_cap {
+                continue;
+            }
+            if let Ok(name) = cap.node.utf8_text(src) {
+                if !name.is_empty() {
+                    sites.push((name.to_string(), cap.node.start_byte() as u32));
+                }
+            }
+        }
+    }
+    sites
+}
+
+/// Truncate every narrowing whose range straddles a re-definition of the same
+/// variable. A reassignment at byte `B` kills the narrowed fact from `B`
+/// onward, so a narrowing `[start, end)` with a matching reassignment at
+/// `start < B < end` is shortened to `[start, B)`. The earliest such `B` wins
+/// — the first re-definition ends the narrowing. Uses of the variable before
+/// `B` stay narrowed; uses after `B` fall back to the declared type.
+fn kill_narrowings_at_reassignments(meta: &mut FlowMeta, reassignments: &[(String, u32)]) {
+    let earliest_kill = |name: &str, start: u32, end: u32| -> Option<u32> {
+        reassignments
+            .iter()
+            .filter(|(n, b)| n == name && *b > start && *b < end)
+            .map(|(_, b)| *b)
+            .min()
+    };
+
+    for n in &mut meta.narrowings {
+        if let Some(b) = earliest_kill(&n.name, n.byte_start, n.byte_end) {
+            n.byte_end = b;
+        }
+    }
+    for d in &mut meta.discriminant_narrowings {
+        if let Some(b) = earliest_kill(&d.name, d.byte_start, d.byte_end) {
+            d.byte_end = b;
+        }
+    }
 }
 
 fn run_assignment_query(

@@ -161,6 +161,45 @@ fn flow_narrowing_captures_instanceof_body() {
 }
 
 #[test]
+fn flow_reassignment_kills_narrowing_for_rest_of_scope() {
+    // A reassignment to `x` inside a narrowed block invalidates the narrowing
+    // from that point on — `x.bar()` after `x = reset()` must NOT see `Derived`.
+    // The narrowing's range is truncated to end at the reassignment.
+    let source =
+        "function f(x: Base) {\n  if (x instanceof Derived) {\n    x.foo();\n    x = reset();\n    x.bar();\n  }\n}\n";
+    let symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    let n = meta
+        .narrowings
+        .iter()
+        .find(|n| n.name == "x")
+        .expect("instanceof guard should narrow `x`");
+    assert_eq!(n.narrowed_type, "Derived");
+
+    // The reassignment `x = reset();` sits before `x.bar();`. The narrowing
+    // must end at or before `x.bar()` so the later use is not narrowed.
+    let reassign_pos = source.find("x = reset()").unwrap() as u32;
+    let bar_pos = source.find("x.bar()").unwrap() as u32;
+    assert!(
+        n.byte_end <= bar_pos,
+        "narrowing range [{}, {}) must not cover `x.bar()` at {bar_pos} (killed by reassignment at {reassign_pos})",
+        n.byte_start,
+        n.byte_end
+    );
+    // The use before the reassignment (`x.foo()`) is still narrowed.
+    let foo_pos = source.find("x.foo()").unwrap() as u32;
+    assert!(
+        n.byte_start <= foo_pos && foo_pos < n.byte_end,
+        "narrowing range [{}, {}) should still cover `x.foo()` at {foo_pos}",
+        n.byte_start,
+        n.byte_end
+    );
+}
+
+#[test]
 fn flow_discriminant_guard_captures_prop_and_literal() {
     let source = "function f(s: Shape) {\n  if (s.kind === \"circle\") {\n    s.radius;\n  }\n}\n";
     let symbols: Vec<ExtractedSymbol> = Vec::new();

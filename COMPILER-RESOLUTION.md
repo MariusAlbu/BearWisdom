@@ -98,9 +98,35 @@ ts-immich: grep-baseline 6,179 → **4,627** unresolved, with honest structural 
 These four are what make the engine a *checker*, not a binder-with-generics. All
 `[generic]` — each lifts every language at once. Highest-leverage block.
 
-### INFER-1 — Control-flow-graph-based narrowing  ·  [generic]  ·  ❌
+### INFER-1 — Control-flow-graph-based narrowing  ·  [generic]  ·  ⚠️ (slice 1 ✅)
 **Compiler feature:** narrow across the whole flow graph — if/else merge, loop back-edges, reassignment *kills* a narrowing, `&&`/`||` short-circuit, exhaustiveness.
-**Gap:** no CFG exists. Narrowing is lexical-block + early-return only (`type_checker/`, `indexer/flow`).
+
+**Today's model (the gap).** A narrowing is a byte interval `Narrowing { name, narrowed_type, byte_start, byte_end }` (`types.rs:786`), emitted by the tree-sitter `type_guard_query` over the guard body's range (`flow.rs:run_type_guard_query`). `LocalTypeCache::lookup` (`index/mod.rs:262`) is a point query — "which interval contains the cursor (= ref byte offset)." `forward` is a flat `name → type` map mutated in source order by `record_local_type` (`lookup_impl.rs:366`); it has no position, so it can't express a fact that holds only over part of a scope. There is no graph: a reassignment never truncates an interval, an if/else join is never unioned, loops/`&&`/exhaustiveness are invisible.
+
+**Slice 1 done — reassignment kills a narrowing (the def-resets-fact seed).** `collect_reassignment_sites` (`flow.rs`) reads the `assignment_query` `@lhs` capture into `(name, byte_offset)`; `kill_narrowings_at_reassignments` truncates any `Narrowing`/`DiscriminantNarrowing` whose `[start, end)` straddles a same-name reassignment at `start < B < end` down to `[start, B)`, earliest-B-wins. The strict-interior test naturally excludes the declaration that establishes the variable (it sits before any guard range), so no node-kind discrimination is needed — one generic post-pass over the runner's output, all languages at once, zero per-language code. This models the CFG's "a def block resets the fact on its out-edge" as interval truncation. Failing→green test: `flow_tests.rs::flow_reassignment_kills_narrowing_for_rest_of_scope` (`x.bar()` after `x = reset()` inside an `instanceof` block no longer sees `Derived`). 29 flow + 317 type_checker + 233 resolve tests green.
+
+**Why this first.** It proves the "facts have kill points" machinery against the existing interval model without a CFG-wide fixed point — the smallest honest increment before the graph build-out.
+
+**Design proposal (the full build-out, for review).** Replace the byte-interval narrowing model with a per-function CFG that the narrowing pass walks. Generic-engine-first; `LanguageProfile`/`FlowConfig` stays data, `LanguageEngineHooks` only if data can't express a language's branch shapes.
+- **Representation:** `BasicBlock { stmts, byte_range }` + typed edges `Edge { to, fact: Option<Narrowing> }`; a per-function `Cfg { blocks, edges, entry }`. Facts (the narrowed `(name → type)` set) ride edges; a block's in-fact is the **merge** of its predecessors' out-facts.
+- **Build location:** a new `build_cfg(fn_node, cfg: &FlowConfig)` in `indexer/flow` (alongside `run_flow_queries`), per function, from the tree-sitter tree — same input the query runner uses, so it stays `[generic]` + data-driven. Branch/loop/switch node kinds come from `FlowConfig` (today's queries already name `if_statement`/`switch_statement`/`statement_block` per language).
+- **Narrowing walk:** forward dataflow. Edge fact = the guard condition's implied narrowing (true-edge gets `x: T`, false-edge gets the negation). **Join** block = `∪` of predecessor facts (a branch that narrowed `x` out contributes `never`). **Reassignment** = a def in a block clears `x` from the block's out-fact (slice 1 generalized). **Loop** back-edges iterate to a **fixed point** (facts only widen; monotone, bounded by the type lattice). `&&`/`||` lower to extra edges so the guard fact sits on the true edge. Exhaustive `switch` leaves the default block unreachable → `never`.
+- **Coexistence/replacement:** `LocalTypeCache::lookup` keeps its `(name, cursor) → type` signature — the CFG result is *compiled down* to the same per-ref fact table the resolver already consumes (cursor = ref byte offset → active fact), so the consumer side (`loop_body.rs:419`, chain walker) is unchanged. The interval `narrowings` vec becomes the CFG's serialized output rather than the source of truth.
+
+**Architectural decisions for the architect (HIS call — not silently picked):**
+1. **CFG data structure & ownership** — petgraph vs. a hand-rolled `Vec<BasicBlock>` + edge list. Hand-rolled is lighter and avoids a dep; petgraph gives traversal/SCC utilities for the loop fixed-point. Lean hand-rolled unless the loop machinery wants SCCs.
+2. **Build location & granularity** — per-function in `indexer/flow` at extract time (CFG serialized into `FlowMeta`, survives to resolve), vs. built lazily at resolve time per file. Extract-time keeps the resolver thin but bloats `FlowMeta`; resolve-time keeps `FlowMeta` slim but re-parses. (Slice 1 is extract-time post-pass — consistent with the former.)
+3. **Fixed-point strategy** — worklist vs. naive iterate-to-stable; widening operator and iteration cap for loops (TS caps at a small N). Pick the cap.
+4. **Coexist vs. replace the interval model** — compile the CFG down to today's `Narrowing` intervals (consumer untouched, slices land incrementally — recommended) vs. swap the resolver to query the CFG directly (cleaner end state, larger blast radius on `loop_body.rs` / chain walker / `LocalTypeCache`).
+5. **Fact representation at joins** — does a join union need a real union type (`string ∪ null`) in the type arena, or is "drop to declared type on disagreement" enough for navigation? The former is precise; the latter is cheap and may suffice pre-INFER-4.
+
+**Remaining slices (next, scaffolded — not faked):**
+- **if/else join merge** — union predecessor facts at the merge block; needs the CFG join node + a fact-merge op (decision 5).
+- **loop back-edge fixed point** — iterate facts over the back-edge to stability (decisions 1, 3).
+- **`&&`/`||` short-circuit** — lower to extra edges so the guard fact lands on the true edge.
+- **switch exhaustiveness** — unreachable default block ⇒ `never` (ties to INFER-5 for the "all branches covered" check).
+- **reassignment-kills** is generalized into the CFG's def-resets-fact once the graph lands; slice 1 stands alone until then.
+
 **Fix:** new machinery — a per-function flow graph the narrowing pass walks. Largest item; caps how far INFER-2..4 reach.
 **Deps:** — (foundational)
 
