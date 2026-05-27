@@ -202,30 +202,6 @@ impl KotlinResolver {
             }
         }
 
-        // By-name lookup. Enables DSL-lambda receivers (Spring MockMvc Kotlin
-        // DSL: `mockMvc.andExpect { jsonPath(...) }`), top-level helpers
-        // imported via wildcards the extractor may have lost, and framework-
-        // synthesised symbols (spring_stubs, compose_stubs, …) whose
-        // qualified path the caller wouldn't know.
-        if !effective_target.contains('.')
-            && matches!(
-                edge_kind,
-                EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates
-            )
-        {
-            for sym in lookup.by_name(effective_target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.85,
-                        strategy: "kotlin_by_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
         None
     }
 

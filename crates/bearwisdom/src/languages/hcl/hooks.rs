@@ -2,7 +2,7 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, RefContext, Resolution, SymbolLookup,
+    FileContext, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
@@ -115,7 +115,6 @@ impl LanguageEngineHooks for HclHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
         if is_terraform_meta_ref(target) {
             return None;
         }
@@ -142,17 +141,6 @@ impl LanguageEngineHooks for HclHooks {
                         });
                     }
                 }
-                for sym in lookup.by_name(head) {
-                    if sym.kind == "class" {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.85,
-                            strategy: "hcl_provider_alias_cross_file",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
             }
         }
         let bare = strip_hcl_prefix(target);
@@ -167,15 +155,6 @@ impl LanguageEngineHooks for HclHooks {
                         flow_emit: None,
                     });
                 }
-            }
-            for sym in lookup.by_name(bare) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.9,
-                    strategy: "hcl_cross_file_bare",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
             }
         }
         (DefaultResolver {

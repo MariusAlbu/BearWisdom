@@ -3,7 +3,7 @@
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
@@ -93,7 +93,6 @@ impl LanguageEngineHooks for PrologHooks {
             return Some(res);
         }
         let mut runtime_hit: Option<&SymbolInfo> = None;
-        let mut internal_hit: Option<&SymbolInfo> = None;
         for sym in lookup.by_name(target) {
             if !predicates::kind_compatible(edge_kind, &sym.kind) {
                 continue;
@@ -102,8 +101,6 @@ impl LanguageEngineHooks for PrologHooks {
                 if runtime_hit.is_none() {
                     runtime_hit = Some(sym);
                 }
-            } else if internal_hit.is_none() {
-                internal_hit = Some(sym);
             }
         }
         if let Some(sym) = runtime_hit {
@@ -111,15 +108,6 @@ impl LanguageEngineHooks for PrologHooks {
                 target_symbol_id: sym.id,
                 confidence: 0.85,
                 strategy: "prolog_runtime_fallback",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
-        }
-        if let Some(sym) = internal_hit {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.80,
-                strategy: "prolog_project_by_name",
                 resolved_yield_type: None,
                 flow_emit: None,
             });

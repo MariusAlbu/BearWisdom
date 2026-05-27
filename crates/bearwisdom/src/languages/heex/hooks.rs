@@ -70,21 +70,6 @@ impl LanguageEngineHooks for HeexHooks {
                 flow_emit: None,
             });
         }
-        for sym in lookup.by_name(target) {
-            if sym.file_path.starts_with("ext:") {
-                continue;
-            }
-            if !elixir::predicates::kind_compatible(edge_kind, &sym.kind) {
-                continue;
-            }
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.80,
-                strategy: "heex_internal_component",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
-        }
         None
     }
 }

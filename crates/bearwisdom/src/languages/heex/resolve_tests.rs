@@ -155,8 +155,11 @@ fn ext_component_resolves_via_bare_name() {
 }
 
 #[test]
-fn internal_component_resolves_when_no_ext_match() {
-    // Project-defined component — no ext: path.
+fn internal_component_not_grep_resolved() {
+    // A project-defined component referenced as `<.button>` has no scope-directed
+    // binding (the import->component link isn't modeled for HEEx), so it stays
+    // unresolved rather than binding to a same-named symbol by coincidence. The
+    // old whole-program by-name fallback (`heex_internal_component`) was removed.
     let comp_file = make_file(
         "lib/my_app_web/components/core_components.ex",
         "elixir",
@@ -171,16 +174,15 @@ fn internal_component_resolves_when_no_ext_match() {
     );
     let (index, id_map) = build_env(&[&comp_file, &heex_file]);
     let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
-        let ref_ctx = RefContext {
+    let ref_ctx = RefContext {
         extracted_ref: &heex_file.refs[0],
         source_symbol: &heex_file.symbols[0],
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
     let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
-    assert!(res.is_some(), "<.button> should resolve to internal component");
-    assert_eq!(res.unwrap().strategy, "heex_internal_component");
-    let _ = id_map; // ensure id_map used
+    assert!(res.is_none(), "bare internal component is no longer grep-resolved");
+    let _ = id_map;
 }
 
 #[test]

@@ -427,29 +427,16 @@ pub(crate) fn resolve(
             }
         }
 
-        // Step 5: Global by-name fallback for Calls.
-        // Catches bare function references across module boundaries where the
-        // caller has no `use` statement — common in test modules that call
-        // helpers defined in sibling test modules (e.g. `test_match`, `test_replace`).
-        // Only fires when there is exactly one compatible candidate (unambiguous).
+        // Step 5: Same-file by-name for Calls.
+        // When multiple candidates share the name, prefer the one in the
+        // same file as the caller — common for per-file helper functions
+        // (e.g. `test_match` defined locally in each language module).
         if edge_kind == EdgeKind::Calls {
             let candidates: Vec<&SymbolInfo> = lookup
                 .by_name(effective_target)
                 .into_iter()
                 .filter(|s| predicates::kind_compatible(edge_kind, &s.kind))
                 .collect();
-            if candidates.len() == 1 {
-                return Some(Resolution {
-                    target_symbol_id: candidates[0].id,
-                    confidence: 0.80,
-                    strategy: "rust_global_name_fallback",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-            // Multiple candidates: prefer the one in the same file as the caller.
-            // This resolves cases where each file defines the same helper function
-            // locally (e.g. `test_match` in each `crates/language/src/<lang>.rs`).
             let same_file: Vec<&&SymbolInfo> = candidates
                 .iter()
                 .filter(|s| s.file_path.as_ref() == file_ctx.file_path.as_str())
@@ -463,45 +450,9 @@ pub(crate) fn resolve(
                     flow_emit: None,
                 });
             }
-            // Multiple candidates: prefer internal (crate-relative qualified names start with
-            // known crate root segments, not external crate names from Cargo deps).
-            // Use scope_path presence as a proxy for "came from this crate's source".
-            let scoped: Vec<&&SymbolInfo> = candidates
-                .iter()
-                .filter(|s| s.scope_path.is_some())
-                .collect();
-            if scoped.len() == 1 {
-                return Some(Resolution {
-                    target_symbol_id: scoped[0].id,
-                    confidence: 0.75,
-                    strategy: "rust_global_name_scoped",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
         }
 
-        // Step 6: Global by-name for TypeRef with single unambiguous match.
-        // Catches types used without `use` that exist only once in the crate
-        // (common for types pulled in through re-exports or cfg-conditional modules).
-        if edge_kind == EdgeKind::TypeRef {
-            let candidates: Vec<&SymbolInfo> = lookup
-                .by_name(effective_target)
-                .into_iter()
-                .filter(|s| predicates::kind_compatible(edge_kind, &s.kind))
-                .collect();
-            if candidates.len() == 1 {
-                return Some(Resolution {
-                    target_symbol_id: candidates[0].id,
-                    confidence: 0.75,
-                    strategy: "rust_global_typeref_fallback",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
-        // Step 7: Rust prelude. Names in `std::prelude::v1` are in scope
+        // Step 6: Rust prelude. Names in `std::prelude::v1` are in scope
         // without an explicit `use`. The earlier steps fail when an
         // identically-named internal symbol (e.g. an `<Enum>.Vec`
         // variant) makes the by-name lookup ambiguous, or when the

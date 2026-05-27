@@ -2,7 +2,7 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
@@ -73,7 +73,6 @@ impl LanguageEngineHooks for NixHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
         if target.starts_with("builtins.")
             || target.starts_with("lib.")
             || target.starts_with("pkgs.")
@@ -87,16 +86,6 @@ impl LanguageEngineHooks for NixHooks {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "nix_qualified_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-            let last_seg = target.rsplit('.').next().unwrap_or(target.as_str());
-            if let Some(sym) = lookup.by_name(last_seg).first() {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.75,
-                    strategy: "nix_attr_path_last_seg",
                     resolved_yield_type: None,
                     flow_emit: None,
                 });

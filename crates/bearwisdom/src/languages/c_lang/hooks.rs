@@ -235,18 +235,6 @@ impl LanguageEngineHooks for CHooks {
                 });
             }
         }
-        if !effective_target.contains("::") && effective_target.len() > 1 {
-            let by_name_hits = lookup.by_name(effective_target);
-            if let Some(sym) = by_name_hits.first() {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "c_by_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
         if let Some(res) = (DefaultResolver {
             file_ctx,
             ref_ctx,

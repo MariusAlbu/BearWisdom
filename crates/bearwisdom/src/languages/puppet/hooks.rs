@@ -4,7 +4,7 @@ use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
@@ -122,7 +122,6 @@ impl LanguageEngineHooks for PuppetHooks {
         if !target.contains("::") {
             let target_lower = target.to_ascii_lowercase();
             let mut synthetic_match = None;
-            let mut internal_match = None;
             for sym in lookup.by_name(target) {
                 if !predicates::kind_compatible(edge_kind, &sym.kind) {
                     continue;
@@ -130,11 +129,9 @@ impl LanguageEngineHooks for PuppetHooks {
                 if sym.file_path.starts_with("ext:") {
                     synthetic_match = Some(sym);
                     break;
-                } else if internal_match.is_none() {
-                    internal_match = Some(sym);
                 }
             }
-            if synthetic_match.is_none() && internal_match.is_none() && **target != target_lower {
+            if synthetic_match.is_none() && **target != target_lower {
                 for sym in lookup.by_name(&target_lower) {
                     if !predicates::kind_compatible(edge_kind, &sym.kind) {
                         continue;
@@ -142,25 +139,14 @@ impl LanguageEngineHooks for PuppetHooks {
                     if sym.file_path.starts_with("ext:") {
                         synthetic_match = Some(sym);
                         break;
-                    } else if internal_match.is_none() {
-                        internal_match = Some(sym);
                     }
                 }
             }
-            if let Some(sym) = synthetic_match.or(internal_match) {
-                let strategy = if sym.file_path.starts_with("ext:") {
-                    "puppet_synthetic_global"
-                } else {
-                    "puppet_internal_global"
-                };
+            if let Some(sym) = synthetic_match {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: if strategy == "puppet_synthetic_global" {
-                        0.95
-                    } else {
-                        0.9
-                    },
-                    strategy,
+                    confidence: 0.95,
+                    strategy: "puppet_synthetic_global",
                     resolved_yield_type: None,
                     flow_emit: None,
                 });
@@ -201,17 +187,6 @@ impl LanguageEngineHooks for PuppetHooks {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "puppet_qualified_global",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-            for sym in lookup.by_name(last_segment) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.9,
-                        strategy: "puppet_unqualified_fallback",
                         resolved_yield_type: None,
                         flow_emit: None,
                     });

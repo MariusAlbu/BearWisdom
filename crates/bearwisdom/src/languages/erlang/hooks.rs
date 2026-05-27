@@ -260,26 +260,6 @@ impl LanguageEngineHooks for ErlangHooks {
                 });
             }
         }
-        if edge_kind == EdgeKind::Calls && !target.contains(':') {
-            for sym in lookup.by_name(target) {
-                if sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if sym.file_path.as_ref() == file_ctx.file_path.as_str() {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "erlang_cross_file_arity",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
         None
     }
 }

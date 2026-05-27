@@ -944,11 +944,11 @@ mod prelude {
     }
 
     #[test]
-    fn prelude_bare_vec_typeref_with_no_collision_uses_global_fallback() {
-        // Single external candidate — the cheaper single-candidate fallback
-        // (step 6) wins before the prelude path is reached. The prelude path
-        // is intentionally a fallback for the ambiguous case; step 6 already
-        // covers the unambiguous one.
+    fn prelude_bare_vec_typeref_resolves_via_prelude() {
+        // A bare `Vec` TypeRef with no internal collision binds through the Rust
+        // prelude path. The old by-name typeref fallback that used to catch the
+        // single-candidate case was removed — prelude is the scope-directed home
+        // for prelude names on a stdlib path.
         let files = vec![
             external_file(
                 &stdlib_path("alloc/src/vec/mod.rs"),
@@ -962,7 +962,7 @@ mod prelude {
         ];
         let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files)
             .expect("Vec must resolve");
-        assert_eq!(res.strategy, "rust_global_typeref_fallback");
+        assert_eq!(res.strategy, "rust_prelude");
     }
 
     #[test]

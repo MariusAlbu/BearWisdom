@@ -376,17 +376,6 @@ impl LanguageEngineHooks for SwiftHooks {
                 }
             }
         }
-        for sym in lookup.by_name(effective_target) {
-            if predicates::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "swift_by_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
         None
     }
 }
