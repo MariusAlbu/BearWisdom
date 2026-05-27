@@ -1,4 +1,4 @@
-use super::{merge_where_bounds, parse_generic_param_clause};
+use super::{merge_where_bounds, parse_generic_param_clause, parse_return_type_from_signature};
 
 #[test]
 fn names_only_when_unbounded() {
@@ -161,4 +161,87 @@ fn no_where_clause_leaves_params_untouched() {
     let mut params = parse_generic_param_clause("T");
     merge_where_bounds(&mut params, "class Box<T>");
     assert_eq!(params, vec![("T".to_string(), None)]);
+}
+
+// --- parse_return_type_from_signature: colon form (regression) ---
+
+#[test]
+fn return_type_colon_form() {
+    assert_eq!(
+        parse_return_type_from_signature("findUnique(args): Prisma.User"),
+        Some("Prisma.User".to_string())
+    );
+}
+
+#[test]
+fn return_type_colon_form_with_generics() {
+    assert_eq!(
+        parse_return_type_from_signature("get(): Promise<User>"),
+        Some("Promise<User>".to_string())
+    );
+}
+
+#[test]
+fn return_type_arrow_in_params_does_not_shadow_colon() {
+    // The `=> void` lives inside the parameter list; the real return is `Ret`.
+    assert_eq!(
+        parse_return_type_from_signature("on(cb: () => void): Ret"),
+        Some("Ret".to_string())
+    );
+}
+
+// --- parse_return_type_from_signature: arrow forms (new) ---
+
+#[test]
+fn return_type_python_arrow() {
+    assert_eq!(
+        parse_return_type_from_signature("find_one(self, id) -> User"),
+        Some("User".to_string())
+    );
+}
+
+#[test]
+fn return_type_python_arrow_trailing_colon() {
+    assert_eq!(
+        parse_return_type_from_signature("query(self) -> Dict[str, int]:"),
+        Some("Dict[str, int]".to_string())
+    );
+}
+
+#[test]
+fn return_type_ts_fat_arrow() {
+    assert_eq!(
+        parse_return_type_from_signature("(x: number) => string"),
+        Some("string".to_string())
+    );
+}
+
+#[test]
+fn return_type_rust_arrow_with_generics() {
+    assert_eq!(
+        parse_return_type_from_signature("fn find(&self) -> Result<T, E>"),
+        Some("Result<T, E>".to_string())
+    );
+}
+
+#[test]
+fn return_type_rust_arrow_strips_where_clause() {
+    assert_eq!(
+        parse_return_type_from_signature("fn f(&self) -> Foo where T: Clone"),
+        Some("Foo".to_string())
+    );
+}
+
+#[test]
+fn return_type_rust_arrow_strips_block() {
+    assert_eq!(
+        parse_return_type_from_signature("fn f() -> Foo {"),
+        Some("Foo".to_string())
+    );
+}
+
+#[test]
+fn return_type_none_when_no_return() {
+    assert_eq!(parse_return_type_from_signature("void Foo()"), None);
+    assert_eq!(parse_return_type_from_signature(""), None);
 }

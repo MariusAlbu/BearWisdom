@@ -525,6 +525,65 @@ fn signature_derived_return_type_id_interned() {
 }
 
 #[test]
+fn signature_derived_return_type_arrow_form() {
+    // An external Method with a Python-style arrow signature (`(args) -> Ret`)
+    // and no TypeRef refs gets its return type via the arrow-form scan in
+    // parse_return_type_from_signature, flowing through build_with_context's
+    // signature fallback exactly like the .NET colon form above.
+    let pf = ParsedFile {
+        path: "ext:site-packages/repo.py".to_string(),
+        language: "python".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "find_one".to_string(),
+            qualified_name: "Repo.find_one".to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("find_one(self, id) -> User".to_string()),
+            doc_comment: None,
+            scope_path: Some("Repo".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(
+        ("ext:site-packages/repo.py".to_string(), "Repo.find_one".to_string()),
+        1,
+    );
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    assert_eq!(index.return_type_name("Repo.find_one"), Some("User"));
+}
+
+#[test]
 fn method_return_type_id_interned_via_typeref() {
     // A Method symbol with a `TypeRef` ref to "User" gets `return_type`
     // populated from that ref. The post-merge intern pass turns the string

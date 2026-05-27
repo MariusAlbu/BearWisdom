@@ -622,6 +622,49 @@ pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {
             _ => {}
         }
     }
+
+    // Arrow return forms: Python/Rust `-> T`, TS `=> T`. A `>` immediately
+    // preceded by `-` or `=` is a return arrow, never a generic close (no type
+    // bracket ends in `->`/`=>`), so it doesn't perturb angle depth. Return the
+    // type after the rightmost top-level arrow.
+    let mut depth_paren: i32 = 0;
+    let mut depth_angle: i32 = 0;
+    let mut depth_square: i32 = 0;
+    for (i, &b) in bytes.iter().enumerate().rev() {
+        match b {
+            b')' => depth_paren += 1,
+            b'(' => depth_paren -= 1,
+            b']' => depth_square += 1,
+            b'[' => depth_square -= 1,
+            b'<' => depth_angle -= 1,
+            b'>' => {
+                let is_arrow = i > 0 && matches!(bytes[i - 1], b'-' | b'=');
+                if is_arrow
+                    && depth_paren == 0
+                    && depth_angle == 0
+                    && depth_square == 0
+                {
+                    let mut after = sig[i + 1..].trim();
+                    // Drop a Rust block / where-clause and a trailing Python `:`
+                    // that follow the return type in the signature text.
+                    if let Some(pos) = after.find('{').or_else(|| after.find(';')) {
+                        after = after[..pos].trim_end();
+                    }
+                    if let Some(pos) = after.find(" where ") {
+                        after = after[..pos].trim_end();
+                    }
+                    after = after.strip_suffix(':').unwrap_or(after).trim_end();
+                    if !after.is_empty() {
+                        return Some(after.to_string());
+                    }
+                }
+                if !is_arrow {
+                    depth_angle += 1;
+                }
+            }
+            _ => {}
+        }
+    }
     None
 }
 
