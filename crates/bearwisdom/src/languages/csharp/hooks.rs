@@ -198,20 +198,13 @@ impl CSharpResolver {
 
     pub(crate) fn is_visible(
         &self,
-        file_ctx: &FileContext,
+        _file_ctx: &FileContext,
         _ref_ctx: &RefContext,
-        target: &SymbolInfo,
+        _target: &SymbolInfo,
     ) -> bool {
-        let vis = target.visibility.as_deref().unwrap_or("public");
-        match vis {
-            "public" => true,
-            // Full check requires assembly information; approximate by allowing.
-            "internal" => true,
-            // Full check would require walking the inheritance chain.
-            "protected" => true,
-            "private" => &*target.file_path == file_ctx.file_path,
-            _ => true,
-        }
+        // Navigation tool: visibility never gates resolution, so go-to-definition
+        // reaches private members. Deliberate divergence from compiler behavior.
+        true
     }
 }
 
@@ -883,11 +876,54 @@ pub(crate) fn walk_csharp_chain(
         }
     }
 
+    // Extension methods: `receiver.Method()` binds to a static method
+    // `static R Method(this current_type x, ...)` declared in a static class.
+    // Match by name plus a `this current_type` first parameter read from the
+    // signature. Visibility-blind (no `using`-scope gate), consistent with the
+    // navigation model that over-resolves.
+    for sym in lookup.by_name(&last.name) {
+        if (sym.kind == "method" || sym.kind == "function")
+            && predicates::kind_compatible(edge_kind, &sym.kind)
+            && signature_is_extension_on(sym.signature.as_deref(), &current_type)
+        {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.85,
+                strategy: "csharp_extension_method",
+                resolved_yield_type: intern_yield_type(
+                    csharp_yield_type(sym, &last.type_args, lookup, &mut env),
+                    lookup,
+                ),
+                flow_emit: None,
+            });
+        }
+    }
+
     lookup.record_chain_miss(ChainMiss {
         current_type: current_type.clone(),
         target_name: last.name.clone(),
     });
     None
+}
+
+/// True when `sig` is a C# extension-method signature whose `this`-qualified
+/// first parameter has receiver type `receiver_type` (compared by simple
+/// name). An extension method is a static method whose first parameter is
+/// `this ReceiverType name`; the receiver token is the word after `this `.
+fn signature_is_extension_on(sig: Option<&str>, receiver_type: &str) -> bool {
+    let Some(sig) = sig else { return false };
+    let Some(open) = sig.find('(') else { return false };
+    let Some(after_this) = sig[open + 1..].trim_start().strip_prefix("this ") else {
+        return false;
+    };
+    let recv = after_this
+        .trim_start()
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | ')' | '<' | '['))
+        .next()
+        .unwrap_or("");
+    let recv_simple = recv.rsplit('.').next().unwrap_or(recv);
+    let want_simple = receiver_type.rsplit('.').next().unwrap_or(receiver_type);
+    !recv_simple.is_empty() && recv_simple == want_simple
 }
 
 /// Yield type for a resolved Phase-3 symbol, honoring call-site

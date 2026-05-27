@@ -61,16 +61,6 @@ impl ScalaResolver {
             None
         };
 
-        let chain_is_single_segment = ref_ctx.extracted_ref.chain
-            .as_ref()
-            .map(|c| c.segments.len() <= 1)
-            .unwrap_or(false);
-        if ref_ctx.extracted_ref.chain.is_none() || chain_is_single_segment {
-            if let Some(res) = try_external_global(target) {
-                return Some(res);
-            }
-        }
-
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             let config = ChainConfig {
                 strategy_prefix: "scala",
@@ -212,23 +202,25 @@ impl ScalaResolver {
             }
         }
 
+        // External stdlib globals and ScalaTest DSL matchers, after all scope
+        // and import strategies so a project symbol wins over a same-named
+        // global.
+        if let Some(res) = try_external_global(target) {
+            return Some(res);
+        }
+
         None
     }
 
     pub(crate) fn is_visible(
         &self,
-        file_ctx: &FileContext,
+        _file_ctx: &FileContext,
         _ref_ctx: &RefContext,
-        target: &SymbolInfo,
+        _target: &SymbolInfo,
     ) -> bool {
-        let vis = target.visibility.as_deref().unwrap_or("public");
-        match vis {
-            "public" => true,
-            "protected" => true,
-            "private" => &*target.file_path == file_ctx.file_path,
-            // `private[pkg]` / `protected[pkg]` — needs package graph for full check.
-            _ => true,
-        }
+        // Navigation tool: visibility never gates resolution, so go-to-definition
+        // reaches private members. Deliberate divergence from compiler behavior.
+        true
     }
 }
 

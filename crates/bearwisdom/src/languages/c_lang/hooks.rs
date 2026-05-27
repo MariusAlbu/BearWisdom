@@ -157,27 +157,6 @@ impl LanguageEngineHooks for CHooks {
         if predicates::is_template_param(target) {
             return None;
         }
-        if ref_ctx.extracted_ref.chain.is_none()
-            && !target.contains("::")
-            && !target.contains('.')
-            && !target.contains("->")
-        {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "c_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = walk_c_lang_chain(chain_ref, edge_kind, ref_ctx, lookup) {
                 return Some(res);
@@ -227,6 +206,30 @@ impl LanguageEngineHooks for CHooks {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "c_same_file",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
+            }
+        }
+        // External stdlib globals (printf, malloc, …). Runs after scope,
+        // qualified, and same-file strategies so a project symbol wins over a
+        // same-named external.
+        if ref_ctx.extracted_ref.chain.is_none()
+            && !target.contains("::")
+            && !target.contains('.')
+            && !target.contains("->")
+        {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "c_synthetic_global",
                     resolved_yield_type: None,
                     flow_emit: None,
                 });

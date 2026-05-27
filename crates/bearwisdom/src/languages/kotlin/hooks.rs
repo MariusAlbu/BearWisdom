@@ -231,17 +231,13 @@ impl KotlinResolver {
 
     pub(crate) fn is_visible(
         &self,
-        file_ctx: &FileContext,
+        _file_ctx: &FileContext,
         _ref_ctx: &RefContext,
-        target: &SymbolInfo,
+        _target: &SymbolInfo,
     ) -> bool {
-        let vis = target.visibility.as_deref().unwrap_or("public");
-        match vis {
-            "public" | "internal" => true,
-            "protected" => true,
-            "private" => &*target.file_path == file_ctx.file_path,
-            _ => true,
-        }
+        // Navigation tool: visibility never gates resolution, so go-to-definition
+        // reaches private members. Deliberate divergence from compiler behavior.
+        true
     }
 }
 

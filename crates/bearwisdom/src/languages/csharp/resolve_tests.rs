@@ -386,8 +386,8 @@ fn test_private_visibility_cross_file() {
     };
 
     assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
-        "Private cross-file should not resolve"
+        resolver.resolve(&file_ctx, &ref_ctx, &index).is_some(),
+        "Private cross-file now resolves (visibility is not a gate)"
     );
 }
 
@@ -884,6 +884,63 @@ fn make_chain(segments: &[&str]) -> MemberChain {
 })
             .collect(),
     }
+}
+
+#[test]
+fn test_csharp_extension_method_resolves_by_receiver() {
+    // `s.Truncate(10)` binds to `static string Truncate(this string s, int n)`
+    // in a static class — Truncate is not an instance member of string, so it
+    // resolves via the extension-method search keyed on the `this` receiver.
+    let mut ext = make_symbol(
+        "Truncate",
+        "App.StringExtensions.Truncate",
+        SymbolKind::Method,
+        Visibility::Public,
+        Some("App.StringExtensions"),
+    );
+    ext.signature = Some("public static string Truncate(this string value, int max)".to_string());
+
+    let file = make_file(
+        "src/Ext.cs",
+        vec![
+            make_symbol(
+                "StringExtensions",
+                "App.StringExtensions",
+                SymbolKind::Class,
+                Visibility::Public,
+                Some("App"),
+            ),
+            ext,
+        ],
+        vec![],
+    );
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let resolver = CSharpResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+
+    let mut chain = make_chain(&["s", "Truncate"]);
+    chain.segments[0].declared_type = Some("string".to_string());
+    let mut call_ref = make_ref(0, "Truncate", EdgeKind::Calls, 5);
+    call_ref.chain = Some(chain);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &call_ref,
+        source_symbol: &file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "s.Truncate() should resolve to the extension method");
+    let res = result.unwrap();
+    assert_eq!(res.strategy, "csharp_extension_method");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("src/Ext.cs".to_string(), "App.StringExtensions.Truncate".to_string()))
+            .unwrap()
+    );
 }
 
 #[test]

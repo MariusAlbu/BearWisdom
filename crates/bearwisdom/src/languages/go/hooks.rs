@@ -196,21 +196,12 @@ impl GoResolver {
 
     pub(crate) fn is_visible(
         &self,
-        file_ctx: &FileContext,
+        _file_ctx: &FileContext,
         _ref_ctx: &RefContext,
-        target: &SymbolInfo,
+        _target: &SymbolInfo,
     ) -> bool {
-        let vis = target.visibility.as_deref().unwrap_or("public");
-
-        if vis == "private" {
-            if &*target.file_path == file_ctx.file_path {
-                return true;
-            }
-            let target_dir = predicates::parent_dir(&target.file_path);
-            let source_dir = predicates::parent_dir(&file_ctx.file_path);
-            return target_dir == source_dir;
-        }
-
+        // Navigation tool: visibility never gates resolution, so go-to-definition
+        // reaches private members. Deliberate divergence from compiler behavior.
         true
     }
 
@@ -620,6 +611,28 @@ pub(crate) fn walk_go_chain(
                 flow_emit: None,
             });
         }
+    }
+
+    // Embedded-struct/interface promotion: `current_type` may promote `last.name`
+    // from an anonymous embedded field. Climb the inherits_map (embedded fields
+    // emit Inherits edges) and retry the member lookup.
+    if let Some(sym) = crate::indexer::resolve::engine::find_member_via_inheritance(
+        &current_type,
+        &last.name,
+        edge_kind,
+        lookup,
+        predicates::kind_compatible,
+    ) {
+        return Some(Resolution {
+            target_symbol_id: sym.id,
+            confidence: 0.90,
+            strategy: "go_chain_inheritance",
+            resolved_yield_type: intern_yield_type(
+                generic_yield_type(sym, &last.type_args, lookup, &mut env),
+                lookup,
+            ),
+            flow_emit: None,
+        });
     }
 
     lookup.record_chain_miss(ChainMiss {

@@ -536,11 +536,15 @@ impl SymbolIndex {
                 if r.kind != EdgeKind::Inherits {
                     continue;
                 }
-                // Identify the child class symbol.
+                // Identify the child symbol. Struct is included so Go embedded
+                // fields (and other struct-based inheritance) populate the map.
                 let Some(child_sym) = pf.symbols.get(r.source_symbol_index) else {
                     continue;
                 };
-                if !matches!(child_sym.kind, SymbolKind::Class | SymbolKind::Interface | SymbolKind::Trait) {
+                if !matches!(
+                    child_sym.kind,
+                    SymbolKind::Class | SymbolKind::Interface | SymbolKind::Trait | SymbolKind::Struct
+                ) {
                     continue;
                 }
                 let child_qname = &child_sym.qualified_name;

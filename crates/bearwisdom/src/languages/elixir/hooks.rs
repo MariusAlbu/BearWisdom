@@ -45,28 +45,6 @@ impl ElixirResolver {
         let edge_kind = ref_ctx.extracted_ref.kind;
 
 
-        // Synthetic-global lookup. elixir_stdlib + erlang_otp + hex (when
-        // mix.exs declares deps) emit real symbols for Kernel functions
-        // (length, hd, tl, abs, …), ExUnit macros (assert, describe,
-        // setup), Phoenix.ConnTest helpers, etc.
-        if !target.contains('.') {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "elixir_synthetic_global",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
@@ -127,6 +105,27 @@ impl ElixirResolver {
                         flow_emit: None,
                     });
                 }
+            }
+        }
+
+        // External stdlib/OTP/hex globals (Kernel length/hd/tl, ExUnit
+        // assert/describe, Phoenix.ConnTest helpers). Runs after scope and
+        // import strategies so a project symbol wins over a same-named global.
+        if !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "elixir_synthetic_global",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
             }
         }
 

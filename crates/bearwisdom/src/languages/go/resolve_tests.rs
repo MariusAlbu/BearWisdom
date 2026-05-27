@@ -538,6 +538,70 @@ fn test_same_package_resolution_method_on_same_receiver() {
 }
 
 #[test]
+fn test_go_chained_embedded_promotion() {
+    // `d.Hello()` where d: Derived, Derived embeds Base, and Hello is a method on
+    // Base. The promoted method resolves by climbing the embed (Inherits) edge.
+    let base_file = make_file(
+        "pkg/base.go",
+        vec![
+            make_symbol("Base", "pkg.Base", SymbolKind::Struct, Visibility::Public, Some("pkg")),
+            make_symbol(
+                "Hello",
+                "pkg.Base.Hello",
+                SymbolKind::Method,
+                Visibility::Public,
+                Some("pkg.Base"),
+            ),
+        ],
+        vec![],
+    );
+
+    // Anonymous embedded field `Base` → Inherits edge from the Derived struct.
+    let derived_file = make_file(
+        "pkg/derived.go",
+        vec![make_symbol(
+            "Derived",
+            "pkg.Derived",
+            SymbolKind::Struct,
+            Visibility::Public,
+            Some("pkg"),
+        )],
+        vec![make_ref(0, "Base", EdgeKind::Inherits, 2)],
+    );
+
+    let mut caller_file = make_file(
+        "pkg/use.go",
+        vec![make_symbol("Use", "pkg.Use", SymbolKind::Function, Visibility::Public, Some("pkg"))],
+        vec![make_ref(0, "Hello", EdgeKind::Calls, 5)],
+    );
+    let mut chain = make_chain(&["d", "Hello"]);
+    chain.segments[0].declared_type = Some("pkg.Derived".to_string());
+    caller_file.refs[0].chain = Some(chain);
+
+    let (index, id_map) = build_test_env(&[&base_file, &derived_file, &caller_file]);
+    let resolver = GoResolver;
+    let file_ctx = resolver.build_file_context(&caller_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &caller_file.refs[0],
+        source_symbol: &caller_file.symbols[0],
+        scope_chain: build_scope_chain(caller_file.symbols[0].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "d.Hello() should resolve via embedded promotion");
+    let res = result.unwrap();
+    assert_eq!(res.strategy, "go_chain_inheritance");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("pkg/base.go".to_string(), "pkg.Base.Hello".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
 fn test_cross_package_import_resolution() {
     // File imports a package and calls an exported function from it.
     let handlers_file = make_file(
@@ -699,8 +763,9 @@ fn test_visibility_unexported_same_package() {
 }
 
 #[test]
-fn test_visibility_unexported_cross_package_not_visible() {
-    // Unexported function in a different directory must not resolve.
+fn test_visibility_unexported_cross_package_resolves() {
+    // Unexported function in a different directory: visibility no longer gates,
+    // so the cross-directory ref resolves.
     let other_file = make_file(
         "internal/util.go",
         vec![make_symbol(
@@ -739,12 +804,12 @@ fn test_visibility_unexported_cross_package_not_visible() {
     file_package_id: None,
     };
 
-    // The "internal" package has a symbol named "helper" but it's Private.
-    // Cross-directory access to a private symbol should fail.
+    // The "internal" package has a symbol named "helper" that is Private.
+    // Visibility is not a resolution gate, so the cross-directory ref resolves.
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
     assert!(
-        result.is_none(),
-        "Private cross-package symbol should not resolve"
+        result.is_some(),
+        "Private cross-package symbol now resolves (visibility is not a gate)"
     );
 }
 
@@ -1120,54 +1185,6 @@ fn test_is_visible_private_same_dir() {
 
     let resolver = GoResolver;
     assert!(resolver.is_visible(&file_ctx, &ref_ctx, &sym), "Same dir private should be visible");
-}
-
-#[test]
-fn test_is_visible_private_different_dir() {
-    let file_ctx = FileContext {
-        file_path: "cmd/main.go".to_string(),
-        language: "go".to_string(),
-        imports: vec![],
-        file_namespace: Some("main".to_string()),
-    };
-
-    let sym = SymbolInfo {
-        id: 3,
-        name: "unexported".to_string(),
-        qualified_name: "pkg.unexported".to_string(),
-        kind: "function".to_string(),
-        visibility: Some("private".to_string()),
-        file_path: Arc::from("pkg/b.go"), // different directory
-        scope_path: Some("pkg".to_string()),
-        package_id: None,
-        signature: None,
-    };
-
-    let sym_ref = ExtractedRef {
-        source_symbol_index: 0,
-        target_name: "unexported".to_string(),
-        kind: EdgeKind::Calls,
-        line: 1,
-        col: 0,
-        module: None,
-        chain: None,
-        byte_offset: 1,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-};
-    let source_sym = make_symbol("main", "main.main", SymbolKind::Function, Visibility::Private, Some("main"));
-    let ref_ctx = RefContext {
-        extracted_ref: &sym_ref,
-        source_symbol: &source_sym,
-        scope_chain: vec![],
-    file_package_id: None,
-    };
-
-    let resolver = GoResolver;
-    assert!(
-        !resolver.is_visible(&file_ctx, &ref_ctx, &sym),
-        "Private cross-dir should not be visible"
-    );
 }
 
 #[test]

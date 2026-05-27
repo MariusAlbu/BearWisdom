@@ -627,26 +627,13 @@ pub(crate) fn resolve(
 
     pub(crate) fn is_visible(
         &self,
-        file_ctx: &FileContext,
+        _file_ctx: &FileContext,
         _ref_ctx: &RefContext,
-        target: &SymbolInfo,
+        _target: &SymbolInfo,
     ) -> bool {
-        let vis = target.visibility.as_deref().unwrap_or("public");
-
-        match vis {
-            "private" => {
-                // Private in Rust = visible only within the same module (same file
-                // or same module path). Approximate: same file is always ok.
-                &*target.file_path == file_ctx.file_path
-            }
-            "internal" => {
-                // pub(crate) / pub(super) — same directory as an approximation.
-                let target_dir = predicates::parent_dir(&target.file_path);
-                let source_dir = predicates::parent_dir(&file_ctx.file_path);
-                target_dir == source_dir || &*target.file_path == file_ctx.file_path
-            }
-            _ => true, // public
-        }
+        // Navigation tool: visibility never gates resolution, so go-to-definition
+        // reaches private members. Deliberate divergence from compiler behavior.
+        true
     }
 
 }

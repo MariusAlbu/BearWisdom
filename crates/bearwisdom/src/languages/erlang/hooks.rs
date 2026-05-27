@@ -193,23 +193,6 @@ impl LanguageEngineHooks for ErlangHooks {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
         if edge_kind == EdgeKind::Calls && !target.contains(':') {
-            for sym in lookup.by_name(target) {
-                if !sym.file_path.starts_with("ext:erlang:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "erlang_otp_arity",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        if edge_kind == EdgeKind::Calls && !target.contains(':') {
             if let Some(res) = resolve_via_import(file_ctx, target, lookup) {
                 return Some(res);
             }
@@ -255,6 +238,26 @@ impl LanguageEngineHooks for ErlangHooks {
                         });
                     }
                 }
+            }
+        }
+        // OTP/stdlib externals. Runs after explicit -import, scope, and
+        // same-file strategies so a project function wins over a same-named
+        // OTP function.
+        if edge_kind == EdgeKind::Calls && !target.contains(':') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:erlang:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "erlang_otp_arity",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
             }
         }
         if edge_kind == EdgeKind::Calls && !target.contains(':') {
