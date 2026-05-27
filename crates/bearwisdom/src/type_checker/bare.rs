@@ -72,16 +72,25 @@ pub fn resolve_bare(
         }
     }
 
-    // 2. Same-file resolution.
-    for sym in lookup.in_file(&file_ctx.file_path) {
-        if sym.name == target && kind_ok(profile, edge_kind, &sym.kind) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 1.0,
-                strategy: "engine_bare_same_file",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
+    // 2. Same-file resolution — but yield to an explicit (non-wildcard) import
+    //    that binds this name. The scope-chain walk above already handled true
+    //    lexical locals; a file-level sibling must not shadow an import.
+    let imported = !target.is_empty()
+        && file_ctx.imports.iter().any(|imp| {
+            !imp.is_wildcard
+                && (imp.imported_name == target || imp.alias.as_deref() == Some(target))
+        });
+    if !imported {
+        for sym in lookup.in_file(&file_ctx.file_path) {
+            if sym.name == target && kind_ok(profile, edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "engine_bare_same_file",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
+            }
         }
     }
 

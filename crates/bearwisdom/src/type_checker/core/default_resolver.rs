@@ -447,6 +447,18 @@ impl<'a> DefaultResolver<'a> {
     /// kind-compatible match.
     pub fn resolve_via_same_file(&self) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        // Yield to an explicit (non-wildcard) import that binds this name. True
+        // lexical locals are already handled by resolve_via_scope_visible (which
+        // runs first); a file-level sibling that isn't in the scope chain must
+        // not shadow an import that names the same thing.
+        if !target.is_empty()
+            && self.file_ctx.imports.iter().any(|imp| {
+                !imp.is_wildcard
+                    && (imp.imported_name == target || imp.alias.as_deref() == Some(target))
+            })
+        {
+            return None;
+        }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for sym in self.lookup.in_file(&self.file_ctx.file_path) {
             if sym.name == target && (self.kind_compatible)(edge_kind, &sym.kind) {
