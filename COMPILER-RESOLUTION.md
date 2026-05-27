@@ -56,7 +56,8 @@ inference to bind every reference to its declaring symbol.
 | QUAL-3 (H.1) | Delete the import-blind `*_synthetic_global` ext-bare-name grep family (Option A — honest floor) | `bf46353b` |
 | EXT-4 | Delete the eager `seed_demand_from_user_refs` — externals load lazily via the expand loop | `aad62601` |
 | — | Large-stack parse pool (`build_parse_pool`, 128MB) + iterative `scope_tree`/`recurse_for_object_types` so deep generated `.d.ts` unions don't overflow; full-corpus recapture (honest floor) | `c25ff7d9` |
-| EXT-1 | Scope-directed external routing: module-scoped demand for import-qualified externals (`ChainMiss.module` → `SymbolLocationIndex::locate`), recovers the externals EXT-4 dropped, no cross-package grep | _(this change)_ |
+| EXT-1 | Scope-directed external routing: module-scoped demand for import-qualified externals (`ChainMiss.module` → `SymbolLocationIndex::locate`), recovers the externals EXT-4 dropped, no cross-package grep | `29a055a4` |
+| EXT-3 | Supertype walk over external bases: `build_explicit` includes pulled `ext:` files, so `walk_up_with_args` climbs external hierarchies and composes generics across them (reachability-bounded) | _(this change)_ |
 
 ts-immich: grep-baseline 6,179 → **4,627** unresolved, with honest structural edges.
 
@@ -159,8 +160,9 @@ return types is gated here, and it is what makes external types ordinary table r
 **Deps:** EXT-3
 **Corpus proof:** `PrismaClient.findUnique/findMany`, R `mutate/ggplot`, C `curl_easy_*`.
 
-### EXT-3 — Lazy member hydration, origin-blind (D3/S4)  ·  [generic]  ·  ⚠️
-**State:** `qualified_member_lookup` already resolves external members origin-blind via the global index (the `members.rs:68` `ext:` skip is not the blocker). Remaining value: generics carried through external chains, supertype walk over external bases. Reachability-bounded (resource-monopoly constraint), never whole-dep-tree.
+### EXT-3 — Lazy member hydration, origin-blind (D3/S4)  ·  [generic]  ·  ✅
+**Done.** `build_explicit` (supertype.rs) no longer skips `ext:` files, so a pulled external base's OWN `Inherits`/`Implements` edges enter the `SupertypeGraph`. `walk_up_with_args` then climbs the external hierarchy and composes generic args across those hops; the existing `members.lookup_with_binding` → `env.bind_positional(owner_args)` → `yield_type_of` path (chain.rs:432-475) substitutes the bound args into an inherited member's return type — so a method on a deep external base resolves with the concrete type, not an unbound `T`. The generic-substitution machinery already existed; the only blocker was the missing external edges. Reachability-bounded for free: the graph is built from `parsed`, which holds only the externals the demand loop pulled (post-EXT-4), never the whole dep tree. **Verified:** new `build_explicit_includes_pulled_external_base_edges` test (failing→green) + 317 type_checker tests green; ts-rallly / java-spring-petclinic / ts-nestjs-realworld regression-free. Corpus gain is shape-dependent (OO inheritance from pulled external bases) — measurable at closeout, not on the functional/ceiling/sources-absent samples here.
+**Earlier state (for reference):** `qualified_member_lookup` already resolved external *members* origin-blind (the `members.rs:68` `ext:` skip was never the blocker); the supertype-edge gap above was.
 
 ### EXT-4 — Delete the eager seed (D5/S6)  ·  [generic]  ·  ✅
 **Done.** Deleted `seed_demand_from_user_refs` + `_inner` + `enqueue_named_target` + `follow_inheritance_closure` (`stage_link.rs`, ~370 lines) and its `full.rs` call. Externals now load lazily through the Stage-2 chain-miss → `expand` → re-resolve loop only — no eager pre-pull of every import-qualified external up front (that was the dominant reindex cost on dep-heavy projects). **Tradeoff (honest floor):** import-qualified externals on demand-driven ecosystems (npm/TS) that don't surface a chain miss may stay unresolved until **EXT-1** records that demand on the scoped path; chained externals are already covered by the expand loop.
@@ -282,9 +284,9 @@ The baseline (`baseline-all.json`, 2026-05-24) predates this session — svelte 
 6. **EXT-5, CORPUS-1/2, INFER-2/3/4/5, remaining LANG-*** — breadth.
 7. **DOC-1..4** — in passing / at closeout.
 
-**State (2026-05-27):** sequence #1's EXT-2 slice-1 ✅ (`1f03bec9`) + EXT-1 ✅ (this change), #2's QUAL-1b H.1+H.2 ✅ (`bf46353b`/`c4252e8b`) and BIND-1 ✅, EXT-4 ✅ (`aad62601`). The remaining top of the stack: **EXT-3** (finish the #1 block — carry generics through external chains + supertype walk over external bases) and **QUAL-5** (three-state external model — pairs with EXT-1 to make external precision measurable: resolved / known-unhydrated / unknown). INFER-1 (CFG) is the foundational-but-largest item gating INFER-2/3/4.
+**State (2026-05-27):** the entire #1 externals block is done — EXT-2 slice-1 ✅ (`1f03bec9`), EXT-1 ✅ (`29a055a4`), EXT-3 ✅ (this change), EXT-4 ✅ (`aad62601`); #2's QUAL-1b H.1+H.2 ✅ (`bf46353b`/`c4252e8b`) and BIND-1 ✅. Externals are now first-class rows, pulled scope-directed, with type-aware chains (generics + supertypes) over them. Remaining top of the stack: **QUAL-5** (three-state external model) and **INFER-1** (CFG, the foundational-but-largest item gating INFER-2/3/4).
 
-**Single best next move:** EXT-3 — finish the type-aware external-chain block now that EXT-1/EXT-2 land the externals as real rows: carry generics through external chains and walk supertypes over external bases (reachability-bounded). QUAL-5's three-state metric is the alternative — it makes EXT-1's import-known-but-unhydrated case measurable instead of hidden in the coverage rate.
+**Single best next move:** QUAL-5 — the three-state external model (`resolved` / `external_known_unhydrated` / `unresolved_unknown`). It's the natural close to the externals block: EXT-1/EXT-3 now pull and resolve externals, but "import known, dep source absent" still hides in the coverage rate. QUAL-5 makes that precision measurable (and is small). INFER-1 (CFG) is the alternative — the foundational checker feature, but the largest single item.
 
 ---
 

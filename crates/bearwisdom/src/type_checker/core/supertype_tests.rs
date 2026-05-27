@@ -268,6 +268,55 @@ fn build_explicit_falls_back_to_target_name_when_lookup_misses() {
 }
 
 #[test]
+fn build_explicit_includes_pulled_external_base_edges() {
+    // EXT-3: a pulled external file's own inheritance must enter the graph so a
+    // chain through an external base can climb the external's own hierarchy
+    // (and `walk_up_with_args` compose generic args across those hops). Before
+    // EXT-3, `ext:` files were skipped and the external base's edge was absent,
+    // so `walk_up` stopped at the first external hop.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type("Repository", "pkg.Repository")
+        .with_type("BaseRepo", "pkg.BaseRepo");
+
+    let parsed = vec![
+        // internal: UserRepo extends Repository
+        parsed_with_refs(
+            "src/repo.rs",
+            vec![class_sym("UserRepo", "myapp.UserRepo")],
+            vec![inherits_ref(0, "Repository")],
+        ),
+        // external (pulled by the demand loop): Repository extends BaseRepo
+        parsed_with_refs(
+            "ext:pkg/repository.d.ts",
+            vec![class_sym("Repository", "pkg.Repository")],
+            vec![inherits_ref(0, "BaseRepo")],
+        ),
+    ];
+
+    let members = MembersIndex::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &lookup);
+
+    // The external base's OWN supertype edge is now in the graph.
+    let repo_id = arena.class("pkg.Repository");
+    let base_id = arena.class("pkg.BaseRepo");
+    assert_eq!(
+        graph.parents_of(repo_id),
+        &[base_id],
+        "external Repository → BaseRepo edge must be present"
+    );
+
+    // And the chain climbs the whole way: UserRepo → Repository → BaseRepo.
+    let userrepo_id = arena.class("myapp.UserRepo");
+    let walk: Vec<TypeId> = graph.walk_up(userrepo_id).collect();
+    assert!(
+        walk.contains(&base_id),
+        "walk_up from UserRepo must reach the deep external base BaseRepo"
+    );
+}
+
+#[test]
 fn build_explicit_handles_multi_inherit_and_implements() {
     // Admin extends User, Admin implements Role, Admin implements Auditable.
     let mut arena = TypeArena::new();

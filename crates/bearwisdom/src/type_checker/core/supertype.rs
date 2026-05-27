@@ -214,9 +214,14 @@ fn build_explicit(
     lookup: &dyn SymbolLookup,
 ) {
     for pf in parsed {
-        if pf.path.starts_with("ext:") {
-            continue;
-        }
+        // EXT-3: external files ARE included. A project class extending an
+        // external base (`class UserRepo extends Repository<User>`) needs the
+        // external base's OWN supertype edges here so `walk_up_with_args`
+        // climbs the external hierarchy and composes the `<User>` arg across
+        // those hops — resolving inherited members on deep external bases. The
+        // set is reachability-bounded (only externals the resolve loop pulled),
+        // so this is not the eager whole-dep-tree walk an `ext:` skip would
+        // guard against.
         for r in &pf.refs {
             if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) {
                 continue;
