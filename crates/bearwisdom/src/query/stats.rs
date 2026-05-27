@@ -182,22 +182,44 @@ pub struct UnresolvedTarget {
 /// to `files.origin = 'internal'` so external dependency noise
 /// (node_modules, site-packages) never inflates the resolution rate.
 ///
-/// The primary gate metric is `internal_resolution_rate`, defined per
+/// A reference lands in one of three states, reported as separate buckets:
+///   * `internal_edges`             — bound to a declaration (a real edge).
+///   * `external_known_unhydrated`  — scope/import names a real dependency
+///     whose source/metadata was never pulled (absent on disk). A
+///     dependency-availability gap, NOT a resolution failure.
+///   * `internal_unresolved`        — binds to nothing AND no dependency
+///     owns the name. The genuine gap.
+///
+/// The primary gate metric is `internal_resolution_rate` (== `precision`),
+/// defined per
 /// `research/ArchitectureImprovements/Codex/01-resolution-gate-plan.md`:
 ///   internal_edges / (internal_edges + internal_unresolved) * 100
-/// `resolution_rate` is the same value retained as a back-compat alias
-/// for the older quality-check baselines.
+/// `external_known_unhydrated` is excluded from the denominator — a missing
+/// dep source must not be counted against the engine. `resolution_rate` is
+/// the same value retained as a back-compat alias for the older
+/// quality-check baselines.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolutionBreakdown {
     /// Edges whose source symbol lives in a user file.
     pub internal_edges: u32,
     /// `unresolved_refs` whose source symbol lives in a user file (and
-    /// which didn't come from a doc/markdown snippet).
+    /// which didn't come from a doc/markdown snippet). The genuine-unknown
+    /// state — binds to nothing and no dependency owns the name.
     pub internal_unresolved: u32,
+    /// `external_refs` whose source symbol lives in a user file — refs the
+    /// classifier routed to a known external namespace whose source was
+    /// never hydrated. Reported apart as a dependency-availability gap, not
+    /// counted in the precision denominator.
+    pub external_known_unhydrated: u32,
     /// Primary resolution gate metric, two decimals: internal_edges /
     /// (internal_edges + internal_unresolved) * 100. 100.0 when both
-    /// sides are zero (empty project).
+    /// sides are zero (empty project). `external_known_unhydrated` is not
+    /// in the denominator.
     pub internal_resolution_rate: f64,
+    /// Precision over the three-state model: resolved / (resolved +
+    /// unresolved_unknown) * 100, equal to `internal_resolution_rate`. The
+    /// name states the contract — the unhydrated bucket is excluded.
+    pub precision: f64,
     /// Back-compat alias for `internal_resolution_rate` — older callers
     /// (quality-check baselines, MCP wrappers) read `resolution_rate`.
     pub resolution_rate: f64,
@@ -262,6 +284,22 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     );
     let internal_unresolved: u32 = conn
         .query_row(&internal_unresolved_sql, [], |r| r.get(0))
+        .unwrap_or(0);
+
+    // The third state: refs the classifier routed to a known external
+    // namespace whose source was never pulled. Lives in `external_refs`,
+    // disjoint from `unresolved_refs`, so it never entered the precision
+    // denominator above — counted here so the gap is observable instead of
+    // hidden.
+    let external_known_unhydrated: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM external_refs er
+             JOIN symbols s ON s.id = er.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
 
     let mut languages: BTreeMap<String, u32> = BTreeMap::new();
@@ -442,7 +480,9 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     Ok(ResolutionBreakdown {
         internal_edges,
         internal_unresolved,
+        external_known_unhydrated,
         internal_resolution_rate: resolution_rate,
+        precision: resolution_rate,
         resolution_rate,
         unresolved_by_lang_kind,
         unresolved_by_origin_language,

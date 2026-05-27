@@ -58,6 +58,7 @@ inference to bind every reference to its declaring symbol.
 | — | Large-stack parse pool (`build_parse_pool`, 128MB) + iterative `scope_tree`/`recurse_for_object_types` so deep generated `.d.ts` unions don't overflow; full-corpus recapture (honest floor) | `c25ff7d9` |
 | EXT-1 | Scope-directed external routing: module-scoped demand for import-qualified externals (`ChainMiss.module` → `SymbolLocationIndex::locate`), recovers the externals EXT-4 dropped, no cross-package grep | `29a055a4` |
 | EXT-3 | Supertype walk over external bases: `build_explicit` includes pulled `ext:` files, so `walk_up_with_args` climbs external hierarchies and composes generics across them (reachability-bounded) | _(this change)_ |
+| QUAL-5 | Three-state external model: `ResolutionBreakdown` surfaces `external_known_unhydrated` (internal `external_refs`) + a `precision` field apart from `resolved`/`unresolved_unknown`; precision excludes the unhydrated bucket. No schema change — the three states already lived in `edges`/`external_refs`/`unresolved_refs`; the gap was metric visibility | _(this change)_ |
 
 ts-immich: grep-baseline 6,179 → **4,627** unresolved, with honest structural edges.
 
@@ -240,8 +241,10 @@ Structural matching (INFER-5); conditional-beyond-decidable; mapped-beyond-trans
 ### QUAL-4 — Collapse confidence to {resolved, unresolved} (D8)  ·  ⚠️
 As grep goes, drop 0.x-confidence edges; a front-end answers resolved or error. Falls out of QUAL-1/QUAL-2.
 
-### QUAL-5 — Three-state external model  ·  [generic]  ·  ❌
-Distinguish `resolved_edge` / `external_known_unhydrated` (import names dep X, X's metadata absent) / `unresolved_unknown`. Makes precision measurable instead of hidden in a coverage rate. Pairs with EXT-1.
+### QUAL-5 — Three-state external model  ·  [generic]  ·  ✅
+**Compiler feature:** a miss is not one bucket — separate "dep source absent" from "genuine unknown" so precision is measurable instead of hidden in a coverage rate.
+**Done.** No schema change: the three states were already persisted in three disjoint tables — `edges` (`resolved`), `external_refs` (`external_known_unhydrated` — the EXT-1 outcome: `classify_external_ns` routed the ref to a known `ext:<module>` namespace but `locate` never hydrated the source, `loop_body.rs:608`), `unresolved_refs` (`unresolved_unknown` — `classify_external_ns → None`, `loop_body.rs:747`). The gap was the metric: `ResolutionBreakdown` (`stats.rs`) computed `internal_edges / (internal_edges + internal_unresolved)` — already precision, since `internal_unresolved` joins only `unresolved_refs` — but never surfaced the third bucket, so the dependency-availability gap was invisible and the precision contract was undocumented/untested. Added `external_known_unhydrated` (internal-origin `external_refs` count) and a `precision` field (== `internal_resolution_rate`, naming the contract) to `ResolutionBreakdown`, and surfaced both in the MCP/CLI compact header (`compact.rs`). Precision explicitly excludes the unhydrated bucket from the denominator. Failing-first locked by `resolution_breakdown_distinguishes_three_states` (resolved + dep-absent + typo → 1/1/1, precision 50%) and `external_known_unhydrated_excluded_from_precision_denominator` (all-unhydrated → precision 100%). Consumers unchanged: `cmd_resolution_gate` serializes the breakdown via serde (new fields flow through); the quality-check baseline reads only `resolution_rate`/`internal_edges` (preserved). `resolution_gate` integration suite green (rate still matches dead-code health).
+**Deps:** EXT-1 ✅ (produces the `external_known_unhydrated` signal at the `locate` miss).
 
 ---
 

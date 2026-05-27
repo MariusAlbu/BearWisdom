@@ -47,6 +47,84 @@ fn seed_unresolved(
         .unwrap();
 }
 
+fn seed_external(db: &Database, source_id: i64, target_name: &str, kind: &str, namespace: &str) {
+    db.conn()
+        .execute(
+            "INSERT INTO external_refs (source_id, target_name, kind, source_line, namespace)
+             VALUES (?1, ?2, ?3, 1, ?4)",
+            rusqlite::params![source_id, target_name, kind, namespace],
+        )
+        .unwrap();
+}
+
+fn seed_edge(db: &Database, source_id: i64, target_id: i64) {
+    db.conn()
+        .execute(
+            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence, strategy)
+             VALUES (?1, ?2, 'calls', 1, 1.0, 'test')",
+            rusqlite::params![source_id, target_id],
+        )
+        .unwrap();
+}
+
+#[test]
+fn resolution_breakdown_distinguishes_three_states() {
+    // The three outcomes a reference can land in must be reported as
+    // separate buckets, so precision is measurable instead of hidden in
+    // one coverage rate:
+    //   * a real bind                  → resolved (an edge)
+    //   * import names a dep, source
+    //     absent on disk               → external_known_unhydrated
+    //   * binds nothing, no dep owns
+    //     the name (a typo)            → unresolved_unknown
+    let db = open();
+    let f = seed_file(&db, "src/a.ts", "typescript", "internal");
+    let caller = seed_symbol(&db, f, "caller", "internal");
+    let callee = seed_symbol(&db, f, "callee", "internal");
+
+    // resolved — a bound declaration.
+    seed_edge(&db, caller, callee);
+    // external_known_unhydrated — scope named a real dependency whose
+    // metadata was never pulled (the EXT-1 locate-miss outcome).
+    seed_external(&db, caller, "findUnique", "calls", "ext:@prisma/client");
+    // unresolved_unknown — the genuine gap.
+    seed_unresolved(&db, caller, "frobnicate", "calls", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    assert_eq!(rb.internal_edges, 1, "one resolved edge");
+    assert_eq!(rb.external_known_unhydrated, 1, "one dep-absent ref");
+    assert_eq!(rb.internal_unresolved, 1, "one genuine unknown");
+
+    // Precision counts only resolved vs unknown — the unhydrated dep is
+    // tracked apart and must NOT drag the denominator down.
+    // 1 / (1 + 1) = 50%.
+    assert_eq!(rb.precision, 50.0);
+    assert_eq!(rb.precision, rb.internal_resolution_rate);
+}
+
+#[test]
+fn external_known_unhydrated_excluded_from_precision_denominator() {
+    // A project whose every miss is a known-but-unhydrated dependency has
+    // perfect precision — the engine bound everything it could see; the
+    // gaps are dependency-availability, not resolution failures.
+    let db = open();
+    let f = seed_file(&db, "src/a.ts", "typescript", "internal");
+    let caller = seed_symbol(&db, f, "caller", "internal");
+    let callee = seed_symbol(&db, f, "callee", "internal");
+
+    seed_edge(&db, caller, callee);
+    seed_external(&db, caller, "useQuery", "calls", "ext:@tanstack/react-query");
+    seed_external(&db, caller, "axios", "calls", "ext:axios");
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    assert_eq!(rb.internal_edges, 1);
+    assert_eq!(rb.external_known_unhydrated, 2);
+    assert_eq!(rb.internal_unresolved, 0);
+    assert_eq!(rb.precision, 100.0, "unhydrated deps must not count as failures");
+}
+
 #[test]
 fn resolution_breakdown_excludes_markdown_imports() {
     let db = open();
