@@ -64,7 +64,9 @@ impl ManifestReader for NpmManifest {
             // resolver just won't rewrite aliases for this package.
             let tsconfig_path = package_dir.join("tsconfig.json");
             if let Ok(ts_content) = std::fs::read_to_string(&tsconfig_path) {
-                data.path_aliases = parse_tsconfig_paths(&ts_content);
+                // Follow `extends` so monorepo / preset base configs that hold
+                // the `paths` map still contribute aliases.
+                data.path_aliases = parse_tsconfig_paths_with_extends(&tsconfig_path);
                 data.tsconfig_types = parse_tsconfig_types(&ts_content);
             }
 
@@ -184,6 +186,107 @@ pub fn parse_tsconfig_paths(content: &str) -> Vec<(String, String)> {
             continue;
         }
         out.push((alias_prefix.to_string(), target_prefix.to_string()));
+    }
+    out
+}
+
+/// Like `parse_tsconfig_paths` but follows the `extends` chain, so a package
+/// that declares its `paths` in a shared base config (common in monorepos and
+/// `@tsconfig/*` presets) still contributes aliases. Resolves both relative
+/// (`./base.json`, `../tsconfig.base.json`) and package
+/// (`@org/cfg/web.json`, `@tsconfig/node18/tsconfig.json`) `extends` targets.
+/// Child entries win over inherited ones on key conflict. Bounded depth with a
+/// visited-set cycle guard.
+pub fn parse_tsconfig_paths_with_extends(tsconfig_path: &Path) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    collect_tsconfig_paths(
+        tsconfig_path,
+        &|p| std::fs::read_to_string(p).ok(),
+        &mut out,
+        &mut seen,
+        0,
+    );
+    out
+}
+
+const MAX_TSCONFIG_EXTENDS_DEPTH: usize = 8;
+
+/// Walk a tsconfig and its `extends` ancestors, accumulating path aliases.
+/// `read` returns a file's content or `None` when it doesn't exist — folding
+/// existence and content into one closure keeps the extends-resolution logic
+/// testable without touching the filesystem.
+fn collect_tsconfig_paths(
+    path: &Path,
+    read: &dyn Fn(&Path) -> Option<String>,
+    out: &mut Vec<(String, String)>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    depth: usize,
+) {
+    if depth >= MAX_TSCONFIG_EXTENDS_DEPTH || !seen.insert(path.to_path_buf()) {
+        return;
+    }
+    let Some(content) = read(path) else { return };
+    // First-writer-wins: the current (more derived) config's aliases are pushed
+    // before its ancestors', so a child key shadows the parent's.
+    for entry in parse_tsconfig_paths(&content) {
+        if !out.iter().any(|(k, _)| *k == entry.0) {
+            out.push(entry);
+        }
+    }
+    let base_dir = path.parent().unwrap_or_else(|| Path::new(""));
+    for target in tsconfig_extends_targets(&content) {
+        for candidate in extends_candidate_paths(&target, base_dir) {
+            if read(&candidate).is_some() {
+                collect_tsconfig_paths(&candidate, read, out, seen, depth + 1);
+                break;
+            }
+        }
+    }
+}
+
+/// Extract the `extends` field as a list of targets. TS 5.0+ allows an array;
+/// older configs use a single string.
+fn tsconfig_extends_targets(content: &str) -> Vec<String> {
+    let stripped = strip_json_comments(content);
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&stripped) else {
+        return Vec::new();
+    };
+    match value.get("extends") {
+        Some(serde_json::Value::String(s)) => vec![s.clone()],
+        Some(serde_json::Value::Array(a)) => {
+            a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Candidate on-disk locations for an `extends` target, in priority order.
+/// Relative targets resolve against `base_dir` (a missing `.json` is appended);
+/// package targets resolve under `node_modules`, walking up from `base_dir`,
+/// trying `<pkg>.json` then `<pkg>/tsconfig.json`.
+fn extends_candidate_paths(target: &str, base_dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if target.starts_with('.') {
+        let rel = target.trim_start_matches("./");
+        let joined = base_dir.join(rel);
+        if joined.extension().is_some() {
+            out.push(joined);
+        } else {
+            out.push(base_dir.join(format!("{rel}.json")));
+        }
+        return out;
+    }
+    let mut dir = Some(base_dir);
+    while let Some(d) = dir {
+        let nm = d.join("node_modules").join(target);
+        if target.ends_with(".json") {
+            out.push(nm);
+        } else {
+            out.push(nm.with_extension("json"));
+            out.push(nm.join("tsconfig.json"));
+        }
+        dir = d.parent();
     }
     out
 }
@@ -409,78 +512,5 @@ const NODE_BUILTINS: &[&str] = &[
 ];
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_name_and_registry_deps() {
-        let json = r#"{"name": "@myorg/web", "dependencies": {"react": "^18.0.0", "axios": "1.2.3"}}"#;
-        let (name, deps) = parse_package_json(json);
-        assert_eq!(name.as_deref(), Some("@myorg/web"));
-        assert!(deps.contains(&"react".to_string()));
-        assert!(deps.contains(&"axios".to_string()));
-    }
-
-    #[test]
-    fn workspace_protocol_deps_excluded() {
-        let json = r#"{
-            "name": "@myorg/web",
-            "dependencies": {
-                "react": "^18.0.0",
-                "@myorg/utils": "workspace:*",
-                "@myorg/ui": "workspace:^",
-                "@myorg/local": "file:../local-pkg"
-            }
-        }"#;
-        let (_, deps) = parse_package_json(json);
-        assert!(deps.contains(&"react".to_string()), "registry dep kept");
-        assert!(!deps.contains(&"@myorg/utils".to_string()), "workspace:* excluded");
-        assert!(!deps.contains(&"@myorg/ui".to_string()), "workspace:^ excluded");
-        assert!(!deps.contains(&"@myorg/local".to_string()), "file: excluded");
-    }
-
-    #[test]
-    fn link_and_portal_protocols_excluded() {
-        let json = r#"{
-            "name": "app",
-            "dependencies": {
-                "pinned": "link:../pinned",
-                "tunneled": "portal:../tunneled"
-            }
-        }"#;
-        let (_, deps) = parse_package_json(json);
-        assert!(deps.is_empty(), "link: and portal: both excluded");
-    }
-
-    #[test]
-    fn mixed_workspace_and_registry_both_work() {
-        let json = r#"{
-            "name": "web",
-            "dependencies": {"react": "^18"},
-            "devDependencies": {
-                "typescript": "^5",
-                "@internal/test-utils": "workspace:*"
-            }
-        }"#;
-        let (_, deps) = parse_package_json(json);
-        assert!(deps.contains(&"react".to_string()));
-        assert!(deps.contains(&"typescript".to_string()));
-        assert!(!deps.contains(&"@internal/test-utils".to_string()));
-    }
-
-    #[test]
-    fn workspace_protocol_helper_recognizes_variants() {
-        assert!(is_workspace_protocol("workspace:*"));
-        assert!(is_workspace_protocol("workspace:^"));
-        assert!(is_workspace_protocol("workspace:~"));
-        assert!(is_workspace_protocol("workspace:1.2.3"));
-        assert!(is_workspace_protocol("file:../foo"));
-        assert!(is_workspace_protocol("link:../foo"));
-        assert!(is_workspace_protocol("portal:../foo"));
-
-        assert!(!is_workspace_protocol("^1.0.0"));
-        assert!(!is_workspace_protocol("1.2.3"));
-        assert!(!is_workspace_protocol("git+https://github.com/x/y"));
-        assert!(!is_workspace_protocol("npm:foo@1.0.0"));
-    }
-}
+#[path = "npm_tests.rs"]
+mod tests;
