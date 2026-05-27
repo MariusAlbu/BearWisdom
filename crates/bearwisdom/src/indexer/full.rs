@@ -668,36 +668,12 @@ pub fn full_index(
     let _ = &demand_driven_roots;
     let _ = &demand_driven_ecosystems;
 
-    // --- Step 4e: Seed demand from user refs (demand-driven pipeline) ---
-    //
-    // When a demand-driven ecosystem's eager walk was skipped, the first
-    // resolve_iteration would classify every ref into externals as
-    // "external_refs" (no target symbol indexed yet) rather than real
-    // `edges` rows. Pre-pull files the user's direct import-qualified refs
-    // demand so those resolutions land as edges on pass 1. Chain walker
-    // still drives the loop below for deeper hops.
-    if !symbol_index.is_empty() {
-        let mut seeded = seed_demand_from_user_refs(
-            &parsed, &symbol_index, registry, workspace_arena.as_ref(),
-        );
-        if !seeded.is_empty() {
-            info!(
-                "Seeded {} external files from user-ref demand",
-                seeded.len(),
-            );
-            let (_sfm, seeded_sym_map) =
-                write::write_parsed_files_with_origin(db, &seeded, "external")
-                    .context("Failed to write seeded external index")?;
-            symbol_id_map.extend(seeded_sym_map);
-            for pf in seeded.iter_mut() {
-                pf.slim_for_resolve();
-            }
-            parsed.extend(seeded);
-        }
-    }
-    mem_probe::probe("09_demand_seeded");
-
     // --- Step 5: Cross-file resolution + edge writing (Stage 2 loop) ---
+    //
+    // External symbols load lazily: the chain walker records a chain miss for
+    // each unresolved `(current_type, target_name)`, `expand` pulls the file
+    // that defines it, and a re-resolve binds it — iterating to fixpoint. No
+    // eager pre-pull of import-qualified externals.
     //
     // Demand-driven iteration: resolve once, let the chain walker record any
     // `(current_type, target_name)` bail-outs, pull the files that define
@@ -954,11 +930,10 @@ use super::parse_file::panic_message;
 #[cfg(test)]
 pub(super) use super::parse_file::is_generated_platform_header;
 
-// External-source discovery, demand seeding, and external virtual-path
-// plumbing live in `stage_link.rs`.
+// External-source discovery and external virtual-path plumbing live in
+// `stage_link.rs`.
 pub(crate) use super::stage_link::{
-    make_walked_file, parse_external_sources, seed_demand_from_user_refs,
-    ExternalParsingResult,
+    make_walked_file, parse_external_sources, ExternalParsingResult,
 };
 
 // ---------------------------------------------------------------------------

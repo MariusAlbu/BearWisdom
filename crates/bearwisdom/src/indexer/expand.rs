@@ -204,10 +204,9 @@ fn expand_chain_reachability_inner(
     debug!("expand: {} new files to parse", new_walked.len());
 
     // Parse new files in parallel. Errors are logged but not fatal.
-    // Apply the same post-parse hook `seed_demand_from_user_refs` uses so
-    // pulled TS externals get their symbols prefixed with `<pkg>.` before
-    // the index sees them — otherwise expand-path qnames would diverge
-    // from seed-path qnames for the same file across iterations.
+    // Apply the TS external post-parse hook so pulled externals get their
+    // symbols prefixed with `<pkg>.` before the index sees them — keeping
+    // qnames consistent for the same file across expand iterations.
     let new_parsed: Vec<ParsedFile> = new_walked
         .par_iter()
         .filter_map(|w| {
@@ -312,13 +311,11 @@ fn locate_via_symbol_index(
 
 /// Build a virtual path for a file located through the symbol index.
 ///
-/// Must match the shape used by `stage_link::seed_demand_from_user_refs` —
-/// if the two paths disagree, a file pulled by the seed on iteration 1 and
-/// re-pulled by chain expansion on iteration 2 gets a different
-/// `ParsedFile::path`, defeats the `already_walked` dedupe check, and gets
-/// parsed + written twice with mismatched qnames (because post-processing
-/// hooks like `prefix_ts_external_symbols` key off the `ext:ts:<pkg>/...`
-/// shape that the seed produces).
+/// Must match `stage_link::virtual_path_for_pulled` — if a file pulled on
+/// one expand iteration and re-pulled on the next gets a different
+/// `ParsedFile::path`, it defeats the `already_walked` dedupe check and gets
+/// parsed + written twice with mismatched qnames (post-processing hooks like
+/// `prefix_ts_external_symbols` key off the `ext:ts:<pkg>/...` shape).
 ///
 /// Falls back to `ext:idx:<absolute>` when the ecosystem-specific shape
 /// isn't applicable (same as `make_walked_file` in `stage_link`).

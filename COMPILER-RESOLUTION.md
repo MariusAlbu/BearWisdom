@@ -153,11 +153,9 @@ return types is gated here, and it is what makes external types ordinary table r
 ### EXT-3 — Lazy member hydration, origin-blind (D3/S4)  ·  [generic]  ·  ⚠️
 **State:** `qualified_member_lookup` already resolves external members origin-blind via the global index (the `members.rs:68` `ext:` skip is not the blocker). Remaining value: generics carried through external chains, supertype walk over external bases. Reachability-bounded (resource-monopoly constraint), never whole-dep-tree.
 
-### EXT-4 — Delete the eager seed (D5/S6)  ·  [generic]  ·  ❌
-**Compiler feature:** load deps at the ref, lazily.
-**Gap:** `seed_demand_from_user_refs` (`full.rs`) **still runs** — the seed-skip was gated and the gate is gone. ~4× reindex cost on dep-heavy projects.
-**Fix:** once EXT-1/EXT-2 land, the at-the-ref demand-load covers it; delete the seed.
-**Deps:** EXT-1, EXT-2
+### EXT-4 — Delete the eager seed (D5/S6)  ·  [generic]  ·  ✅
+**Done.** Deleted `seed_demand_from_user_refs` + `_inner` + `enqueue_named_target` + `follow_inheritance_closure` (`stage_link.rs`, ~370 lines) and its `full.rs` call. Externals now load lazily through the Stage-2 chain-miss → `expand` → re-resolve loop only — no eager pre-pull of every import-qualified external up front (that was the dominant reindex cost on dep-heavy projects). **Tradeoff (honest floor):** import-qualified externals on demand-driven ecosystems (npm/TS) that don't surface a chain miss may stay unresolved until **EXT-1** records that demand on the scoped path; chained externals are already covered by the expand loop.
+**Deps:** EXT-1 (to recover the bare import-qualified external coverage)
 
 ### EXT-5 — Ambient framework globals via real packages  ·  [profile]  ·  ❌
 **Compiler feature:** `expect`/`it`/`describe`/`assertTrue`/`hasSize` resolve to the test framework's declared types.
