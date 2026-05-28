@@ -174,6 +174,134 @@ fn cfg_after_if_else_with_both_branches_narrowing_yields_union() {
 
 // ---------- def-resets-fact (generalizes slice 1's interval truncation) ------
 
+// ---------- loop back-edge fixed point --------------------------------------
+
+#[test]
+fn cfg_loop_without_def_preserves_narrowing_in_body() {
+    // No def of `x` inside the loop body → the fixed-point converges with the
+    // narrowing intact at the header (and hence in the body).
+    let src = "function f(x: Base) {\n  if (x instanceof Derived) {\n    while (cond) {\n      x.foo();\n    }\n  }\n}\n";
+    let fc = _test_build_for_ts(src);
+    let foo = src.find("x.foo()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_at("x", foo),
+        Some(Fact::Single("Derived".into())),
+        "loop without a def preserves the narrowing across the back-edge"
+    );
+}
+
+#[test]
+fn cfg_loop_back_edge_invalidates_narrowing_inside_body() {
+    // A reassignment inside the loop body propagates back via the back-edge:
+    // the header's fixed point sees x defined → it drops the narrowing for
+    // x. Therefore x.foo() — even BEFORE the def textually — is NOT narrowed,
+    // because iteration 2+ enters the body after the reset. This catches a
+    // bug the byte-ordered interval model misses (the interval model would
+    // wrongly narrow x.foo() because def_byte > probe_byte).
+    let src = "function f(x: Base) {\n  if (x instanceof Derived) {\n    while (cond) {\n      x.foo();\n      x = reset();\n    }\n  }\n}\n";
+    let fc = _test_build_for_ts(src);
+    let foo = src.find("x.foo()").unwrap() as u32;
+    assert!(
+        fc.fact_at("x", foo).is_none(),
+        "loop body's reassignment back-edge invalidates the narrowing at x.foo()"
+    );
+}
+
+#[test]
+fn cfg_after_loop_preserves_unchanged_narrowing() {
+    let src = "function f(x: Base) {\n  if (x instanceof Derived) {\n    while (cond) { unrelated(); }\n    x.foo();\n  }\n}\n";
+    let fc = _test_build_for_ts(src);
+    let after = src.find("x.foo()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_at("x", after),
+        Some(Fact::Single("Derived".into())),
+        "x is unchanged by the loop body, narrowing holds after exit"
+    );
+}
+
+// ---------- && / || short-circuit ------------------------------------------
+
+#[test]
+fn cfg_logical_and_composes_both_guards_on_true_edge() {
+    // `if (typeof x === "string" && x.length > 0)` — the true edge carries
+    // the LHS's narrowing (`x: string`). The RHS adds no narrowing fact for
+    // any other name, so the composed guard is just `x: string`.
+    let src = "function f(x: unknown) {\n  if (typeof x === \"string\" && x.length > 0) { x.toUpperCase(); }\n}\n";
+    let fc = _test_build_for_ts(src);
+    let probe = src.find("x.toUpperCase()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_at("x", probe),
+        Some(Fact::Single("string".into())),
+        "&& with a typeof on the LHS narrows in the then-block"
+    );
+}
+
+#[test]
+fn cfg_logical_and_two_guards_narrows_both_names() {
+    // `if (typeof x === "string" && typeof y === "number")` — the true edge
+    // narrows BOTH `x` and `y` simultaneously.
+    let src = "function f(x: unknown, y: unknown) {\n  if (typeof x === \"string\" && typeof y === \"number\") { use(x, y); }\n}\n";
+    let fc = _test_build_for_ts(src);
+    let probe = src.find("use(x, y)").unwrap() as u32;
+    assert_eq!(fc.fact_at("x", probe), Some(Fact::Single("string".into())));
+    assert_eq!(fc.fact_at("y", probe), Some(Fact::Single("number".into())));
+}
+
+#[test]
+fn cfg_logical_or_unions_disagreeing_guards_on_true_edge() {
+    // `if (typeof x === "string" || typeof x === "number")` — the true edge
+    // carries `x : string ∪ number` (a real Union fact). The interval model
+    // can't express this; `fact_at` returns it via the CFG path.
+    let src = "function f(x: unknown) {\n  if (typeof x === \"string\" || typeof x === \"number\") { use(x); }\n}\n";
+    let fc = _test_build_for_ts(src);
+    let probe = src.find("use(x)").unwrap() as u32;
+    assert_eq!(
+        fc.fact_at("x", probe),
+        Some(Fact::Union(vec!["number".into(), "string".into()])),
+        "|| on disjoint typeof guards yields a Union fact on the true edge"
+    );
+}
+
+// ---------- switch ----------------------------------------------------------
+
+#[test]
+fn cfg_switch_builds_disjoint_case_blocks_routed_to_join() {
+    // Structural slice: a switch with two cases + default produces
+    // pred → scrutinee → {case_1, case_2, default} → exit, and inside each
+    // case the narrowing established outside the switch survives (cases
+    // don't reassign).
+    let src = "function f(x: Base) {\n  if (x instanceof Derived) {\n    switch (k) {\n      case 1: x.foo(); break;\n      case 2: x.bar(); break;\n      default: x.baz(); break;\n    }\n  }\n}\n";
+    let fc = _test_build_for_ts(src);
+    for name in &["x.foo()", "x.bar()", "x.baz()"] {
+        let probe = src.find(name).unwrap() as u32;
+        assert_eq!(
+            fc.fact_at("x", probe),
+            Some(Fact::Single("Derived".into())),
+            "narrowing survives inside `{name}` case body"
+        );
+    }
+}
+
+#[test]
+fn cfg_switch_case_reassignment_kills_only_its_own_branch_after_join() {
+    // A reassignment in ONE case kills x within that case's tail. After the
+    // join (post-switch), at least one path (the case that reassigned)
+    // contributes "no fact" — the pointwise join drops x.
+    let src = "function f(x: Base) {\n  if (x instanceof Derived) {\n    switch (k) {\n      case 1: x.foo(); break;\n      case 2: x = reset(); break;\n    }\n    x.bar();\n  }\n}\n";
+    let fc = _test_build_for_ts(src);
+    let foo = src.find("x.foo()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_at("x", foo),
+        Some(Fact::Single("Derived".into())),
+        "case-1 doesn't reassign — narrowing holds inside it"
+    );
+    let bar = src.find("x.bar()").unwrap() as u32;
+    assert!(
+        fc.fact_at("x", bar).is_none(),
+        "post-switch join drops the narrowing because case-2 reassigns x"
+    );
+}
+
 #[test]
 fn cfg_reassignment_in_block_kills_narrowing_at_def() {
     // The CFG def-resets-fact equivalent of slice 1: a reassignment inside the

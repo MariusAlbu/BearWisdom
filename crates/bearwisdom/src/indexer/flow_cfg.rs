@@ -245,6 +245,25 @@ pub struct CfgNodeKinds {
     /// Variable-declarator node kind (`let x = ...`).
     pub declarator_kind: &'static str,
     pub declarator_name_field: &'static str,
+    /// Loop node kinds (while/for/do). The CFG models each as
+    /// `pred → header → body → header (back-edge)` and `header → exit`.
+    pub loop_kinds: &'static [&'static str],
+    /// Field on a loop node holding the body statement (typically `"body"`).
+    pub loop_body_field: &'static str,
+    /// Field on a loop node holding the loop condition, when one exists
+    /// (`while`/`for`). `None` for `for_in`/`for_of`-style loops that
+    /// iterate without a boolean test.
+    pub loop_condition_field: Option<&'static str>,
+    /// Switch-statement node kind.
+    pub switch_kind: &'static str,
+    /// Field on the switch holding the scrutinee value.
+    pub switch_value_field: &'static str,
+    /// Field on the switch holding the body (the wrapper of case clauses).
+    pub switch_body_field: &'static str,
+    /// Case-clause node kind inside the switch body.
+    pub switch_case_kind: &'static str,
+    /// Default-clause node kind inside the switch body.
+    pub switch_default_kind: &'static str,
 }
 
 /// TypeScript / JavaScript node-kind table. The first wire-up; other
@@ -265,6 +284,19 @@ pub const TS_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     assignment_lhs_field: "left",
     declarator_kind: "variable_declarator",
     declarator_name_field: "name",
+    loop_kinds: &[
+        "while_statement",
+        "for_statement",
+        "for_in_statement",
+        "do_statement",
+    ],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kind: "switch_statement",
+    switch_value_field: "value",
+    switch_body_field: "body",
+    switch_case_kind: "switch_case",
+    switch_default_kind: "switch_default",
 };
 
 /// Build CFGs for every function in `root`. The returned `FileCfg`'s functions
@@ -355,6 +387,10 @@ fn build_block_sequence(
         let ck = child.kind();
         if ck == kinds.if_kind {
             current = build_if(&child, src, kinds, cfg, current);
+        } else if kinds.loop_kinds.contains(&ck) {
+            current = build_loop(&child, src, kinds, cfg, current);
+        } else if ck == kinds.switch_kind {
+            current = build_switch(&child, src, kinds, cfg, current);
         } else {
             collect_defs_in(&child, src, kinds, cfg, current);
             // Statement is wholly inside the current block; widen its range
@@ -465,6 +501,120 @@ fn build_if(
     join
 }
 
+/// Build a loop diamond:
+///
+///     pred → header ─true─▶ body ──▶ header (back-edge)
+///                  └false─▶ exit
+///
+/// The worklist iterates to a fixed point: if the body defines a name, the
+/// back-edge invalidates any prior narrowing for that name at the header
+/// (and hence inside the body, since the body's in-fact joins through the
+/// header). The visited-pred skip in `compute_in_fact` ensures the first
+/// pass propagates pred → header → body before the back-edge fires, so an
+/// untouched name's narrowing survives the loop. Returns `exit` as the new
+/// current block.
+fn build_loop(
+    loop_node: &Node,
+    src: &[u8],
+    kinds: &CfgNodeKinds,
+    cfg: &mut Cfg,
+    pred: BlockId,
+) -> BlockId {
+    close_block(cfg, pred, loop_node.start_byte() as u32);
+
+    let header = new_block(cfg, loop_node.start_byte() as u32);
+    add_edge(cfg, pred, header, FactMap::default());
+
+    let true_guard = kinds
+        .loop_condition_field
+        .and_then(|f| loop_node.child_by_field_name(f))
+        .map(|c| condition_to_true_guard(&c, src))
+        .unwrap_or_default();
+
+    let body_node = loop_node.child_by_field_name(kinds.loop_body_field);
+    let body_start = body_node
+        .as_ref()
+        .map(|n| n.start_byte() as u32)
+        .unwrap_or_else(|| loop_node.end_byte() as u32);
+    let body_block = new_block(cfg, body_start);
+    add_edge(cfg, header, body_block, true_guard);
+    let body_tail = match body_node {
+        Some(body) if body.kind() == kinds.block_kind => {
+            let tail = build_block_sequence(&body, src, kinds, cfg, body_block);
+            close_block(cfg, tail, body.end_byte() as u32);
+            tail
+        }
+        Some(body) => {
+            collect_defs_in(&body, src, kinds, cfg, body_block);
+            close_block(cfg, body_block, body.end_byte() as u32);
+            body_block
+        }
+        None => body_block,
+    };
+    add_edge(cfg, body_tail, header, FactMap::default());
+
+    let exit = new_block(cfg, loop_node.end_byte() as u32);
+    add_edge(cfg, header, exit, FactMap::default());
+    exit
+}
+
+/// Build a switch diamond:
+///
+///     pred → scrutinee → case_1 ─┐
+///                      → case_2 ─┤
+///                      → default ┴→ exit
+///
+/// Cases are disjoint blocks — fall-through across cases is not modeled.
+/// Per-case discriminant guards are not yet attached to edges (the existing
+/// `discriminant_guard_query` produces those on the interval path); the CFG
+/// structure here is what the exhaustiveness-aware enrichment plugs into.
+fn build_switch(
+    switch_node: &Node,
+    src: &[u8],
+    kinds: &CfgNodeKinds,
+    cfg: &mut Cfg,
+    pred: BlockId,
+) -> BlockId {
+    close_block(cfg, pred, switch_node.start_byte() as u32);
+
+    let scrutinee = new_block(cfg, switch_node.start_byte() as u32);
+    add_edge(cfg, pred, scrutinee, FactMap::default());
+
+    let exit = new_block(cfg, switch_node.end_byte() as u32);
+
+    if let Some(body) = switch_node.child_by_field_name(kinds.switch_body_field) {
+        let mut walker = body.walk();
+        for clause in body.named_children(&mut walker) {
+            let ck = clause.kind();
+            if ck == kinds.switch_case_kind || ck == kinds.switch_default_kind {
+                let case_block = new_block(cfg, clause.start_byte() as u32);
+                add_edge(cfg, scrutinee, case_block, FactMap::default());
+                let mut tail = case_block;
+                let mut walker2 = clause.walk();
+                for stmt in clause.named_children(&mut walker2) {
+                    let sk = stmt.kind();
+                    if sk == kinds.if_kind {
+                        tail = build_if(&stmt, src, kinds, cfg, tail);
+                    } else if kinds.loop_kinds.contains(&sk) {
+                        tail = build_loop(&stmt, src, kinds, cfg, tail);
+                    } else if sk == kinds.switch_kind {
+                        tail = build_switch(&stmt, src, kinds, cfg, tail);
+                    } else {
+                        collect_defs_in(&stmt, src, kinds, cfg, tail);
+                        close_block(cfg, tail, stmt.end_byte() as u32);
+                    }
+                }
+                close_block(cfg, tail, clause.end_byte() as u32);
+                add_edge(cfg, tail, exit, FactMap::default());
+            }
+        }
+    }
+    if !cfg.edges.iter().any(|e| e.to == exit) {
+        add_edge(cfg, scrutinee, exit, FactMap::default());
+    }
+    exit
+}
+
 /// Collect any defs (assignment LHS, variable declarators) reachable inside
 /// `node` and append them to `block`. Walks shallowly — does not descend into
 /// nested functions or into nested if-statements (those are CFG branches and
@@ -535,6 +685,31 @@ fn condition_to_true_guard(cond: &Node, src: &[u8]) -> FactMap {
             .unwrap_or("");
         let left = n.child_by_field_name("left");
         let right = n.child_by_field_name("right");
+        // Short-circuit operators compose true-edge facts:
+        //   a && b: both sides must hold ⇒ insert L pointwise then R (R wins
+        //     on the same name; in practice they narrow disjoint names).
+        //   a || b: either side may hold ⇒ pointwise union via FactMap.join.
+        if op == "&&" {
+            if let (Some(l), Some(r)) = (left, right) {
+                let lg = condition_to_true_guard(&l, src);
+                let rg = condition_to_true_guard(&r, src);
+                for (name, fact) in &lg.0 {
+                    out.insert(name.clone(), fact.clone());
+                }
+                for (name, fact) in &rg.0 {
+                    out.insert(name.clone(), fact.clone());
+                }
+                return out;
+            }
+        }
+        if op == "||" {
+            if let (Some(l), Some(r)) = (left, right) {
+                let mut lg = condition_to_true_guard(&l, src);
+                let rg = condition_to_true_guard(&r, src);
+                lg.join(&rg);
+                return lg;
+            }
+        }
         if op == "instanceof" {
             if let (Some(l), Some(r)) = (left, right) {
                 if l.kind() == "identifier" && r.kind() == "identifier" {
@@ -612,6 +787,15 @@ pub fn run_dataflow(cfg: &mut Cfg, iter_cap: usize) {
     for (i, e) in cfg.edges.iter().enumerate() {
         preds[e.to as usize].push(i);
     }
+    // Visited bit per block — `compute_in_fact` skips preds whose source
+    // block hasn't been visited yet. Without this, a loop header would
+    // compute on the first pop with its body's in-fact still empty, then
+    // join-with-empty drops every narrowing the pred carried — even names
+    // the body never touches. Entry seeds the propagation.
+    let mut visited = vec![false; cfg.blocks.len()];
+    if !cfg.blocks.is_empty() {
+        visited[cfg.entry as usize] = true;
+    }
     let mut work: VecDeque<BlockId> = (0..cfg.blocks.len() as BlockId).collect();
     let max_pops = iter_cap.saturating_mul(cfg.blocks.len().max(1));
     let mut pops = 0;
@@ -620,9 +804,10 @@ pub fn run_dataflow(cfg: &mut Cfg, iter_cap: usize) {
         if pops > max_pops {
             break;
         }
-        let new_in = compute_in_fact(cfg, bid, &preds);
-        if new_in != cfg.in_facts[bid as usize] {
+        let new_in = compute_in_fact(cfg, bid, &preds, &visited);
+        if new_in != cfg.in_facts[bid as usize] || !visited[bid as usize] {
             cfg.in_facts[bid as usize] = new_in;
+            visited[bid as usize] = true;
             for e in &cfg.edges {
                 if e.from == bid {
                     work.push_back(e.to);
@@ -632,7 +817,12 @@ pub fn run_dataflow(cfg: &mut Cfg, iter_cap: usize) {
     }
 }
 
-fn compute_in_fact(cfg: &Cfg, bid: BlockId, preds: &[Vec<usize>]) -> FactMap {
+fn compute_in_fact(
+    cfg: &Cfg,
+    bid: BlockId,
+    preds: &[Vec<usize>],
+    visited: &[bool],
+) -> FactMap {
     let pred_edges = &preds[bid as usize];
     if pred_edges.is_empty() {
         return FactMap::default();
@@ -640,6 +830,12 @@ fn compute_in_fact(cfg: &Cfg, bid: BlockId, preds: &[Vec<usize>]) -> FactMap {
     let mut acc: Option<FactMap> = None;
     for &eid in pred_edges {
         let e = &cfg.edges[eid];
+        if !visited[e.from as usize] {
+            // First-pass-skip: an unvisited pred has no real in-fact yet, so
+            // its contribution is "unknown" rather than "empty." The worklist
+            // re-visits this block once the pred lands.
+            continue;
+        }
         let mut contrib = cfg.in_facts[e.from as usize].clone();
         // Source block's defs kill any prior fact for the defined names.
         let src_block = &cfg.blocks[e.from as usize];
