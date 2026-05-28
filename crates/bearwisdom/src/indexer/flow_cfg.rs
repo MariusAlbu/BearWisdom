@@ -228,8 +228,14 @@ impl FileCfg {
 pub struct CfgNodeKinds {
     /// Function-level nodes whose body should get its own CFG.
     pub function_kinds: &'static [&'static str],
-    /// Statement-block node kind (the body of a function, then-branch, etc.).
-    pub block_kind: &'static str,
+    /// Statement-block node kinds (the body of a function, then-branch, etc.).
+    /// A slice because some grammars use different node kinds for different
+    /// block contexts — Ruby's method body is `body_statement` while the if
+    /// then-branch is `then` and the while body is `do`; R uses
+    /// `braced_expression` instead of `block`. The first kind in the slice
+    /// is treated as the canonical block kind in error / fallback paths;
+    /// otherwise the slice is a contains-set.
+    pub block_kinds: &'static [&'static str],
     /// If-statement node kind.
     pub if_kind: &'static str,
     /// Field name on `if_kind` for the consequence (then) branch.
@@ -290,7 +296,7 @@ pub const TS_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
         "method_definition",
         "arrow_function",
     ],
-    block_kind: "statement_block",
+    block_kinds: &["statement_block"],
     if_kind: "if_statement",
     if_consequence_field: "consequence",
     if_alternative_field: "alternative",
@@ -325,7 +331,7 @@ pub const JAVA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
         "compact_constructor_declaration",
         "lambda_expression",
     ],
-    block_kind: "block",
+    block_kinds: &["block"],
     if_kind: "if_statement",
     if_consequence_field: "consequence",
     if_alternative_field: "alternative",
@@ -353,7 +359,7 @@ pub const JAVA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
 /// Python node-kind table.
 pub const PYTHON_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     function_kinds: &["function_definition", "lambda"],
-    block_kind: "block",
+    block_kinds: &["block"],
     if_kind: "if_statement",
     if_consequence_field: "consequence",
     if_alternative_field: "alternative",
@@ -385,7 +391,7 @@ pub const CSHARP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
         "local_function_statement",
         "lambda_expression",
     ],
-    block_kind: "block",
+    block_kinds: &["block"],
     if_kind: "if_statement",
     if_consequence_field: "consequence",
     if_alternative_field: "alternative",
@@ -419,7 +425,7 @@ pub const CSHARP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
 /// the type_guard_query, not from let-bindings).
 pub const RUST_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     function_kinds: &["function_item", "closure_expression"],
-    block_kind: "block",
+    block_kinds: &["block"],
     if_kind: "if_expression",
     if_consequence_field: "consequence",
     if_alternative_field: "alternative",
@@ -446,7 +452,7 @@ pub const RUST_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
 /// narrowing source (`switch v := x.(type) { case *T: ... }`).
 pub const GO_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     function_kinds: &["function_declaration", "method_declaration", "func_literal"],
-    block_kind: "block",
+    block_kinds: &["block"],
     if_kind: "if_statement",
     if_consequence_field: "consequence",
     if_alternative_field: "alternative",
@@ -466,6 +472,232 @@ pub const GO_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_default_kinds: &["default_case"],
     // Go's block and case both wrap their statements in `statement_list`.
     transparent_kinds: &["statement_list"],
+};
+
+/// C node-kind table. Switch shares a single `case_statement` kind for both
+/// labeled cases and `default:` — the case_kinds slice carries it once and
+/// the generic builder routes both paths through the same case-block.
+pub const C_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_definition"],
+    block_kinds: &["compound_statement"],
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_expression",
+    assignment_lhs_field: "left",
+    declarator_kind: "init_declarator",
+    declarator_name_field: "declarator",
+    loop_kinds: &["while_statement", "for_statement", "do_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["switch_statement"],
+    switch_value_field: "condition",
+    // C's switch puts case_statement children directly in the compound_statement
+    // body wrapper (no separate switch_body field shape).
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["case_statement"],
+    switch_default_kinds: &[],
+    transparent_kinds: &[],
+};
+
+/// PHP node-kind table. PHP's switch wraps cases in a `switch_block` and
+/// distinguishes `case_statement` / `default_statement`.
+pub const PHP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_definition", "method_declaration"],
+    block_kinds: &["compound_statement"],
+    if_kind: "if_statement",
+    if_consequence_field: "body",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_expression",
+    assignment_lhs_field: "left",
+    declarator_kind: "__php_no_declarator__",
+    declarator_name_field: "name",
+    loop_kinds: &[
+        "while_statement",
+        "for_statement",
+        "foreach_statement",
+        "do_statement",
+    ],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["switch_statement"],
+    switch_value_field: "condition",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["case_statement"],
+    switch_default_kinds: &["default_statement"],
+    transparent_kinds: &[],
+};
+
+/// Lua node-kind table. Lua has no switch construct. `variable_declaration`
+/// wraps an `assignment_statement` for `local x = …`, so the latter handles
+/// both bare assignment and declaration.
+pub const LUA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &[
+        "function_declaration",
+        "local_function",
+        "function_definition",
+    ],
+    block_kinds: &["block"],
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_statement",
+    assignment_lhs_field: "left",
+    declarator_kind: "__lua_no_declarator__",
+    declarator_name_field: "name",
+    loop_kinds: &[
+        "while_statement",
+        "for_statement",
+        "for_numeric_statement",
+        "for_generic_statement",
+        "repeat_statement",
+    ],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &[],
+    switch_value_field: "value",
+    switch_body_field: None,
+    switch_case_kinds: &[],
+    switch_default_kinds: &[],
+    // `variable_declaration` is a thin wrapper over `assignment_statement`
+    // for `local x = …`; recursing through it puts the assignment into the
+    // current block where collect_defs_in sees it.
+    transparent_kinds: &["variable_declaration"],
+};
+
+/// Groovy node-kind table. Groovy's grammar is Java-flavored — `if_statement`,
+/// `while_statement`, `local_variable_declaration` + `variable_declarator` —
+/// but switch is `switch_expression` with `switch_block` cases.
+pub const GROOVY_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["method_declaration", "constructor_declaration"],
+    block_kinds: &["block"],
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_expression",
+    assignment_lhs_field: "left",
+    declarator_kind: "variable_declarator",
+    declarator_name_field: "name",
+    loop_kinds: &["while_statement", "for_statement", "do_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["switch_expression", "switch_statement"],
+    switch_value_field: "condition",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["switch_block_statement_group"],
+    switch_default_kinds: &[],
+    transparent_kinds: &[],
+};
+
+/// Scala node-kind table. Control-flow constructs are *expressions* in Scala
+/// (`if_expression` / `while_expression` / `match_expression`); the match
+/// expression wraps clauses in a `case_block`.
+pub const SCALA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_definition"],
+    block_kinds: &["block"],
+    if_kind: "if_expression",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_expression",
+    assignment_lhs_field: "left",
+    declarator_kind: "var_definition",
+    declarator_name_field: "pattern",
+    loop_kinds: &["while_expression", "for_expression"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["match_expression"],
+    switch_value_field: "value",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["case_clause"],
+    switch_default_kinds: &[],
+    transparent_kinds: &[],
+};
+
+/// Kotlin node-kind table (tree-sitter-kotlin-ng). Function bodies are
+/// wrapped in `function_body` which itself contains a `block` — listing
+/// `function_body` in `transparent_kinds` lets `find_function_body`
+/// descend through it to the real block. Control-flow constructs are
+/// expressions (`if_expression`, `when_expression`); the latter uses
+/// `when_entry` for cases.
+pub const KOTLIN_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_declaration"],
+    block_kinds: &["block"],
+    if_kind: "if_expression",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment",
+    assignment_lhs_field: "left",
+    declarator_kind: "property_declaration",
+    declarator_name_field: "name",
+    loop_kinds: &["while_statement", "for_statement", "do_while_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["when_expression"],
+    switch_value_field: "value",
+    switch_body_field: None,
+    switch_case_kinds: &["when_entry"],
+    switch_default_kinds: &[],
+    transparent_kinds: &["function_body"],
+};
+
+/// Ruby node-kind table. Ruby uses three different block-like containers
+/// depending on context: method bodies are `body_statement`, if then-bodies
+/// are `then`, while/until bodies are `do`. All three count as block_kinds
+/// so the generic walker recurses into each.
+pub const RUBY_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["method", "singleton_method"],
+    block_kinds: &["body_statement", "then", "do"],
+    if_kind: "if",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment",
+    assignment_lhs_field: "left",
+    declarator_kind: "__ruby_no_declarator__",
+    declarator_name_field: "name",
+    loop_kinds: &["while", "until", "while_modifier", "until_modifier"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["case"],
+    switch_value_field: "value",
+    switch_body_field: None,
+    switch_case_kinds: &["when"],
+    switch_default_kinds: &["else"],
+    transparent_kinds: &[],
+};
+
+/// R node-kind table. R has no switch statement — `switch()` is a regular
+/// function call, not a control-flow construct. The function body is a
+/// `braced_expression`. Assignments use `<-` which parses as a
+/// `binary_operator` rather than a dedicated assignment kind, so the
+/// declarator/assignment fields are sentinel — local def discovery falls
+/// back to whatever `collect_defs_in` finds.
+pub const R_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_definition"],
+    block_kinds: &["braced_expression"],
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "__r_no_assignment__",
+    assignment_lhs_field: "left",
+    declarator_kind: "__r_no_declarator__",
+    declarator_name_field: "name",
+    loop_kinds: &["while_statement", "for_statement", "repeat_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &[],
+    switch_value_field: "value",
+    switch_body_field: None,
+    switch_case_kinds: &[],
+    switch_default_kinds: &[],
+    transparent_kinds: &[],
 };
 
 /// Build CFGs for every function in `root`. The returned `FileCfg`'s functions
@@ -557,10 +789,26 @@ fn guards_for_range(
 }
 
 fn find_function_body<'a>(fn_node: &Node<'a>, kinds: &CfgNodeKinds) -> Option<Node<'a>> {
+    // Direct match first — the common case (`function_declaration > block`).
     let mut c = fn_node.walk();
     for ch in fn_node.named_children(&mut c) {
-        if ch.kind() == kinds.block_kind {
+        if kinds.block_kinds.contains(&ch.kind()) {
             return Some(ch);
+        }
+    }
+    // Descend one level through a transparent wrapper — Kotlin's
+    // `function_declaration > function_body > block`, where `function_body`
+    // is registered in `transparent_kinds`.
+    let mut c = fn_node.walk();
+    for ch in fn_node.named_children(&mut c) {
+        if !kinds.transparent_kinds.contains(&ch.kind()) {
+            continue;
+        }
+        let mut cc = ch.walk();
+        for gc in ch.named_children(&mut cc) {
+            if kinds.block_kinds.contains(&gc.kind()) {
+                return Some(gc);
+            }
         }
     }
     None
@@ -687,7 +935,7 @@ fn build_if(
     let then_block = new_block(cfg, then_start);
     add_edge(cfg, pred, then_block, true_guard);
     let then_tail = match then_node {
-        Some(body) if body.kind() == kinds.block_kind => {
+        Some(body) if kinds.block_kinds.contains(&body.kind()) => {
             let tail = build_block_sequence(&body, src, kinds, narrowings, cfg, then_block);
             close_block(cfg, tail, body.end_byte() as u32);
             tail
@@ -719,7 +967,7 @@ fn build_if(
         add_edge(cfg, pred, eb, FactMap::default());
         else_block = eb;
         else_tail = match else_body.kind() {
-            k if k == kinds.block_kind => {
+            k if kinds.block_kinds.contains(&k) => {
                 let tail = build_block_sequence(&else_body, src, kinds, narrowings, cfg, eb);
                 close_block(cfg, tail, else_body.end_byte() as u32);
                 tail
@@ -798,7 +1046,7 @@ fn build_loop(
     let body_block = new_block(cfg, body_range.0);
     add_edge(cfg, header, body_block, true_guard);
     let body_tail = match body_node {
-        Some(body) if body.kind() == kinds.block_kind => {
+        Some(body) if kinds.block_kinds.contains(&body.kind()) => {
             let tail = build_block_sequence(&body, src, kinds, narrowings, cfg, body_block);
             close_block(cfg, tail, body.end_byte() as u32);
             tail

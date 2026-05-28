@@ -433,3 +433,101 @@ fn cfg_reassignment_in_block_kills_narrowing_at_def() {
         "use after the def is not — the def killed the fact"
     );
 }
+
+// ---------- per-language CfgNodeKinds smoke tests (slice 3) -----------------
+//
+// Two flavors:
+//   * Narrowing assertion (Groovy, PHP, Ruby) — language's own type_guard_query
+//     produces a Narrowing that the CFG attaches as an edge guard; probed via
+//     fact_string_at inside the then-block.
+//   * Structural-only (Kotlin, Scala, C, Lua, R) — type_guard_query is empty,
+//     so the CFG is built but inherits no narrowings. Pin that the function /
+//     block / if / loop wiring at least produces a non-empty FileCfg so a
+//     future grammar bump that breaks the kind table is visible.
+
+#[test]
+fn cfg_groovy_instanceof_narrows_via_cfg() {
+    use crate::languages::groovy::GroovyPlugin;
+    let src = "class C {\n  def f(x) {\n    if (x instanceof String) {\n      x.length()\n    }\n  }\n}\n";
+    let fc = _build_cfg_via_runner(&GroovyPlugin, "groovy", src);
+    assert!(!fc.is_empty(), "groovy CFG should be built");
+    let probe = src.find("x.length()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("x", probe),
+        Some("String"),
+        "Groovy `instanceof` narrows `x` in the then-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_php_instanceof_narrows_via_cfg() {
+    use crate::languages::php::PhpPlugin;
+    let src = "<?php\nfunction f($x) {\n  if ($x instanceof Foo) {\n    $x->bar();\n  }\n}\n";
+    let fc = _build_cfg_via_runner(&PhpPlugin, "php", src);
+    assert!(!fc.is_empty(), "php CFG should be built");
+    // The type_guard_query captures the inner `(name)` of `variable_name`
+    // (bare `x`, not `$x`) so that's what the consumer probes.
+    let probe = src.find("$x->bar()").unwrap() as u32 + 1;
+    assert_eq!(
+        fc.fact_string_at("x", probe),
+        Some("Foo"),
+        "PHP `instanceof` narrows `x` in the then-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_ruby_is_a_narrows_via_cfg() {
+    use crate::languages::ruby::RubyPlugin;
+    let src = "def f(x)\n  if x.is_a?(String)\n    x.length\n  end\nend\n";
+    let fc = _build_cfg_via_runner(&RubyPlugin, "ruby", src);
+    assert!(!fc.is_empty(), "ruby CFG should be built");
+    let probe = src.find("x.length").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("x", probe),
+        Some("String"),
+        "Ruby `is_a?` narrows `x` in the then-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_kotlin_structural_function_body_builds() {
+    use crate::languages::kotlin::KotlinPlugin;
+    let src = "fun f(x: Any): Int {\n  if (x is String) {\n    return x.length\n  }\n  return 0\n}\n";
+    let fc = _build_cfg_via_runner(&KotlinPlugin, "kotlin", src);
+    assert!(
+        !fc.is_empty(),
+        "kotlin CFG should be built (function_declaration > function_body > block recognized via transparent_kinds)"
+    );
+}
+
+#[test]
+fn cfg_scala_structural_function_body_builds() {
+    use crate::languages::scala::ScalaPlugin;
+    let src = "object O {\n  def f(x: Any): Int = {\n    if (x.isInstanceOf[String]) 1 else 0\n  }\n}\n";
+    let fc = _build_cfg_via_runner(&ScalaPlugin, "scala", src);
+    assert!(!fc.is_empty(), "scala CFG should be built");
+}
+
+#[test]
+fn cfg_c_structural_function_body_builds() {
+    use crate::languages::c_lang::CLangPlugin;
+    let src = "int f(int x) {\n  if (x > 0) { return 1; }\n  return 0;\n}\n";
+    let fc = _build_cfg_via_runner(&CLangPlugin, "c", src);
+    assert!(!fc.is_empty(), "c CFG should be built");
+}
+
+#[test]
+fn cfg_lua_structural_function_body_builds() {
+    use crate::languages::lua::LuaPlugin;
+    let src = "function f(x)\n  if x then x.foo() end\nend\n";
+    let fc = _build_cfg_via_runner(&LuaPlugin, "lua", src);
+    assert!(!fc.is_empty(), "lua CFG should be built");
+}
+
+#[test]
+fn cfg_r_structural_function_body_builds() {
+    use crate::languages::r_lang::RLangPlugin;
+    let src = "f <- function(x) {\n  if (x > 0) { 1 } else { 2 }\n}\n";
+    let fc = _build_cfg_via_runner(&RLangPlugin, "r", src);
+    assert!(!fc.is_empty(), "r CFG should be built");
+}

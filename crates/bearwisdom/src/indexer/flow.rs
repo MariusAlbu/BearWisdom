@@ -140,6 +140,14 @@ fn cfg_node_kinds_for(
         "csharp" => Some(&crate::indexer::flow_cfg::CSHARP_CFG_KINDS),
         "rust" => Some(&crate::indexer::flow_cfg::RUST_CFG_KINDS),
         "go" => Some(&crate::indexer::flow_cfg::GO_CFG_KINDS),
+        "c" => Some(&crate::indexer::flow_cfg::C_CFG_KINDS),
+        "php" => Some(&crate::indexer::flow_cfg::PHP_CFG_KINDS),
+        "lua" => Some(&crate::indexer::flow_cfg::LUA_CFG_KINDS),
+        "groovy" => Some(&crate::indexer::flow_cfg::GROOVY_CFG_KINDS),
+        "scala" => Some(&crate::indexer::flow_cfg::SCALA_CFG_KINDS),
+        "kotlin" => Some(&crate::indexer::flow_cfg::KOTLIN_CFG_KINDS),
+        "ruby" => Some(&crate::indexer::flow_cfg::RUBY_CFG_KINDS),
+        "r" => Some(&crate::indexer::flow_cfg::R_CFG_KINDS),
         _ => None,
     }
 }
