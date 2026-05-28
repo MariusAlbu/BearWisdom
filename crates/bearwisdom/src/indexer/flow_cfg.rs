@@ -254,16 +254,31 @@ pub struct CfgNodeKinds {
     /// (`while`/`for`). `None` for `for_in`/`for_of`-style loops that
     /// iterate without a boolean test.
     pub loop_condition_field: Option<&'static str>,
-    /// Switch-statement node kind.
-    pub switch_kind: &'static str,
+    /// Switch-statement node kinds (some grammars split expression-switch /
+    /// type-switch / pattern-match into separate kinds — Go in particular has
+    /// `expression_switch_statement` and `type_switch_statement` as siblings).
+    /// An empty slice disables the switch path for that language.
+    pub switch_kinds: &'static [&'static str],
     /// Field on the switch holding the scrutinee value.
     pub switch_value_field: &'static str,
     /// Field on the switch holding the body (the wrapper of case clauses).
-    pub switch_body_field: &'static str,
-    /// Case-clause node kind inside the switch body.
-    pub switch_case_kind: &'static str,
-    /// Default-clause node kind inside the switch body.
-    pub switch_default_kind: &'static str,
+    /// `None` for grammars whose switch lists cases as direct children of
+    /// the switch node (Go).
+    pub switch_body_field: Option<&'static str>,
+    /// Case-clause node kinds inside the switch body. Multiple entries for
+    /// languages whose switch flavors emit distinct case kinds (Go:
+    /// `expression_case` + `type_case`).
+    pub switch_case_kinds: &'static [&'static str],
+    /// Default-clause node kinds inside the switch body. Empty when the
+    /// language has no separate default node (e.g., Python `_` patterns
+    /// are subsumed by the case kind itself).
+    pub switch_default_kinds: &'static [&'static str],
+    /// Pass-through container kinds. When iterating a block's or case's
+    /// statements, a child whose kind matches one of these is treated as
+    /// transparent — the walker recurses into its named_children instead
+    /// of dispatching it as a single statement. Go wraps top-level stmts
+    /// in `statement_list`; other grammars may have analogous wrappers.
+    pub transparent_kinds: &'static [&'static str],
 }
 
 /// TypeScript / JavaScript node-kind table. The first wire-up; other
@@ -292,16 +307,17 @@ pub const TS_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     ],
     loop_body_field: "body",
     loop_condition_field: Some("condition"),
-    switch_kind: "switch_statement",
+    switch_kinds: &["switch_statement"],
     switch_value_field: "value",
-    switch_body_field: "body",
-    switch_case_kind: "switch_case",
-    switch_default_kind: "switch_default",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["switch_case"],
+    switch_default_kinds: &["switch_default"],
+    transparent_kinds: &[],
 };
 
 /// Java node-kind table. Java's switch uses a `switch_block` body whose
-/// case structure differs from TS — switch is left disabled here (the
-/// sentinel kinds match nothing); the if / loop / def CFG still applies.
+/// case structure differs from TS — switch is left disabled here (empty
+/// switch_kinds matches nothing); the if / loop / def CFG still applies.
 pub const JAVA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     function_kinds: &[
         "method_declaration",
@@ -326,11 +342,12 @@ pub const JAVA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     ],
     loop_body_field: "body",
     loop_condition_field: Some("condition"),
-    switch_kind: "__java_switch_disabled__",
+    switch_kinds: &[],
     switch_value_field: "condition",
-    switch_body_field: "body",
-    switch_case_kind: "switch_block_statement_group",
-    switch_default_kind: "switch_label",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["switch_block_statement_group"],
+    switch_default_kinds: &["switch_label"],
+    transparent_kinds: &[],
 };
 
 /// Python node-kind table.
@@ -350,11 +367,12 @@ pub const PYTHON_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     loop_body_field: "body",
     loop_condition_field: Some("condition"),
     // PEP 634 match — disabled by default; default `_` pattern subsumes else.
-    switch_kind: "__python_match_disabled__",
+    switch_kinds: &[],
     switch_value_field: "subject",
-    switch_body_field: "body",
-    switch_case_kind: "case_clause",
-    switch_default_kind: "__python_no_default__",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["case_clause"],
+    switch_default_kinds: &[],
+    transparent_kinds: &[],
 };
 
 /// C# node-kind table. C#'s switch_section + switch_label split is enough
@@ -384,11 +402,12 @@ pub const CSHARP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     ],
     loop_body_field: "body",
     loop_condition_field: Some("condition"),
-    switch_kind: "switch_statement",
+    switch_kinds: &["switch_statement"],
     switch_value_field: "value",
-    switch_body_field: "body",
-    switch_case_kind: "switch_section",
-    switch_default_kind: "__csharp_default_label__",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["switch_section"],
+    switch_default_kinds: &[],
+    transparent_kinds: &[],
 };
 
 /// Rust node-kind table. Control-flow constructs are *expressions* in Rust
@@ -412,16 +431,19 @@ pub const RUST_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     loop_kinds: &["while_expression", "loop_expression", "for_expression"],
     loop_body_field: "body",
     loop_condition_field: Some("condition"),
-    switch_kind: "match_expression",
+    switch_kinds: &["match_expression"],
     switch_value_field: "value",
-    switch_body_field: "body",
-    switch_case_kind: "match_arm",
-    switch_default_kind: "__rust_no_default__",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["match_arm"],
+    switch_default_kinds: &[],
+    transparent_kinds: &[],
 };
 
 /// Go node-kind table. Go's `for` covers all loop forms (with optional
-/// condition); switch has two variants (`expression_switch_statement` /
-/// `type_switch_statement`) — only the expression form is enabled here.
+/// condition); switch has two variants — both are routed through the same
+/// case/default kinds (`expression_case` / `default_case`) so the generic
+/// switch builder handles them uniformly. Type-switch is Go's dominant
+/// narrowing source (`switch v := x.(type) { case *T: ... }`).
 pub const GO_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     function_kinds: &["function_declaration", "method_declaration", "func_literal"],
     block_kind: "block",
@@ -436,11 +458,14 @@ pub const GO_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     loop_kinds: &["for_statement"],
     loop_body_field: "body",
     loop_condition_field: Some("condition"),
-    switch_kind: "expression_switch_statement",
+    switch_kinds: &["expression_switch_statement", "type_switch_statement"],
     switch_value_field: "value",
-    switch_body_field: "body",
-    switch_case_kind: "expression_case",
-    switch_default_kind: "default_case",
+    // Go's switch lists cases as direct children — no `body` wrapper.
+    switch_body_field: None,
+    switch_case_kinds: &["expression_case", "type_case"],
+    switch_default_kinds: &["default_case"],
+    // Go's block and case both wrap their statements in `statement_list`.
+    transparent_kinds: &["statement_list"],
 };
 
 /// Build CFGs for every function in `root`. The returned `FileCfg`'s functions
@@ -565,6 +590,10 @@ fn add_edge(cfg: &mut Cfg, from: BlockId, to: BlockId, guard: FactMap) {
 /// Walk `block_node`'s children in source order, growing/branching `cfg`.
 /// Returns the BlockId of the *current* open block at the end of the walk
 /// (which the caller closes at the enclosing scope's end).
+///
+/// Children whose kind is in `kinds.transparent_kinds` (Go's `statement_list`)
+/// are flattened — the walker recurses into their named_children so the real
+/// if/loop/switch statements are visible to the dispatcher.
 fn build_block_sequence(
     block_node: &Node,
     src: &[u8],
@@ -576,21 +605,41 @@ fn build_block_sequence(
     let mut current = entry;
     let mut walker = block_node.walk();
     for child in block_node.named_children(&mut walker) {
-        let ck = child.kind();
-        if ck == kinds.if_kind {
-            current = build_if(&child, src, kinds, narrowings, cfg, current);
-        } else if kinds.loop_kinds.contains(&ck) {
-            current = build_loop(&child, src, kinds, narrowings, cfg, current);
-        } else if ck == kinds.switch_kind {
-            current = build_switch(&child, src, kinds, narrowings, cfg, current);
-        } else {
-            collect_defs_in(&child, src, kinds, cfg, current);
-            // Statement is wholly inside the current block; widen its range
-            // to cover what's been seen so far.
-            close_block(cfg, current, child.end_byte() as u32);
+        if kinds.transparent_kinds.contains(&child.kind()) {
+            current = build_block_sequence(&child, src, kinds, narrowings, cfg, current);
+            continue;
         }
+        current = process_block_child(&child, src, kinds, narrowings, cfg, current);
     }
     current
+}
+
+/// Dispatch one statement-level child within a block / case. Extracted so
+/// the transparent-wrapper case in `build_block_sequence` and the case-clause
+/// walker in `build_switch` share one rule for what counts as if / loop /
+/// switch vs. an opaque statement.
+fn process_block_child(
+    child: &Node,
+    src: &[u8],
+    kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
+    cfg: &mut Cfg,
+    current: BlockId,
+) -> BlockId {
+    let ck = child.kind();
+    if ck == kinds.if_kind {
+        build_if(child, src, kinds, narrowings, cfg, current)
+    } else if kinds.loop_kinds.contains(&ck) {
+        build_loop(child, src, kinds, narrowings, cfg, current)
+    } else if kinds.switch_kinds.contains(&ck) {
+        build_switch(child, src, kinds, narrowings, cfg, current)
+    } else {
+        collect_defs_in(child, src, kinds, cfg, current);
+        // Statement is wholly inside the current block; widen its range
+        // to cover what's been seen so far.
+        close_block(cfg, current, child.end_byte() as u32);
+        current
+    }
 }
 
 /// Build an if/else diamond:
@@ -793,11 +842,18 @@ fn build_switch(
 
     let exit = new_block(cfg, switch_node.end_byte() as u32);
 
-    if let Some(body) = switch_node.child_by_field_name(kinds.switch_body_field) {
+    // Some grammars wrap cases in a `body` node (TS/Java/C#/Python/Rust),
+    // others list them as direct children of the switch (Go). Pick the right
+    // iteration root based on the language's `switch_body_field`.
+    let case_root = match kinds.switch_body_field {
+        Some(f) => switch_node.child_by_field_name(f),
+        None => Some(*switch_node),
+    };
+    if let Some(body) = case_root {
         let mut walker = body.walk();
         for clause in body.named_children(&mut walker) {
             let ck = clause.kind();
-            if ck == kinds.switch_case_kind || ck == kinds.switch_default_kind {
+            if kinds.switch_case_kinds.contains(&ck) || kinds.switch_default_kinds.contains(&ck) {
                 let case_block = new_block(cfg, clause.start_byte() as u32);
                 let case_guard = guards_for_range(
                     narrowings,
@@ -805,21 +861,14 @@ fn build_switch(
                     clause.end_byte() as u32,
                 );
                 add_edge(cfg, scrutinee, case_block, case_guard);
-                let mut tail = case_block;
-                let mut walker2 = clause.walk();
-                for stmt in clause.named_children(&mut walker2) {
-                    let sk = stmt.kind();
-                    if sk == kinds.if_kind {
-                        tail = build_if(&stmt, src, kinds, narrowings, cfg, tail);
-                    } else if kinds.loop_kinds.contains(&sk) {
-                        tail = build_loop(&stmt, src, kinds, narrowings, cfg, tail);
-                    } else if sk == kinds.switch_kind {
-                        tail = build_switch(&stmt, src, kinds, narrowings, cfg, tail);
-                    } else {
-                        collect_defs_in(&stmt, src, kinds, cfg, tail);
-                        close_block(cfg, tail, stmt.end_byte() as u32);
-                    }
-                }
+                let tail = walk_case_statements(
+                    &clause,
+                    src,
+                    kinds,
+                    narrowings,
+                    cfg,
+                    case_block,
+                );
                 close_block(cfg, tail, clause.end_byte() as u32);
                 add_edge(cfg, tail, exit, FactMap::default());
             }
@@ -829,6 +878,30 @@ fn build_switch(
         add_edge(cfg, scrutinee, exit, FactMap::default());
     }
     exit
+}
+
+/// Walk the statements inside a switch case clause. Same dispatch rule as
+/// `build_block_sequence` (if/loop/switch routed to their builders, other
+/// nodes treated as opaque defs) but rooted at the clause node, recursing
+/// through any `transparent_kinds` wrapper (Go's `statement_list`).
+fn walk_case_statements(
+    clause: &Node,
+    src: &[u8],
+    kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
+    cfg: &mut Cfg,
+    case_block: BlockId,
+) -> BlockId {
+    let mut tail = case_block;
+    let mut walker = clause.walk();
+    for stmt in clause.named_children(&mut walker) {
+        if kinds.transparent_kinds.contains(&stmt.kind()) {
+            tail = walk_case_statements(&stmt, src, kinds, narrowings, cfg, tail);
+            continue;
+        }
+        tail = process_block_child(&stmt, src, kinds, narrowings, cfg, tail);
+    }
+    tail
 }
 
 /// Collect any defs (assignment LHS, variable declarators) reachable inside

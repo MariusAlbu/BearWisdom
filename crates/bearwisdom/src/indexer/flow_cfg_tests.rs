@@ -371,6 +371,37 @@ fn cfg_rust_structural_function_body_builds() {
 }
 
 #[test]
+fn cfg_go_type_switch_statement_recognized_as_switch_kind() {
+    // Go's grammar splits switch into `expression_switch_statement` and
+    // `type_switch_statement`. The `switch_kinds` slice carries both so that
+    // the case-body edge gets `guards_for_range`-derived narrowings attached.
+    // GoPlugin.flow_config() is None at runtime (OOM workaround), so this
+    // exercises the CFG directly with a synthesized Narrowing — the same fact
+    // type_guard_query produces when flow_config is on.
+    use crate::languages::go::GoPlugin;
+    use crate::languages::LanguagePlugin;
+    use crate::types::Narrowing;
+    let lang = GoPlugin.grammar("go").expect("go grammar");
+    let src = "package p\nfunc f(x interface{}) {\n    switch v := x.(type) {\n    case *Foo:\n        v.bar()\n    }\n}\n";
+    let case_start = src.find("case *Foo:").unwrap() as u32;
+    let case_end = src.find("\n    }").unwrap() as u32;
+    let narrowings = vec![Narrowing {
+        name: "v".into(),
+        narrowed_type: "Foo".into(),
+        byte_start: case_start,
+        byte_end: case_end,
+    }];
+    let fc = super::_test_build_with_narrowings(src, &GO_CFG_KINDS, &lang, &narrowings);
+    assert!(!fc.is_empty(), "go CFG should be built");
+    let probe = src.find("v.bar()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("v", probe),
+        Some("Foo"),
+        "type_switch_statement participates as a switch_kind and routes case-body narrowings",
+    );
+}
+
+#[test]
 fn cfg_csharp_declaration_pattern_narrows_via_cfg() {
     use crate::languages::csharp::CSharpPlugin;
     let src = "class C {\n  void M(object user) {\n    if (user is Admin admin) {\n      admin.Ban();\n    }\n  }\n}\n";
