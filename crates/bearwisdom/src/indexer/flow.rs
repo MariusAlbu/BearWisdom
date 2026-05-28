@@ -138,6 +138,7 @@ fn cfg_node_kinds_for(
         "java" => Some(&crate::indexer::flow_cfg::JAVA_CFG_KINDS),
         "python" => Some(&crate::indexer::flow_cfg::PYTHON_CFG_KINDS),
         "csharp" => Some(&crate::indexer::flow_cfg::CSHARP_CFG_KINDS),
+        "rust" => Some(&crate::indexer::flow_cfg::RUST_CFG_KINDS),
         "go" => Some(&crate::indexer::flow_cfg::GO_CFG_KINDS),
         _ => None,
     }

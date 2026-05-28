@@ -354,6 +354,23 @@ fn cfg_python_isinstance_guard_narrows_via_cfg() {
 }
 
 #[test]
+fn cfg_rust_structural_function_body_builds() {
+    // Rust's `type_guard_query` is empty — the existing narrowing path uses
+    // `flow_binding_decl_type` for `let x: T` annotations rather than guard
+    // queries. The CFG is structurally built for Rust (functions discovered,
+    // blocks / if-expressions modeled) but inherits no narrowings until a
+    // Rust type_guard pattern is added. Pin the structural wiring here so a
+    // future grammar / kind regression is visible.
+    use crate::languages::rust_lang::RustLangPlugin;
+    let src = "fn f(x: Base) {\n    if cond {\n        x.foo();\n    } else {\n        x.bar();\n    }\n}\n";
+    let fc = _build_cfg_via_runner(&RustLangPlugin, "rust", src);
+    assert!(
+        !fc.is_empty(),
+        "rust CFG should be built (function_item recognized)"
+    );
+}
+
+#[test]
 fn cfg_csharp_declaration_pattern_narrows_via_cfg() {
     use crate::languages::csharp::CSharpPlugin;
     let src = "class C {\n  void M(object user) {\n    if (user is Admin admin) {\n      admin.Ban();\n    }\n  }\n}\n";

@@ -391,6 +391,34 @@ pub const CSHARP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_default_kind: "__csharp_default_label__",
 };
 
+/// Rust node-kind table. Control-flow constructs are *expressions* in Rust
+/// (`if_expression` / `match_expression` / etc.) but their structure mirrors
+/// the statement forms in TS / Java. `let_declaration`'s LHS is a pattern
+/// rather than a bare identifier — the def-collector only registers simple
+/// `identifier` patterns; destructured/`mut`/`ref` bindings are missed
+/// (acceptable for narrowing — narrowings come from `if let` / `match` via
+/// the type_guard_query, not from let-bindings).
+pub const RUST_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_item", "closure_expression"],
+    block_kind: "block",
+    if_kind: "if_expression",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_expression",
+    assignment_lhs_field: "left",
+    declarator_kind: "let_declaration",
+    declarator_name_field: "pattern",
+    loop_kinds: &["while_expression", "loop_expression", "for_expression"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kind: "match_expression",
+    switch_value_field: "value",
+    switch_body_field: "body",
+    switch_case_kind: "match_arm",
+    switch_default_kind: "__rust_no_default__",
+};
+
 /// Go node-kind table. Go's `for` covers all loop forms (with optional
 /// condition); switch has two variants (`expression_switch_statement` /
 /// `type_switch_statement`) — only the expression form is enabled here.
