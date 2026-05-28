@@ -113,6 +113,7 @@ struct EmptyLookup {
     empty_reexports: Vec<(String, String)>,
     types: rustc_hash::FxHashMap<String, Vec<SymbolInfo>>,
     locals: rustc_hash::FxHashMap<String, String>,
+    local_unions: rustc_hash::FxHashMap<String, Vec<String>>,
     field_types: rustc_hash::FxHashMap<String, String>,
     return_types: rustc_hash::FxHashMap<String, String>,
     by_qname: rustc_hash::FxHashMap<String, SymbolInfo>,
@@ -128,6 +129,7 @@ impl EmptyLookup {
             empty_reexports: Vec::new(),
             types: Default::default(),
             locals: Default::default(),
+            local_unions: Default::default(),
             field_types: Default::default(),
             return_types: Default::default(),
             by_qname: Default::default(),
@@ -153,6 +155,11 @@ impl EmptyLookup {
     }
     fn with_local(mut self, name: &str, qname: &str) -> Self {
         self.locals.insert(name.to_string(), qname.to_string());
+        self
+    }
+    fn with_local_union(mut self, name: &str, branches: &[&str]) -> Self {
+        self.local_unions
+            .insert(name.to_string(), branches.iter().map(|s| s.to_string()).collect());
         self
     }
     fn with_field_type(mut self, qname: &str, type_name: &str) -> Self {
@@ -203,6 +210,12 @@ impl SymbolLookup for EmptyLookup {
     }
     fn local_type(&self, name: &str) -> Option<String> {
         self.locals.get(name).cloned()
+    }
+    fn local_type_union(&self, name: &str) -> Option<Vec<String>> {
+        if let Some(u) = self.local_unions.get(name) {
+            return Some(u.clone());
+        }
+        self.locals.get(name).cloned().map(|s| vec![s])
     }
     fn local_discriminant(&self, name: &str) -> Option<(String, String, bool)> {
         self.discriminants.get(name).cloned()
@@ -3076,4 +3089,137 @@ fn last_segment_resolves_when_yield_type_missing() {
         .walk(&chain, &ref_ctx, &fc)
         .expect("Customer.ToViewModel resolves even without method return type");
     assert_eq!(result.target_symbol_id, 21);
+}
+
+// ----------------------------------------------------------------------------
+// CFG-derived Union narrowing flows through the chain walker
+// ----------------------------------------------------------------------------
+
+#[test]
+fn cfg_union_narrowing_resolves_member_present_on_every_branch() {
+    // The shape this proves end-to-end:
+    //
+    //   function f(x: unknown) {
+    //     if (typeof x === "string" || typeof x === "number") {
+    //       x.toString();   // x is string ∪ number — toString lives on both
+    //     }
+    //   }
+    //
+    // The CFG side already produces a `Fact::Union(["number","string"])` at
+    // the probe byte (test `cfg_logical_or_unions_disagreeing_guards_on_true_edge`
+    // pins that). This test drives the chain walker on a synthetic lookup
+    // that returns the same union via `local_type_union`, asserting that the
+    // walker builds a `Type::Union` root and the member arm in
+    // `core/members.rs` finds `toString` on every branch.
+    use crate::type_checker::core::types::Type;
+
+    let mut arena = TypeArena::new();
+    let string_ty = arena.class("string");
+    let number_ty = arena.class("number");
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        string_ty,
+        sym_info(1, "toString", "string.toString", "method", Some("string")),
+    );
+    members.add_direct(
+        number_ty,
+        sym_info(2, "toString", "number.toString", "method", Some("number")),
+    );
+
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local_union("x", &["string", "number"]);
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("x", SegmentKind::Identifier),
+            seg("toString", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("toString");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("toString present on every branch resolves through the union root");
+    // The Union arm in members.rs requires every branch to carry the member
+    // and returns the first branch's hit — `string` came first in the
+    // builder, so id 1 (string.toString) wins.
+    assert_eq!(result.target_symbol_id, 1);
+}
+
+#[test]
+fn cfg_union_narrowing_drops_when_member_missing_on_a_branch() {
+    // Sister case: `length` lives on string but not on number. The Union
+    // arm in members.rs is conservative — any branch missing the member
+    // fails the lookup, because at runtime the value could be on that
+    // branch and the access would NPE. The chain walker resolves to None.
+    use crate::type_checker::core::types::Type;
+
+    let mut arena = TypeArena::new();
+    let string_ty = arena.class("string");
+    let _number_ty = arena.class("number");
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        string_ty,
+        sym_info(1, "length", "string.length", "property", Some("string")),
+    );
+    // number has no `length` member — the Union lookup must drop.
+
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local_union("x", &["string", "number"]);
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("x", SegmentKind::Identifier),
+            seg("length", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("length");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker.walk(&chain, &ref_ctx, &fc).is_none(),
+        "length is missing on the `number` branch — Union lookup refuses to bind"
+    );
+    // Touch the suppress-unused so a future grammar bump that prints the type
+    // doesn't lose the explicit construction.
+    let _ = Type::Union(vec![]);
 }

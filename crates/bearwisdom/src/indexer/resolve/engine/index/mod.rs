@@ -266,8 +266,9 @@ impl LocalTypeCache {
     /// Look up the active type for `name` at the current cursor position.
     /// The CFG-native path (when wired for this file's language) wins; the
     /// interval `narrowings` vec is the fallback for languages without a
-    /// `CfgNodeKinds` table, for `Union`/`Never` facts the consumer can't
-    /// represent yet, and for the discriminant path.
+    /// `CfgNodeKinds` table and for the discriminant path. `Union` facts
+    /// project to `None` here — callers that can dispatch across union
+    /// members use `lookup_union` instead.
     pub fn lookup(&self, name: &str) -> Option<&str> {
         if let Some(s) = self.cfg.fact_string_at(name, self.cursor) {
             return Some(s);
@@ -281,6 +282,25 @@ impl LocalTypeCache {
             }
         }
         self.forward.get(name).map(|s| s.as_str())
+    }
+
+    /// Multi-branch variant of `lookup`. Returns every branch of a
+    /// CFG-derived `Fact::Union`, or a single-element vec for the
+    /// `Single` / interval / forward-binding cases. `None` means no
+    /// narrowing is active at the cursor.
+    pub fn lookup_union(&self, name: &str) -> Option<Vec<String>> {
+        if let Some(v) = self.cfg.fact_union_at(name, self.cursor) {
+            return Some(v);
+        }
+        for n in &self.narrowings {
+            if n.name == name
+                && n.byte_start <= self.cursor
+                && self.cursor < n.byte_end
+            {
+                return Some(vec![n.narrowed_type.clone()]);
+            }
+        }
+        self.forward.get(name).map(|s| vec![s.clone()])
     }
 
     /// The active discriminant guard for `name` at the cursor — `(prop,

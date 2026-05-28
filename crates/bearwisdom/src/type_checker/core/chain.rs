@@ -162,12 +162,25 @@ impl RootResolver for DefaultRootResolver {
             | SegmentKind::Construction => Some(arena.class(&seg.name)),
             SegmentKind::Identifier => {
                 // 1. Local-variable inferred type wins over global symbols
-                //    of the same name. `local_type` consults the per-file
-                //    LocalTypeCache that the resolver loop populates as it
-                //    encounters assignments; the cursor is moved before
-                //    each ref so narrowings honour the current position.
-                if let Some(local_qname) = lookup.local_type(&seg.name) {
-                    return Some(arena.class(&local_qname));
+                //    of the same name. `local_type_union` consults the
+                //    per-file LocalTypeCache that the resolver loop populates
+                //    as it encounters assignments and CFG narrowings; the
+                //    cursor is moved before each ref so narrowings honour the
+                //    current position. A multi-branch fact (`if (typeof x ===
+                //    "string" || typeof x === "number")`) builds a real
+                //    `Type::Union` here; downstream member lookup
+                //    (`core/members.rs` Union arm) requires every branch to
+                //    carry the member, which is the safe semantic — a runtime
+                //    value could land on any branch.
+                if let Some(branches) = lookup.local_type_union(&seg.name) {
+                    return Some(match branches.as_slice() {
+                        [one] => arena.class(one),
+                        many => {
+                            let ids: Vec<TypeId> =
+                                many.iter().map(|n| arena.class(n)).collect();
+                            arena.intern(Type::Union(ids))
+                        }
+                    });
                 }
                 // 2. Unique type symbol with this simple name.
                 let matches = lookup.types_by_name(&seg.name);

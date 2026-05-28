@@ -337,6 +337,10 @@ impl SymbolLookup for SymbolIndex {
         LOCAL_TYPE_CACHE.with(|c| c.borrow().lookup(name).map(|s| s.to_string()))
     }
 
+    fn local_type_union(&self, name: &str) -> Option<Vec<String>> {
+        LOCAL_TYPE_CACHE.with(|c| c.borrow().lookup_union(name))
+    }
+
     fn local_discriminant(&self, name: &str) -> Option<(String, String, bool)> {
         LOCAL_TYPE_CACHE.with(|c| {
             c.borrow()

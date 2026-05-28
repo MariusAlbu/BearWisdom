@@ -381,6 +381,16 @@ pub trait SymbolLookup {
         None
     }
 
+    /// Multi-branch variant: when the CFG has narrowed `name` to a `Union`,
+    /// each branch is a separate entry; for the common `Single` case it is
+    /// a one-element vec. Consumers that can dispatch across union members
+    /// (the type-arena chain walker) call this instead of `local_type`.
+    /// The default impl delegates to `local_type` for trait implementors
+    /// that do not yet expose CFG facts.
+    fn local_type_union(&self, name: &str) -> Option<Vec<String>> {
+        self.local_type(name).map(|s| vec![s])
+    }
+
     /// The active discriminated-union guard for `name` — `(prop, literal)` —
     /// at the current cursor. The chain walker uses it to select a union branch.
     fn local_discriminant(&self, _name: &str) -> Option<(String, String, bool)> {

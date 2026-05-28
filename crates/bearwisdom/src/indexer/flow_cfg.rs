@@ -186,6 +186,30 @@ impl Cfg {
             _ => None,
         }
     }
+
+    /// Multi-branch projection of the fact at `byte`: `Single(s)` projects to
+    /// `[s]`, `Union(branches)` to its branches verbatim, `Never` to `None`
+    /// (no callable type at an unreachable program point). Callers that can
+    /// dispatch across union members use this instead of `fact_string_at`.
+    pub fn fact_union_at(&self, name: &str, byte: u32) -> Option<Vec<String>> {
+        let bid = self.block_at(byte)?;
+        let in_fact = self.in_facts.get(bid as usize)?;
+        let mut current = in_fact.0.get(name);
+        let block = &self.blocks[bid as usize];
+        for (def_name, def_byte) in &block.defs {
+            if *def_byte > byte {
+                break;
+            }
+            if def_name == name {
+                current = None;
+            }
+        }
+        match current? {
+            Fact::Single(s) => Some(vec![s.clone()]),
+            Fact::Union(b) => Some(b.clone()),
+            Fact::Never => None,
+        }
+    }
 }
 
 /// A collection of per-function CFGs for a single source file. The dataflow
@@ -206,13 +230,21 @@ impl FileCfg {
 
     /// Borrowed-string fast path for callers (e.g. `LocalTypeCache::lookup`)
     /// that consume only the single-narrowed-type case. Returns `None` for a
-    /// `Union` or `Never` fact, letting the caller fall back to its existing
-    /// path until the consumer surface speaks the richer fact type.
+    /// `Union` or `Never` fact; callers that can dispatch across union
+    /// members consult `fact_union_at` instead.
     pub fn fact_string_at(&self, name: &str, byte: u32) -> Option<&str> {
         self.functions
             .iter()
             .find(|c| c.fn_byte_range.0 <= byte && byte < c.fn_byte_range.1)
             .and_then(|c| c.fact_string_at(name, byte))
+    }
+
+    /// Multi-branch projection; see `Cfg::fact_union_at`.
+    pub fn fact_union_at(&self, name: &str, byte: u32) -> Option<Vec<String>> {
+        self.functions
+            .iter()
+            .find(|c| c.fn_byte_range.0 <= byte && byte < c.fn_byte_range.1)
+            .and_then(|c| c.fact_union_at(name, byte))
     }
 
     pub fn is_empty(&self) -> bool {
