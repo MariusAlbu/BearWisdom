@@ -302,6 +302,71 @@ fn cfg_switch_case_reassignment_kills_only_its_own_branch_after_join() {
     );
 }
 
+// ---------- per-language CfgNodeKinds smoke tests ---------------------------
+//
+// These exercise the dispatch through `run_flow_queries`: the language's own
+// `type_guard_query` produces narrowings, the CFG attaches them as edge
+// guards on body-containing edges via `guards_for_range`, and the consumer
+// reads the CFG-native fact at the probe byte.
+
+#[cfg(test)]
+fn _build_cfg_via_runner<P: crate::languages::LanguagePlugin>(
+    plugin: &P,
+    lang_name: &str,
+    src: &str,
+) -> FileCfg {
+    use crate::indexer::flow::run_flow_queries;
+    use crate::types::{ExtractedRef, ExtractedSymbol};
+    let lang = plugin.grammar(lang_name).expect("grammar must load");
+    let fc = plugin.flow_config().expect("flow config must exist");
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+    let meta = run_flow_queries(src, &lang, fc, &symbols, &mut refs);
+    meta.cfg
+}
+
+#[test]
+fn cfg_java_instanceof_pattern_binding_narrows_via_cfg() {
+    use crate::languages::java::JavaPlugin;
+    let src = "class C {\n  void m(Object x) {\n    if (x instanceof Admin a) {\n      a.ban();\n    }\n  }\n}\n";
+    let fc = _build_cfg_via_runner(&JavaPlugin, "java", src);
+    assert!(!fc.is_empty(), "java CFG should be built");
+    let probe = src.find("a.ban()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("a", probe),
+        Some("Admin"),
+        "Java instanceof pattern binding narrows `a` in the then-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_python_isinstance_guard_narrows_via_cfg() {
+    use crate::languages::python::PythonPlugin;
+    let src = "def f(x):\n    if isinstance(x, Foo):\n        x.bar()\n";
+    let fc = _build_cfg_via_runner(&PythonPlugin, "python", src);
+    assert!(!fc.is_empty(), "python CFG should be built");
+    let probe = src.find("x.bar()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("x", probe),
+        Some("Foo"),
+        "Python isinstance narrows `x` in the if-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_csharp_declaration_pattern_narrows_via_cfg() {
+    use crate::languages::csharp::CSharpPlugin;
+    let src = "class C {\n  void M(object user) {\n    if (user is Admin admin) {\n      admin.Ban();\n    }\n  }\n}\n";
+    let fc = _build_cfg_via_runner(&CSharpPlugin, "csharp", src);
+    assert!(!fc.is_empty(), "C# CFG should be built");
+    let probe = src.find("admin.Ban()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("admin", probe),
+        Some("Admin"),
+        "C# `is T name` pattern narrows the binding via the CFG"
+    );
+}
+
 #[test]
 fn cfg_reassignment_in_block_kills_narrowing_at_def() {
     // The CFG def-resets-fact equivalent of slice 1: a reassignment inside the

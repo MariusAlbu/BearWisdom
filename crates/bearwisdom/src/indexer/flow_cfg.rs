@@ -299,17 +299,152 @@ pub const TS_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_default_kind: "switch_default",
 };
 
+/// Java node-kind table. Java's switch uses a `switch_block` body whose
+/// case structure differs from TS — switch is left disabled here (the
+/// sentinel kinds match nothing); the if / loop / def CFG still applies.
+pub const JAVA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &[
+        "method_declaration",
+        "constructor_declaration",
+        "compact_constructor_declaration",
+        "lambda_expression",
+    ],
+    block_kind: "block",
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_expression",
+    assignment_lhs_field: "left",
+    declarator_kind: "variable_declarator",
+    declarator_name_field: "name",
+    loop_kinds: &[
+        "while_statement",
+        "for_statement",
+        "enhanced_for_statement",
+        "do_statement",
+    ],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kind: "__java_switch_disabled__",
+    switch_value_field: "condition",
+    switch_body_field: "body",
+    switch_case_kind: "switch_block_statement_group",
+    switch_default_kind: "switch_label",
+};
+
+/// Python node-kind table.
+pub const PYTHON_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_definition", "lambda"],
+    block_kind: "block",
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment",
+    assignment_lhs_field: "left",
+    // Python has no separate declarator — assignment is the def.
+    declarator_kind: "__python_no_declarator__",
+    declarator_name_field: "name",
+    loop_kinds: &["while_statement", "for_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    // PEP 634 match — disabled by default; default `_` pattern subsumes else.
+    switch_kind: "__python_match_disabled__",
+    switch_value_field: "subject",
+    switch_body_field: "body",
+    switch_case_kind: "case_clause",
+    switch_default_kind: "__python_no_default__",
+};
+
+/// C# node-kind table. C#'s switch_section + switch_label split is enough
+/// like TS's case structure that the basic switch routing works; richer
+/// pattern matching falls back to the interval path.
+pub const CSHARP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &[
+        "method_declaration",
+        "constructor_declaration",
+        "local_function_statement",
+        "lambda_expression",
+    ],
+    block_kind: "block",
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_expression",
+    assignment_lhs_field: "left",
+    declarator_kind: "variable_declarator",
+    declarator_name_field: "name",
+    loop_kinds: &[
+        "while_statement",
+        "for_statement",
+        "for_each_statement",
+        "do_statement",
+    ],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kind: "switch_statement",
+    switch_value_field: "value",
+    switch_body_field: "body",
+    switch_case_kind: "switch_section",
+    switch_default_kind: "__csharp_default_label__",
+};
+
+/// Go node-kind table. Go's `for` covers all loop forms (with optional
+/// condition); switch has two variants (`expression_switch_statement` /
+/// `type_switch_statement`) — only the expression form is enabled here.
+pub const GO_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_declaration", "method_declaration", "func_literal"],
+    block_kind: "block",
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment_statement",
+    assignment_lhs_field: "left",
+    declarator_kind: "short_var_declaration",
+    declarator_name_field: "left",
+    loop_kinds: &["for_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kind: "expression_switch_statement",
+    switch_value_field: "value",
+    switch_body_field: "body",
+    switch_case_kind: "expression_case",
+    switch_default_kind: "default_case",
+};
+
 /// Build CFGs for every function in `root`. The returned `FileCfg`'s functions
 /// are independent — each is its own dataflow.
-pub fn build_file_cfg(root: &Node, src: &[u8], kinds: &CfgNodeKinds) -> FileCfg {
+///
+/// `narrowings` are the per-language `type_guard_query` results from the
+/// `flow` runner. They feed into edge guards on body-containing edges
+/// (if-then, loop body, switch case) — any `Narrowing` whose byte range
+/// fits inside a body becomes a `Single`-fact edge guard. This is the
+/// generic, language-agnostic source of narrowing facts; the TS-specific
+/// `condition_to_true_guard` adds shortcuts for patterns the query may not
+/// have captured (e.g., `||` disjunctions yielding a `Union` fact).
+pub fn build_file_cfg(
+    root: &Node,
+    src: &[u8],
+    kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
+) -> FileCfg {
     let mut out = FileCfg::default();
-    visit_for_functions(root, src, kinds, &mut out);
+    visit_for_functions(root, src, kinds, narrowings, &mut out);
     out
 }
 
-fn visit_for_functions(node: &Node, src: &[u8], kinds: &CfgNodeKinds, out: &mut FileCfg) {
+fn visit_for_functions(
+    node: &Node,
+    src: &[u8],
+    kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
+    out: &mut FileCfg,
+) {
     if kinds.function_kinds.contains(&node.kind()) {
-        if let Some(cfg) = build_function_cfg(node, src, kinds) {
+        if let Some(cfg) = build_function_cfg(node, src, kinds, narrowings) {
             out.functions.push(cfg);
         }
         // Don't recurse — nested functions get their own CFG via the top
@@ -318,13 +453,18 @@ fn visit_for_functions(node: &Node, src: &[u8], kinds: &CfgNodeKinds, out: &mut 
     }
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
-        visit_for_functions(&child, src, kinds, out);
+        visit_for_functions(&child, src, kinds, narrowings, out);
     }
 }
 
 /// Build a CFG for a single function. Returns `None` if the function has no
 /// body the builder recognizes (e.g., an abstract method).
-fn build_function_cfg(fn_node: &Node, src: &[u8], kinds: &CfgNodeKinds) -> Option<Cfg> {
+fn build_function_cfg(
+    fn_node: &Node,
+    src: &[u8],
+    kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
+) -> Option<Cfg> {
     let body = find_function_body(fn_node, kinds)?;
     let mut cfg = Cfg {
         fn_byte_range: (fn_node.start_byte() as u32, fn_node.end_byte() as u32),
@@ -332,12 +472,35 @@ fn build_function_cfg(fn_node: &Node, src: &[u8], kinds: &CfgNodeKinds) -> Optio
     };
     let entry = new_block(&mut cfg, body.start_byte() as u32);
     cfg.entry = entry;
-    let exit = build_block_sequence(&body, src, kinds, &mut cfg, entry);
+    let exit = build_block_sequence(&body, src, kinds, narrowings, &mut cfg, entry);
     // Close the last open block at the body's end so `fact_at` ranges cover
     // the whole body.
     close_block(&mut cfg, exit, body.end_byte() as u32);
     run_dataflow(&mut cfg, /*iter_cap=*/ 8);
     Some(cfg)
+}
+
+/// Collect any `Narrowing` whose byte range is contained in `(start, end)`
+/// into a `FactMap` of `Single` facts. The CFG attaches these to edges
+/// whose target block is the body the narrowing was emitted for.
+fn guards_for_range(
+    narrowings: &[crate::types::Narrowing],
+    start: u32,
+    end: u32,
+) -> FactMap {
+    let mut out = FactMap::default();
+    for n in narrowings {
+        if n.byte_start >= start && n.byte_end <= end && !n.name.is_empty() {
+            // Innermost narrowing wins on ties — the input is pre-sorted
+            // innermost-first by the resolver before reaching the CFG via
+            // `LocalTypeCache::install_local_cache`, so a later insert here
+            // would be the OUTER narrowing; skip when already present.
+            if !out.0.contains_key(&n.name) {
+                out.insert(n.name.clone(), Fact::Single(n.narrowed_type.clone()));
+            }
+        }
+    }
+    out
 }
 
 fn find_function_body<'a>(fn_node: &Node<'a>, kinds: &CfgNodeKinds) -> Option<Node<'a>> {
@@ -378,6 +541,7 @@ fn build_block_sequence(
     block_node: &Node,
     src: &[u8],
     kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
     cfg: &mut Cfg,
     entry: BlockId,
 ) -> BlockId {
@@ -386,11 +550,11 @@ fn build_block_sequence(
     for child in block_node.named_children(&mut walker) {
         let ck = child.kind();
         if ck == kinds.if_kind {
-            current = build_if(&child, src, kinds, cfg, current);
+            current = build_if(&child, src, kinds, narrowings, cfg, current);
         } else if kinds.loop_kinds.contains(&ck) {
-            current = build_loop(&child, src, kinds, cfg, current);
+            current = build_loop(&child, src, kinds, narrowings, cfg, current);
         } else if ck == kinds.switch_kind {
-            current = build_switch(&child, src, kinds, cfg, current);
+            current = build_switch(&child, src, kinds, narrowings, cfg, current);
         } else {
             collect_defs_in(&child, src, kinds, cfg, current);
             // Statement is wholly inside the current block; widen its range
@@ -412,6 +576,7 @@ fn build_if(
     if_node: &Node,
     src: &[u8],
     kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
     cfg: &mut Cfg,
     pred: BlockId,
 ) -> BlockId {
@@ -419,11 +584,22 @@ fn build_if(
     // before the branch.
     close_block(cfg, pred, if_node.start_byte() as u32);
 
-    // Read the condition's implied true-edge fact (if any).
-    let true_guard = if_node
-        .child_by_field_name(kinds.if_condition_field)
-        .map(|c| condition_to_true_guard(&c, src))
-        .unwrap_or_default();
+    // Read the condition's implied true-edge fact. Two sources combined:
+    //   * the per-language `type_guard_query` results (`narrowings`) whose
+    //     byte range fits inside the then-body — generic, all languages.
+    //   * the TS-specific syntactic recognizer for patterns the query may
+    //     not capture (e.g., `||` disjunctions yielding a Union fact).
+    let then_range = if_node
+        .child_by_field_name(kinds.if_consequence_field)
+        .map(|n| (n.start_byte() as u32, n.end_byte() as u32))
+        .unwrap_or((if_node.end_byte() as u32, if_node.end_byte() as u32));
+    let mut true_guard = guards_for_range(narrowings, then_range.0, then_range.1);
+    if let Some(c) = if_node.child_by_field_name(kinds.if_condition_field) {
+        let syntactic = condition_to_true_guard(&c, src);
+        for (name, fact) in &syntactic.0 {
+            true_guard.insert(name.clone(), fact.clone());
+        }
+    }
 
     // THEN branch.
     let then_node = if_node.child_by_field_name(kinds.if_consequence_field);
@@ -435,7 +611,7 @@ fn build_if(
     add_edge(cfg, pred, then_block, true_guard);
     let then_tail = match then_node {
         Some(body) if body.kind() == kinds.block_kind => {
-            let tail = build_block_sequence(&body, src, kinds, cfg, then_block);
+            let tail = build_block_sequence(&body, src, kinds, narrowings, cfg, then_block);
             close_block(cfg, tail, body.end_byte() as u32);
             tail
         }
@@ -467,13 +643,13 @@ fn build_if(
         else_block = eb;
         else_tail = match else_body.kind() {
             k if k == kinds.block_kind => {
-                let tail = build_block_sequence(&else_body, src, kinds, cfg, eb);
+                let tail = build_block_sequence(&else_body, src, kinds, narrowings, cfg, eb);
                 close_block(cfg, tail, else_body.end_byte() as u32);
                 tail
             }
             k if k == kinds.if_kind => {
                 // `else if` — a chained if; pred is `eb`, returns its join.
-                let chained = build_if(&else_body, src, kinds, cfg, eb);
+                let chained = build_if(&else_body, src, kinds, narrowings, cfg, eb);
                 chained
             }
             _ => {
@@ -517,6 +693,7 @@ fn build_loop(
     loop_node: &Node,
     src: &[u8],
     kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
     cfg: &mut Cfg,
     pred: BlockId,
 ) -> BlockId {
@@ -525,22 +702,27 @@ fn build_loop(
     let header = new_block(cfg, loop_node.start_byte() as u32);
     add_edge(cfg, pred, header, FactMap::default());
 
-    let true_guard = kinds
+    let body_node = loop_node.child_by_field_name(kinds.loop_body_field);
+    let body_range = body_node
+        .as_ref()
+        .map(|n| (n.start_byte() as u32, n.end_byte() as u32))
+        .unwrap_or((loop_node.end_byte() as u32, loop_node.end_byte() as u32));
+    let mut true_guard = guards_for_range(narrowings, body_range.0, body_range.1);
+    if let Some(c) = kinds
         .loop_condition_field
         .and_then(|f| loop_node.child_by_field_name(f))
-        .map(|c| condition_to_true_guard(&c, src))
-        .unwrap_or_default();
+    {
+        let syntactic = condition_to_true_guard(&c, src);
+        for (name, fact) in &syntactic.0 {
+            true_guard.insert(name.clone(), fact.clone());
+        }
+    }
 
-    let body_node = loop_node.child_by_field_name(kinds.loop_body_field);
-    let body_start = body_node
-        .as_ref()
-        .map(|n| n.start_byte() as u32)
-        .unwrap_or_else(|| loop_node.end_byte() as u32);
-    let body_block = new_block(cfg, body_start);
+    let body_block = new_block(cfg, body_range.0);
     add_edge(cfg, header, body_block, true_guard);
     let body_tail = match body_node {
         Some(body) if body.kind() == kinds.block_kind => {
-            let tail = build_block_sequence(&body, src, kinds, cfg, body_block);
+            let tail = build_block_sequence(&body, src, kinds, narrowings, cfg, body_block);
             close_block(cfg, tail, body.end_byte() as u32);
             tail
         }
@@ -572,6 +754,7 @@ fn build_switch(
     switch_node: &Node,
     src: &[u8],
     kinds: &CfgNodeKinds,
+    narrowings: &[crate::types::Narrowing],
     cfg: &mut Cfg,
     pred: BlockId,
 ) -> BlockId {
@@ -588,17 +771,22 @@ fn build_switch(
             let ck = clause.kind();
             if ck == kinds.switch_case_kind || ck == kinds.switch_default_kind {
                 let case_block = new_block(cfg, clause.start_byte() as u32);
-                add_edge(cfg, scrutinee, case_block, FactMap::default());
+                let case_guard = guards_for_range(
+                    narrowings,
+                    clause.start_byte() as u32,
+                    clause.end_byte() as u32,
+                );
+                add_edge(cfg, scrutinee, case_block, case_guard);
                 let mut tail = case_block;
                 let mut walker2 = clause.walk();
                 for stmt in clause.named_children(&mut walker2) {
                     let sk = stmt.kind();
                     if sk == kinds.if_kind {
-                        tail = build_if(&stmt, src, kinds, cfg, tail);
+                        tail = build_if(&stmt, src, kinds, narrowings, cfg, tail);
                     } else if kinds.loop_kinds.contains(&sk) {
-                        tail = build_loop(&stmt, src, kinds, cfg, tail);
+                        tail = build_loop(&stmt, src, kinds, narrowings, cfg, tail);
                     } else if sk == kinds.switch_kind {
-                        tail = build_switch(&stmt, src, kinds, cfg, tail);
+                        tail = build_switch(&stmt, src, kinds, narrowings, cfg, tail);
                     } else {
                         collect_defs_in(&stmt, src, kinds, cfg, tail);
                         close_block(cfg, tail, stmt.end_byte() as u32);
@@ -867,7 +1055,23 @@ pub(super) fn _test_build_for_ts(src: &str) -> FileCfg {
         .expect("ts grammar");
     p.set_language(&lang).expect("set lang");
     let tree = p.parse(src, None).expect("parse");
-    build_file_cfg(&tree.root_node(), src.as_bytes(), &TS_CFG_KINDS)
+    // Tests rely on the TS syntactic recognizer (typeof / instanceof / &&·||);
+    // no pre-extracted narrowings are needed.
+    build_file_cfg(&tree.root_node(), src.as_bytes(), &TS_CFG_KINDS, &[])
+}
+
+#[cfg(test)]
+pub(super) fn _test_build_with_narrowings(
+    src: &str,
+    kinds: &CfgNodeKinds,
+    lang: &tree_sitter::Language,
+    narrowings: &[crate::types::Narrowing],
+) -> FileCfg {
+    use tree_sitter::Parser;
+    let mut p = Parser::new();
+    p.set_language(lang).expect("set lang");
+    let tree = p.parse(src, None).expect("parse");
+    build_file_cfg(&tree.root_node(), src.as_bytes(), kinds, narrowings)
 }
 
 #[cfg(test)]

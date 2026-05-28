@@ -123,7 +123,8 @@ pub fn run_flow_queries(
     // table; the cleaner per-language plumbing (a `LanguagePlugin::cfg_node_kinds`
     // method) lands when more languages get tables.
     if let Some(kinds) = cfg_node_kinds_for(cfg.strategy_prefix) {
-        meta.cfg = crate::indexer::flow_cfg::build_file_cfg(&root, src_bytes, kinds);
+        meta.cfg =
+            crate::indexer::flow_cfg::build_file_cfg(&root, src_bytes, kinds, &meta.narrowings);
     }
 
     meta
@@ -134,6 +135,10 @@ fn cfg_node_kinds_for(
 ) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
     match strategy_prefix {
         "ts" | "js" => Some(&crate::indexer::flow_cfg::TS_CFG_KINDS),
+        "java" => Some(&crate::indexer::flow_cfg::JAVA_CFG_KINDS),
+        "python" => Some(&crate::indexer::flow_cfg::PYTHON_CFG_KINDS),
+        "csharp" => Some(&crate::indexer::flow_cfg::CSHARP_CFG_KINDS),
+        "go" => Some(&crate::indexer::flow_cfg::GO_CFG_KINDS),
         _ => None,
     }
 }
