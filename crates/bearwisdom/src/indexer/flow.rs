@@ -118,7 +118,24 @@ pub fn run_flow_queries(
     let reassignments = collect_reassignment_sites(&root, src_bytes, cfg);
     kill_narrowings_at_reassignments(&mut meta, &reassignments);
 
+    // Per-function CFGs for the consumer's CFG-native lookup path. Dispatch
+    // by `strategy_prefix` because `FlowConfig` does not yet carry the kind
+    // table; the cleaner per-language plumbing (a `LanguagePlugin::cfg_node_kinds`
+    // method) lands when more languages get tables.
+    if let Some(kinds) = cfg_node_kinds_for(cfg.strategy_prefix) {
+        meta.cfg = crate::indexer::flow_cfg::build_file_cfg(&root, src_bytes, kinds);
+    }
+
     meta
+}
+
+fn cfg_node_kinds_for(
+    strategy_prefix: &str,
+) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+    match strategy_prefix {
+        "ts" | "js" => Some(&crate::indexer::flow_cfg::TS_CFG_KINDS),
+        _ => None,
+    }
 }
 
 /// All assignment-LHS sites, as `(variable_name, byte_offset)`. Reuses the

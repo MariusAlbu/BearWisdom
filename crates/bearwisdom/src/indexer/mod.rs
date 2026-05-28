@@ -4,6 +4,7 @@ pub mod secondary_scan;
 pub mod demand;
 pub mod expand;
 pub mod flow;
+pub mod flow_cfg;
 #[cfg(test)]
 #[path = "flow_tests.rs"]
 mod flow_tests;

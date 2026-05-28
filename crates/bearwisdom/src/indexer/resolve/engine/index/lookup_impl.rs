@@ -349,12 +349,14 @@ impl SymbolLookup for SymbolIndex {
         &self,
         narrowings: Vec<crate::types::Narrowing>,
         discriminants: Vec<crate::types::DiscriminantNarrowing>,
+        cfg: crate::indexer::flow_cfg::FileCfg,
     ) {
         LOCAL_TYPE_CACHE.with(|c| {
             let mut cache = c.borrow_mut();
             cache.forward.clear();
             cache.narrowings = narrowings;
             cache.discriminants = discriminants;
+            cache.cfg = cfg;
             cache.cursor = 0;
         });
     }
@@ -373,6 +375,7 @@ impl SymbolLookup for SymbolIndex {
             cache.forward.clear();
             cache.narrowings.clear();
             cache.discriminants.clear();
+            cache.cfg = crate::indexer::flow_cfg::FileCfg::default();
             cache.cursor = 0;
         });
     }

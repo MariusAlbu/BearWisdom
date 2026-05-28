@@ -337,7 +337,7 @@ fn resolve_iteration_body(
         narrowings.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
         let mut discriminants = pf.flow.discriminant_narrowings.clone();
         discriminants.sort_by_key(|d| d.byte_end.saturating_sub(d.byte_start));
-        index.install_local_cache(narrowings, discriminants);
+        index.install_local_cache(narrowings, discriminants, pf.flow.cfg.clone());
 
         // R5: seed local types from explicit annotations (`let x: T`). Unlike
         // forward inference these need no RHS to resolve — the annotation is

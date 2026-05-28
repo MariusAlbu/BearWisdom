@@ -845,6 +845,12 @@ pub struct FlowMeta {
     pub flow_binding_decl_type: HashMap<usize, String>,
     pub flow_binding_unwrap: std::collections::HashSet<usize>,
     pub ref_byte_offsets: Vec<u32>,
+    /// Per-function control-flow graphs for the file, built at extract time
+    /// from the same tree the query runner uses. Empty when the language has
+    /// no `CfgNodeKinds` table wired yet — the consumer falls back to the
+    /// interval `narrowings` path. Queried by `LocalTypeCache::lookup` via
+    /// `fact_string_at(name, cursor)`.
+    pub cfg: crate::indexer::flow_cfg::FileCfg,
 }
 
 /// Everything extracted from a single source file.

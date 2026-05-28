@@ -393,6 +393,7 @@ pub trait SymbolLookup {
         &self,
         _narrowings: Vec<crate::types::Narrowing>,
         _discriminants: Vec<crate::types::DiscriminantNarrowing>,
+        _cfg: crate::indexer::flow_cfg::FileCfg,
     ) {
     }
 

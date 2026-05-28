@@ -239,6 +239,12 @@ pub struct LocalTypeCache {
     /// separate from `narrowings` because the narrowed type is a union branch
     /// the chain walker resolves at lookup time, not a fixed type name.
     discriminants: Vec<crate::types::DiscriminantNarrowing>,
+    /// Per-function CFGs for this file. Consulted by `lookup` before the
+    /// interval `narrowings` vec — when present and the dataflow has a
+    /// `Single` fact for `name` at `cursor`, the CFG answer wins. A `Union`
+    /// or `Never` fact falls back to the interval path (the interval API
+    /// does not yet speak the richer fact type).
+    cfg: crate::indexer::flow_cfg::FileCfg,
     /// Current ref's byte position. Set by the resolver before each
     /// chain-walker call via `SymbolLookup::set_cursor`.
     cursor: u32,
@@ -250,6 +256,7 @@ impl Default for LocalTypeCache {
             forward: FxHashMap::default(),
             narrowings: Vec::new(),
             discriminants: Vec::new(),
+            cfg: crate::indexer::flow_cfg::FileCfg::default(),
             cursor: 0,
         }
     }
@@ -257,9 +264,14 @@ impl Default for LocalTypeCache {
 
 impl LocalTypeCache {
     /// Look up the active type for `name` at the current cursor position.
-    /// Narrowings take precedence — innermost (smallest) wins because the
-    /// `narrowings` vec is pre-sorted by ascending range size.
+    /// The CFG-native path (when wired for this file's language) wins; the
+    /// interval `narrowings` vec is the fallback for languages without a
+    /// `CfgNodeKinds` table, for `Union`/`Never` facts the consumer can't
+    /// represent yet, and for the discriminant path.
     pub fn lookup(&self, name: &str) -> Option<&str> {
+        if let Some(s) = self.cfg.fact_string_at(name, self.cursor) {
+            return Some(s);
+        }
         for n in &self.narrowings {
             if n.name == name
                 && n.byte_start <= self.cursor

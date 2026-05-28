@@ -932,7 +932,7 @@ fn narrowing(name: &str, ty: &str, start: u32, end: u32) -> crate::types::Narrow
 #[test]
 fn local_cache_forward_inference() {
     let idx = make_empty_index();
-    idx.install_local_cache(Vec::new(), Vec::new());
+    idx.install_local_cache(Vec::new(), Vec::new(), Default::default());
     idx.record_local_type("x".to_string(), "Foo".to_string());
     assert_eq!(idx.local_type("x"), Some("Foo".to_string()));
     assert_eq!(idx.local_type("y"), None);
@@ -941,7 +941,7 @@ fn local_cache_forward_inference() {
 #[test]
 fn local_cache_reassignment_last_write_wins() {
     let idx = make_empty_index();
-    idx.install_local_cache(Vec::new(), Vec::new());
+    idx.install_local_cache(Vec::new(), Vec::new(), Default::default());
     idx.record_local_type("x".to_string(), "Foo".to_string());
     idx.record_local_type("x".to_string(), "Bar".to_string());
     assert_eq!(idx.local_type("x"), Some("Bar".to_string()));
@@ -950,7 +950,7 @@ fn local_cache_reassignment_last_write_wins() {
 #[test]
 fn local_cache_clear_wipes_bindings() {
     let idx = make_empty_index();
-    idx.install_local_cache(vec![narrowing("x", "Bar", 0, 100)], Vec::new());
+    idx.install_local_cache(vec![narrowing("x", "Bar", 0, 100)], Vec::new(), Default::default());
     idx.record_local_type("x".to_string(), "Foo".to_string());
     idx.clear_local_cache();
     assert_eq!(idx.local_type("x"), None);
@@ -959,10 +959,10 @@ fn local_cache_clear_wipes_bindings() {
 #[test]
 fn local_cache_install_resets_previous_bindings() {
     let idx = make_empty_index();
-    idx.install_local_cache(Vec::new(), Vec::new());
+    idx.install_local_cache(Vec::new(), Vec::new(), Default::default());
     idx.record_local_type("x".to_string(), "Foo".to_string());
     // Simulate moving to the next file: install a fresh cache.
-    idx.install_local_cache(Vec::new(), Vec::new());
+    idx.install_local_cache(Vec::new(), Vec::new(), Default::default());
     assert_eq!(idx.local_type("x"), None);
 }
 
@@ -970,7 +970,7 @@ fn local_cache_install_resets_previous_bindings() {
 fn local_cache_narrowing_honors_cursor() {
     let idx = make_empty_index();
     // Narrowing for `x` as `Bar` valid in byte range [50, 80).
-    idx.install_local_cache(vec![narrowing("x", "Bar", 50, 80)], Vec::new());
+    idx.install_local_cache(vec![narrowing("x", "Bar", 50, 80)], Vec::new(), Default::default());
     // Baseline forward type is `Foo`.
     idx.record_local_type("x".to_string(), "Foo".to_string());
 
@@ -990,7 +990,7 @@ fn local_cache_narrowing_honors_cursor() {
 #[test]
 fn local_cache_narrowing_upper_bound_exclusive() {
     let idx = make_empty_index();
-    idx.install_local_cache(vec![narrowing("x", "Bar", 50, 80)], Vec::new());
+    idx.install_local_cache(vec![narrowing("x", "Bar", 50, 80)], Vec::new(), Default::default());
     // Exactly at end is outside (half-open range).
     idx.set_cursor(80);
     assert_eq!(idx.local_type("x"), None);
@@ -1013,7 +1013,7 @@ fn local_cache_innermost_narrowing_wins() {
     // The resolver sorts these before install; replicate that here.
     let mut sorted = narrowings.clone();
     sorted.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
-    idx.install_local_cache(sorted, Vec::new());
+    idx.install_local_cache(sorted, Vec::new(), Default::default());
 
     idx.set_cursor(50);
     assert_eq!(idx.local_type("x"), Some("B".to_string()));
@@ -1045,7 +1045,7 @@ fn local_cache_default_impls_noop_for_non_symbol_index() {
     let e = Empty;
     // All defaulted methods should be no-ops / None.
     assert_eq!(e.local_type("anything"), None);
-    e.install_local_cache(vec![narrowing("x", "Foo", 0, 10)], Vec::new());
+    e.install_local_cache(vec![narrowing("x", "Foo", 0, 10)], Vec::new(), Default::default());
     e.set_cursor(5);
     e.record_local_type("x".to_string(), "Foo".to_string());
     e.clear_local_cache();
