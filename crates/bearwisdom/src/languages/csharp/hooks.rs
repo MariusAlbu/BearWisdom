@@ -19,16 +19,43 @@ use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo,
-    SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::inheritance;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::type_checker::type_env::TypeEnvironment;
-use crate::types::{EdgeKind, MemberChain, ParsedFile, SegmentKind};
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct CSharpResolver;
+
+/// C# `ChainConfig` for the unified `resolve_via_chain`.
+///
+/// C# carries three deltas as `ChainExtensions` data: inheritance climbing on a
+/// member miss, the extension-method last resort (`receiver.Method()` →
+/// `static R Method(this Receiver x, ...)`), and namespace-qualified lookups
+/// through wildcard `using` directives (`NamespaceLookup::WildcardWithGenerics`).
+/// It has no type aliases, no external-qname promotion, no `new X().m()`
+/// construction roots, and no ambient-globals root fallback. `enclosing_type_kinds`
+/// admits `record`; `static_type_kinds` admits `delegate` — both C#-specific.
+pub(crate) static CSHARP_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
+    crate::type_checker::chain::ChainConfig {
+        strategy_prefix: "csharp",
+        normalize_type: crate::type_checker::chain::identity_normalize,
+        has_self_ref: true,
+        enclosing_type_kinds: &["class", "struct", "interface", "record"],
+        static_type_kinds: &["class", "struct", "interface", "enum", "delegate"],
+        use_generics: true,
+        namespace_lookup: crate::type_checker::chain::NamespaceLookup::WildcardWithGenerics,
+        kind_compatible: predicates::kind_compatible,
+        extensions: crate::type_checker::chain::ChainExtensions {
+            expand_aliases: false,
+            walk_inheritance: true,
+            promote_external_qname: false,
+            root_construction: false,
+            extension_method_fallback: true,
+            root_fallback: None,
+        },
+    };
 
 impl CSharpResolver {
     pub(crate) fn build_file_context(
@@ -49,7 +76,9 @@ impl CSharpResolver {
         let edge_kind = ref_ctx.extracted_ref.kind;
 
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = walk_csharp_chain(chain_ref, edge_kind, file_ctx, ref_ctx, lookup) {
+            if let Some(res) = crate::type_checker::chain::resolve_via_chain(
+                &CSHARP_CHAIN_CONFIG, chain_ref, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            ) {
                 return Some(res);
             }
         }
@@ -694,275 +723,6 @@ pub(crate) fn detect_flow_inner(
         return vec![emission];
     }
     Vec::new()
-}
-
-/// C# chain walker.
-pub(crate) fn walk_csharp_chain(
-    chain_ref: &MemberChain,
-    edge_kind: EdgeKind,
-    file_ctx: &FileContext,
-    ref_ctx: &RefContext,
-    lookup: &dyn SymbolLookup,
-) -> Option<Resolution> {
-    let segments = &chain_ref.segments;
-    if segments.len() < 2 {
-        return None;
-    }
-
-    // Phase 1: Determine the root type from the first segment.
-    let mut initial_generic_args: Vec<String> = Vec::new();
-    let root_type = match segments[0].kind {
-        SegmentKind::SelfRef => find_enclosing_class(&ref_ctx.scope_chain, lookup),
-        SegmentKind::Identifier => {
-            let name = &segments[0].name;
-
-            if let Some(local_type) = lookup.local_type(name) {
-                Some(local_type)
-            } else {
-                let is_type = lookup.types_by_name(name).iter().any(|s| {
-                    matches!(
-                        s.kind.as_str(),
-                        "class" | "struct" | "interface" | "enum" | "delegate"
-                    )
-                });
-                if is_type {
-                    Some(name.clone())
-                } else {
-                    let mut found = None;
-                    for scope in &ref_ctx.scope_chain {
-                        let field_qname = format!("{scope}.{name}");
-                        if let Some(type_name) = lookup.field_type_str(&field_qname) {
-                            initial_generic_args = lookup
-                                .field_type_arg_strs(&field_qname)
-                                .unwrap_or_default();
-                            found = Some(type_name);
-                            break;
-                        }
-                    }
-                    found.or_else(|| segments[0].declared_type.clone())
-                }
-            }
-        }
-        _ => None,
-    };
-
-    let mut current_type = root_type?;
-    let mut env = TypeEnvironment::new();
-
-    if !initial_generic_args.is_empty() {
-        env.enter_generic_context(&current_type, &initial_generic_args, |name| {
-            lookup.generic_params(name).map(|p| p.to_vec())
-        });
-    }
-
-    // Phase 2: Walk intermediate segments.
-    for seg in &segments[1..segments.len() - 1] {
-        let member_qname = format!("{current_type}.{}", seg.name);
-
-        if let Some(next_type) = lookup.field_type_str(&member_qname) {
-            let new_args = lookup
-                .field_type_arg_strs(&member_qname)
-                .unwrap_or_default();
-            let resolved_type = env.resolve(&next_type);
-            env.push_scope();
-            if !new_args.is_empty() {
-                env.enter_generic_context(&resolved_type, &new_args, |name| {
-                    lookup.generic_params(name).map(|p| p.to_vec())
-                });
-            }
-            current_type = resolved_type;
-            continue;
-        }
-
-        if !seg.type_args.is_empty() {
-            env.enter_generic_context(&member_qname, &seg.type_args, |name| {
-                lookup.generic_params(name).map(|p| p.to_vec())
-            });
-        }
-
-        if let Some(raw_return) = lookup.return_type_str(&member_qname) {
-            let resolved = env.resolve(&raw_return);
-            env.push_scope();
-            current_type = resolved;
-            continue;
-        }
-
-        let mut found = false;
-        for import in &file_ctx.imports {
-            if import.is_wildcard {
-                if let Some(module) = &import.module_path {
-                    let qualified_member = format!("{module}.{member_qname}");
-                    if let Some(next_type) = lookup.field_type_str(&qualified_member) {
-                        let resolved_type = env.resolve(&next_type);
-                        env.push_scope();
-                        current_type = resolved_type;
-                        found = true;
-                        break;
-                    }
-                    if let Some(raw_return) = lookup.return_type_str(&qualified_member) {
-                        let resolved = env.resolve(&raw_return);
-                        env.push_scope();
-                        current_type = resolved;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if found {
-            continue;
-        }
-
-        lookup.record_chain_miss(ChainMiss {
-            current_type: current_type.clone(),
-            target_name: seg.name.clone(),
-            module: None,
-        });
-        return None;
-    }
-
-    // Phase 3: Final segment.
-    let last = &segments[segments.len() - 1];
-    let candidate = format!("{current_type}.{}", last.name);
-
-    if let Some(sym) = lookup.by_qualified_name(&candidate) {
-        if predicates::kind_compatible(edge_kind, &sym.kind) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 1.0,
-                strategy: "csharp_chain_resolution",
-                resolved_yield_type: intern_yield_type(
-                    csharp_yield_type(sym, &last.type_args, lookup, &mut env),
-                    lookup,
-                ),
-                flow_emit: None,
-            });
-        }
-    }
-
-    for import in &file_ctx.imports {
-        if import.is_wildcard {
-            if let Some(module) = &import.module_path {
-                let ns_candidate = format!("{module}.{candidate}");
-                if let Some(sym) = lookup.by_qualified_name(&ns_candidate) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.95,
-                            strategy: "csharp_chain_resolution",
-                            resolved_yield_type: intern_yield_type(
-                                csharp_yield_type(sym, &last.type_args, lookup, &mut env),
-                                lookup,
-                            ),
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    for sym in lookup.members_of(&current_type) {
-        if sym.name == last.name && predicates::kind_compatible(edge_kind, &sym.kind) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.90,
-                strategy: "csharp_chain_resolution",
-                resolved_yield_type: intern_yield_type(
-                    csharp_yield_type(sym, &last.type_args, lookup, &mut env),
-                    lookup,
-                ),
-                flow_emit: None,
-            });
-        }
-    }
-
-    // Extension methods: `receiver.Method()` binds to a static method
-    // `static R Method(this current_type x, ...)` declared in a static class.
-    // Match by name plus a `this current_type` first parameter read from the
-    // signature. Visibility-blind (no `using`-scope gate), consistent with the
-    // navigation model that over-resolves.
-    for sym in lookup.by_name(&last.name) {
-        if (sym.kind == "method" || sym.kind == "function")
-            && predicates::kind_compatible(edge_kind, &sym.kind)
-            && signature_is_extension_on(sym.signature.as_deref(), &current_type)
-        {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "csharp_extension_method",
-                resolved_yield_type: intern_yield_type(
-                    csharp_yield_type(sym, &last.type_args, lookup, &mut env),
-                    lookup,
-                ),
-                flow_emit: None,
-            });
-        }
-    }
-
-    lookup.record_chain_miss(ChainMiss {
-        current_type: current_type.clone(),
-        target_name: last.name.clone(),
-        module: None,
-    });
-    None
-}
-
-/// True when `sig` is a C# extension-method signature whose `this`-qualified
-/// first parameter has receiver type `receiver_type` (compared by simple
-/// name). An extension method is a static method whose first parameter is
-/// `this ReceiverType name`; the receiver token is the word after `this `.
-fn signature_is_extension_on(sig: Option<&str>, receiver_type: &str) -> bool {
-    let Some(sig) = sig else { return false };
-    let Some(open) = sig.find('(') else { return false };
-    let Some(after_this) = sig[open + 1..].trim_start().strip_prefix("this ") else {
-        return false;
-    };
-    let recv = after_this
-        .trim_start()
-        .split(|c: char| c.is_whitespace() || matches!(c, ',' | ')' | '<' | '['))
-        .next()
-        .unwrap_or("");
-    let recv_simple = recv.rsplit('.').next().unwrap_or(recv);
-    let want_simple = receiver_type.rsplit('.').next().unwrap_or(receiver_type);
-    !recv_simple.is_empty() && recv_simple == want_simple
-}
-
-/// Yield type for a resolved Phase-3 symbol, honoring call-site
-/// generic args and the `TypeEnvironment`.
-fn csharp_yield_type(
-    sym: &SymbolInfo,
-    call_site_type_args: &[String],
-    lookup: &dyn SymbolLookup,
-    env: &mut TypeEnvironment,
-) -> Option<String> {
-    let raw = lookup
-        .return_type_str(&sym.qualified_name)
-        .or_else(|| lookup.field_type_str(&sym.qualified_name))?;
-    if !call_site_type_args.is_empty() {
-        env.enter_generic_context(&sym.qualified_name, call_site_type_args, |name| {
-            lookup.generic_params(name).map(|p| p.to_vec())
-        });
-    }
-    Some(env.resolve(&raw))
-}
-
-/// Find the enclosing class/struct/interface from the scope chain.
-fn find_enclosing_class(
-    scope_chain: &[String],
-    lookup: &dyn SymbolLookup,
-) -> Option<String> {
-    for scope in scope_chain {
-        if let Some(sym) = lookup.by_qualified_name(scope) {
-            if matches!(sym.kind.as_str(), "class" | "struct" | "interface" | "record") {
-                return Some(scope.clone());
-            }
-        }
-    }
-    if scope_chain.len() >= 2 {
-        return Some(scope_chain[scope_chain.len() - 2].clone());
-    }
-    scope_chain.last().cloned()
 }
 
 pub(crate) fn build_file_context_inner(

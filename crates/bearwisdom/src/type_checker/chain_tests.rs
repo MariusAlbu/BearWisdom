@@ -15,6 +15,7 @@ use super::{
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
 };
+use crate::languages::csharp::hooks::CSHARP_CHAIN_CONFIG;
 use crate::languages::typescript::hooks::TS_CHAIN_CONFIG;
 use crate::types::{
     AliasTarget, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
@@ -36,6 +37,8 @@ struct FakeLookup {
     aliases: Vec<(String, AliasTarget)>,
     path_aliases: Vec<(String, String)>,
     locals: Vec<(String, String)>,
+    by_name_store: Vec<(String, Vec<SymbolInfo>)>,
+    members_store: Vec<(String, Vec<SymbolInfo>)>,
     empty_syms: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -76,23 +79,63 @@ impl FakeLookup {
         self.locals.push((name.to_string(), ty.to_string()));
         self
     }
+    /// Register a method symbol whose simple name `by_name` returns and whose
+    /// `signature` drives the C# extension-method probe.
+    fn ext_method(mut self, id: i64, qname: &str, kind: &str, signature: &str) -> Self {
+        let name = qname.rsplit('.').next().unwrap().to_string();
+        let sym = SymbolInfo {
+            id,
+            name: name.clone(),
+            qualified_name: qname.to_string(),
+            kind: kind.to_string(),
+            visibility: Some("public".to_string()),
+            file_path: Arc::from("ext:fixture/__bw_synthetic__.cs"),
+            scope_path: None,
+            package_id: None,
+            signature: Some(signature.to_string()),
+        };
+        self.by_name_store.push((name, vec![sym]));
+        self
+    }
+    /// Register a direct child symbol under `parent_qname` so `members_of`
+    /// returns it.
+    fn member(mut self, parent_qname: &str, id: i64, qname: &str, kind: &str) -> Self {
+        let name = qname.rsplit('.').next().unwrap().to_string();
+        let sym = SymbolInfo {
+            id,
+            name,
+            qualified_name: qname.to_string(),
+            kind: kind.to_string(),
+            visibility: Some("public".to_string()),
+            file_path: Arc::from("ext:fixture/__bw_synthetic__.cs"),
+            scope_path: None,
+            package_id: None,
+            signature: None,
+        };
+        self.members_store.push((parent_qname.to_string(), vec![sym]));
+        self
+    }
 }
 
 impl SymbolLookup for FakeLookup {
     fn by_name(&self, name: &str) -> &[SymbolInfo] {
-        // Used by the final by_name-prefix fallback. Match on simple name.
-        // We don't need it for these tests; return the matching slice by
-        // scanning is impossible without allocation, so return empty and rely
-        // on by_qualified_name / members_of paths.
-        let _ = name;
-        &self.empty_syms
+        // Backed by `by_name_store` for the C# extension-method probe; the TS
+        // delta tests don't register entries and fall through to empty.
+        self.by_name_store
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_slice())
+            .unwrap_or(&self.empty_syms)
     }
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
         self.by_qname.iter().find(|s| s.qualified_name == qname)
     }
     fn members_of(&self, parent_qname: &str) -> &[SymbolInfo] {
-        let _ = parent_qname;
-        &self.empty_syms
+        self.members_store
+            .iter()
+            .find(|(p, _)| p == parent_qname)
+            .map(|(_, v)| v.as_slice())
+            .unwrap_or(&self.empty_syms)
     }
     fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
         // Return the first type-kind match wrapped in a 1-slice via a cached
@@ -265,6 +308,41 @@ fn run(
         lookup,
     )
     .map(|r| r.target_symbol_id)
+}
+
+fn wildcard_import(module: &str) -> ImportEntry {
+    ImportEntry {
+        imported_name: module.to_string(),
+        module_path: Some(module.to_string()),
+        alias: None,
+        is_wildcard: true,
+    }
+}
+
+/// Like `run` but returns the full `Resolution` and accepts a custom scope
+/// chain (SelfRef resolution reads the enclosing type from it).
+fn run_res(
+    config: &ChainConfig,
+    chain_ref: &ExtractedRef,
+    file_ctx: &FileContext,
+    scope_chain: Vec<String>,
+    lookup: &dyn SymbolLookup,
+) -> Option<crate::indexer::resolve::engine::Resolution> {
+    let src = src_symbol();
+    let ref_ctx = RefContext {
+        extracted_ref: chain_ref,
+        source_symbol: &src,
+        scope_chain,
+        file_package_id: None,
+    };
+    resolve_via_chain(
+        config,
+        chain_ref.chain.as_ref().unwrap(),
+        chain_ref.kind,
+        Some(file_ctx),
+        &ref_ctx,
+        lookup,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +567,228 @@ fn none_config_skips_alias_expansion() {
         vec![
             seg("m", SegmentKind::Identifier, false),
             seg("get", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
+}
+
+// ---------------------------------------------------------------------------
+// Tests — C# deltas via CSHARP_CHAIN_CONFIG. These exercise every path the
+// deleted `walk_csharp_chain` covered, now through the generic engine:
+// SelfRef enclosing-type root (incl. `record`), field-type root, static-type
+// root, field-type intermediate hop, wildcard-`using` namespace lookup
+// (intermediate + final), by_qualified_name final hit, members_of final
+// fallback, inheritance climb, and the extension-method last resort.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn csharp_chain_self_ref_root_record() {
+    // `this.Save()` inside a `record` — SelfRef resolves the enclosing type
+    // from the scope chain. `record` is the C#-specific enclosing kind.
+    let lookup = FakeLookup::default()
+        .sym(1, "App.Order", "record")
+        .sym(2, "App.Order.Save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("this", SegmentKind::SelfRef, false),
+            seg("Save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run_res(&CSHARP_CHAIN_CONFIG, &r, &fc, vec!["App.Order".to_string()], &lookup)
+            .map(|res| res.target_symbol_id),
+        Some(2)
+    );
+}
+
+#[test]
+fn csharp_chain_field_type_root() {
+    // `repo.Find()` where `repo: UserRepository` is a field on the enclosing
+    // class. Phase 1 resolves the field type, Phase 3 resolves the member.
+    let mut lookup = FakeLookup::default()
+        .sym(1, "App.Svc", "class")
+        .sym(2, "UserRepository.Find", "method");
+    lookup
+        .field_types
+        .push(("App.Svc.repo".to_string(), "UserRepository".to_string()));
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("Find", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run_res(&CSHARP_CHAIN_CONFIG, &r, &fc, vec!["App.Svc".to_string()], &lookup)
+            .map(|res| res.target_symbol_id),
+        Some(2)
+    );
+}
+
+#[test]
+fn csharp_chain_static_type_root_by_qname_final() {
+    // `Math.Abs()` — `Math` is a static type root; `Abs` resolves directly via
+    // by_qualified_name at confidence 1.0.
+    let lookup = FakeLookup::default()
+        .sym(1, "Math", "class")
+        .sym(2, "Math.Abs", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("Math", SegmentKind::Identifier, false),
+            seg("Abs", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&CSHARP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("Math.Abs resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(res.strategy, "csharp_chain_resolution");
+}
+
+#[test]
+fn csharp_chain_namespace_wildcard_final() {
+    // `helper.Run()` where `helper: Helper` and `Helper.Run` is keyed under a
+    // wildcard `using App.Utils` namespace (`App.Utils.Helper.Run`).
+    let lookup = FakeLookup::default()
+        .local("helper", "Helper")
+        .sym(1, "App.Utils.Helper.Run", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("helper", SegmentKind::Identifier, false),
+            seg("Run", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![wildcard_import("App.Utils")]);
+    let res = run_res(&CSHARP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("namespace-qualified final resolves");
+    assert_eq!(res.target_symbol_id, 1);
+    assert_eq!(res.confidence, 0.95);
+}
+
+#[test]
+fn csharp_chain_members_of_final_fallback() {
+    // `svc.Handle()` where `svc: Service` and `Handle` is a member of
+    // `Service` reachable only via members_of (no by_qualified_name hit, no
+    // namespace). walk_inheritance gates the generic members_of-final fallback.
+    let lookup = FakeLookup::default()
+        .local("svc", "Service")
+        .member("Service", 1, "Service.Handle", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("svc", SegmentKind::Identifier, false),
+            seg("Handle", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run_res(&CSHARP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+            .map(|res| res.target_symbol_id),
+        Some(1)
+    );
+}
+
+#[test]
+fn csharp_chain_inheritance_final_segment() {
+    // `repo.FindOne()` where `repo: UserRepo extends BaseRepo` and `FindOne`
+    // is declared on the parent. walk_inheritance climbs to BaseRepo.
+    let lookup = FakeLookup::default()
+        .local("repo", "UserRepo")
+        .sym(1, "UserRepo", "class")
+        .parent("UserRepo", "BaseRepo")
+        .sym(2, "BaseRepo.FindOne", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("FindOne", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run_res(&CSHARP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+            .map(|res| res.target_symbol_id),
+        Some(2)
+    );
+}
+
+#[test]
+fn csharp_chain_extension_method_resolves_by_receiver() {
+    // `s.Truncate(10)` binds to `static string Truncate(this string s, int n)`
+    // in a static class — Truncate is not a member of `string`, so it resolves
+    // via the extension-method last resort keyed on the `this` receiver.
+    let lookup = FakeLookup::default()
+        .local("s", "string")
+        .ext_method(
+            7,
+            "App.StringExtensions.Truncate",
+            "method",
+            "public static string Truncate(this string value, int max)",
+        );
+    let r = ref_with_chain(
+        vec![
+            seg("s", SegmentKind::Identifier, false),
+            seg("Truncate", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&CSHARP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("extension method resolves");
+    assert_eq!(res.target_symbol_id, 7);
+    assert_eq!(res.confidence, 0.85);
+    assert_eq!(res.strategy, "csharp_extension_method");
+}
+
+#[test]
+fn csharp_chain_extension_method_rejects_wrong_receiver() {
+    // Same shape, but the extension's `this` receiver is `int`, not `string`.
+    // The signature probe rejects it and the chain misses.
+    let lookup = FakeLookup::default()
+        .local("s", "string")
+        .ext_method(
+            7,
+            "App.IntExtensions.Truncate",
+            "method",
+            "public static int Truncate(this int value, int max)",
+        );
+    let r = ref_with_chain(
+        vec![
+            seg("s", SegmentKind::Identifier, false),
+            seg("Truncate", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert!(
+        run_res(&CSHARP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup).is_none()
+    );
+}
+
+#[test]
+fn none_config_skips_extension_method() {
+    // The extension-method fixture under ChainExtensions::NONE: the probe is
+    // gated off, so `Truncate` never binds and the chain misses.
+    let lookup = FakeLookup::default()
+        .local("s", "string")
+        .ext_method(
+            7,
+            "App.StringExtensions.Truncate",
+            "method",
+            "public static string Truncate(this string value, int max)",
+        );
+    let r = ref_with_chain(
+        vec![
+            seg("s", SegmentKind::Identifier, false),
+            seg("Truncate", SegmentKind::Property, true),
         ],
         EdgeKind::Calls,
     );

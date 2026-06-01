@@ -91,6 +91,15 @@ pub struct ChainExtensions {
     /// type is the chain's receiver.
     pub root_construction: bool,
 
+    /// As a final-segment last resort, bind `receiver.Method()` to a static
+    /// extension method `static R Method(this Receiver x, ...)` declared in a
+    /// static class. Match is by member name plus a `this <current_type>` first
+    /// parameter read from the signature, and visibility-blind (no import-scope
+    /// gate). C#-specific: the static-method-with-`this`-receiver shape and the
+    /// global, using-blind search both diverge from package-scoped static
+    /// imports in Java/Kotlin.
+    pub extension_method_fallback: bool,
+
     /// Last-resort root resolver for a bare-identifier call root the import
     /// scan missed — carries the per-ecosystem ambient-globals probe (e.g.
     /// jest/vitest `globals: true`). Returns the root type name.
@@ -105,6 +114,7 @@ impl ChainExtensions {
         walk_inheritance: false,
         promote_external_qname: false,
         root_construction: false,
+        extension_method_fallback: false,
         root_fallback: None,
     };
 }
@@ -572,6 +582,30 @@ pub fn resolve_via_chain(
         }
     }
 
+    // Extension-method last resort: `receiver.Method()` binds to a static
+    // method `static R Method(this Receiver x, ...)` in a static class. Scan
+    // `by_name(last.name)` for a method/function whose signature carries a
+    // `this <effective_type>` first parameter. Fires after every receiver-typed
+    // lookup misses, so it only widens resolution.
+    if config.extensions.extension_method_fallback {
+        for sym in lookup.by_name(&last.name) {
+            if (sym.kind == "method" || sym.kind == "function")
+                && (config.kind_compatible)(edge_kind, &sym.kind)
+                && signature_is_extension_on(sym.signature.as_deref(), &effective_type)
+            {
+                let yield_type =
+                    compute_yield_type(sym, &last.type_args, config, lookup, env.as_mut());
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.85,
+                    strategy: chain_strategy_extension(strategy),
+                    resolved_yield_type: intern_yield_type(yield_type, lookup),
+                    flow_emit: None,
+                });
+            }
+        }
+    }
+
     // Final-segment miss: walked to effective_type but no `.last.name` found
     // anywhere under it. Same R3 reload signal as the intermediate-segment
     // bail-out above.
@@ -581,6 +615,27 @@ pub fn resolve_via_chain(
         module: None,
     });
     None
+}
+
+/// True when `sig` is a C# extension-method signature whose `this`-qualified
+/// first parameter has receiver type `receiver_type` (compared by simple
+/// name). An extension method is a static method whose first parameter is
+/// `this ReceiverType name`; the receiver token is the word after `this `.
+/// Returns false on a malformed/absent signature.
+fn signature_is_extension_on(sig: Option<&str>, receiver_type: &str) -> bool {
+    let Some(sig) = sig else { return false };
+    let Some(open) = sig.find('(') else { return false };
+    let Some(after_this) = sig[open + 1..].trim_start().strip_prefix("this ") else {
+        return false;
+    };
+    let recv = after_this
+        .trim_start()
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | ')' | '<' | '['))
+        .next()
+        .unwrap_or("");
+    let recv_simple = recv.rsplit('.').next().unwrap_or(recv);
+    let want_simple = receiver_type.rsplit('.').next().unwrap_or(receiver_type);
+    !recv_simple.is_empty() && recv_simple == want_simple
 }
 
 /// R5: compute the yield type of a resolved symbol for per-language
@@ -1012,6 +1067,15 @@ fn chain_strategy_inheritance(prefix: &str) -> &'static str {
         "dart" => "dart_chain_inheritance",
         "swift" => "swift_chain_inheritance",
         _ => "chain_inheritance",
+    }
+}
+
+/// Strategy name for an extension-method final-segment hit — the member is a
+/// static method with a `this`-qualified receiver matching the chain's type.
+fn chain_strategy_extension(prefix: &str) -> &'static str {
+    match prefix {
+        "csharp" => "csharp_extension_method",
+        _ => "chain_extension_method",
     }
 }
 
