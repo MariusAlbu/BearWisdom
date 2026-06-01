@@ -6,7 +6,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
-use crate::type_checker::chain::{self, identity_normalize, ChainConfig, NamespaceLookup};
+use crate::type_checker::chain::{self, identity_normalize, ChainConfig, ChainExtensions, NamespaceLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -309,6 +309,7 @@ impl LanguageEngineHooks for DartHooks {
                 use_generics: true,
                 namespace_lookup: NamespaceLookup::None,
                 kind_compatible: predicates::kind_compatible,
+                extensions: ChainExtensions::NONE,
             };
             if let Some(res) = chain::resolve_via_chain(
                 &config,

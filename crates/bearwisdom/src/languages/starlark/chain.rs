@@ -19,7 +19,7 @@
 // =============================================================================
 
 use crate::type_checker::chain::{
-    ChainConfig, NamespaceLookup, identity_normalize, resolve_via_chain,
+    ChainConfig, ChainExtensions, NamespaceLookup, identity_normalize, resolve_via_chain,
 };
 use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
 use crate::types::{EdgeKind, MemberChain};
@@ -45,6 +45,7 @@ pub(super) static STARLARK_CHAIN_CONFIG: ChainConfig = ChainConfig {
     use_generics: false,
     namespace_lookup: NamespaceLookup::None,
     kind_compatible,
+    extensions: ChainExtensions::NONE,
 };
 
 // ---------------------------------------------------------------------------

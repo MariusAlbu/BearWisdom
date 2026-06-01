@@ -64,6 +64,43 @@ pub use predicates::is_bare_specifier;
 /// synthesis).
 pub struct TypeScriptResolver;
 
+/// Last-resort chain root for a bare-identifier call the import scan missed:
+/// jest/vitest `globals: true` injects `vi`/`expect`/`describe`/`test` without
+/// an import. The npm ecosystem walker records their type under the synthetic
+/// `__npm_globals__.<name>` qname; probe its return/field type as the root.
+fn ts_root_globals_fallback(name: &str, lookup: &dyn SymbolLookup) -> Option<String> {
+    let candidate = format!("{}.{name}", crate::ecosystem::npm::NPM_GLOBALS_MODULE);
+    lookup
+        .return_type_str(&candidate)
+        .or_else(|| lookup.field_type_str(&candidate))
+}
+
+/// TypeScript / JavaScript `ChainConfig` for the unified `resolve_via_chain`.
+///
+/// TS opts into every chain extension: alias expansion (`type X = Y<Z>`
+/// receivers), inheritance climbing on a member miss, external-qname promotion
+/// (`Assertion` → `chai.Assertion`), `new X().m()` construction roots, and the
+/// jest/vitest ambient-globals root fallback. `static_type_kinds` /
+/// `enclosing_type_kinds` match the kinds the TS extractor emits.
+pub(crate) static TS_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
+    crate::type_checker::chain::ChainConfig {
+        strategy_prefix: "ts",
+        normalize_type: crate::type_checker::chain::identity_normalize,
+        has_self_ref: true,
+        enclosing_type_kinds: &["class", "struct", "interface"],
+        static_type_kinds: &["class", "struct", "interface", "enum", "type_alias"],
+        use_generics: true,
+        namespace_lookup: crate::type_checker::chain::NamespaceLookup::None,
+        kind_compatible: predicates::kind_compatible,
+        extensions: crate::type_checker::chain::ChainExtensions {
+            expand_aliases: true,
+            walk_inheritance: true,
+            promote_external_qname: true,
+            root_construction: true,
+            root_fallback: Some(ts_root_globals_fallback),
+        },
+    };
+
 impl TypeScriptResolver {
 
     
@@ -86,10 +123,10 @@ pub(crate) fn resolve(
         // Skip EdgeKind::Imports — TS/JS extractor rarely emits these, but be safe.
 
         // Chain-aware resolution: if we have a structured MemberChain, walk it
-        // step-by-step following field types. Dispatch to the TypeChecker.
+        // step-by-step following field types via the unified chain walker.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = super::chain_walker::walk_typescript_chain(
-                chain_ref, edge_kind, file_ctx, ref_ctx, lookup,
+            if let Some(res) = crate::type_checker::chain::resolve_via_chain(
+                &TS_CHAIN_CONFIG, chain_ref, edge_kind, Some(file_ctx), ref_ctx, lookup,
             ) {
                 return Some(res);
             }

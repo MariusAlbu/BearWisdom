@@ -13,7 +13,7 @@ use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::chain::{
-    self, ChainConfig, NamespaceLookup, identity_normalize,
+    self, ChainConfig, ChainExtensions, NamespaceLookup, identity_normalize,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
@@ -48,6 +48,7 @@ impl ScalaResolver {
                 use_generics: true,
                 namespace_lookup: NamespaceLookup::WildcardOnly,
                 kind_compatible: predicates::kind_compatible,
+                extensions: ChainExtensions::NONE,
             };
             if let Some(res) = chain::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,

@@ -20,6 +20,7 @@ use crate::indexer::resolve::engine::{
     intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo,
     SymbolLookup,
 };
+use crate::type_checker::alias::expand_alias;
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
@@ -59,6 +60,53 @@ pub struct ChainConfig {
 
     /// Edge-kind / symbol-kind compatibility check.
     pub kind_compatible: fn(EdgeKind, &str) -> bool,
+
+    /// Optional capabilities a language opts into. `ChainExtensions::NONE`
+    /// keeps the bare three-phase walk; languages whose source forks carried
+    /// extra hops (TypeScript) flip the relevant flags.
+    pub extensions: ChainExtensions,
+}
+
+/// Opt-in chain-walk capabilities. Each flag adds a fallback hop that fires
+/// only after the bare field/return/member lookups miss, so enabling one can
+/// only widen resolution — never change a hit the base walk already produced.
+pub struct ChainExtensions {
+    /// Expand `current_type` through `expand_alias` at the root and before
+    /// each member lookup, so a value typed as a type-alias name walks to the
+    /// alias's concrete head (`type UserMap = Map<string, User>` → `Map`).
+    pub expand_aliases: bool,
+
+    /// On a member miss, climb `parent_class_qname` (depth-10) retrying the
+    /// member on each ancestor — inherited fields/methods reachable by the
+    /// `extends` chain.
+    pub walk_inheritance: bool,
+
+    /// Promote a short `current_type` to its external-package qname via
+    /// `external_type_qname` before member lookup, so chains landing on an
+    /// externally-declared type (`Assertion` → `chai.Assertion`) find members
+    /// keyed under the package-prefixed qname.
+    pub promote_external_qname: bool,
+
+    /// Accept a `Construction` root segment (`new X().m()`): the constructed
+    /// type is the chain's receiver.
+    pub root_construction: bool,
+
+    /// Last-resort root resolver for a bare-identifier call root the import
+    /// scan missed — carries the per-ecosystem ambient-globals probe (e.g.
+    /// jest/vitest `globals: true`). Returns the root type name.
+    pub root_fallback: Option<fn(&str, &dyn SymbolLookup) -> Option<String>>,
+}
+
+impl ChainExtensions {
+    /// No extensions — the bare three-phase walk. The default for every
+    /// language whose chain rules fit field/return/member lookups directly.
+    pub const NONE: ChainExtensions = ChainExtensions {
+        expand_aliases: false,
+        walk_inheritance: false,
+        promote_external_qname: false,
+        root_construction: false,
+        root_fallback: None,
+    };
 }
 
 /// How to handle namespace-aware chain resolution.
@@ -117,6 +165,23 @@ pub fn resolve_via_chain(
         SegmentKind::SelfRef if config.has_self_ref => {
             find_enclosing_type(&ref_ctx.scope_chain, lookup, config.enclosing_type_kinds)
         }
+        SegmentKind::Construction if config.extensions.root_construction => {
+            // `new X().m()` — the constructed type is the receiver. Accept it
+            // when it names a known type; otherwise fall back to the segment's
+            // declared type (synthetic constructor roots carry one).
+            let name = &segments[0].name;
+            let is_type = lookup.types_by_name(name).iter().any(|s| {
+                config.static_type_kinds.iter().any(|&k| s.kind == k)
+            });
+            if is_type {
+                Some((config.normalize_type)(name))
+            } else {
+                segments[0]
+                    .declared_type
+                    .as_ref()
+                    .map(|t| (config.normalize_type)(t))
+            }
+        }
         SegmentKind::Identifier => {
             let name = &segments[0].name;
 
@@ -145,14 +210,13 @@ pub fn resolve_via_chain(
                     let mut found = None;
                     for scope in &ref_ctx.scope_chain {
                         let field_qname = format!("{scope}.{name}");
-                        if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                        if let Some(type_name) = lookup.field_type_str(&field_qname) {
                             if config.use_generics {
                                 initial_generic_args = lookup
-                                    .field_type_args(&field_qname)
-                                    .unwrap_or(&[])
-                                    .to_vec();
+                                    .field_type_arg_strs(&field_qname)
+                                    .unwrap_or_default();
                             }
-                            found = Some((config.normalize_type)(type_name));
+                            found = Some((config.normalize_type)(&type_name));
                             break;
                         }
                     }
@@ -169,7 +233,10 @@ pub fn resolve_via_chain(
                                 .as_ref()
                                 .map(|t| (config.normalize_type)(t))
                         })
-                        .or_else(|| resolve_import_root_type(name, file_ctx, config, lookup))
+                        .or_else(|| resolve_import_root_type(name, file_ctx, ref_ctx, config, lookup))
+                        .or_else(|| {
+                            config.extensions.root_fallback.and_then(|f| f(name, lookup))
+                        })
                 }
             }
         }
@@ -195,13 +262,19 @@ pub fn resolve_via_chain(
         None
     };
 
+    // Alias-aware root: a value typed as a type-alias name has no members of
+    // its own — walk to the alias's concrete head first.
+    expand_current_type(config, &mut current_type, &initial_generic_args, lookup, env.as_mut());
+
     for seg in &segments[1..segments.len() - 1] {
+        // Re-expand: the previous yield may itself name an alias.
+        expand_current_type(config, &mut current_type, &[], lookup, env.as_mut());
         let member_qname = format!("{current_type}.{}", seg.name);
 
         // Try field type (property access).
-        if let Some(next_type) = lookup.field_type_name(&member_qname) {
+        if let Some(next_type) = lookup.field_type_str(&member_qname) {
             let resolved = resolve_and_enter_generics(
-                next_type,
+                &next_type,
                 &member_qname,
                 config,
                 lookup,
@@ -226,9 +299,9 @@ pub fn resolve_via_chain(
         }
 
         // Try return type (method call result in a fluent chain).
-        if let Some(raw_return) = lookup.return_type_name(&member_qname) {
+        if let Some(raw_return) = lookup.return_type_str(&member_qname) {
             let resolved = resolve_and_enter_generics(
-                raw_return,
+                &raw_return,
                 &member_qname,
                 config,
                 lookup,
@@ -259,9 +332,9 @@ pub fn resolve_via_chain(
             if sym.name != seg.name {
                 continue;
             }
-            if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+            if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
                 let resolved = resolve_and_enter_generics(
-                    ft,
+                    &ft,
                     &sym.qualified_name,
                     config,
                     lookup,
@@ -272,9 +345,9 @@ pub fn resolve_via_chain(
                 found = true;
                 break;
             }
-            if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+            if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
                 let resolved = resolve_and_enter_generics(
-                    rt,
+                    &rt,
                     &sym.qualified_name,
                     config,
                     lookup,
@@ -290,11 +363,53 @@ pub fn resolve_via_chain(
             continue;
         }
 
+        // External-qname promotion: a short `current_type` shadowed by an
+        // external library type ("Assertion" → "chai.Assertion") keys its
+        // members under the package-prefixed qname. Retry the member there.
+        if config.extensions.promote_external_qname {
+            if let Some(ext_qname) = external_type_qname(&current_type, lookup) {
+                let ext_member = format!("{ext_qname}.{}", seg.name);
+                if let Some(ft) = lookup.field_type_str(&ext_member) {
+                    current_type = resolve_and_enter_generics(
+                        &ft, &ext_member, config, lookup, env.as_mut(), true,
+                    );
+                    continue;
+                }
+                if let Some(rt) = lookup.return_type_str(&ext_member) {
+                    current_type = resolve_and_enter_generics(
+                        &rt, &ext_member, config, lookup, env.as_mut(), false,
+                    );
+                    continue;
+                }
+                // Type known, member not — advance to the external type so the
+                // remaining segments resolve against its qname.
+                current_type = ext_qname;
+                continue;
+            }
+        }
+
+        // Inheritance walk: climb `parent_class_qname` retrying the member on
+        // each ancestor (depth-10, cycle-guarded). Covers inherited
+        // fields/methods reachable through the `extends` chain.
+        if config.extensions.walk_inheritance {
+            if let Some(next) =
+                walk_inheritance_for_member(&current_type, &seg.name, config, lookup, env.as_mut())
+            {
+                current_type = next;
+                continue;
+            }
+        }
+
         // Lost the chain — can't determine the next type. Record the miss
         // for R3 lazy reload: a second pass will call resolve_symbol on
         // `current_type`'s owning ecosystem dep to pull its definition file.
+        let miss_type = if config.extensions.promote_external_qname {
+            external_type_qname(&current_type, lookup).unwrap_or_else(|| current_type.clone())
+        } else {
+            current_type.clone()
+        };
         lookup.record_chain_miss(ChainMiss {
-            current_type: current_type.clone(),
+            current_type: miss_type,
             target_name: seg.name.clone(),
             module: None,
         });
@@ -305,7 +420,17 @@ pub fn resolve_via_chain(
     // Phase 3: Resolve the final segment on the resolved type.
     // ------------------------------------------------------------------
     let last = &segments[segments.len() - 1];
-    let candidate = format!("{current_type}.{}", last.name);
+
+    // Alias-aware final hop, then promote a short receiver to its external
+    // package qname. With extensions off, `effective_type == current_type`.
+    expand_current_type(config, &mut current_type, &[], lookup, env.as_mut());
+    let effective_type = if config.extensions.promote_external_qname {
+        external_type_qname(&current_type, lookup).unwrap_or_else(|| current_type.clone())
+    } else {
+        current_type.clone()
+    };
+
+    let candidate = format!("{effective_type}.{}", last.name);
 
     // Direct qualified name match.
     if let Some(sym) = lookup.by_qualified_name(&candidate) {
@@ -313,7 +438,7 @@ pub fn resolve_via_chain(
             debug!(
                 strategy = %format!("{strategy}_chain_resolution"),
                 chain_len = segments.len(),
-                resolved_type = %current_type,
+                resolved_type = %effective_type,
                 target = %last.name,
                 "resolved"
             );
@@ -334,7 +459,7 @@ pub fn resolve_via_chain(
     if config.namespace_lookup != NamespaceLookup::None {
         if let Some(file_ctx) = file_ctx {
             if let Some(res) = resolve_final_via_namespace(
-                config, file_ctx, &current_type, &last.name, edge_kind, lookup,
+                config, file_ctx, &effective_type, &last.name, edge_kind, lookup,
             ) {
                 return Some(res);
             }
@@ -343,17 +468,17 @@ pub fn resolve_via_chain(
 
     // by_name scoped to the resolved type.
     //
-    // Constrain the prefix match: `current_type = "Foo"` must be followed by
+    // Constrain the prefix match: `effective_type = "Foo"` must be followed by
     // a `.` so it doesn't spuriously collide with `FooBar.bar`. Then collect
     // all matches — a single match is deterministic enough to emit at
     // confidence 1.0 via a dedicated "*_chain_resolution_unique" strategy,
     // while multiple matches keep the 0.95 hedge.
-    let type_prefix = format!("{current_type}.");
+    let type_prefix = format!("{effective_type}.");
     let matches: Vec<&SymbolInfo> = lookup
         .by_name(&last.name)
         .iter()
         .filter(|sym| {
-            (sym.qualified_name == current_type
+            (sym.qualified_name == effective_type
                 || sym.qualified_name.starts_with(&type_prefix))
                 && (config.kind_compatible)(edge_kind, &sym.kind)
         })
@@ -384,11 +509,74 @@ pub fn resolve_via_chain(
         }
     }
 
-    // Final-segment miss: walked to current_type but no `.last.name` found
+    // Members-of final fallback: a direct child of `effective_type` whose
+    // simple name matches, emitted at 0.95. The by_name-prefix block above
+    // already covers the deterministic single-hit case; this catches the
+    // member declared directly under the type but not surfaced as a unique
+    // by_name match (e.g. an external type whose members share common names).
+    if config.extensions.walk_inheritance {
+        for sym in lookup.members_of(&effective_type) {
+            if sym.name == last.name && (config.kind_compatible)(edge_kind, &sym.kind) {
+                let yield_type = compute_yield_type(
+                    sym, &last.type_args, config, lookup, env.as_mut(),
+                );
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: chain_strategy(strategy),
+                    resolved_yield_type: intern_yield_type(yield_type, lookup),
+                    flow_emit: None,
+                });
+            }
+        }
+
+        // Inheritance walk: climb `parent_class_qname` (depth-10) retrying the
+        // final member on each ancestor. by_qualified_name hits at 0.9,
+        // members_of hits at 0.85.
+        let mut ancestor = effective_type.as_str();
+        for _ in 0..10 {
+            let parent = match lookup.parent_class_qname(ancestor) {
+                Some(p) => p,
+                None => break,
+            };
+            let cand = format!("{parent}.{}", last.name);
+            if let Some(sym) = lookup.by_qualified_name(&cand) {
+                if (config.kind_compatible)(edge_kind, &sym.kind) {
+                    let yield_type = compute_yield_type(
+                        sym, &last.type_args, config, lookup, env.as_mut(),
+                    );
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.9,
+                        strategy: chain_strategy_inheritance(strategy),
+                        resolved_yield_type: intern_yield_type(yield_type, lookup),
+                        flow_emit: None,
+                    });
+                }
+            }
+            for sym in lookup.members_of(parent) {
+                if sym.name == last.name && (config.kind_compatible)(edge_kind, &sym.kind) {
+                    let yield_type = compute_yield_type(
+                        sym, &last.type_args, config, lookup, env.as_mut(),
+                    );
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.85,
+                        strategy: chain_strategy_inheritance(strategy),
+                        resolved_yield_type: intern_yield_type(yield_type, lookup),
+                        flow_emit: None,
+                    });
+                }
+            }
+            ancestor = parent;
+        }
+    }
+
+    // Final-segment miss: walked to effective_type but no `.last.name` found
     // anywhere under it. Same R3 reload signal as the intermediate-segment
     // bail-out above.
     lookup.record_chain_miss(ChainMiss {
-        current_type: current_type.clone(),
+        current_type: effective_type,
         target_name: last.name.clone(),
         module: None,
     });
@@ -498,6 +686,7 @@ pub fn external_type_qname(current_type: &str, lookup: &dyn SymbolLookup) -> Opt
 fn resolve_import_root_type(
     name: &str,
     file_ctx: Option<&FileContext>,
+    ref_ctx: &RefContext,
     config: &ChainConfig,
     lookup: &dyn SymbolLookup,
 ) -> Option<String> {
@@ -513,12 +702,30 @@ fn resolve_import_root_type(
             continue;
         }
         let candidate = format!("{module}.{name}");
-        if let Some(ty) = lookup.field_type_name(&candidate) {
-            return Some((config.normalize_type)(ty));
+        // Call-root form (`dayjs()` / `expect(x)`): the callee's return type
+        // seeds the chain. Probe return type first so `dayjs().format()`
+        // resolves against the call result, then the value's declared field
+        // type, then the import-is-a-type case.
+        if let Some(rt) = lookup.return_type_str(&candidate) {
+            return Some((config.normalize_type)(&rt));
+        }
+        if let Some(ty) = lookup.field_type_str(&candidate) {
+            return Some((config.normalize_type)(&ty));
         }
         if let Some(sym) = lookup.by_qualified_name(&candidate) {
             if config.static_type_kinds.iter().any(|&k| k == sym.kind) {
                 return Some((config.normalize_type)(&candidate));
+            }
+        }
+        // tsconfig `paths` alias: the specifier may be an alias (`@/lib/dayjs`)
+        // that rewrites to a real package path before the qname matches.
+        if let Some(rewritten) = lookup.resolve_path_alias(ref_ctx.file_package_id, module) {
+            let alias_candidate = format!("{rewritten}.{name}");
+            if let Some(rt) = lookup.return_type_str(&alias_candidate) {
+                return Some((config.normalize_type)(&rt));
+            }
+            if let Some(ft) = lookup.field_type_str(&alias_candidate) {
+                return Some((config.normalize_type)(&ft));
             }
         }
     }
@@ -544,6 +751,112 @@ pub fn find_enclosing_type(
         return Some(scope_chain[scope_chain.len() - 2].clone());
     }
     scope_chain.last().cloned()
+}
+
+/// Expand `current_type` through `expand_alias` when the language opts into
+/// alias-aware walking. A value typed as a type-alias name (`type UserMap =
+/// Map<string, User>`) has no members of its own — rewrite it to the alias's
+/// concrete head and bind the alias's type args into a fresh `env` scope so
+/// deeper segments substitute consistently. No-op when extensions are off, the
+/// type isn't an alias, or there's no `env` (alias expansion drives generic
+/// substitution, so it rides on `use_generics`).
+fn expand_current_type(
+    config: &ChainConfig,
+    current_type: &mut String,
+    current_args_hint: &[String],
+    lookup: &dyn SymbolLookup,
+    env: Option<&mut TypeEnvironment>,
+) {
+    if !config.extensions.expand_aliases {
+        return;
+    }
+    let Some(env) = env else { return };
+    let Some((root, args)) = expand_alias(current_type, current_args_hint, lookup, env) else {
+        return;
+    };
+    *current_type = root;
+    if !args.is_empty() {
+        env.push_scope();
+        env.enter_generic_context(current_type, &args, |n| {
+            lookup.generic_params(n).map(|p| p.to_vec())
+        });
+    }
+}
+
+/// Climb `parent_class_qname` from `current_type` (depth-10, cycle-guarded)
+/// retrying the member on each ancestor. Returns the next chain type when an
+/// inherited field/method matches, advancing `env` for any new generic args.
+fn walk_inheritance_for_member(
+    current_type: &str,
+    member_name: &str,
+    config: &ChainConfig,
+    lookup: &dyn SymbolLookup,
+    mut env: Option<&mut TypeEnvironment>,
+) -> Option<String> {
+    let mut ancestor = current_type.to_string();
+    for _ in 0..10 {
+        let parent = lookup.parent_class_qname(&ancestor)?.to_string();
+        let parent_member = format!("{parent}.{member_name}");
+        if let Some(next) = lookup.field_type_str(&parent_member) {
+            let new_args = lookup.field_type_arg_strs(&parent_member).unwrap_or_default();
+            let resolved = resolve_and_enter_generics_args(
+                &next, &new_args, config, lookup, env.as_deref_mut(),
+            );
+            return Some(resolved);
+        }
+        if let Some(next) = lookup.return_type_str(&parent_member) {
+            let resolved = resolve_and_enter_generics(
+                &next, &parent_member, config, lookup, env.as_deref_mut(), false,
+            );
+            return Some(resolved);
+        }
+        for sym in lookup.members_of(&parent) {
+            if sym.name != member_name {
+                continue;
+            }
+            if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
+                return Some(resolve_and_enter_generics(
+                    &ft, &sym.qualified_name, config, lookup, env.as_deref_mut(), true,
+                ));
+            }
+            if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
+                return Some(resolve_and_enter_generics(
+                    &rt, &sym.qualified_name, config, lookup, env.as_deref_mut(), false,
+                ));
+            }
+        }
+        if parent == ancestor {
+            break;
+        }
+        ancestor = parent;
+    }
+    None
+}
+
+/// Resolve a type through the TypeEnvironment (if active) and enter a new
+/// generic context bound to explicit `new_args` (used by the inheritance walk,
+/// where the args come from a `field_type_args` lookup rather than the member
+/// qname). Mirrors `resolve_and_enter_generics`'s field branch.
+fn resolve_and_enter_generics_args(
+    raw_type: &str,
+    new_args: &[String],
+    config: &ChainConfig,
+    lookup: &dyn SymbolLookup,
+    env: Option<&mut TypeEnvironment>,
+) -> String {
+    let normalized = (config.normalize_type)(raw_type);
+    if let Some(env) = env {
+        let resolved = env.resolve(&normalized);
+        env.push_scope();
+        if !new_args.is_empty() {
+            env.enter_generic_context(&resolved, new_args, |name| {
+                lookup.generic_params(name).map(|p| p.to_vec())
+            });
+        }
+        resolved
+    } else {
+        normalized
+    }
 }
 
 /// Resolve a type through the TypeEnvironment (if active) and optionally
@@ -686,6 +999,22 @@ fn chain_strategy(prefix: &str) -> &'static str {
     }
 }
 
+/// Strategy name for an inherited final-segment hit — the member lives on an
+/// ancestor reached through the `extends` chain rather than the receiver type.
+fn chain_strategy_inheritance(prefix: &str) -> &'static str {
+    match prefix {
+        "ts" => "ts_chain_inheritance",
+        "csharp" => "csharp_chain_inheritance",
+        "java" => "java_chain_inheritance",
+        "go" => "go_chain_inheritance",
+        "kotlin" => "kotlin_chain_inheritance",
+        "scala" => "scala_chain_inheritance",
+        "dart" => "dart_chain_inheritance",
+        "swift" => "swift_chain_inheritance",
+        _ => "chain_inheritance",
+    }
+}
+
 /// Strategy name for the unique prefix-match variant — exactly one symbol
 /// within the resolved type owns the trailing segment, so the resolution
 /// is deterministic and emitted at confidence 1.0.
@@ -708,3 +1037,7 @@ fn chain_strategy_unique(prefix: &str) -> &'static str {
         _ => "chain_resolution_unique",
     }
 }
+
+#[cfg(test)]
+#[path = "chain_tests.rs"]
+mod tests;
