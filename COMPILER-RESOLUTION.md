@@ -6,10 +6,11 @@ engine's path to compiler behavior.** It supersedes the status sections of
 was **deleted** in `a3815b4e`) and folds in the remaining items of
 `TYPE-INFERENCE-ROADMAP.md`. When those disagree with this file, this file wins.
 
-Established 2026-05-26. Keep the **Done** table current; move tasks into it as
-they land. Tag every task `[generic]` (one engine algorithm) · `[profile]`
-(per-language data) · `[hook]` (per-language code) and status `❌ not started` ·
-`⚠️ partial` · `✅ done` · `🔬 decision needed`.
+Established 2026-05-26; **restructured 2026-06-02** around the per-language 99%
+gate and the one-engine architecture gate (below). Keep the **Done** table
+current; move tasks into it as they land. Tag every task `[generic]` (one engine
+algorithm) · `[profile]` (per-language data) · `[hook]` (per-language code) and
+status `❌ not started` · `⚠️ partial` · `✅ done` · `🔬 decision needed`.
 
 ---
 
@@ -36,6 +37,38 @@ and **all language specifics are data** fed to one algorithm.
 **Scope boundary (NOT building):** the back end — no borrow-check, trait
 coherence, monomorphization, codegen. Only front-end resolution + *enough* type
 inference to bind every reference to its declaring symbol.
+
+**Definition of done (the gate this roadmap is measured against):**
+
+1. **Every supported language reaches ≥99% internal resolution precision** — per
+   QUAL-5's three-state metric (`external_known_unhydrated` excluded from the
+   denominator). 99% is the bar for *every* language, not the corpus average; a
+   language below 99% is an open task, not a rounding error.
+2. **Reached through the one generic engine.** A language hits 99% by routing onto
+   the shared algorithm with its specifics expressed as `LanguageProfile` /
+   `FlowConfig` / `ChainConfig` **data** — not by growing a bespoke per-language
+   resolver. A % gain bought with a new per-language algorithm is a *regression*
+   against this bar even when the number goes up.
+
+**Architecture gate (hard rule — applies to every task below):**
+
+- **No new per-language resolution algorithm.** New language behavior lands as
+  (a) profile/config **data**, (b) a generic-engine capability all languages
+  share, or (c) a *minimal* `LanguageEngineHooks` delta — in that order. A new
+  `walk_<lang>_chain` is forbidden.
+- **Net resolution code trends down, not up.** The bespoke chain walkers
+  (~3,800 LOC, QUAL-2) are debt to retire onto `resolve_via_chain`, not a pattern
+  to extend. Every per-language task states whether it *adds* engine code or
+  *moves* behavior into shared data.
+- **Generic-first decomposition.** Before any `LANG-*` task, reduce it to the
+  smallest generic-engine change that closes it for all languages at once; only
+  the irreducible remainder is a hook.
+
+This reframes the remaining work. The corpus gap does **not** close by "writing
+the missing per-language rules" — it closes by finishing the generic capabilities
+(§B), retiring the per-language forks onto them (§F QUAL-2), and feeding each
+language its data. Incremental per-language % that drifts from this gate is
+explicitly rejected.
 
 ---
 
@@ -82,8 +115,9 @@ ts-immich: grep-baseline 6,179 → **4,627** unresolved, with honest structural 
 **Compiler feature:** resolve every import specifier to a module (alias, re-export, prefix, package entry, wildcard), then bind the imported name.
 - **2a** SvelteKit `$lib`/`$app` — ✅ (`7fb058e7`).
 - **2b** tsconfig `extends` chains — ✅ `parse_tsconfig_paths_with_extends` (`ecosystem/manifest/npm.rs`) follows `extends` (relative + `node_modules` package presets, array form, child-wins, cycle-guarded); the npm manifest reader now uses it for `path_aliases`. Inline test module split to `npm_tests.rs` per the sibling-test rule.
-- **2c** Re-export / barrel chains — ⚠️ multi-hop **works** (TS relative barrels recurse to depth 5, `typescript/aliases.rs:293`; generic external-npm BFS to depth 4 with cycle guard, `engine/index/classify.rs:110`). Two gaps: (i) the **monorepo seam** — `project file → workspace package → external npm` falls between both walkers (workspace packages are never sources in `pkg_reexports`, `build.rs:660`; `follow_reexports` bails on bare specifiers, `aliases.rs:315`); (ii) re-export following is **TS/JS-only** — no other language has it.
+- **2c** Re-export / barrel chains (TS/JS) — ⚠️ multi-hop **works** (TS relative barrels recurse to depth 5, `typescript/aliases.rs:293`; generic external-npm BFS to depth 4 with cycle guard, `engine/index/classify.rs:110`). One gap left in TS itself: the **monorepo seam** — `project file → workspace package → external npm` falls between both walkers (workspace packages are never sources in `pkg_reexports`, `build.rs:660`; `follow_reexports` bails on bare specifiers, `aliases.rs:315`). The *cross-language* generalization is split out as **2e**.
 - **2d** Import-prefix → module binding (the Dart `i0.X` case, see LANG-DART-1b) — ❌.
+- **2e** **Generic re-export following across languages** — ❌ [generic]+[profile]. The 2c walker is **TS/JS-only**: `follow_reexports` (`typescript/aliases.rs:293`) has no non-TS caller; every other language's `reexports_from` impl is a test stub returning `&[]`. The *data* is already built language-agnostically — `build.rs:640` populates the reexport map from any `EdgeKind::Imports` ref carrying a module, so Rust `pub use foo::Bar` and Python `__init__` re-exports already populate it — but no consumer reads it for them, so a name imported through a re-export hop (`pub use`, `from .x import *`, Java static import, C++ using-decl) never follows to its declaring symbol. **Fix:** lift `follow_reexports` into a generic engine walk over `reexports_from`, gated by a `LanguageProfile` flag marking which `Imports` refs are re-exports (needs extractor tagging of Rust `pub use` vs `use`). High leverage for Rust facade crates / Python package APIs.
 
 ### BIND-3 — Visibility / access-control awareness  ·  [generic]  ·  ✅ (over-resolve)
 **Compiler feature:** won't bind `obj.privateMember` from outside its class.
@@ -91,12 +125,20 @@ ts-immich: grep-baseline 6,179 → **4,627** unresolved, with honest structural 
 **Done — over-resolve (deliberate, non-compiler divergence).** BearWisdom is a navigation tool; go-to-definition must reach private members. The audit undercounted — gating existed in **7** languages (C#/Go/Java/Kotlin/PHP **+ Rust + Scala**), all now `is_visible → true`, so visibility never blocks a bind and every language is consistently visibility-blind. This is intentional — do not re-add a visibility gate later thinking the inconsistency is a bug. Two resolution tests that asserted private-cross-file non-resolution were inverted; `java`/`php` analogues still pass because the bare private name isn't import-reachable (legitimate scope behavior, not a gate). The `+50/-200` ranking skew (`default_resolver.rs:901`) is left as-is — it can't block resolution, only mis-order disambiguation.
 **Deps:** —
 
+### BIND-4 — Overload disambiguation (arity + parameter type)  ·  [generic]  ·  ⚠️
+**Compiler feature:** when N symbols share a name in scope, bind the call to the **one** whose signature matches the call's arity and argument types — not "a symbol of that name."
+- **Member / method chains — ✅ generic, already landed (was untracked).** `members.rs:315 find_on_chain` selects `type_hit → arity_hit → first`; `dispatch.rs:93 select_multi_arg` + `most_specific_index` + `select_return_type` pick the most-specific overload by resolved arg types; wired through `chain.rs:388-440`. This is the correct generic shape — reuse it.
+- **Bare-name function / static-method calls — ❌.** `foo(a,b)` with several same-name `foo` binds the **first** name+kind match at confidence 1.0 (`default_resolver.rs:463`, `resolve_via_scope_visible:480`); the `resolve_all` ladder has no arity/param strategy (only Erlang has an ad-hoc `*_arity` hook). **This violates Invariant #2 in spirit — it binds to *a* declaring symbol, often the wrong overload.**
+**Fix [generic]:** when `by_name(target)`+kind yields ≥2 candidates, prune by `canonical_form::signature_arity == call_args.len()`, then `subtype::args_assignable` (both helpers already exist) — the bare-name analogue of `find_on_chain`. Folds in the per-language `erlang_*_arity` hooks. **LANG-CPP-1's "overload" clause depends on this; it does not own it.**
+**Deps:** INFER-4 (arg types for the param-type tiebreak; arity-only pruning needs nothing).
+
 ---
 
 ## B. Type-checker breadth (generic inference — the spine)
 
-These four are what make the engine a *checker*, not a binder-with-generics. All
-`[generic]` — each lifts every language at once. Highest-leverage block.
+These are what make the engine a *checker*, not a binder-with-generics. All
+`[generic]` — each lifts every language at once. **This is the block that closes
+the corpus gap without per-language code; finish it before any `LANG-*` work.**
 
 ### INFER-1 — Control-flow-graph-based narrowing  ·  [generic]  ·  ✅
 **Compiler feature:** narrow across the whole flow graph — if/else merge, loop back-edges, reassignment *kills* a narrowing, `&&`/`||` short-circuit, exhaustiveness. Decision: **CFG-native** — consumers query the CFG directly via `fact_at(name, ref_byte)`; real union types at joins; the chain walker dispatches across `Union` members for member lookup.
@@ -160,8 +202,27 @@ These four are what make the engine a *checker*, not a binder-with-generics. All
 **Gap:** needs stdlib generic *signatures* — ties to EXT-2.
 **Deps:** EXT-2
 
-### INFER-7 — Expected-type / bidirectional (roadmap D7/G1)  ·  [generic]  ·  ✅
-**Closed.** Confirmed: turbofish consumed (`chain.rs:449`); cast/type-assertion adopted as root and mid-chain type (`chain.rs:322,363`; extractor emits it, `typescript/calls.rs:926`). The LHS annotation is fully exploited — it seeds `local_type` forward so any later chain rooted on the annotated var gets the declared type (`loop_body.rs:347`). The only unused slot is `expected_return` for overload selection (`DispatchQuery`, always `None` from `loop_body.rs:456`), which affects only ReturnType-dispatch languages (Haskell / Rust trait specialization) and resolves nothing new on the TS/JS/C#/Java corpus. Nothing to build.
+### INFER-7 — Turbofish + cast/assertion adoption  ·  [generic]  ·  ✅ (re-scoped)
+**Done, for what it actually covers.** Turbofish consumed (`chain.rs:449`); cast/type-assertion adopted as root and mid-chain type (`chain.rs:322,363`; extractor emits it, `typescript/calls.rs:926`); the LHS annotation seeds `local_type` forward so any later chain rooted on the annotated var gets the declared type (`loop_body.rs:347`). The only unused slot is `expected_return` for overload selection (`DispatchQuery`, always `None` from `loop_body.rs:456`).
+**Scope correction (was titled "expected-type / bidirectional" and marked closed):** that title overstated. Turbofish + cast adoption is the *explicit-annotation* expected-type path. The **dominant** bidirectional flow — an expected callback-parameter type seeding an un-annotated lambda parameter (`arr.map(x => x.foo)`) — is **not** built here; it is **INFER-9**. Read INFER-7 as closed only for the explicit cases, not as "bidirectional inference is done."
+
+### INFER-8 — Argument-driven generic inference  ·  [generic]  ·  ❌
+**Compiler feature:** infer a callee's own type parameter from an argument's static type — `identity(x)` where `fn identity<T>(x: T) -> T` binds `T` from `x`; `arr.map(f)` flows the element type through `f`'s signature.
+**Gap:** the only three generic-binding sites (`chain.rs:454/483/828`) bind from inheritance args, turbofish, and receiver `Apply` args. **None unify a callee's declared `param_types` against resolved `arg_types`.** `dispatch.rs:230 resolve_arg_types` already computes the arg types but uses them only for overload *selection*, never `env.bind_positional`.
+**Fix:** in `chain.rs`, alongside the turbofish branch, unify declared `param_types ⇄ resolved arg_types` and bind the resulting generic args before `yield_type_of`. Do **not** fold into INFER-7 (that is turbofish/cast only).
+**Deps:** INFER-4 (arg expression types).  **Corpus leverage: high** — generic helpers, factory functions, `.map`/`.reduce` chains in every language with generics.
+
+### INFER-9 — Contextual callback-parameter typing  ·  [generic]+[profile]  ·  ❌
+**Compiler feature:** type an **un-annotated** lambda parameter from the expected callback-parameter type of the method it is passed to — `arr.map(x => x.foo)` types `x` as the array element. The single highest-frequency inference case in JS/TS/Kotlin/Swift/C#.
+**Gap:** un-annotated lambda params resolve to `Type::Unknown` (`dispatch.rs:260`); lambda params get a type **only** from explicit annotations at extract time. No seeding from the expected signature; no profile field (`grep callback_param/expected_callback → 0`).
+**Fix:** seed the lambda parameter's `local_type` from the resolved callback-parameter type of the enclosing call, gated by a `LanguageProfile` field declaring which stdlib higher-order methods carry element-typed callbacks (or, once INFER-6 lands, derive it from the container generic). This is the bidirectional half INFER-7's old title implied but never built.
+**Deps:** INFER-8 (generic-arg binding, to know the element type), INFER-6 (container element types).  **Corpus leverage: high.**
+
+### INFER-10 — Generic type-alias / typedef expansion in the shared walker  ·  [generic]  ·  ❌
+**Compiler feature:** when a chain root or hop is a type alias, expand it to its target before member/return lookup, so `aliasVal.member` binds. Cross-language: Rust `type X = Y`, Go `type X = Y` / `type X Y`, C/C++ `typedef` / `using X = Y`, Scala type members, Kotlin `typealias`.
+**Gap:** `expand_alias` is **consumed only by TS** (`typescript/chain_walker.rs:47`). C/C++ has a separate one-hop `dereference_typedef` hook (`c_lang/hooks.rs:445`). The **shared** `resolve_via_chain` (Go/Java/C#/Kotlin/Scala/Dart/Swift) never expands aliases — it looks up members on the alias *name*, which has none, so the walk stalls at the first `.member` after an alias-typed value. The *data* is already generic: `build.rs:605-634` synthesizes `AliasTarget::Application` for any `TypeAlias` with a `field_type`, populated for ~15 languages.
+**Fix:** call `expand_alias` (or the `alias_target`/`field_type` deref) at root + each hop inside `resolve_via_chain`, unifying with the TS path and retiring the C hook — pure consumer-side generic change. **Prerequisite (small extractor slice):** Go emits no target `TypeRef` for `type Foo Bar` (`go/types.rs:217`) — mirror `rust_lang/extract.rs:355` (~10 lines + test) so the alias becomes visible to `expand_alias`.
+**Deps:** — (rides on the consolidated walker, QUAL-2b).  **Corpus leverage: medium-high** — Rust/Go/Scala alias chains.
 
 ---
 
@@ -204,15 +265,40 @@ return types is gated here, and it is what makes external types ordinary table r
 
 ---
 
-## D. Language-specific resolution rules
+## D. Codegen / synthetic-symbol synthesis  ·  the third symbol source
 
-Per-language name/method-resolution a compiler hard-codes. Ranked by corpus volume.
+The symbol table has three sources of declarations: parsed project source, decoded
+dependencies (§C), and **symbols a generator/macro/preprocessor emits that never
+appear in parsed text.** A compiler resolves against post-expansion symbols; today
+this is N hardcoded one-offs with **no generic surface.**
+
+### CODEGEN-1 — Generic post-extract symbol synthesis  ·  [hook]  ·  ❌
+**Compiler feature:** a per-language recognizer emits synthetic declared symbols (and their member/return types) into the same table, so refs to generated members bind like any other symbol.
+**Gap:** there is **no synthesis hook** on `LanguagePlugin` (only `extract` + `embedded_regions`). Every codegen path is hardcoded inside a language's `extract()` or an on-disk walker: Python `@dataclass → synthesize_dataclass_init` (`python/symbols.rs:684`), Svelte `$store` desugar (`svelte/hooks.rs:40`), C/C++ `#define` expansion (`c_lang/macro_catalog.rs` + `salvage_macro_expanded_decls`). These prove the shape; nothing generalizes it.
+**Reference implementation (present, untracked):** C/C++ `#define` expansion is the most mature — `macro_catalog.rs` reads the project's own macro bodies from sibling/parent headers, honours token-paste `##` and stringify `#`, and `salvage_macro_expanded_decls` re-runs the declaration scanners over the substituted body (`c_lang/extract.rs:158`). The recognizer + re-scan shape is exactly what generalizes.
+**Fix:** a `LanguageEngineHooks` method `synthesize_symbols(&self, file) -> Vec<ExtractedSymbol>` invoked post-extract, fed by per-language recognizers. Case space (all currently unresolved, all deterministically synthesizable **without running the real generator**):
+- **Java/Kotlin Lombok** — `@Data`/`@Getter`/`@Builder` → `getX()`/`setX()`/`builder()` from field declarations. High frequency in real Java corpora; **no Java codegen path exists today.**
+- **Rust derive / proc-macro** — `#[derive(...)]` impls, `bitflags!`/`prost`/`sqlx` accessors. Two on-disk walkers exist (`cargo_build_scripts.rs` indexes `OUT_DIR` only *after* `cargo build`; `cargo_expand_runtime.rs` shells `cargo expand`) but in-memory derive output is unreachable. Common derives are mechanically synthesizable without invoking the compiler — that belongs here.
+- **C# source generators** — the `❌` half of LANG-CSHARP-1 is this same capability, not a C# quirk.
+- **Generalizes** the existing Python/Svelte/C one-offs onto the shared hook.
+**Cleanup (no-env-gate rule):** `cargo_expand_runtime.rs:43` gates expansion behind `BEARWISDOM_CARGO_EXPAND` — an env toggle, which the project rule forbids. Decide it in code (use always, or drop it) when CODEGEN-1 lands.
+**Deps:** —  **Corpus leverage: high** — Lombok getters, derive impls, source-gen members are a large unresolved slice in Java/Rust/C#.
+
+---
+
+## E. Language-specific resolution rules
+
+Per-language name/method-resolution a compiler hard-codes — expressed as **data on
+the shared engine**, per the architecture gate. **A `LANG-*` task that adds a new
+per-language walker is a gate violation; it must reduce to engine data + the
+irreducible hook.** Ranked by corpus volume.
 
 ### LANG-RUST-1 — Trait method resolution  ·  [hook]  ·  ❌
 Autoref/autoderef + trait-in-scope + which `impl Trait for T` provides `.foo()`; associated types; blanket impls. Confirmed absent in `rust_lang` — `.method()` is name-only. The defining Rust compiler feature.
 
-### LANG-CPP-1 — Template-parameter binding + ADL  ·  [profile]+[hook]  ·  ❌
-`T1`/`T2`/`OutputIt`/`iterator_t`/`charT` are top C++ unresolved — template params aren't treated as generic params. Plus argument-dependent lookup and overload. High corpus volume.
+### LANG-CPP-1 — ADL (+ overload via BIND-4; template-param binding ✅)  ·  [profile]+[hook]  ·  ⚠️
+**Template-parameter binding — ✅ (was mis-marked ❌).** `templates.rs:84-93` folds template param names into the signature (`<T,charT>`) feeding the generic-param strategy; `default_resolver.rs:526` resolves self-declared params as `engine_generic_param` (passing test `default_resolver_tests.rs:1062` resolves `OutputIt`). `T1`/`T2`/`OutputIt`/`iterator_t`/`charT` are no longer the gap.
+**Remaining — ⚠️:** **overload resolution** (genuinely absent — `c_lang/hooks.rs:380` on ambiguity just picks the first @0.95) → **owned by the generic BIND-4, not here**; **ADL** (argument-dependent lookup) → the only true C++-specific `[hook]` remainder. The C/C++ `#define` leg of CODEGEN-1 also lands under this language.
 
 ### LANG-GO-1 — Implicit interface satisfaction + embedded promotion  ·  [hook]  ·  ⚠️
 - **Embedded promotion** — ✅ chained `t.BaseMethod()` now resolves. Two fixes were needed (the earlier "inherits_map populated" claim was wrong for full builds): both `inherits_map` child-kind filters excluded `Struct` (only Class/Interface/Trait), so Go struct embedding never populated the map — `build.rs` and `augment.rs` now include `Struct`; and `walk_go_chain` Phase 3 now climbs via `find_member_via_inheritance` (strategy `go_chain_inheritance`, conf 0.90). Bare-name promoted refs from inside the struct already resolved via `resolve_via_enclosing_member`.
@@ -224,7 +310,7 @@ Autoref/autoderef + trait-in-scope + which `impl Trait for T` provides `.foo()`;
 **Scoped (why it's not a C#-style quick slice):** for `fun String.shout()` the extractor emits the receiver `String` as a **TypeRef** (`kotlin/coverage_tests.rs:464`), and the symbol qname is just `shout` — so Phase 3's `current_type.last` lookup misses. Unlike C# (where `signature_is_extension_on` reads `this <recv>` from the signature inside the dedicated `walk_csharp_chain`), Kotlin (a) routes through the **shared** `chain::resolve_via_chain` and (b) has no signature marker — the receiver is a position-dependent TypeRef indistinguishable from a first-param type. Clean fix needs extractor-level receiver tagging (a dedicated field / `extension_receiver` map) + a config-gated Phase-3 fallback in the shared walker (reusable for Scala). Multi-part.
 
 ### LANG-CSHARP-1 — Extension-method search across usings  ·  [hook]  ·  ⚠️
-**Extension methods** — ✅ `walk_csharp_chain` Phase 3 now, after instance-member lookups miss, searches `by_name(method)` for a static method whose signature's first parameter is `this <current_type>` (`signature_is_extension_on`, strategy `csharp_extension_method`, conf 0.85). The `this`-param is read straight from the stored signature text — no extract-time tag needed. Visibility-blind (no `using`-scope gate), consistent with the over-resolve model (BIND-3). **Partial classes** — ✅ work incidentally: `members_by_parent` accumulates members under the shared parent qname across files (`build.rs:153`). **Source-generated members** — ❌ not handled (the remaining ⚠️).
+**Extension methods** — ✅ `walk_csharp_chain` Phase 3 now, after instance-member lookups miss, searches `by_name(method)` for a static method whose signature's first parameter is `this <current_type>` (`signature_is_extension_on`, strategy `csharp_extension_method`, conf 0.85). The `this`-param is read straight from the stored signature text — no extract-time tag needed. Visibility-blind (no `using`-scope gate), consistent with the over-resolve model (BIND-3). **Partial classes** — ✅ work incidentally: `members_by_parent` accumulates members under the shared parent qname across files (`build.rs:153`). **Source-generated members** — ❌ → this is **CODEGEN-1**, not a C#-specific fix; do not build a bespoke C# walker for it.
 
 ### LANG-PY-1 — MRO  ·  [hook]  ·  ❌
 Method resolution order for multiple inheritance. (Dynamic `__getattr__`/duck typing out of scope.)
@@ -237,8 +323,8 @@ Structural matching (INFER-5); conditional-beyond-decidable; mapped-beyond-trans
 
 ### LANG-DART-1 — Dart binding  ·  [hook]  ·  ⚠️
 - **1a** bare prefix-ref drop — ✅ (`4be1cb83`).
-- **1b** prefix → library binding — ❌ `i0.Value` should resolve `Value` in `i0`'s module (drift external) or the local file (`i2.X`). `collect_dart_import_aliases` currently *drops* the prefix; needs a prefix→module map (BIND-2d). Dart still 3,216 unresolved.
-- **1c** Flutter SDK externals — ❌ `ListTile` etc. (EXT-2/EXT-3).
+- **1b** prefix → library binding — ❌ `i0.Value` should resolve `Value` in `i0`'s module (drift external) or the local file (`i2.X`). `collect_dart_import_aliases` (`dart/extract.rs:84`) captures only the alias and *drops the URI* — needs a prefix→module map (BIND-2d). The lone remaining Dart gap.
+- **1c** Flutter SDK externals — ✅ (was mis-marked ❌). `FlutterSdkEcosystem` (`ecosystem/flutter_sdk.rs`) walks `packages/flutter/lib/src`; `demand_pre_pull` surfaces `ListTile`/`IconData`/`EdgeInsets` (`flutter_sdk.rs:77`); registered + tested (`flutter_sdk_tests.rs`).
 
 ### Deferred per-language (recorded, low value)
 - Kotlin smart-cast / Rust `if let`/`match` discriminant (roadmap L2/L3) — grammar-uncertain.
@@ -246,7 +332,7 @@ Structural matching (INFER-5); conditional-beyond-decidable; mapped-beyond-trans
 
 ---
 
-## E. Correctness — grep family, synthetics, confidence
+## F. Correctness, confidence — and the one-engine consolidation
 
 ### QUAL-1 — Bar the whole grep family (D1/D9)  ·  [generic]+[hook]  ·  ⚠️ (H.1+H.2 ✅, H.3 remains)
 **Invariant:** never bind a bare name to a coincidental same-name symbol.
@@ -254,9 +340,14 @@ Structural matching (INFER-5); conditional-beyond-decidable; mapped-beyond-trans
 - **1b** ✅ for the two grep buckets: the ordering bugs are fixed (Appendix), **H.2** (internal whole-program `by_name` — `{c,kotlin,swift,dart,elixir}_by_name`, `rust_global_name_*`, …) deleted in `c4252e8b`, and **H.1** (the `*_synthetic_global` ext-bare-name family) deleted in `bf46353b` (= QUAL-3). Verified: 0 occurrences of any of those strategy literals remain. **Remaining = H.3 only** (~20 borderline: same-file/module fallbacks whose risk is ladder order, or `by_name` scoped by a coarse path/prefix rather than a qualified-name lookup). Each needs reorder-after-imports or a tighter filter — none is a whole-program bare grep, so this is precision-tuning, not invariant-breaking.
 **Deps:** BIND-1 ✅ (so removing same-file grep doesn't drop legitimate scope hits)
 
-### QUAL-2 — Single engine, no per-language grep (D9)  ·  [generic]  ·  ⚠️
+### QUAL-2 — One generic chain walker, all languages on it (D9)  ·  [generic]  ·  ⚠️ — **the central architectural deliverable**
+**This task decides whether BearWisdom is "one engine + data" or "94 resolvers." It is not deferred hygiene** — it is the gate the whole restructure exists to enforce.
 - **2a** reroute apparatus deleted — ✅ (`a3815b4e`).
-- **2b** per-language hooks still run their own Step-5 grep fallbacks; consolidate resolution into one engine algorithm + data. Largest structural refactor; do after QUAL-1b.
+- **2b — retire the bespoke chain walkers.** The generic `resolve_via_chain` (`type_checker/chain.rs:96`, parameterized by `ChainConfig`: `strategy_prefix`, `normalize_type`, `has_self_ref`, `enclosing_type_kinds`, `static_type_kinds`, `use_generics`, `namespace_lookup`, `kind_compatible`) exists and is **proven** — but only **5 low-volume languages** use it as data (Dart, Kotlin, Scala, Swift, Starlark). The **9 highest-volume languages still run bespoke full-code walkers** (~3,800 LOC total): `walk_typescript_chain` (480L), `walk_csharp_chain` (~400L), `walk_go_chain`, `java`/`php`/`python`/`ruby`/`rust_lang`/`c_lang` + Ada's `walk_field_chain` (264L). They are **near-duplicates**: `walk_go_chain` Phase-1 and `walk_typescript_chain` Phase-1 differ only in `static_type_kinds` (`"struct"` vs `"class"`) and a SelfRef/Construction arm — exactly what `ChainConfig` already captures as data. `chain.rs:4` claims it "Replaces 8 per-language chain.rs files," but the forks were never retired.
+  **Work — per-language migration slices (`QUAL-2b-ts`, `-csharp`, `-go`, …):** (a) write a `ChainConfig` for the language; (b) lift the irreducible deltas (TS `resolve_call_root_type`/cast-as-root, C# `signature_is_extension`, Go embedded promotion) to a `ChainConfig` fn-pointer field or a *thin* hook; (c) **delete the forked walker**; (d) a regression test asserting the chain resolves identically before/after. Each slice must **reduce** resolution LOC.
+- **2c — Step-5 by-name fallback tail.** The per-language `*_by_name`/`*_same_package` fallbacks (`go/hooks.rs`, `rust_lang/hooks.rs:250`, `python/hooks.rs:285`, `nim/hooks.rs:207`) are a small slice of the above — fold into the migration or the H.3 reorder (QUAL-1).
+**Why this is the gate, not breadth:** every `LANG-*` rule (Rust traits, Go interface satisfaction, Kotlin extensions, alias expansion INFER-10) should land as a `ChainConfig`/hook delta on the *one* walker. Doing them on the forks first multiplies the migration cost and drifts from the goal. **Migrate the walkers, then express the language rules as data on the survivor.**
+**Deps:** the 5 ChainConfig languages already prove the case-space; start with the highest-volume fork (TS).
 
 ### QUAL-3 — `*_synthetic_global` is import-blind external grep  ·  [generic]+[profile]  ·  ✅
 **Done (`bf46353b`).** Option A executed: the whole `*_synthetic_global` ext-bare-name family is deleted (0 strategy literals remain). A bare external name now resolves only via scope/import or a curated prelude, or stays unresolved. This is the honest-floor crater behind the corpus drop (kept: `rust_prelude`, `scala_implicit_import`, `php_global_function`, `ada_modular_primitive`). True-globals like `print`/`len` will be recovered later via curated per-language **prelude strategies** (EXT-5-adjacent), not by name grep. Original audit/decision below.
@@ -276,20 +367,20 @@ As grep goes, drop 0.x-confidence edges; a front-end answers resolved or error. 
 
 ---
 
-## F. Corpus-driven gaps (volume the above doesn't directly cover)
+## G. Corpus-driven gaps (volume the above doesn't directly cover)
 
-### CORPUS-1 — Component-in-template binding  ·  [profile]  ·  ⚠️
-Svelte done (LANG-SVELTE-1 + BIND-2a). Generalize the import→component link to **Vue** (`VCol`/`VBtn`), **Astro**, **MDX**, **Angular templates**, **HTML**.
+### CORPUS-1 — Component-in-template binding  ·  [profile]  ·  ⚠️ (HTML only)
+Svelte (LANG-SVELTE-1 + BIND-2a), **Vue** (incl. vuetify `VCol`/`VBtn` via `vue/global_registry.rs:111`), **Astro** (`astro/extract.rs:116`), **Angular** (`angular/extract.rs:120`), **MDX** (`mdx/extract.rs:5`) — all ✅ (were mis-listed as pending). **Remaining: plain HTML custom-element tags** — `html/extract.rs:18` resolves script-block calls only, no PascalCase / custom-element component binding.
 
-### CORPUS-2 — DSL / markup resolvers  ·  [profile]+[hook]  ·  ❌
-Weak or absent resolvers dragging the corpus: **astro** (0%), **gsp** (16%), **bicep** (44%), **vbnet** (46%), **matlab** (62%), **html** (66%), **prolog** (74%), **r** (76%). Lower per-language volume; breadth play.
+### CORPUS-2 — DSL / markup resolvers below the 99% gate  ·  [profile]+[hook]  ·  ❌
+Languages whose resolvers are weak or absent and so fail the per-language 99% bar: **gsp** (16% — `gsp/` has only `profile.rs`+`mod.rs`, **no resolver at all**), **bicep** (44%), **vbnet** (46%), **matlab** (62%), **html** (66%), **prolog** (74%), **r** (76%). (`astro` dropped — its 0% was stale; `astro/hooks.rs:26`'s `build_file_context` fix already resolved it.) Each must reach 99% through the shared engine + its profile data, not a bespoke walker. Numbers are pre-recapture (DOC-4) and indicative.
 
 ---
 
-## G. Hygiene / consolidation
+## H. Hygiene / consolidation
 
 ### DOC-1 — Retire `RESOLUTION-EXTERNAL-ROUTING.md`  ·  ✅
-Deleted 2026-05-26; its north star (D1–D9) is folded into §A/§C/§E here.
+Deleted 2026-05-26; its north star (D1–D9) is folded into §A/§C/§F here.
 
 ### DOC-2 — Retire `TYPE-INFERENCE-ROADMAP.md`  ·  ✅
 Deleted 2026-05-26 (along with `RESOLUTION-GOAL.md`, `RESOLUTION-TASKS.md`,
@@ -300,24 +391,28 @@ and arrow-return path were deleted in `a3815b4e`).
 ### DOC-3 — Close residual long-tail  ·  ❌
 13 `$t` in plain `.ts` (outside the SFC splice path); small `$lib` edge cases (`keyboard`/`imageLoader`/`useLogger`).
 
-### DOC-4 — Full-corpus recapture  ·  ❌
-The baseline (`baseline-all.json`, 2026-05-24) predates this session — svelte numbers especially are stale, grep-removal lowered some honestly. One recapture at initiative closeout (per the one-recapture rule), reporting QUAL-5's three states separately.
+### DOC-4 — Full-corpus recapture → the per-language 99% scoreboard  ·  ❌
+`baseline-all.json` (`captured_at` 2026-05-27) predates this restructure and lacks the QUAL-5 three-state fields. One recapture **at initiative closeout** (per the one-recapture rule — *not* mid-refactor), reporting QUAL-5's three states separately and **per language against the 99% gate**. This recapture is what turns "Definition of done" from a target into a checked scoreboard; until then per-language % is honest-floor noise.
 
 ---
 
-## Leverage-ranked sequence
+## Sequence — architecture-first, toward 99% per language through one engine
 
-1. **EXT-2 + EXT-3** — emit/hydrate external return types. Unblocks ORM/stdlib/Flutter chains (the largest *type-aware* corpus block) and INFER-6; the chain-walker is already waiting on it.
-2. **QUAL-1b + BIND-1 (incl. QUAL-3 split)** — finish barring the grep family (with BIND-1 so legitimate scope hits survive), and split `*_synthetic_global` into kept true-globals vs import-gated SDK symbols gated on an import. Completes the "never grep" invariant and restates the inflated Dart/Swift/Kotlin engine %.
-3. **INFER-1 (CFG)** — the foundational checker feature; unblocks the real reach of INFER-2/3/4.
-4. **EXT-1 + EXT-4 + QUAL-5** — scope-directed routing, delete the seed, three-state metric (the clean redo of the deleted routing spine).
-5. **LANG-RUST-1 / LANG-CPP-1 / LANG-GO-1** — the high-volume per-language method-resolution rules.
-6. **EXT-5, CORPUS-1/2, INFER-2/3/4/5, remaining LANG-*** — breadth.
-7. **DOC-1..4** — in passing / at closeout.
+The ordering rule changed. The corpus gap does **not** close by writing per-language
+rules; it closes by finishing the generic capabilities and **moving every language
+onto them**. Per-language % is a *consequence* of that, measured once at closeout (DOC-4).
 
-**State (2026-05-28):** the entire #1 externals block is done — EXT-2 slice-1 ✅ (`1f03bec9`), EXT-1 ✅ (`29a055a4`), EXT-3 ✅ (`fa0a1e43`), EXT-4 ✅ (`aad62601`); #2's QUAL-1b H.1+H.2 ✅ (`bf46353b`/`c4252e8b`) and BIND-1 ✅. **QUAL-5 ✅ (`de0d9820`)** — three-state external model. **INFER-1 ✅** — foundation + four narrowing cases (if/else, `&&`/`||`, loop back-edge, switch) + fourteen languages CFG-native (TS, JS, Java, Python, C#, Rust, Go, C, PHP, Lua, Groovy, Scala, Kotlin, Ruby, R) + chain walker `Union` dispatch end-to-end. Commits `afedb777` · `d45e21dd` · `402756cc` · `16940b8b` · `e405c157` · `c78db287` · `6bda447b` · `ab0d12fb`, +35 tests across `flow_cfg` and `core/chain`, **6022 lib tests green**. The CFG foundation is structurally complete; adjacent improvements (Rust if-let via ADT lookup, Go runtime flow_config OOM, Dart/Swift/long-tail tables) belong to their own initiatives.
+1. **QUAL-2b — consolidate the chain walkers** (start with `QUAL-2b-ts`, the highest-volume fork). Until the 9 bespoke walkers are `ChainConfig` data on `resolve_via_chain`, every other task either duplicates across forks or deepens the drift. This is the architecture gate; it comes first.
+2. **§B generic inference — INFER-4 → INFER-8 → INFER-9, then INFER-3 → INFER-2**, plus **INFER-5** (unblocks Go interface satisfaction) and **INFER-10** (alias expansion, rides on the consolidated walker). Closes the type-aware corpus gap for *all* languages at once, zero per-language code.
+3. **CODEGEN-1 — the third symbol source.** Lombok / derive / source-gen are a large unresolved slice; one generic hook + per-language recognizers.
+4. **EXT-2 finish + EXT-5 + INFER-6** — external return types, framework ambient globals, container generics (each gated on hydration).
+5. **BIND-2e (generic re-export) + BIND-4 (bare-name overload)** — generic binder completeness across languages.
+6. **`LANG-*` as data on the survivor walker** — Rust traits, Go interface satisfaction, Kotlin/Scala extensions, Py MRO, Swift protocols (+ Swift's missing `swift_import` strategy), CORPUS-1 HTML, CORPUS-2 DSLs. By now each is a `ChainConfig`/hook/profile delta, not a fork.
+7. **DOC-3 long-tail; DOC-4 closeout recapture** — the per-language 99% scoreboard.
 
-**Single best next move:** **LANG-RUST-1 / LANG-CPP-1 / LANG-GO-1** — the high-volume per-language method-resolution rules. With externals (EXT-1/2/3/4), the three-state model (QUAL-5), and the CFG (INFER-1) all done, the next corpus-visible gains live in per-language resolution rules: Rust trait-method dispatch and `if let` (now unblocked by the CFG's Union consumer surface); C++ qualified-method-name resolution; Go runtime `flow_config()` re-enablement (the assignment_query OOM in `languages/go/mod.rs` blocks Go's CFG path from firing at indexing time even though the CFG side is wired). These are language-specific and concrete; the framework work that would have blocked them is done. Alternative (broader): the INFER-2/3/4 inference family — interprocedural propagation, body-based return-type inference, generic instantiation — which now sit on top of a complete CFG foundation.
+**State (2026-06-02):** spine done — externals (EXT-1 / EXT-2 slice-1 / EXT-3 / EXT-4), three-state metric (QUAL-5), CFG narrowing with end-to-end `Union` dispatch across 14 languages (INFER-1), binder shadowing (BIND-1), visibility-blind over-resolve (BIND-3). **6022 lib tests green.** The generic chain walker (`resolve_via_chain`) exists and is proven on 5 languages — but the 9 highest-volume languages still run ~3,800 LOC of bespoke near-duplicate walkers (QUAL-2b), so the "one engine" invariant is **not yet true where it matters most.** Newly tracked after the 2026-06-02 architecture audit: **INFER-8/9/10, BIND-2e, BIND-4, CODEGEN-1**; re-scoped **INFER-7, QUAL-2, LANG-CPP-1**; corrected **LANG-DART-1c ✅, CORPUS-1 (HTML only), CORPUS-2 (astro dropped)**.
+
+**Single best next move:** **QUAL-2b-ts — migrate `walk_typescript_chain` onto `resolve_via_chain(TS_CHAIN_CONFIG)` and delete the fork**, with a before/after regression test proving identical resolution. It is the highest-volume walker, the proof that the generic path absorbs the hard cases (cast-as-root, call-root inference), and the template for the other eight migrations. Doing this *before* the per-language rules is the entire point of the restructure: every `LANG-*` rule then lands once, as data on the survivor — not N times across forks. (The previous "single best next move" — LANG-RUST-1/CPP-1/GO-1 — is explicitly demoted: it adds per-language code and drifts from the gate.)
 
 ---
 

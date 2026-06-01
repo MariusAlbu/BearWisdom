@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resolution — CURRENT</title>
+<style>
+  :root{
+    --bg:#f4f5f9; --dot:#d9dbe6; --ink:#1f2430; --sub:#7c8395;
+    --card:#ffffff; --border:#e3e5ef; --wire:#aab0c2; --wire-dash:#c4c9d8;
+    --trigger:#10b981; --step:#3b82f6; --decision:#f59e0b;
+    --store:#8b5cf6; --data:#64748b; --good:#16a34a; --ext:#f97316; --bad:#ef4444;
+    --note:#94a3b8; --hook:#6366f1; --flow:#0d9488; --gap:#e11d48;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  header{position:sticky;top:0;z-index:50;background:rgba(244,245,249,.92);
+    backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 22px}
+  header h1{margin:0;font-size:16px;font-weight:700;letter-spacing:.2px}
+  header p{margin:3px 0 0;font-size:12px;color:var(--sub)}
+  header .tag{color:var(--gap);font-weight:700}
+  #scene{position:relative;overflow:auto;height:calc(100vh - 56px)}
+  #canvas{position:relative;
+    background-image:radial-gradient(var(--dot) 1.3px,transparent 1.3px);
+    background-size:26px 26px}
+  svg.wires{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:visible}
+  .node{position:absolute;z-index:2;background:var(--card);border:1px solid var(--border);
+    border-radius:11px;box-shadow:0 2px 10px rgba(28,33,60,.07);
+    display:flex;gap:10px;padding:10px 12px;align-items:center}
+  .node .badge{flex:0 0 auto;width:34px;height:34px;border-radius:9px;display:flex;
+    align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700}
+  .node .body{min-width:0}
+  .node .title{font-weight:650;font-size:12.5px;white-space:pre-line}
+  .node .sub{margin-top:3px;font-size:10.5px;color:var(--sub);white-space:pre-line;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .node.store{background:#faf8ff;border-color:#e6dcff;border-style:dashed}
+  .node.data{background:#f7f8fb;border-style:dashed}
+  .node.note{background:#f4f6f9;border-style:dashed;opacity:.92}
+  .node.hook{border-color:#d8d9fb;background:#f7f7ff}
+  .node.flow{border-color:#bdeee7;background:#f0fbf9}
+  .node.good{border-color:#bbf0cf;background:#f3fdf6}
+  .node.ext{border-color:#ffd9b8;background:#fff8f1}
+  .node.bad{border-color:#ffc9c9;background:#fff5f5}
+  .node.gap{border-color:#ffc4d2;background:#fff5f8;border-style:dashed}
+  .elabel{position:absolute;z-index:3;transform:translate(-50%,-50%);
+    background:#fff;border:1px solid var(--border);border-radius:7px;
+    padding:1px 7px;font-size:10px;color:#5b6270;white-space:nowrap;
+    box-shadow:0 1px 4px rgba(28,33,60,.06)}
+  .band{position:absolute;z-index:0;font-size:10px;font-weight:700;letter-spacing:1.2px;
+    text-transform:uppercase;color:#aeb4c4}
+  .legend{position:fixed;right:16px;bottom:16px;z-index:60;background:rgba(255,255,255,.96);
+    border:1px solid var(--border);border-radius:12px;box-shadow:0 6px 22px rgba(28,33,60,.12);
+    padding:11px 13px;font-size:11px;max-width:380px}
+  .legend b{display:block;font-size:10px;letter-spacing:.5px;text-transform:uppercase;
+    color:var(--sub);margin-bottom:6px}
+  .legend .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+  .legend .it{display:flex;align-items:center;gap:5px}
+  .legend .sw{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .legend .sw.gap{border:1.5px dashed var(--gap);background:#fff5f8}
+  .legend .ln{width:22px;height:0;border-top:2px solid var(--wire);display:inline-block}
+  .legend .ln.flow{border-top:2px solid var(--flow)}
+  .legend .ln.dash{border-top:2px dashed var(--wire-dash)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Resolution — <span class="tag">CURRENT</span> · how it runs today <span style="color:var(--sub);font-weight:400">(post-2026-06-02)</span></h1>
+  <p>Same data/code model · per-ref tiers in <code>loop_body.rs</code> · the chain walker is <b>forked</b> into 9 bespoke walkers + 1 generic (5 langs) — the drift <code>QUAL-2b</code> retires. Rose-dashed / gap = where it diverges from the compiler model.</p>
+</header>
+<div id="scene"><div id="canvas"><svg class="wires"></svg></div></div>
+
+<div class="legend">
+  <b>Legend</b>
+  <div class="row">
+    <span class="it"><span class="sw" style="background:var(--trigger)"></span>entry</span>
+    <span class="it"><span class="sw" style="background:var(--step)"></span>step</span>
+    <span class="it"><span class="sw" style="background:var(--decision)"></span>branch</span>
+    <span class="it"><span class="sw" style="background:var(--hook)"></span>lang&nbsp;code</span>
+    <span class="it"><span class="sw" style="background:var(--flow)"></span>flow</span>
+    <span class="it"><span class="sw gap"></span>gap</span>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <span class="it"><span class="sw" style="background:var(--good)"></span>resolved</span>
+    <span class="it"><span class="sw" style="background:var(--ext)"></span>external_ref</span>
+    <span class="it"><span class="sw" style="background:var(--bad)"></span>unresolved</span>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <span class="it"><span class="ln"></span>resolve</span>
+    <span class="it"><span class="ln flow"></span>flow</span>
+    <span class="it"><span class="ln dash"></span>feeds / reads · dashed card = data</span>
+  </div>
+</div>
+
+<script>
+const GLYPH={trigger:'◉',step:'▸',decision:'◆',store:'▤',data:'▥',good:'✓',ext:'◐',bad:'✕',note:'–',hook:'⚙',flow:'⇶',gap:'!'};
+const COLOR=c=>getComputedStyle(document.documentElement).getPropertyValue('--'+c).trim();
+
+const bands=[
+  {x:30,y:18,t:'language specifics — data + code (same model)'},
+  {x:30,y:300,t:'per-ref resolution tiers — loop_body.rs · the chain walker is FORKED (QUAL-2b)'},
+  {x:30,y:700,t:'engine state'},
+  {x:30,y:838,t:'flow emission — runs alongside, regardless of resolution'},
+];
+
+const nodes=[
+  // language specifics
+  {id:'profile',x:300,y:34,w:300,h:84,cat:'data',title:'LanguageProfile · [data]',
+   sub:'scope/visibility · import syntax\ntype rules · FlowConfig'},
+  {id:'hooks',x:632,y:34,w:372,h:84,cat:'hook',title:'LanguageEngineHooks · [code]',
+   sub:'+ each hook still runs its OWN Step-5 grep\n(QUAL-2b — not yet one engine)'},
+
+  // spine
+  {id:'ref',x:40,y:360,w:196,h:70,cat:'trigger',title:'Reference site',sub:'from_str(&body)?'},
+  {id:'resolve',x:272,y:356,w:220,h:80,cat:'step',title:'type_engine.resolve',sub:'loop_body.rs'},
+  {id:'chainq',x:528,y:366,w:150,h:62,cat:'decision',title:'chain-bearing?',outs:2},
+
+  // the fork (the drift)
+  {id:'dispatch',x:716,y:250,w:150,h:62,cat:'decision',title:'which walker?',sub:'by language',outs:2},
+  {id:'bespoke',x:906,y:186,w:316,h:88,cat:'gap',title:'9 bespoke walk_<lang>_chain',
+   sub:'TS·C#·Go·Java·PHP·Py·Ruby·Rust·C\n~3,800 LOC near-duplicate (QUAL-2b)'},
+  {id:'generic',x:906,y:312,w:316,h:78,cat:'good',title:'generic resolve_via_chain',
+   sub:'ChainConfig data\nDart·Kotlin·Scala·Swift·Starlark'},
+  {id:'bare',x:716,y:438,w:240,h:74,cat:'step',title:'resolve_bare + ladder',
+   sub:'resolve_all · H.1/H.2 removed\nH.3 borderline residual'},
+
+  {id:'someq',x:1300,y:330,w:158,h:62,cat:'decision',title:'Some(resolution)?',outs:2},
+  {id:'writeedge',x:1516,y:258,w:210,h:74,cat:'step',title:'write edge',sub:'strategy + confidence'},
+  {id:'resolved',x:1772,y:264,w:166,h:62,cat:'good',title:'RESOLVED',sub:'edge'},
+  {id:'tier15',x:1300,y:470,w:236,h:96,cat:'step',title:'Tier 1.5 classify_external_ns',
+   sub:'import-based · module-qualified'},
+  {id:'extq',x:1572,y:488,w:150,h:62,cat:'decision',title:'external ns?',outs:2},
+  {id:'extref',x:1772,y:438,w:184,h:64,cat:'ext',title:'external_known_\nunhydrated',sub:'ext:NS'},
+  {id:'unres',x:1772,y:610,w:184,h:62,cat:'bad',title:'UNRESOLVED',sub:'honest gap'},
+
+  // engine state
+  {id:'symidx',x:300,y:736,w:300,h:84,cat:'store',title:'SymbolIndex · per pass',
+   sub:'by_name · by_qname · members · inherits\nreturn_type · field_type'},
+  {id:'localcache',x:636,y:738,w:276,h:80,cat:'flow',title:'LocalTypeCache',
+   sub:'CFG-native narrowing ✅ (INFER-1)\nper-file → not interprocedural (INFER-2)'},
+  {id:'precision',x:948,y:738,w:286,h:80,cat:'good',title:'ResolutionBreakdown · 3-state',
+   sub:'resolved · external_known_unhydrated\n· unresolved · precision (QUAL-5)'},
+  {id:'deleted',x:1270,y:742,w:300,h:72,cat:'note',title:'DELETED families',
+   sub:'seed_demand · *_synthetic_global · reroute'},
+
+  // flow emission (runs alongside)
+  {id:'connpoints',x:300,y:874,w:282,h:82,cat:'flow',title:'connection points',
+   sub:'connectors + FlowConfig\nroutes · DI · HTTP · DB markers'},
+  {id:'flowemit',x:632,y:874,w:288,h:82,cat:'flow',title:'detect_flow_emissions',
+   sub:'loop_body.rs · per-ref,\nREGARDLESS of resolution'},
+  {id:'flowgraph',x:972,y:874,w:344,h:82,cat:'flow',title:'flow_edges',
+   sub:'http_call · db_query · di_binding · …'},
+];
+
+const edges=[
+  // language specifics
+  {f:'profile',t:'resolve',k:'dash'},
+  {f:'hooks',t:'resolve',k:'dash'},
+  {f:'profile',t:'localcache',k:'dash',l:'flow-typing'},
+
+  // spine
+  {f:'ref',t:'resolve'},
+  {f:'resolve',t:'chainq'},
+  {f:'chainq',t:'dispatch',o:0,l:'chain'},
+  {f:'chainq',t:'bare',o:1,l:'bare'},
+  {f:'dispatch',t:'bespoke',o:0,l:'9 langs'},
+  {f:'dispatch',t:'generic',o:1,l:'5 langs'},
+  {f:'bespoke',t:'someq'},
+  {f:'generic',t:'someq'},
+  {f:'bare',t:'someq'},
+  {f:'someq',t:'writeedge',o:0,l:'Some'},
+  {f:'writeedge',t:'resolved'},
+  {f:'someq',t:'tier15',o:1,l:'None'},
+  {f:'tier15',t:'extq'},
+  {f:'extq',t:'extref',o:0,l:'ext:NS'},
+  {f:'extq',t:'unres',o:1,l:'None'},
+
+  // state reads
+  {f:'symidx',t:'resolve',k:'dash',l:'reads'},
+  {f:'localcache',t:'resolve',k:'dash'},
+  {f:'someq',t:'precision',k:'dash',l:'3-state'},
+
+  // flow emission
+  {f:'connpoints',t:'flowemit',k:'flow'},
+  {f:'flowemit',t:'flowgraph',k:'flow'},
+];
+
+renderGraph(nodes,edges,bands);
+
+function renderGraph(nodes,edges,bands){
+  const N={}; nodes.forEach(n=>{n.outs=n.outs||1; N[n.id]=n;});
+  const canvas=document.getElementById('canvas');
+  const svg=canvas.querySelector('svg');
+  const PAD=70;
+  const W=Math.max(...nodes.map(n=>n.x+n.w))+PAD+40;
+  const H=Math.max(...nodes.map(n=>n.y+n.h))+PAD;
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('width',W); svg.setAttribute('height',H);
+
+  svg.innerHTML=`<defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--wire)"/></marker>
+    <marker id="arrf" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--flow)"/></marker>
+    <marker id="arrd" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--wire-dash)"/></marker></defs>`;
+
+  (bands||[]).forEach(b=>{
+    const el=document.createElement('div');
+    el.className='band'; el.style.left=b.x+'px'; el.style.top=b.y+'px'; el.textContent=b.t;
+    canvas.appendChild(el);
+  });
+
+  nodes.forEach(n=>{
+    const el=document.createElement('div');
+    el.className='node '+n.cat;
+    el.style.left=n.x+'px'; el.style.top=n.y+'px'; el.style.width=n.w+'px'; el.style.minHeight=n.h+'px';
+    const badge=(n.cat==='store'||n.cat==='data'||n.cat==='note')?'':
+      `<div class="badge" style="background:${COLOR(n.cat)}">${GLYPH[n.cat]}</div>`;
+    el.innerHTML=badge+`<div class="body"><div class="title">${n.title}</div>`+
+      (n.sub?`<div class="sub">${n.sub}</div>`:'')+`</div>`;
+    canvas.appendChild(el);
+  });
+
+  const inP =n=>({x:n.x, y:n.y+n.h/2});
+  const outP=(n,i)=>({x:n.x+n.w, y:n.y+n.h*((i||0)+1)/(n.outs+1)});
+  const ns='http://www.w3.org/2000/svg';
+  const seen=new Set();
+
+  edges.forEach(e=>{
+    const a=N[e.f], b=N[e.t];
+    const p0=outP(a,e.o), p1=inP(b);
+    const dash=e.k==='dash', flow=e.k==='flow';
+    const back=e.k==='back'||(p1.x<p0.x && !dash && !flow);
+    let d, my=(p0.y+p1.y)/2;
+    if(dash){
+      d=`M${p0.x},${p0.y} C${p0.x},${my} ${p1.x},${my} ${p1.x},${p1.y}`;
+    }else if(back){
+      const dy=Math.max(70, Math.abs(p1.x-p0.x)*0.18); my+=dy*0.75;
+      d=`M${p0.x},${p0.y} C${p0.x+90},${p0.y+dy} ${p1.x-90},${p1.y+dy} ${p1.x},${p1.y}`;
+    }else{
+      const dx=Math.min(170,Math.max(45,Math.abs(p1.x-p0.x)*0.5));
+      d=`M${p0.x},${p0.y} C${p0.x+dx},${p0.y} ${p1.x-dx},${p1.y} ${p1.x},${p1.y}`;
+    }
+    const path=document.createElementNS(ns,'path');
+    path.setAttribute('d',d); path.setAttribute('fill','none');
+    path.setAttribute('stroke',dash?'var(--wire-dash)':flow?'var(--flow)':'var(--wire)');
+    path.setAttribute('stroke-width',dash?1.6:2);
+    if(dash) path.setAttribute('stroke-dasharray','5 5');
+    path.setAttribute('marker-end',dash?'url(#arrd)':flow?'url(#arrf)':'url(#arr)');
+    svg.appendChild(path);
+
+    [[p0.x,p0.y],[p1.x,p1.y]].forEach(([px,py])=>{
+      const key=px+','+py; if(seen.has(key))return; seen.add(key);
+      const c=document.createElementNS(ns,'circle');
+      c.setAttribute('cx',px); c.setAttribute('cy',py); c.setAttribute('r',4);
+      c.setAttribute('fill','#fff');
+      c.setAttribute('stroke',flow?'var(--flow)':'var(--wire)'); c.setAttribute('stroke-width',1.6);
+      svg.appendChild(c);
+    });
+
+    if(e.l){
+      const mx=(p0.x+p1.x)/2;
+      const lab=document.createElement('div');
+      lab.className='elabel'; lab.style.left=mx+'px'; lab.style.top=my+'px'; lab.textContent=e.l;
+      canvas.appendChild(lab);
+    }
+  });
+}
+</script>
+</body>
+</html>

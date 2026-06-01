@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compiler-grade resolution — TARGET</title>
+<style>
+  :root{
+    --bg:#f4f5f9; --dot:#d9dbe6; --ink:#1f2430; --sub:#7c8395;
+    --card:#ffffff; --border:#e3e5ef; --wire:#aab0c2; --wire-dash:#c4c9d8;
+    --trigger:#10b981; --step:#3b82f6; --decision:#f59e0b;
+    --store:#8b5cf6; --data:#64748b; --good:#16a34a; --ext:#f97316; --bad:#ef4444;
+    --note:#94a3b8; --hook:#6366f1; --flow:#0d9488;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  header{position:sticky;top:0;z-index:50;background:rgba(244,245,249,.92);
+    backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 22px}
+  header h1{margin:0;font-size:16px;font-weight:700;letter-spacing:.2px}
+  header p{margin:3px 0 0;font-size:12px;color:var(--sub)}
+  header .tag{color:var(--trigger);font-weight:700}
+  #scene{position:relative;overflow:auto;height:calc(100vh - 56px)}
+  #canvas{position:relative;
+    background-image:radial-gradient(var(--dot) 1.3px,transparent 1.3px);
+    background-size:26px 26px}
+  svg.wires{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:visible}
+  .node{position:absolute;z-index:2;background:var(--card);border:1px solid var(--border);
+    border-radius:11px;box-shadow:0 2px 10px rgba(28,33,60,.07);
+    display:flex;gap:10px;padding:10px 12px;align-items:center}
+  .node .badge{flex:0 0 auto;width:34px;height:34px;border-radius:9px;display:flex;
+    align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700}
+  .node .body{min-width:0}
+  .node .title{font-weight:650;font-size:12.5px;white-space:pre-line}
+  .node .sub{margin-top:3px;font-size:10.5px;color:var(--sub);white-space:pre-line;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .node.store{background:#faf8ff;border-color:#e6dcff;border-style:dashed}
+  .node.data{background:#f7f8fb;border-style:dashed}
+  .node.note{background:#f4f6f9;border-style:dashed;opacity:.92}
+  .node.hook{border-color:#d8d9fb;background:#f7f7ff}
+  .node.flow{border-color:#bdeee7;background:#f0fbf9}
+  .node.good{border-color:#bbf0cf;background:#f3fdf6}
+  .node.ext{border-color:#ffd9b8;background:#fff8f1}
+  .node.bad{border-color:#ffc9c9;background:#fff5f5}
+  .elabel{position:absolute;z-index:3;transform:translate(-50%,-50%);
+    background:#fff;border:1px solid var(--border);border-radius:7px;
+    padding:1px 7px;font-size:10px;color:#5b6270;white-space:nowrap;
+    box-shadow:0 1px 4px rgba(28,33,60,.06)}
+  .band{position:absolute;z-index:0;font-size:10px;font-weight:700;letter-spacing:1.2px;
+    text-transform:uppercase;color:#aeb4c4}
+  .legend{position:fixed;right:16px;bottom:16px;z-index:60;background:rgba(255,255,255,.96);
+    border:1px solid var(--border);border-radius:12px;box-shadow:0 6px 22px rgba(28,33,60,.12);
+    padding:11px 13px;font-size:11px;max-width:360px}
+  .legend b{display:block;font-size:10px;letter-spacing:.5px;text-transform:uppercase;
+    color:var(--sub);margin-bottom:6px}
+  .legend .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+  .legend .it{display:flex;align-items:center;gap:5px}
+  .legend .sw{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .legend .ln{width:22px;height:0;border-top:2px solid var(--wire);display:inline-block}
+  .legend .ln.flow{border-top:2px solid var(--flow)}
+  .legend .ln.dash{border-top:2px dashed var(--wire-dash)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Resolution — <span class="tag">TARGET</span> · how we want the compiler to resolve</h1>
+  <p>One generic algorithm parameterized by per-language <b>data</b> + <b>code</b> · <b>every language on one walker</b> (ChainConfig) · origin-blind over one table · scope-directed (never grep) · lazy dep load + codegen synthesis · <b>≥99% precision per language</b> · emits both the symbol/type graph <b>and</b> the cross-tier flow graph.</p>
+</header>
+<div id="scene"><div id="canvas"><svg class="wires"></svg></div></div>
+
+<div class="legend">
+  <b>Legend</b>
+  <div class="row">
+    <span class="it"><span class="sw" style="background:var(--trigger)"></span>entry</span>
+    <span class="it"><span class="sw" style="background:var(--step)"></span>step</span>
+    <span class="it"><span class="sw" style="background:var(--decision)"></span>branch</span>
+    <span class="it"><span class="sw" style="background:var(--hook)"></span>lang&nbsp;code</span>
+    <span class="it"><span class="sw" style="background:var(--flow)"></span>flow</span>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <span class="it"><span class="sw" style="background:var(--good)"></span>resolved</span>
+    <span class="it"><span class="sw" style="background:var(--ext)"></span>external&nbsp;unhydrated</span>
+    <span class="it"><span class="sw" style="background:var(--bad)"></span>unresolved</span>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <span class="it"><span class="ln"></span>resolve</span>
+    <span class="it"><span class="ln flow"></span>flow</span>
+    <span class="it"><span class="ln dash"></span>feeds / reads · dashed card = data</span>
+  </div>
+</div>
+
+<script>
+const GLYPH={trigger:'◉',step:'▸',decision:'◆',store:'▤',data:'▥',good:'✓',ext:'◐',bad:'✕',note:'–',hook:'⚙',flow:'⇶'};
+const COLOR=c=>getComputedStyle(document.documentElement).getPropertyValue('--'+c).trim();
+
+const bands=[
+  {x:30,y:18,t:'language specifics — data + code'},
+  {x:30,y:300,t:'one generic algorithm — origin-blind, scope-directed, lazy'},
+  {x:30,y:786,t:'second output — cross-tier flow graph'},
+];
+
+const nodes=[
+  // language specifics (input)
+  {id:'profile',x:300,y:34,w:312,h:92,cat:'data',title:'LanguageProfile · [data]',
+   sub:'scope / visibility · import syntax\ntype rules · primitives · generic syntax · FlowConfig'},
+  {id:'hooks',x:648,y:34,w:344,h:92,cat:'hook',title:'LanguageEngineHooks · [code]',
+   sub:'rules data can’t express:\nRust traits · C++ ADL/templates · Go implicit ifaces\nKotlin extensions · Python MRO'},
+
+  // flow-typing (feeds inference)
+  {id:'flowtype',x:864,y:172,w:300,h:84,cat:'flow',title:'flow-typing · FlowConfig',
+   sub:'narrow (guards / discriminant) + forward yield\n→ local type env feeding the walk'},
+
+  // generic algorithm spine
+  {id:'ref',x:40,y:332,w:200,h:76,cat:'trigger',title:'Reference site',sub:'self.repo.query().leftJoin()'},
+  {id:'root',x:300,y:328,w:236,h:88,cat:'step',title:'resolve_root(head, scope_env)',
+   sub:'scope-directed · imports + scope chain\nno global name match'},
+  {id:'bound',x:606,y:340,w:172,h:64,cat:'decision',title:'head bound?',sub:'in a named scope',outs:2},
+  {id:'lookup',x:846,y:328,w:232,h:88,cat:'step',title:'resolve_via_chain(ty, seg)',
+   sub:'ONE walker, every language\nChainConfig data · no per-lang fork'},
+  {id:'found',x:1148,y:340,w:168,h:64,cat:'decision',title:'member found?',sub:'',outs:2},
+  {id:'typeof',x:1386,y:328,w:214,h:88,cat:'step',title:'ty := type_of(m)',
+   sub:'return / field type\norigin-blind',outs:2},
+  {id:'infer',x:1372,y:170,w:300,h:96,cat:'step',title:'inference spine',
+   sub:'arg-driven generics · callback typing\nbody-return · interprocedural\nstructural · container generics · alias expand'},
+
+  // miss / lazy load
+  {id:'declscope',x:1148,y:520,w:214,h:74,cat:'step',title:'declaring_scope(ty, seg)',sub:'where SHOULD it live?'},
+  {id:'depq',x:1402,y:526,w:186,h:64,cat:'decision',title:'dependency,\nnot loaded?',sub:'',outs:2},
+  {id:'load',x:1380,y:660,w:236,h:86,cat:'step',title:'load(scope)',
+   sub:'lazy metadata decode → INTO\nthe same table · demand-pull'},
+
+  // outcomes (symbol/type graph)
+  {id:'resolved',x:1716,y:292,w:196,h:66,cat:'good',title:'RESOLVED(m)',sub:'symbol / type edge'},
+  {id:'ext',x:1716,y:522,w:224,h:72,cat:'ext',title:'EXTERNAL_KNOWN_\nUNHYDRATED',sub:'scope is a dep,\nmetadata absent'},
+  {id:'unres',x:1716,y:704,w:196,h:66,cat:'bad',title:'UNRESOLVED',sub:'honest gap · never grep'},
+
+  // uniform table (shared store)
+  {id:'table',x:540,y:626,w:470,h:112,cat:'store',title:'UNIFORM SYMBOL / TYPE TABLE',
+   sub:'by_name · by_qname · members_by_type · return_type · field_type\ninternal · workspace · external · synthesized — all first-class rows\norigin = a tag, never a control-flow branch'},
+  {id:'codegen',x:300,y:632,w:218,h:96,cat:'hook',title:'synthesize_symbols',
+   sub:'CODEGEN-1 · per-lang recognizer\nLombok · derive · @dataclass · macros\n→ synthetic rows into the table'},
+
+  // flow graph (second output)
+  {id:'connpoints',x:300,y:822,w:288,h:86,cat:'flow',title:'connection points',
+   sub:'connectors + FlowConfig\nroutes · DI · HTTP · DB markers'},
+  {id:'flowemit',x:648,y:822,w:286,h:86,cat:'flow',title:'FlowEmission',
+   sub:'Producer · Consumer · Stop\ntyped by resolved refs'},
+  {id:'flowgraph',x:996,y:822,w:360,h:86,cat:'flow',title:'cross-tier FLOW GRAPH',
+   sub:'http_call · db_query · di_binding\nroute→consumer · websocket · auth_guard'},
+];
+
+const edges=[
+  // language specifics parameterize the algorithm
+  {f:'profile',t:'root',k:'dash'},
+  {f:'profile',t:'lookup',k:'dash'},
+  {f:'profile',t:'flowtype',k:'dash'},
+  {f:'hooks',t:'root',k:'dash'},
+  {f:'hooks',t:'lookup',k:'dash'},
+
+  // flow-typing + the inference spine feed type_of
+  {f:'flowtype',t:'typeof',k:'dash',l:'type env'},
+  {f:'infer',t:'typeof',k:'dash',l:'inferred types'},
+
+  // codegen synthesizes the third symbol source into the table
+  {f:'codegen',t:'table',k:'dash',l:'synthetic rows'},
+  {f:'hooks',t:'codegen',k:'dash'},
+
+  // spine
+  {f:'ref',t:'root'},
+  {f:'root',t:'bound'},
+  {f:'bound',t:'lookup',o:0,l:'in scope'},
+  {f:'bound',t:'unres',o:1,l:'absent',k:'back'},
+  {f:'lookup',t:'found'},
+  {f:'found',t:'typeof',o:0,l:'hit'},
+  {f:'found',t:'declscope',o:1,l:'miss'},
+  {f:'typeof',t:'lookup',o:0,l:'next segment',k:'back'},
+  {f:'typeof',t:'resolved',o:1,l:'tail end'},
+  {f:'declscope',t:'depq'},
+  {f:'depq',t:'load',o:0,l:'dep, lazy'},
+  {f:'depq',t:'ext',o:1,l:'metadata absent'},
+  {f:'load',t:'lookup',l:'retry once',k:'back'},
+  {f:'load',t:'table',k:'dash',l:'rows ++'},
+
+  // table reads
+  {f:'table',t:'lookup',k:'dash'},
+  {f:'table',t:'typeof',k:'dash'},
+
+  // flow graph: built from resolved table + connection points
+  {f:'connpoints',t:'flowemit',k:'flow'},
+  {f:'table',t:'flowemit',k:'dash',l:'resolved syms + types'},
+  {f:'flowemit',t:'flowgraph',k:'flow'},
+];
+
+renderGraph(nodes,edges,bands);
+
+function renderGraph(nodes,edges,bands){
+  const N={}; nodes.forEach(n=>{n.outs=n.outs||1; N[n.id]=n;});
+  const canvas=document.getElementById('canvas');
+  const svg=canvas.querySelector('svg');
+  const PAD=70;
+  const W=Math.max(...nodes.map(n=>n.x+n.w))+PAD+40;
+  const H=Math.max(...nodes.map(n=>n.y+n.h))+PAD;
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('width',W); svg.setAttribute('height',H);
+
+  svg.innerHTML=`<defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--wire)"/></marker>
+    <marker id="arrf" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--flow)"/></marker>
+    <marker id="arrd" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--wire-dash)"/></marker></defs>`;
+
+  (bands||[]).forEach(b=>{
+    const el=document.createElement('div');
+    el.className='band'; el.style.left=b.x+'px'; el.style.top=b.y+'px'; el.textContent=b.t;
+    canvas.appendChild(el);
+  });
+
+  nodes.forEach(n=>{
+    const el=document.createElement('div');
+    el.className='node '+n.cat;
+    el.style.left=n.x+'px'; el.style.top=n.y+'px'; el.style.width=n.w+'px'; el.style.minHeight=n.h+'px';
+    const badge=(n.cat==='store'||n.cat==='data'||n.cat==='note')?'':
+      `<div class="badge" style="background:${COLOR(n.cat)}">${GLYPH[n.cat]}</div>`;
+    el.innerHTML=badge+`<div class="body"><div class="title">${n.title}</div>`+
+      (n.sub?`<div class="sub">${n.sub}</div>`:'')+`</div>`;
+    canvas.appendChild(el);
+  });
+
+  const inP =n=>({x:n.x, y:n.y+n.h/2});
+  const outP=(n,i)=>({x:n.x+n.w, y:n.y+n.h*((i||0)+1)/(n.outs+1)});
+  const ns='http://www.w3.org/2000/svg';
+  const seen=new Set();
+
+  edges.forEach(e=>{
+    const a=N[e.f], b=N[e.t];
+    const p0=outP(a,e.o), p1=inP(b);
+    const dash=e.k==='dash', flow=e.k==='flow';
+    const back=e.k==='back'||(p1.x<p0.x && !dash && !flow);
+    let d, my=(p0.y+p1.y)/2;
+    if(dash){
+      d=`M${p0.x},${p0.y} C${p0.x},${my} ${p1.x},${my} ${p1.x},${p1.y}`;
+    }else if(back){
+      const dy=Math.max(70, Math.abs(p1.x-p0.x)*0.18); my+=dy*0.75;
+      d=`M${p0.x},${p0.y} C${p0.x+90},${p0.y+dy} ${p1.x-90},${p1.y+dy} ${p1.x},${p1.y}`;
+    }else{
+      const dx=Math.min(170,Math.max(45,Math.abs(p1.x-p0.x)*0.5));
+      d=`M${p0.x},${p0.y} C${p0.x+dx},${p0.y} ${p1.x-dx},${p1.y} ${p1.x},${p1.y}`;
+    }
+    const path=document.createElementNS(ns,'path');
+    path.setAttribute('d',d); path.setAttribute('fill','none');
+    path.setAttribute('stroke',dash?'var(--wire-dash)':flow?'var(--flow)':'var(--wire)');
+    path.setAttribute('stroke-width',dash?1.6:2);
+    if(dash) path.setAttribute('stroke-dasharray','5 5');
+    path.setAttribute('marker-end',dash?'url(#arrd)':flow?'url(#arrf)':'url(#arr)');
+    svg.appendChild(path);
+
+    [[p0.x,p0.y],[p1.x,p1.y]].forEach(([px,py])=>{
+      const key=px+','+py; if(seen.has(key))return; seen.add(key);
+      const c=document.createElementNS(ns,'circle');
+      c.setAttribute('cx',px); c.setAttribute('cy',py); c.setAttribute('r',4);
+      c.setAttribute('fill','#fff');
+      c.setAttribute('stroke',flow?'var(--flow)':'var(--wire)'); c.setAttribute('stroke-width',1.6);
+      svg.appendChild(c);
+    });
+
+    if(e.l){
+      const mx=(p0.x+p1.x)/2;
+      const lab=document.createElement('div');
+      lab.className='elabel'; lab.style.left=mx+'px'; lab.style.top=my+'px'; lab.textContent=e.l;
+      canvas.appendChild(lab);
+    }
+  });
+}
+</script>
+</body>
+</html>
