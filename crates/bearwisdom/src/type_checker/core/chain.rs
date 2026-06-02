@@ -395,7 +395,12 @@ impl<'a> ChainWalker<'a> {
                 && !ref_ctx.extracted_ref.call_args.is_empty();
             let arg_count = is_call_seg.then(|| ref_ctx.extracted_ref.call_args.len());
             let arg_type_ids: Vec<TypeId> = if is_call_seg {
-                resolve_arg_types(&ref_ctx.extracted_ref.call_args, self.arena, self.lookup)
+                resolve_arg_types(
+                    &ref_ctx.extracted_ref.call_args,
+                    self.arena,
+                    self.lookup,
+                    self.profile,
+                )
             } else {
                 Vec::new()
             };
