@@ -6,7 +6,7 @@ use crate::types::{
 };
 
 fn import_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Imports,

@@ -132,7 +132,7 @@ fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
     {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: name,
         kind: EdgeKind::TypeRef,
@@ -185,7 +185,7 @@ pub(super) fn extract_bases(
                 match base.kind() {
                     "type_identifier" => {
                         let name = node_text(base, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind: EdgeKind::Inherits,
@@ -203,7 +203,7 @@ pub(super) fn extract_bases(
                         for inner in base.children(&mut ic) {
                             if inner.kind() == "type_identifier" {
                                 let name = node_text(inner, src);
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: source_idx,
                                     target_name: name,
                                     kind: EdgeKind::Inherits,

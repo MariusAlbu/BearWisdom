@@ -102,7 +102,7 @@ fn visit_expr(
             let name = resolve_call_name(node, src)
                 .unwrap_or_else(|| node_text(node, src));
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -345,7 +345,7 @@ pub(super) fn extract_value_refs(
             let name = resolve_call_name(node, src)
                 .unwrap_or_else(|| node_text(node, src));
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::Calls,

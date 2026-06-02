@@ -590,7 +590,7 @@ fn extract_import_spec_recursive(
                     .unwrap_or(&module)
                     .trim_end_matches(".dart")
                     .to_string();
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -626,7 +626,7 @@ pub(super) fn extract_part_directive(
                 .unwrap_or(&module)
                 .trim_end_matches(".dart")
                 .to_string();
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: current_symbol_count,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -880,7 +880,7 @@ pub(super) fn extract_dart_heritage(
         if let Some(type_node) = superclass_node.child_by_field_name("type") {
             let name = node_text(type_node, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Inherits,
@@ -898,7 +898,7 @@ pub(super) fn extract_dart_heritage(
             let mut c = superclass_node.walk();
             for n in superclass_node.children(&mut c) {
                 if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: node_text(n, src),
                         kind: EdgeKind::Inherits,
@@ -921,7 +921,7 @@ pub(super) fn extract_dart_heritage(
         let mut c = interfaces_node.walk();
         for n in interfaces_node.children(&mut c) {
             if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: node_text(n, src),
                     kind: EdgeKind::Implements,
@@ -944,7 +944,7 @@ pub(super) fn extract_dart_heritage(
         let mut c = mixins_node.walk();
         for n in mixins_node.children(&mut c) {
             if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: node_text(n, src),
                     kind: EdgeKind::TypeRef,
@@ -1023,7 +1023,7 @@ fn infer_type_from_dart_initializer(
             "identifier" => {
                 let name = node_text(child, src);
                 if name.starts_with(|c: char| c.is_uppercase()) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -1044,7 +1044,7 @@ fn infer_type_from_dart_initializer(
                     if inner.kind() == "identifier" {
                         let name = node_text(inner, src);
                         if name.starts_with(|c: char| c.is_uppercase()) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,

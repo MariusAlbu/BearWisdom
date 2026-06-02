@@ -164,7 +164,7 @@ fn handle_include(
     // and classify the call as external.
     let target = find_include_target(node, src);
     if !target.is_empty() {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Calls,
@@ -200,7 +200,7 @@ fn handle_extend(
     if target.contains("#{") {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::Inherits,
@@ -228,7 +228,7 @@ fn handle_import(
     let module = find_string_value(node, src);
     if !module.is_empty() {
         let target = path_to_target(&module);
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -258,7 +258,7 @@ fn handle_forward(
     let module = find_string_value(node, src);
     if !module.is_empty() {
         let target = path_to_target(&module);
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -303,7 +303,7 @@ fn handle_use(
         } else {
             path_to_target(&module)
         };
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -502,7 +502,7 @@ fn handle_call_expr(
     // built-ins (which misses every new CSS Level 5+ addition) or
     // treat all unresolved calls as external, which hides genuinely
     // broken `@include` references.
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::Calls,

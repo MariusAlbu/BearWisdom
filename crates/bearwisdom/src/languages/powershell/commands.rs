@@ -66,7 +66,7 @@ pub(super) fn extract_command(
             {
                 let module = text.trim_matches(|c| c == '"' || c == '\'').to_string();
                 if !module.is_empty() && module != cmd_name {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: module.clone(),
                         kind: EdgeKind::Imports,
@@ -85,7 +85,7 @@ pub(super) fn extract_command(
         }
         if !emitted {
             // Couldn't resolve module name — still emit so the node is covered
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: cmd_name,
                 kind: EdgeKind::Calls,
@@ -101,7 +101,7 @@ pub(super) fn extract_command(
         return;
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: cmd_name,
         kind: EdgeKind::Calls,
@@ -140,7 +140,7 @@ pub(super) fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &
                 });
             if !name.is_empty() {
                 let module = invokation_module(&child, src);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,

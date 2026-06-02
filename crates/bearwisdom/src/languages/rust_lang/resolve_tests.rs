@@ -34,7 +34,7 @@ fn make_symbol(
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -628,7 +628,7 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
             ChainSegment { name: "say_hello".to_string(), node_kind: "field_expression".to_string(), kind: SegmentKind::Property, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, is_call: false, type_arg_ids: Vec::new() },
         ],
     };
-    let extracted_ref = ExtractedRef {
+    let extracted_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "say_hello".to_string(),
         kind: EdgeKind::Calls,

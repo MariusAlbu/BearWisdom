@@ -835,7 +835,7 @@ fn extract_node(
                     if let Some(right) = child.child_by_field_name("right") {
                         let type_name = helpers::node_text(right, src);
                         if !type_name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: type_name,
                                 kind: EdgeKind::TypeRef,
@@ -884,7 +884,7 @@ fn extract_node(
                 let sym_idx = parent_index.unwrap_or(0);
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -908,7 +908,7 @@ fn extract_node(
                 let sym_idx = parent_index.unwrap_or(0);
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,

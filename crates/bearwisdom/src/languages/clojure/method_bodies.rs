@@ -166,7 +166,7 @@ pub(super) fn walk_method_body(
             if child.kind() == "sym_lit" {
                 let name = sym_lit_name(child, src);
                 if !name.is_empty() && !name.starts_with(':') {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: parent_idx.unwrap_or(0),
                         target_name: name,
                         kind: EdgeKind::Calls,

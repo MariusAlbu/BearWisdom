@@ -135,7 +135,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
 
     // Component usages: PascalCase or kebab-case with hyphens
     if let Some(component_name) = as_component_name(&tag) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: component_name,
             kind: EdgeKind::Calls,
@@ -211,7 +211,7 @@ fn try_extract_event_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef
         return; // inline expression, skip
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: handler,
         kind: EdgeKind::Calls,

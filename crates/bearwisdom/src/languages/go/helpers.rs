@@ -245,7 +245,7 @@ pub(super) fn extract_function_type_refs(
                             if let Some(tn) = type_node {
                                 let name = extract_go_type_name(&tn, source);
                                 if !name.is_empty() && !is_go_builtin_type(&name) {
-                                    refs.push(crate::types::ExtractedRef {
+                                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                                         source_symbol_index,
                                         target_name: name,
                                         kind: EdgeKind::TypeRef,
@@ -264,7 +264,7 @@ pub(super) fn extract_function_type_refs(
                             // Bare type in result or single-type result.
                             let name = extract_go_type_name(&param_child, source);
                             if !name.is_empty() && !is_go_builtin_type(&name) {
-                                refs.push(crate::types::ExtractedRef {
+                                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,

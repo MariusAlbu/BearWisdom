@@ -424,7 +424,7 @@ fn infer_external_namespace_from_hash_r_import() {
 
     // Simulate a ParsedFile that has a #r-derived Imports ref for Fornax.Core.
     // build_file_context converts this to a FileContext with one import entry.
-    let fornax_import = ExtractedRef {
+    let fornax_import = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Fornax.Core".to_string(),
         kind: EdgeKind::Imports,
@@ -448,7 +448,7 @@ fn infer_external_namespace_from_hash_r_import() {
         file_namespace: None,
     };
 
-    let div_ref = ExtractedRef {
+    let div_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "div".to_string(),
         kind: EdgeKind::Calls,

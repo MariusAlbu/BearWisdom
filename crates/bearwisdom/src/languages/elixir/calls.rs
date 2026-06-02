@@ -39,7 +39,7 @@ pub(super) fn extract_calls_recursive(
                             None => true, // bare call — keep
                         };
                         if receiver_is_module {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: simple,
                                 kind: EdgeKind::Calls,
@@ -72,7 +72,7 @@ pub(super) fn extract_calls_recursive(
                 let name = node_text(child, src);
                 if !name.is_empty() {
                     let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: simple,
                         kind: EdgeKind::TypeRef,
@@ -152,7 +152,7 @@ pub(super) fn extract_dot_call_module_ref(
                                 return;
                             }
                             let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: simple,
                                 kind: EdgeKind::TypeRef,
@@ -205,7 +205,7 @@ pub(super) fn extract_pipe_calls(
                     if !n.is_empty() {
                         let simple = n.rsplit('.').next().unwrap_or(&n).to_string();
                         let module = n.rfind('.').map(|i| n[..i].to_string());
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: simple,
                             kind: EdgeKind::Calls,
@@ -232,7 +232,7 @@ pub(super) fn extract_pipe_calls(
         if !n.is_empty() {
             let simple = n.rsplit('.').next().unwrap_or(&n).to_string();
             let module = n.rfind('.').map(|i| n[..i].to_string());
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: simple,
                 kind: EdgeKind::Calls,

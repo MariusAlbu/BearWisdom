@@ -120,7 +120,7 @@ fn collect_component_refs(
                     // lookup time, so leaving it None here keeps the
                     // engine's generic module-based external classifier
                     // from mis-treating "app-avatar" as an npm package.
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: host_index,
                         target_name: normalized,
                         kind: EdgeKind::Calls,
@@ -188,7 +188,7 @@ fn collect_attribute_directive_refs(
                 }
             };
             if let Some(selector) = normalize_attribute_as_directive(raw_attr) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: selector,
                     kind: EdgeKind::Calls,

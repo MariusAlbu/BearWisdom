@@ -254,7 +254,7 @@ fn emit_namespace_target_refs(
     if matches!(node.kind(), "namespace_identifier" | "type_identifier") {
         let name = node_text(*node, src);
         if !name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name,
                 kind: EdgeKind::TypeRef,
@@ -582,7 +582,7 @@ pub(super) fn push_include(
                 let raw = node_text(child, src);
                 let path = raw.trim_matches('"').trim_matches('<').trim_matches('>');
                 let target_name = path.rsplit('/').next().unwrap_or(path).to_string();
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name,
                     kind: EdgeKind::Imports,

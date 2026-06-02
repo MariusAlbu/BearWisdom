@@ -364,7 +364,7 @@ pub fn emit_chain_type_ref(
     }
     let type_seg = &c.segments[c.segments.len() - 2];
     if type_seg.name.chars().next().map_or(false, |ch| ch.is_uppercase()) {
-        refs.push(crate::types::ExtractedRef {
+        refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: type_seg.name.clone(),
             kind: crate::types::EdgeKind::TypeRef,

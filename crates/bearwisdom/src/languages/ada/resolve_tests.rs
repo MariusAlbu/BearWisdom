@@ -157,7 +157,7 @@ fn make_extracted_sym(name: &str, qname: &str) -> ExtractedSymbol {
 }
 
 fn make_extracted_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -689,7 +689,7 @@ fn used_package_variable_type_dispatch_resolves_dotted_call() {
 fn test_ada_exec_select_emits_db_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use crate::types::CallArg;
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Exec".to_string(),
         kind: EdgeKind::Calls,
@@ -724,7 +724,7 @@ fn test_ada_exec_select_emits_db_select() {
 #[test]
 fn test_ada_no_emit_for_non_sql() {
     use crate::types::CallArg;
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Put_Line".to_string(),
         kind: EdgeKind::Calls,

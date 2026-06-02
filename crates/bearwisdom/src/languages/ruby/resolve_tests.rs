@@ -32,7 +32,7 @@ fn make_symbol(
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -46,7 +46,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
     }
 }
 fn make_require(source_idx: usize, name: &str, module: Option<&str>) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: name.to_string(),
         kind: EdgeKind::Imports,
@@ -298,7 +298,7 @@ fn test_stdlib_require_is_external() {
 
     let resolver = RubyResolver;
     let file_ctx = resolver.build_file_context(&file, None);
-    let import_ref = ExtractedRef {
+    let import_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "json".to_string(),
         kind: EdgeKind::Imports,

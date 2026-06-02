@@ -70,7 +70,7 @@ fn emit_annotation(
     match node.kind() {
         "marker_annotation" => {
             if let Some(name) = annotation_name(node, src) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -87,7 +87,7 @@ fn emit_annotation(
         "annotation" => {
             if let Some(name) = annotation_name(node, src) {
                 let first_arg = extract_first_string_arg(node, src);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,

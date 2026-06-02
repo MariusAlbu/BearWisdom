@@ -57,7 +57,7 @@ fn make_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,

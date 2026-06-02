@@ -77,7 +77,7 @@ fn make_source_import(raw_path: &str) -> ExtractedRef {
         .trim_end_matches(".sh")
         .trim_end_matches(".bash")
         .to_string();
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: stem,
         kind: EdgeKind::Imports,
@@ -92,7 +92,7 @@ fn make_source_import(raw_path: &str) -> ExtractedRef {
 }
 
 fn make_calls_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,

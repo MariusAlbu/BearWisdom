@@ -55,7 +55,7 @@ pub(super) fn scan_all_type_identifiers(
         if child.kind() == "type_identifier" && child.is_named() {
             let name = node_text(child, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,

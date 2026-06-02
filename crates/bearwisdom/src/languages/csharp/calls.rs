@@ -236,7 +236,7 @@ pub(super) fn extract_calls_from_body(
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !name.is_empty() && !is_csharp_keyword(&name) {
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -257,7 +257,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(type_node) = child.child_by_field_name("type") {
                     let name = simple_type_name(type_node, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Instantiates,
@@ -362,7 +362,7 @@ pub(super) fn extract_calls_from_body(
                             }
                         };
                         if !name.is_empty() && !is_csharp_keyword(&name) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,

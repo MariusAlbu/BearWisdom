@@ -27,7 +27,7 @@ fn make_class_symbol(name: &str) -> ExtractedSymbol {
 }
 
 fn make_partial_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
@@ -233,7 +233,7 @@ fn calls_kind_refs_are_not_resolved_by_partial_resolver() {
     let source = make_file(
         "templates/page.hbs",
         vec![make_class_symbol("page")],
-        vec![ExtractedRef {
+        vec![ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: "eq".to_string(),
             kind: EdgeKind::Calls,

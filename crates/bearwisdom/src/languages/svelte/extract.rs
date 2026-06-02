@@ -134,7 +134,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
 
     // Component usages: PascalCase or kebab-case with hyphens
     if let Some(component_name) = as_component_name(&tag) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: component_name,
             kind: EdgeKind::Calls,
@@ -212,7 +212,7 @@ fn try_extract_on_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) 
         return; // inline expression, not a named handler
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: handler,
         kind: EdgeKind::Calls,
@@ -244,7 +244,7 @@ fn extract_svelte_blocks(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
                 .take_while(|&c| c.is_alphanumeric() || c == '_')
                 .collect();
             if !ident.is_empty() && !SVELTE_KEYWORDS.contains(&ident.as_str()) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: 0,
                     target_name: ident,
                     kind: EdgeKind::Calls,

@@ -165,7 +165,7 @@ pub(super) fn extract_from_node(
                         "dotted_name" | "identifier" => {
                             let name = helpers::node_text(&fc, source);
                             if !name.is_empty() && name != "__future__" {
-                                refs.push(crate::types::ExtractedRef {
+                                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: owner,
                                     target_name: name,
                                     kind: crate::types::EdgeKind::Imports,
@@ -327,7 +327,7 @@ fn emit_type_ref_from_annotation(
             if !name.is_empty()
                 && !matches!(name.as_str(), "None" | "int" | "str" | "float" | "bool" | "bytes")
             {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -352,7 +352,7 @@ fn emit_type_ref_from_annotation(
                         .child_by_field_name("object")
                         .map(|o| node_text(&o, source))
                         .filter(|s| !s.is_empty());
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -404,7 +404,7 @@ fn scan_type_annotation_nodes(
                 // annotations (e.g. bare `str`) emit nothing — there's no real
                 // target to reference.
                 if let Some(name) = collect_first_nonbuiltin_type_name(&child, source) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -420,7 +420,7 @@ fn scan_type_annotation_nodes(
             }
             "generic_type" | "union_type" if child.is_named() => {
                 if let Some(name) = collect_first_nonbuiltin_type_name(&child, source) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -455,7 +455,7 @@ fn emit_type_ref_from_type_node(
                 && !matches!(name.as_str(), "int" | "float" | "str" | "bool" | "bytes"
                     | "None" | "list" | "dict" | "set" | "tuple" | "type" | "object" | "complex")
             {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,

@@ -62,7 +62,7 @@ pub(super) fn extract_is_expression_refs(
                         _ => String::new(),
                     };
                     if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
@@ -138,7 +138,7 @@ pub(super) fn extract_is_expression_refs(
             _ => String::new(),
         };
         if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -186,7 +186,7 @@ fn extract_pattern_type_refs_recursive(
                     _ => String::new(),
                 };
                 if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -248,7 +248,7 @@ fn emit_pattern_type_ref(
             _ => node_text(type_node, src),
         };
         if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,

@@ -108,7 +108,7 @@ fn extract_from_attribute_list(
     for child in attr_list.children(&mut cursor) {
         if child.kind() == "attribute" {
             if let Some((name, first_arg)) = parse_attribute(&child, src) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,

@@ -162,7 +162,7 @@ mod tests {
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
 }],
-            refs: vec![crate::types::ExtractedRef {
+            refs: vec![crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: "OtherClass".to_string(),
                 kind: EdgeKind::TypeRef,

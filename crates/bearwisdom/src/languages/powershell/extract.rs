@@ -151,7 +151,7 @@ fn visit(
                     });
                 if !name.is_empty() {
                     let module = invokation_module(&child, src);
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -315,7 +315,7 @@ fn extract_class(
                 "simple_name" if saw_colon => {
                     let base = node_text(&child, src).to_string();
                     if !base.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: class_idx,
                             target_name: base,
                             kind: EdgeKind::Inherits,
@@ -523,7 +523,7 @@ fn extract_using(
     };
 
     if !target.is_empty() {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target.clone(),
             kind: EdgeKind::Imports,
@@ -728,7 +728,7 @@ fn extract_member_access(
             return;
         }
 
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,

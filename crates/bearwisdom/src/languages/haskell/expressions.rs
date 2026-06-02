@@ -69,7 +69,7 @@ pub(super) fn extract_apply(
     if fname.is_empty() {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: fname,
         kind: EdgeKind::Calls,
@@ -185,7 +185,7 @@ pub(super) fn extract_infix(
         return;
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: op_text,
         kind: EdgeKind::Calls,

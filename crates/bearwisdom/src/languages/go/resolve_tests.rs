@@ -38,7 +38,7 @@ fn make_symbol(
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -58,7 +58,7 @@ fn make_import_ref(
     full_path: &str,
     line: u32,
 ) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: last_segment.to_string(),
         kind: EdgeKind::Imports,
@@ -353,7 +353,7 @@ fn test_build_file_context_alias_import() {
         )],
         vec![],
     );
-    file.refs.push(ExtractedRef {
+    file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "mygin".to_string(),
         kind: EdgeKind::Imports,
@@ -391,7 +391,7 @@ fn test_build_file_context_blank_import_skipped() {
         vec![],
     );
     // Blank import: side effects only
-    file.refs.push(ExtractedRef {
+    file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "_".to_string(),
         kind: EdgeKind::Imports,
@@ -683,7 +683,7 @@ fn test_import_alias_resolution() {
         vec![make_ref(0, "Default", EdgeKind::Calls, 10)],
     );
     // Aliased import
-    main_file.refs.push(ExtractedRef {
+    main_file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "mygin".to_string(),
         kind: EdgeKind::Imports,
@@ -1118,7 +1118,7 @@ fn test_is_visible_public_always() {
     };
 
     // Dummy ref_ctx (not used by is_visible for public symbols)
-    let sym_ref = ExtractedRef {
+    let sym_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Exported".to_string(),
         kind: EdgeKind::Calls,
@@ -1163,7 +1163,7 @@ fn test_is_visible_private_same_dir() {
         signature: None,
     };
 
-    let sym_ref = ExtractedRef {
+    let sym_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "unexported".to_string(),
         kind: EdgeKind::Calls,
@@ -1213,7 +1213,7 @@ fn test_instantiates_ref_resolution() {
         )],
         vec![
             make_import_ref(0, "handlers", "example.com/app/handlers", 3),
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: "UserHandler".to_string(),
                 kind: EdgeKind::Instantiates,

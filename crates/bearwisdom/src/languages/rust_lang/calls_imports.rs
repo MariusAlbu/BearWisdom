@@ -33,7 +33,7 @@ pub(super) fn extract_extern_crate(
     if name.is_empty() || name == "self" {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: current_symbol_count,
         target_name: name,
         kind: EdgeKind::Imports,
@@ -98,7 +98,7 @@ fn walk_use_tree(
             }
 
             let module = build_module_path(prefix, &path);
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: current_symbol_count,
                 target_name: name,
                 kind: EdgeKind::Imports,
@@ -194,7 +194,7 @@ fn walk_use_tree(
                 None
             };
 
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: current_symbol_count,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -214,7 +214,7 @@ fn walk_use_tree(
             } else {
                 Some(prefix.to_string())
             };
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: current_symbol_count,
                 target_name: "*".to_string(),
                 kind: EdgeKind::Imports,
@@ -238,7 +238,7 @@ fn walk_use_tree(
             } else {
                 Some(prefix.to_string())
             };
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: current_symbol_count,
                 target_name: name,
                 kind: EdgeKind::Imports,

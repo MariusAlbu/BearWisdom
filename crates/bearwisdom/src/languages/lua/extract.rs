@@ -578,7 +578,7 @@ fn extract_function_call(
             if name == "require" {
                 // Extract the module path
                 if let Some(module_path) = extract_require_arg(node, src) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: module_path.clone(),
                         kind: EdgeKind::Imports,
@@ -595,7 +595,7 @@ fn extract_function_call(
                 // `setmetatable(Child, {__index = Parent})` — Lua prototype inheritance.
                 // Emit Calls for setmetatable itself, then Inherits for the parent if
                 // the second arg has `__index = <name>`.
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -608,7 +608,7 @@ fn extract_function_call(
     col: 0,
 });
                 if let Some(parent) = extract_setmetatable_parent(node, src) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: parent,
                         kind: EdgeKind::Inherits,
@@ -622,7 +622,7 @@ fn extract_function_call(
 });
                 }
             } else if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -639,7 +639,7 @@ fn extract_function_call(
         "dot_index_expression" => {
             let method = get_index_field_name(&callee, src);
             if !method.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: method,
                     kind: EdgeKind::Calls,
@@ -656,7 +656,7 @@ fn extract_function_call(
         "method_index_expression" => {
             let method = get_method_name(&callee, src);
             if !method.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: method,
                     kind: EdgeKind::Calls,

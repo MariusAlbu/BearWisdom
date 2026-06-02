@@ -161,7 +161,7 @@ pub(super) fn extract_from_node(
                 let sym_idx = parent_index.unwrap_or(0);
                 let type_name = super::helpers::node_text(&child, src);
                 if !type_name.is_empty() {
-                    refs.push(crate::types::ExtractedRef {
+                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: type_name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -183,7 +183,7 @@ pub(super) fn extract_from_node(
                 let sym_idx = parent_index.unwrap_or(0);
                 let type_name = super::helpers::node_text(&child, src);
                 if !type_name.is_empty() {
-                    refs.push(crate::types::ExtractedRef {
+                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: type_name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -258,7 +258,7 @@ fn scan_all_constants(
             "constant" if child.is_named() => {
                 let name = super::helpers::node_text(&child, src);
                 if !name.is_empty() {
-                    refs.push(crate::types::ExtractedRef {
+                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -277,7 +277,7 @@ fn scan_all_constants(
                 let full = super::helpers::node_text(&child, src);
                 let name = full.rsplit("::").next().unwrap_or(&full).to_string();
                 if !name.is_empty() {
-                    refs.push(crate::types::ExtractedRef {
+                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,

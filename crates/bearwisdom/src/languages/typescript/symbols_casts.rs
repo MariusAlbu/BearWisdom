@@ -109,7 +109,7 @@ pub(super) fn extract_type_ref_from_type_assertion(
             "type_identifier" | "identifier" => {
                 let type_name = node_text(child, src);
                 if !type_name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -128,7 +128,7 @@ pub(super) fn extract_type_ref_from_type_assertion(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let type_name = node_text(name_node, src);
                     if !type_name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,

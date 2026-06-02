@@ -150,7 +150,7 @@ pub(super) fn emit_type_refs_from_type_node(
         "type_identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -175,7 +175,7 @@ pub(super) fn emit_type_refs_from_type_node(
                 let name = node_text(&n, source);
                 if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
                     let line = n.start_position().row as u32;
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name.clone(),
                         kind: EdgeKind::TypeRef,
@@ -187,7 +187,7 @@ pub(super) fn emit_type_refs_from_type_node(
                                             call_args: Vec::new(),
     col: 0,
 });
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,

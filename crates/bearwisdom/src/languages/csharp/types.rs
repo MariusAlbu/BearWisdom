@@ -55,7 +55,7 @@ pub(super) fn extract_base_types(
                         if looks_like_interface(&name) {
                             // Don't flip first_concrete for interfaces.
                         }
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind,
@@ -109,7 +109,7 @@ pub(super) fn extract_type_refs_from_type_node(
         "identifier" => {
             let name = node_text(type_node, src);
             if !name.is_empty() && !is_builtin_type(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -127,7 +127,7 @@ pub(super) fn extract_type_refs_from_type_node(
             let full = node_text(type_node, src);
             let simple = full.rsplit('.').next().unwrap_or(&full).to_string();
             if !simple.is_empty() && !is_builtin_type(&simple) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
@@ -150,7 +150,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     "identifier" => {
                         let name = node_text(child, src);
                         if !name.is_empty() && !is_builtin_type(&name) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,

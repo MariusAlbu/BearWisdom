@@ -331,7 +331,7 @@ fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
             continue;
         }
 
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: assembly.to_string(),
             kind: EdgeKind::Imports,
@@ -362,7 +362,7 @@ fn extract_open(
     if module.is_empty() {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: module.clone(),
         kind: EdgeKind::Imports,
@@ -601,7 +601,7 @@ pub(super) fn extract_interface_implementation(
         // For a bare `identifier` node we just use its text.
         let iface_name = last_identifier_text(child, src);
         if !iface_name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: iface_name,
                 kind: EdgeKind::Implements,
@@ -638,7 +638,7 @@ pub(super) fn extract_class_inherits(
         // The type node — extract first identifier as base class name.
         let base_name = first_identifier_from_type(child, src);
         if !base_name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: base_name,
                 kind: EdgeKind::Inherits,

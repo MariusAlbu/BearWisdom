@@ -343,7 +343,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
 
         if let Some(target_name) = target_name_opt {
             // Only emit the ref if we have a real target name.
-            ctx.refs.push(ExtractedRef {
+            ctx.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: ctx.symbols.len().saturating_sub(1).max(0),
                 target_name,
                 kind: EdgeKind::Imports,
@@ -446,7 +446,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
     // ---- Call references ---------------------------------------------------
     if helpers::is_call_node(kind) {
         if let Some(callee_name) = helpers::extract_call_target(node, ctx) {
-            ctx.refs.push(ExtractedRef {
+            ctx.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: ctx.symbols.len().saturating_sub(1),
                 target_name: callee_name,
                 kind: EdgeKind::Calls,
@@ -469,7 +469,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
             if !helpers::is_declaration_name_position(node, parent) {
                 let name = ctx.text(node).trim();
                 if !name.is_empty() && name != "void" && name != "var" {
-                    ctx.refs.push(ExtractedRef {
+                    ctx.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: ctx.symbols.len().saturating_sub(1),
                         target_name: name.to_string(),
                         kind: EdgeKind::TypeRef,

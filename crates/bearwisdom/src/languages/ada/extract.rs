@@ -431,7 +431,7 @@ fn walk_node(
             }
             if let (Some(alias), Some(target)) = (alias_name, target_module) {
                 if !alias.is_empty() && !target.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: alias.clone(),
                         kind: EdgeKind::Imports,
@@ -468,7 +468,7 @@ fn walk_node(
                     "identifier" => {
                         let name = text(child, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: name,
                                 kind: EdgeKind::Imports,
@@ -486,7 +486,7 @@ fn walk_node(
                         // Use the full text (e.g. "Ada.Text_IO") as module name
                         let name = text(child, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: name,
                                 kind: EdgeKind::Imports,
@@ -517,7 +517,7 @@ fn walk_node(
                 if let Some(name_node) = node.child_by_field_name("name") {
                     let name = call_target_text(name_node, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::Calls,

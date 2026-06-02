@@ -182,7 +182,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
 });
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: decl_idx,
                     target_name: path,
                     kind: EdgeKind::Imports,
@@ -392,7 +392,7 @@ fn extract_struct_body(
 
             // Emit TypeRef for non-primitive types
             if !is_primitive(&type_name) && type_name.chars().next().map_or(false, |c| c.is_alphanumeric() || c == '_') {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: field_idx,
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
@@ -708,7 +708,7 @@ fn extract_call_identifiers(
         // Check if followed immediately by `(`
         if i < bytes.len() && bytes[i] == b'(' {
             if !ZIG_KEYWORDS.contains(&ident) && !is_primitive(ident) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: ident.to_string(),
                     kind: EdgeKind::Calls,

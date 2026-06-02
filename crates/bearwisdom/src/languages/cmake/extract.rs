@@ -161,7 +161,7 @@ fn visit_def_body(
             if let Some(name) = command_identifier(&child, src) {
                 // Only emit Calls for user-defined (non-builtin) commands.
                 if !is_cmake_builtin(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -239,7 +239,7 @@ fn collect_variable_refs(
         // unparsed tail leaks into the name.  They cannot be resolved and
         // add noise to unresolved-ref counts.
         if !target.is_empty() && !target.contains('}') {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: target,
                 kind: EdgeKind::TypeRef,

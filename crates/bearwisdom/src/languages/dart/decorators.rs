@@ -82,7 +82,7 @@ fn emit_annotation(
 ) {
     if let Some(name) = annotation_name(node, src) {
         let first_arg = extract_first_string_arg(node, src);
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -204,7 +204,7 @@ fn extract_cascade_section(
                     if inner.kind() == "identifier" {
                         let name = node_text(inner, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::Calls,
@@ -225,7 +225,7 @@ fn extract_cascade_section(
             "identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Calls,

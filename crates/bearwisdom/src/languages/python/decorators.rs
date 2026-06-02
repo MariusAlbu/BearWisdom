@@ -40,7 +40,7 @@ pub(super) fn extract_decorators(
     for child in decorated_def_node.children(&mut cursor) {
         if child.kind() == "decorator" {
             if let Some((name, first_arg)) = parse_decorator(&child, source) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,

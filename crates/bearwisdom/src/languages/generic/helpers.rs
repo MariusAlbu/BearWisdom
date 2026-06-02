@@ -553,7 +553,7 @@ pub(super) fn for_each_type_child<'src>(
         let child = clause.child(i).unwrap();
         if child.is_named() {
             if let Some(name) = extract_type_name(child, ctx) {
-                ctx.refs.push(ExtractedRef {
+                ctx.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: edge_kind,

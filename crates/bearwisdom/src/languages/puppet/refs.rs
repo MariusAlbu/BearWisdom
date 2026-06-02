@@ -40,7 +40,7 @@ pub(super) fn extract_resource_declaration(
     ));
 
     // Calls edge to the resource type.
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: idx,
         target_name: res_type,
         kind: EdgeKind::Calls,
@@ -103,7 +103,7 @@ pub(super) fn extract_include_or_require(
         if matches!(child.kind(), "class_identifier" | "identifier") {
             let name = node_text(child, src);
             // Imports edge.
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name.clone(),
                 kind: EdgeKind::Imports,
@@ -116,7 +116,7 @@ pub(super) fn extract_include_or_require(
                             call_args: Vec::new(),
 });
             // Calls edge.
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -167,7 +167,7 @@ pub(super) fn extract_function_call(
         }
     };
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: if name.is_empty() { "fn".to_string() } else { name },
         kind: EdgeKind::Calls,
@@ -207,7 +207,7 @@ pub(super) fn collect_all_function_calls(
             let raw = node_text(node, src);
             name = raw.lines().next().unwrap_or("").split('(').next().unwrap_or("fn").trim().to_string();
         }
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: if name.is_empty() { "fn".to_string() } else { name },
             kind: EdgeKind::Calls,
@@ -255,7 +255,7 @@ pub(super) fn collect_resource_references(
             let raw = node_text(node, src);
             name = raw.split('[').next().unwrap_or("").trim().to_string();
         }
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: if name.is_empty() { "Resource".to_string() } else { name },
             kind: EdgeKind::TypeRef,

@@ -49,7 +49,7 @@ pub fn extract(source: &str) -> ExtractionResult {
 
         // use statement
         if let Some(target) = parse_use(trimmed) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: target,
                 kind: EdgeKind::Imports,

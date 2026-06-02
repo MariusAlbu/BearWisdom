@@ -99,7 +99,7 @@ pub(super) fn extract_refs_from_body(
                                     EdgeKind::Calls
                                 };
 
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: edge_kind,
@@ -138,7 +138,7 @@ pub(super) fn extract_refs_from_body(
                         let type_ref_line = n.start_position().row as u32;
                         let type_ref_byte = n.start_byte() as u32;
                         // First TypeRef — consumed by the `qualified_type` budget.
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name.clone(),
                             kind: EdgeKind::TypeRef,
@@ -152,7 +152,7 @@ pub(super) fn extract_refs_from_body(
 });
                         // Second TypeRef at the same line — consumed by the
                         // `type_identifier` budget inside the qualified_type.
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -174,7 +174,7 @@ pub(super) fn extract_refs_from_body(
             "type_identifier" => {
                 let name = node_text(&child, source);
                 if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -199,7 +199,7 @@ pub(super) fn extract_refs_from_body(
                     if !type_name.is_empty()
                         && !super::helpers::is_go_builtin_type(&type_name)
                     {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
@@ -245,7 +245,7 @@ pub(super) fn extract_refs_from_body(
             "array_type" => {
                 let type_name = super::helpers::extract_go_type_name(&child, source);
                 if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -272,7 +272,7 @@ pub(super) fn extract_refs_from_body(
             "generic_type" => {
                 let type_name = super::helpers::extract_go_type_name(&child, source);
                 if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,

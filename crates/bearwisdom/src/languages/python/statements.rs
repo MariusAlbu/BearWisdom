@@ -152,7 +152,7 @@ fn extract_with_item(
                             .map(|s| s.name.clone())
                             .unwrap_or_default();
                         if !target.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,
@@ -330,7 +330,7 @@ pub(super) fn extract_named_expression(
             if let Some(chain) = build_chain(&func, source) {
                 let target = chain.segments.last().map(|s| s.name.clone()).unwrap_or_default();
                 if !target.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: target,
                         kind: EdgeKind::TypeRef,
@@ -503,7 +503,7 @@ fn extract_pattern_refs(
                 // dotted_name contains identifiers; use the whole text as the type name.
                 let class_name = node_text(&class_node, source);
                 if !class_name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
                         target_name: class_name,
                         kind: EdgeKind::TypeRef,
@@ -861,7 +861,7 @@ pub(super) fn extract_except_clause(
                 let name = node_text(&child, source);
                 // Skip the `except` keyword itself (though it's usually anonymous).
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -904,7 +904,7 @@ fn extract_except_type_refs(
         "identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: enclosing_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -922,7 +922,7 @@ fn extract_except_type_refs(
             if let Some(attr) = node.child_by_field_name("attribute") {
                 let name = node_text(&attr, source);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -974,7 +974,7 @@ pub(super) fn extract_raise_statement(
             "identifier" => {
                 let name = node_text(&child, source);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -994,7 +994,7 @@ pub(super) fn extract_raise_statement(
                         "identifier" => {
                             let name = node_text(&func, source);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: enclosing_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -1012,7 +1012,7 @@ pub(super) fn extract_raise_statement(
                             if let Some(attr) = func.child_by_field_name("attribute") {
                                 let name = node_text(&attr, source);
                                 if !name.is_empty() {
-                                    refs.push(ExtractedRef {
+                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                         source_symbol_index: enclosing_symbol_index,
                                         target_name: name,
                                         kind: EdgeKind::TypeRef,

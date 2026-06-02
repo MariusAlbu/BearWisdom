@@ -87,7 +87,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     // for the block content of a partial-block — not a real
                     // partial reference, no file to resolve.
                     if !name.is_empty() && name != "@partial-block" {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: name,
                             kind: EdgeKind::Imports,

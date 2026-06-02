@@ -588,7 +588,7 @@ pub(super) fn push_import(
     }
     let full = parts.join(".");
     let target = parts.last().cloned().unwrap_or_else(|| full.clone());
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: current_symbol_count,
         target_name: target,
         kind: EdgeKind::Imports,
@@ -626,7 +626,7 @@ pub(super) fn extract_type_inheritance(
                                     EdgeKind::Inherits
                                 };
                                 first = false;
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: source_idx,
                                     target_name: name,
                                     kind,
@@ -652,7 +652,7 @@ pub(super) fn extract_type_inheritance(
                         EdgeKind::Inherits
                     };
                     first = false;
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind,

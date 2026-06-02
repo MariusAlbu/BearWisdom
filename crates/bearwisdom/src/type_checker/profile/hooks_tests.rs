@@ -3,7 +3,7 @@ use crate::type_checker::core::types::TypeArena;
 use crate::types::{CallArg, EdgeKind, ExtractedRef};
 
 fn make_ref() -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "x".to_string(),
         kind: EdgeKind::Calls,

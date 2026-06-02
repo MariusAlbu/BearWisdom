@@ -170,7 +170,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                                 let module = expr.child_by_field_name("module")
                                     .map(|n| node_text(&n, src).to_string());
                                 if !fun_name.is_empty() {
-                                    refs.push(ExtractedRef {
+                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                         source_symbol_index: source_idx,
                                         target_name: format!("{}/{}", fun_name, arg_count),
                                         kind: EdgeKind::Calls,
@@ -208,7 +208,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                     // `doc/0` is still recognised as the `doc` directive.
                     let bare = target.split('/').next().unwrap_or(&target);
                     if !ATTR_CALL_SKIP.contains(&bare) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -239,7 +239,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                         } else {
                             format!("{}/{}", name, arity)
                         };
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -272,7 +272,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                         } else {
                             format!("{}/{}", fun_name, arity)
                         };
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -298,7 +298,7 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                         node_text(&name_node, src).to_string()
                     };
                     if !record_name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: record_name,
                             kind: EdgeKind::Instantiates,

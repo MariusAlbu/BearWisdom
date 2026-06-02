@@ -90,7 +90,7 @@ pub(super) fn push_variable_decl(
                                         .map(|s| s.name.clone())
                                         .unwrap_or_default();
                                     if !target.is_empty() {
-                                        refs.push(ExtractedRef {
+                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                             source_symbol_index: idx,
                                             target_name: target,
                                             kind: EdgeKind::TypeRef,
@@ -115,7 +115,7 @@ pub(super) fn push_variable_decl(
                                     _ => String::new(),
                                 };
                                 if !type_name.is_empty() {
-                                    refs.push(ExtractedRef {
+                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                         source_symbol_index: idx,
                                         target_name: type_name,
                                         kind: EdgeKind::TypeRef,
@@ -138,7 +138,7 @@ pub(super) fn push_variable_decl(
                                     .map(|s| s.name.clone())
                                     .unwrap_or_default();
                                 if !target.is_empty() {
-                                    refs.push(ExtractedRef {
+                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                         source_symbol_index: idx,
                                         target_name: target,
                                         kind: EdgeKind::TypeRef,
@@ -265,7 +265,7 @@ pub(super) fn push_variable_decl(
                                 is_call: false,
                                 type_arg_ids: Vec::new(),
 });
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: prop_idx,
                                 target_name: source_prop,
                                 kind: EdgeKind::TypeRef,
@@ -396,7 +396,7 @@ pub(super) fn push_variable_decl(
                                     is_call: false,
                                     type_arg_ids: Vec::new(),
 });
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: elem_sym_idx,
                                     target_name: elem_name,
                                     kind: EdgeKind::TypeRef,

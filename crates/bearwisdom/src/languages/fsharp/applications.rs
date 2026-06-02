@@ -74,7 +74,7 @@ pub(super) fn collect_applications(
                 // so we must recurse left to find `f`.
                 let name = extract_application_callee(&child, src);
                 if !name.is_empty() && !is_keyword(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -94,7 +94,7 @@ pub(super) fn collect_applications(
                 // We want the last long_identifier_or_op or identifier child (the member name).
                 if let Some(member) = extract_dot_member(&child, src) {
                     if !member.is_empty() && !is_keyword(&member) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: member,
                             kind: EdgeKind::Calls,

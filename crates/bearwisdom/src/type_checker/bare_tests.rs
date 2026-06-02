@@ -117,7 +117,7 @@ impl SymbolLookup for StubLookup {
 }
 
 fn mk_ref(target: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind,

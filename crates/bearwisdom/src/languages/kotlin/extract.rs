@@ -555,7 +555,7 @@ fn emit_annotation_ref(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if let Some(name) = annotation_type_name(node, src) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -631,7 +631,7 @@ fn scan_type_refs_inner(
             // Emit TypeRef for all user_type nodes — builtins will be unresolved
             // but we need the ref emitted for coverage credit at this line.
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -665,7 +665,7 @@ fn scan_type_refs_inner(
             // (the nullable_type node itself is the ref_node_kind being tracked).
             let name = calls::kotlin_type_name(&node, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -695,7 +695,7 @@ fn scan_type_refs_inner(
         // in ref_node_kinds, so we need a dedicated ref at this line).
         "annotation" | "file_annotation" => {
             if let Some(name) = annotation_name_pub(&node, src) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -739,7 +739,7 @@ fn scan_type_refs_inner(
                 }
             }
             if !found_name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: found_name,
                     kind: EdgeKind::TypeRef,
@@ -861,7 +861,7 @@ fn infer_type_from_initializer(
                         _ => None,
                     };
                     if let Some(name) = type_name {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -880,7 +880,7 @@ fn infer_type_from_initializer(
             "simple_identifier" | "identifier" => {
                 let name = node_text(child, src);
                 if name.starts_with(|c: char| c.is_uppercase()) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,

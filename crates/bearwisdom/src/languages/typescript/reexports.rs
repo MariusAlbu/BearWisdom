@@ -71,7 +71,7 @@ pub(super) fn extract_bare_reexports_via_imports(
                 let type_only = stmt_type_only || spec_type_only;
 
                 let source_idx = symbols.len().saturating_sub(1);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: exported_in_source,
                     kind: EdgeKind::Imports,
@@ -240,7 +240,7 @@ fn emit_triple_slash_ref(
         "types" => format!("@types/{value}"),
         _ => value.to_string(),
     };
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: module.clone(),
         kind: EdgeKind::Imports,
@@ -351,7 +351,7 @@ pub(super) fn extract_reexports(
                             // The Imports ref encodes the redirection — store
                             // the original so the resolver can find it in the
                             // source module. (Unchanged from prior behavior.)
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: source_idx,
                                 target_name: original_name.clone(),
                                 kind: EdgeKind::Imports,
@@ -429,7 +429,7 @@ pub(super) fn extract_reexports(
     }
 
     if has_wildcard {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: source_idx,
             target_name: "*".to_string(),
             kind: EdgeKind::Imports,

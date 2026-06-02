@@ -502,7 +502,7 @@ pub(super) fn extract_node<'a>(
                 let sym_idx = parent_index.unwrap_or(0);
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -543,7 +543,7 @@ fn extract_type_refs_from_type_node(
     if type_node.kind() == "type_identifier" {
         let name = helpers::node_text(*type_node, src);
         if !name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: crate::types::EdgeKind::TypeRef,
@@ -565,7 +565,7 @@ fn extract_type_refs_from_type_node(
             "type_identifier" => {
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -640,7 +640,7 @@ fn dispatch_body_node(
             if let Some(op) = node.child_by_field_name("operator") {
                 let target_name = node_text(op, src);
                 if !target_name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name,
                         kind: crate::types::EdgeKind::Calls,
@@ -667,7 +667,7 @@ fn dispatch_body_node(
                     .map(|s| s.name.clone())
                     .unwrap_or_else(|| call_target_name(&callee, src));
                 if !target_name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name,
                         kind: crate::types::EdgeKind::Calls,
@@ -690,7 +690,7 @@ fn dispatch_body_node(
                     "type_identifier" => {
                         let name = node_text(inner, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: crate::types::EdgeKind::Calls,
@@ -708,7 +708,7 @@ fn dispatch_body_node(
                         let full = node_text(inner, src);
                         let simple = full.rsplit('.').next().unwrap_or(&full).to_string();
                         if !simple.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: simple,
                                 kind: crate::types::EdgeKind::Calls,
@@ -753,7 +753,7 @@ fn scan_type_refs_inner(
     if node.kind() == "type_identifier" {
         let name = helpers::node_text(node, src);
         if !name.is_empty() && !super::predicates::is_scala_primitive_type(&name) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: crate::types::EdgeKind::TypeRef,
@@ -814,7 +814,7 @@ fn infer_type_from_value(
                     _ => None,
                 };
                 if let Some(name) = type_name {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -833,7 +833,7 @@ fn infer_type_from_value(
         "identifier" => {
             let name = helpers::node_text(*value_node, src);
             if name.starts_with(|c: char| c.is_uppercase()) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
@@ -853,7 +853,7 @@ fn infer_type_from_value(
             if let Some(type_node) = value_node.named_child(0) {
                 let name = helpers::node_text(type_node, src);
                 if name.starts_with(|c: char| c.is_uppercase()) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,

@@ -328,7 +328,7 @@ fn extract_union_type(
 
     // TypeRef for each member type
     for member in &members {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: member.clone(),
             kind: EdgeKind::TypeRef,
@@ -514,7 +514,7 @@ fn extract_input_value(
 });
 
     if let Some(t) = type_ref {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: t,
             kind: EdgeKind::TypeRef,
@@ -596,7 +596,7 @@ fn extract_schema_def(
     for child in node.children(&mut cursor) {
         if child.kind() == "root_operation_type_definition" {
             if let Some(type_name) = resolve_named_type_in_subtree(&child, src) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: idx,
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
@@ -708,7 +708,7 @@ fn extract_fragment_def(
 });
 
     if let Some(t) = on_type {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: t,
             kind: EdgeKind::TypeRef,
@@ -734,7 +734,7 @@ fn extract_type_extension(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if let Some(name) = child_name_text(node, src) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -813,7 +813,7 @@ fn extract_field_def(
 });
 
     if let Some(t) = type_ref {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: t,
             kind: EdgeKind::TypeRef,
@@ -877,7 +877,7 @@ fn collect_implements_interfaces(
                     first_child_of_kind(&child, "name").map(|n| node_text(n, src))
                 {
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Implements,

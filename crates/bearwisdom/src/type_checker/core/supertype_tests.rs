@@ -145,7 +145,7 @@ fn parsed_with_refs(
 }
 
 fn inherits_ref(source_idx: usize, target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Inherits,
@@ -160,7 +160,7 @@ fn inherits_ref(source_idx: usize, target: &str) -> ExtractedRef {
 }
 
 fn implements_ref(source_idx: usize, target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Implements,
@@ -359,7 +359,7 @@ fn build_explicit_ignores_non_inheritance_refs() {
     let parsed = vec![parsed_with_refs(
         "x.rs",
         vec![class_sym("Admin", "Admin")],
-        vec![ExtractedRef {
+        vec![ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: "doStuff".to_string(),
             kind: EdgeKind::Calls,

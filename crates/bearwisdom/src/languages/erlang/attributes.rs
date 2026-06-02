@@ -139,7 +139,7 @@ pub(super) fn extract_behaviour(
     if behaviour.is_empty() {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: behaviour.clone(),
         kind: EdgeKind::Implements,
@@ -195,7 +195,7 @@ pub(super) fn extract_import_attr(
             continue;
         }
         let target = format!("{}/{}", fun_name, arity_str);
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -213,7 +213,7 @@ pub(super) fn extract_import_attr(
     // When the `funs` list is empty or not structured (parse error), fall back
     // to a single module-level import so the resolver can still wildcard-match.
     if !emitted {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: module_name.clone(),
             kind: EdgeKind::Imports,
@@ -249,7 +249,7 @@ pub(super) fn extract_include(
     };
 
     if !file.is_empty() {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: file.clone(),
             kind: EdgeKind::Imports,

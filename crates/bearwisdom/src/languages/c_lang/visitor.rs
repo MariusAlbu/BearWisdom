@@ -297,7 +297,7 @@ pub(super) fn extract_node<'a>(
                         "type_identifier" => {
                             let name = node_text(type_node, src);
                             if !name.is_empty() && !predicates::is_c_primitive_type(&name) {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: type_source_idx,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,

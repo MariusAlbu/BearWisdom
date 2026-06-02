@@ -318,7 +318,7 @@ mod tests {
     use crate::types::ExtractedRef;
 
     fn typeref(target: &str) -> ExtractedRef {
-        ExtractedRef {
+        ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: target.into(),
             kind: EdgeKind::TypeRef,
@@ -382,7 +382,7 @@ mod tests {
     fn renamed_named_import_substitutes_target() {
         // import { foo as bar } from 'pkg'; ... bar() — ref carries
         // target_name="bar", needs to become "foo".
-        let mut refs = vec![ExtractedRef {
+        let mut refs = vec![ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: "bar".into(),
             kind: EdgeKind::Calls,
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn already_canonicalized_skipped() {
-        let mut refs = vec![ExtractedRef {
+        let mut refs = vec![ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: "X".into(),
             kind: EdgeKind::TypeRef,

@@ -223,7 +223,7 @@ fn extract_field(
     // Emit TypeRef for non-scalar types
     if !SCALARS.contains(&base_type) && !base_type.is_empty() && base_type.chars().next().map_or(false, |c| c.is_uppercase()) {
         let _ = is_optional;
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: field_index,
             target_name: base_type.to_string(),
             kind: EdgeKind::TypeRef,

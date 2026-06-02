@@ -102,7 +102,7 @@ fn walk_synthetic_macro_calls(
                         // method-chain tracking at the same depth.
                     } else if let Some((prefix, leaf)) = raw.rsplit_once("::") {
                         if !prefix.is_empty() && !leaf.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: leaf.to_string(),
                                 kind: EdgeKind::Calls,
@@ -117,7 +117,7 @@ fn walk_synthetic_macro_calls(
                         }
                     } else if !raw.contains(['.', '(']) {
                         // Plain identifier call: foo(...).
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: raw.to_string(),
                             kind: EdgeKind::Calls,

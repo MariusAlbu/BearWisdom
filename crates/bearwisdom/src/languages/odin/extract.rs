@@ -157,7 +157,7 @@ fn extract_import(
         .map(|p| p.trim_matches('"').to_string())
         .unwrap_or_else(|| name.clone());
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: sym_idx,
         target_name: target,
         kind: EdgeKind::Imports,
@@ -384,7 +384,7 @@ fn extract_using(
     // `using pkg` or `using pkg.Type` — grab the identifier after "using"
     if let Some(id) = find_first_identifier(node, src) {
         if !id.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: id,
                 kind: EdgeKind::TypeRef,
@@ -424,7 +424,7 @@ fn extract_calls_in_subtree(
             let target = target.rsplit('.').next().unwrap_or(&target).to_string();
 
             if !target.is_empty() && target != "(" {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: target,
                     kind: EdgeKind::Calls,

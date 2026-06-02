@@ -742,7 +742,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     .map(|(prefix, _)| prefix.to_string())
                     .filter(|p| !p.is_empty());
                 let line = node.start_position().row as u32;
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_index,
                     target_name: leaf,
                     kind: EdgeKind::TypeRef,
@@ -852,7 +852,7 @@ pub(super) fn extract_type_refs_from_type_node(
 }
 
 fn make_type_ref(sym_index: usize, name: String, line: u32, byte_offset: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: sym_index,
         target_name: name,
         kind: EdgeKind::TypeRef,

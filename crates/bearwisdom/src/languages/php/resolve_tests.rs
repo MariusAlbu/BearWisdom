@@ -34,7 +34,7 @@ fn make_symbol(
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -48,7 +48,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
     }
 }
 fn make_use(source_idx: usize, alias: &str, fqn: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: alias.to_string(),
         kind: EdgeKind::Imports,
@@ -443,7 +443,7 @@ fn test_inherited_method_via_this_resolves() {
         ],
         vec![
             // class SetupAccount extends BaseService
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 1, // SetupAccount
                 target_name: "BaseService".to_string(),
                 kind: EdgeKind::Inherits,
@@ -456,7 +456,7 @@ fn test_inherited_method_via_this_resolves() {
                 call_args: Vec::new(),
             },
             // $this->account() inside execute()
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 2, // execute
                 target_name: "$this->account".to_string(),
                 kind: EdgeKind::Calls,
@@ -523,7 +523,7 @@ fn test_static_eloquent_call_via_type_access() {
         ],
         vec![
             // class File extends Model
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 1, // File class
                 target_name: "Model".to_string(),
                 kind: EdgeKind::Inherits,
@@ -547,7 +547,7 @@ fn test_static_eloquent_call_via_type_access() {
         ],
         vec![
             // File::whereIn('vault_id', $ids)
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 1,
                 target_name: "whereIn".to_string(),
                 kind: EdgeKind::Calls,
@@ -644,7 +644,7 @@ fn test_inherited_method_via_chain_selfref() {
             make_symbol("run", "App.Services.ConcreteService.run", SymbolKind::Method, Visibility::Public, Some("App.Services.ConcreteService")),
         ],
         vec![
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: "BaseService".to_string(),
                 kind: EdgeKind::Inherits,
@@ -657,7 +657,7 @@ fn test_inherited_method_via_chain_selfref() {
                 call_args: Vec::new(),
             },
             // Realistic: extractor emits target_name="account" with SelfRef chain.
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 1,
                 target_name: "account".to_string(), // NOT "$this->account"
                 kind: EdgeKind::Calls,
@@ -744,7 +744,7 @@ fn test_transitive_inherited_method_resolves() {
             make_symbol("QueuableService", "App.Services.QueuableService", SymbolKind::Class, Visibility::Public, Some("App.Services")),
         ],
         vec![
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0, // QueuableService
                 target_name: "BaseService".to_string(),
                 kind: EdgeKind::Inherits,
@@ -765,7 +765,7 @@ fn test_transitive_inherited_method_resolves() {
             make_symbol("handle", "App.Jobs.SetupJob.handle", SymbolKind::Method, Visibility::Public, Some("App.Jobs.SetupJob")),
         ],
         vec![
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0, // SetupJob
                 target_name: "QueuableService".to_string(),
                 kind: EdgeKind::Inherits,
@@ -777,7 +777,7 @@ fn test_transitive_inherited_method_resolves() {
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
             },
-            ExtractedRef {
+            ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 1, // handle
                 target_name: "$this->account".to_string(),
                 kind: EdgeKind::Calls,

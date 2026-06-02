@@ -54,7 +54,7 @@ fn make_class_symbol(name: &str) -> ExtractedSymbol {
 }
 
 fn make_calls_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,

@@ -49,7 +49,7 @@ impl LanguagePlugin for JspPlugin {
                     if let Some(end) = rest[start..].find('"') {
                         let file = &rest[start..start + end];
                         let target = std::path::Path::new(file).file_stem().and_then(|s| s.to_str()).unwrap_or(file).to_string();
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: 0,
                             target_name: target,
                             kind: EdgeKind::Imports,

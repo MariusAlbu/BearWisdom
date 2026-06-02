@@ -82,7 +82,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         .copied()
                         .unwrap_or(host_index);
                     let line_start = line_starts.get(line_no).copied().unwrap_or(0);
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: src_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,

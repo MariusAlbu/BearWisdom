@@ -121,7 +121,7 @@ fn walk_node(
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
 });
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -167,7 +167,7 @@ fn walk_node(
                         // present in the source text.
                         let module = extracted_module
                             .or_else(|| local_open_ctx.map(|m| m.to_string()));
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -228,7 +228,7 @@ fn walk_node(
             if let Some(cls_node) = node.child_by_field_name("class") {
                 let name = first_identifier_in_subtree(cls_node, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Inherits,
@@ -252,7 +252,7 @@ fn walk_node(
                 if child.kind() == "class_path" {
                     let name = first_identifier_in_subtree(child, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::Instantiates,

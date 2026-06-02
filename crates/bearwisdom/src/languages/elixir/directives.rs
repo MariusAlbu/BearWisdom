@@ -102,7 +102,7 @@ pub(super) fn extract_directive(
                                 let module = if name.contains('.') { Some(name.clone()) } else { None };
                                 let default_simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                                 let simple = as_alias.clone().unwrap_or(default_simple);
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: current_symbol_count,
                                     target_name: simple,
                                     kind: EdgeKind::Imports,
@@ -126,7 +126,7 @@ pub(super) fn extract_directive(
                                     if !name.is_empty() {
                                         let module = if name.contains('.') { Some(name.clone()) } else { None };
                                         let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                                        refs.push(ExtractedRef {
+                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                             source_symbol_index: current_symbol_count,
                                             target_name: simple,
                                             kind: EdgeKind::Imports,
@@ -165,7 +165,7 @@ pub(super) fn extract_directive(
         }
         let module = if target.contains('.') { Some(target.clone()) } else { None };
         let simple = target.rsplit('.').next().unwrap_or(&target).to_string();
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: simple,
             kind: EdgeKind::Imports,
@@ -230,7 +230,7 @@ fn extract_qualified_multi_alias(
                 let simple_name = node_text(item, src);
                 if !simple_name.is_empty() {
                     let full_module = format!("{prefix}.{simple_name}");
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: simple_name,
                         kind: EdgeKind::Imports,
@@ -250,7 +250,7 @@ fn extract_qualified_multi_alias(
         // Fallback: `alias MyApp.User` as binary_operator form.
         let name = format!("{prefix}.{}", node_text(*right, src));
         let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: simple,
             kind: EdgeKind::Imports,

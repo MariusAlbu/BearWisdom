@@ -129,7 +129,7 @@ fn collect_uses_refs(source: &str, file_path: &str) -> Vec<ExtractedRef> {
         if !value.starts_with("./") && !value.starts_with("../") {
             continue;
         }
-        out.push(ExtractedRef {
+        out.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: value.to_string(),
             kind: EdgeKind::Imports,

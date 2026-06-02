@@ -73,7 +73,7 @@ pub(super) fn extract_decorators(
                 let url_or_none = first_arg.as_deref();
                 let url_ok = url_or_none.map_or(name == "command", |u| u.starts_with('/'));
                 if url_ok {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name.clone(),
                         kind: EdgeKind::TypeRef,
@@ -210,7 +210,7 @@ fn extract_trait_names_from_token_tree(
                     j += 2;
                 }
 
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: path,
                     kind: EdgeKind::TypeRef,
@@ -229,7 +229,7 @@ fn extract_trait_names_from_token_tree(
                 // Pre-coalesced by the grammar — emit verbatim.
                 let full_name = node_text(&child, source);
                 if !full_name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: full_name,
                         kind: EdgeKind::TypeRef,

@@ -93,7 +93,7 @@ pub(super) fn scan_all_type_identifiers(
             "type_identifier" if child.is_named() => {
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -115,7 +115,7 @@ pub(super) fn scan_all_type_identifiers(
                 // would otherwise be emitted as a duplicate bare ref.
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -142,7 +142,7 @@ pub(super) fn scan_all_type_identifiers(
                 if let Some(base) = base_opt {
                     let name = helpers::node_text(base, src);
                     if !name.is_empty() && !is_ts_primitive(&name) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -254,7 +254,7 @@ pub(super) fn scan_all_type_identifiers(
                             _ => "_primitive".to_string(),
                         };
                         if !is_ts_primitive(&target) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,
@@ -271,7 +271,7 @@ pub(super) fn scan_all_type_identifiers(
                             // so the type_annotation coverage budget is consumed.
                             // Use "_primitive" as a placeholder target — it won't resolve
                             // to any real symbol, but satisfies the coverage counter.
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: "_primitive".to_string(),
                                 kind: EdgeKind::TypeRef,
@@ -314,7 +314,7 @@ pub(super) fn scan_all_type_identifiers(
                             .unwrap_or("_")
                             .to_string();
                         if !target.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,
@@ -350,7 +350,7 @@ pub(super) fn scan_all_type_identifiers(
                             .unwrap_or("_")
                             .to_string();
                         if !target.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,

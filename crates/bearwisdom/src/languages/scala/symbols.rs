@@ -390,7 +390,7 @@ pub(super) fn push_type_definition(
     if let Some(type_node) = node.child_by_field_name("type") {
         let alias_name = type_name_from_node(&type_node, src);
         if !alias_name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: idx,
                 target_name: alias_name,
                 kind: EdgeKind::TypeRef,
@@ -457,7 +457,7 @@ pub(super) fn push_given_definition(
     if let Some(rt) = node.child_by_field_name("return_type") {
         let type_name = type_name_from_node(&rt, src);
         if !type_name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: idx,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -627,7 +627,7 @@ pub(super) fn push_export(
             "stable_id" | "identifier" => {
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -665,7 +665,7 @@ pub(super) fn push_import(
             "stable_id" | "identifier" => {
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -710,7 +710,7 @@ fn emit_import_expression(
                         } else {
                             format!("{base_path}.{name}")
                         };
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: current_symbol_count,
                             target_name: name,
                             kind: EdgeKind::Imports,
@@ -732,7 +732,7 @@ fn emit_import_expression(
     // No selectors — emit for the stable_id itself.
     if let Some(full) = base {
         let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -778,7 +778,7 @@ pub(super) fn extract_extends_with_node(
             } else {
                 EdgeKind::Implements
             };
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name,
                 kind: edge,
@@ -850,7 +850,7 @@ pub(super) fn extract_extends_with(
                         } else {
                             EdgeKind::Implements
                         };
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind,
@@ -871,7 +871,7 @@ pub(super) fn extract_extends_with(
                 for type_node in child.children(&mut wc) {
                     let names = collect_type_names_from_node(&type_node, src);
                     for name in names {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind: EdgeKind::Implements,

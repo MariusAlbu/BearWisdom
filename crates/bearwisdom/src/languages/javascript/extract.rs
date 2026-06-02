@@ -837,7 +837,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
             for n in child.children(&mut hc) {
                 match n.kind() {
                     "identifier" => {
-                        refs.push(Ref {
+                        refs.push(Ref { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: node_text(n, src),
                             kind: EdgeKind::Inherits,
@@ -854,7 +854,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                         let mut ec = n.walk();
                         for type_node in n.children(&mut ec) {
                             if type_node.kind() == "identifier" {
-                                refs.push(Ref {
+                                refs.push(Ref { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: source_idx,
                                     target_name: node_text(type_node, src),
                                     kind: EdgeKind::Inherits,
@@ -961,7 +961,7 @@ fn extract_for_loop_var(
             if !target.is_empty()
                 && !is_enclosing_function_parameter(right, src, &target)
             {
-                refs.push(Ref {
+                refs.push(Ref { is_import_binding: false, is_reexport: false,
                     source_symbol_index: idx,
                     target_name: target,
                     kind: EdgeKind::TypeRef,

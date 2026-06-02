@@ -174,7 +174,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         // Emit Instantiates for `ClassName.new`
                         if let Some(recv) = child.child_by_field_name("receiver") {
                             let recv_text = node_text(&recv, src);
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: recv_text,
                                 kind: EdgeKind::Instantiates,
@@ -200,7 +200,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     let chain = build_chain(&child, src);
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &child, refs);
                     let call_args = extract_call_args(&child, src);
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: mname,
                         kind: EdgeKind::Calls,
@@ -228,7 +228,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     if !mname.is_empty() {
                         let chain = build_chain(&child, src);
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: mname,
                             kind: EdgeKind::Calls,
@@ -248,7 +248,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         if gc.kind() == "identifier" || gc.kind() == "constant" {
                             let mname = node_text(&gc, src);
                             if !mname.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: mname,
                                     kind: EdgeKind::Calls,
@@ -280,7 +280,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     if !mname.is_empty() {
                         let chain = build_chain(&child, src);
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: mname,
                             kind: EdgeKind::Calls,
@@ -365,7 +365,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
             "scope_resolution" => {
                 let type_name = node_text(&child, src);
                 if !type_name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -385,7 +385,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
             "constant" => {
                 let type_name = node_text(&child, src);
                 if !type_name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,

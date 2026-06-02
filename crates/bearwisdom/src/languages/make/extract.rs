@@ -204,7 +204,7 @@ fn extract_prerequisites(
                             && !name.starts_with('$')
                             && !is_unresolvable_prereq(&name)
                         {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: source_idx,
                                 target_name: name,
                                 kind: EdgeKind::Calls,
@@ -381,7 +381,7 @@ fn extract_include_directive(
     let paths = collect_include_paths(node, src);
     for path in paths {
         if !path.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: path.clone(),
                 kind: EdgeKind::Imports,
@@ -433,7 +433,7 @@ fn extract_function_calls_in_subtree(
     match node.kind() {
         "function_call" | "shell_function" => {
             if let Some(func_name) = find_field_text(node, src, "function") {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: func_name,
                     kind: EdgeKind::Calls,

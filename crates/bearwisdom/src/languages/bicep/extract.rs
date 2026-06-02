@@ -130,7 +130,7 @@ fn extract_resource_declaration(
     // Emit a TypeRef for the ARM resource type string (e.g. 'Microsoft.Web/sites@2022-03-01').
     if let Some(type_str) = res_type {
         if is_valid_resource_type_string(&type_str) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: idx,
                 target_name: type_str,
                 kind: EdgeKind::TypeRef,
@@ -182,7 +182,7 @@ fn extract_module_declaration(
 
     // Emit an Imports edge for the module path.
     if let Some(path) = module_path {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: path.clone(),
             kind: EdgeKind::Imports,
@@ -390,7 +390,7 @@ fn extract_import_statement(
 ) {
     // The import path is a string literal child.
     if let Some(path) = find_string_literal(node, src) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: path.clone(),
             kind: EdgeKind::Imports,
@@ -411,7 +411,7 @@ fn extract_using_statement(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if let Some(path) = find_string_literal(node, src) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: path.clone(),
             kind: EdgeKind::Imports,
@@ -440,7 +440,7 @@ fn extract_calls_in_subtree(
         if let Some(func) = node.child_by_field_name("function") {
             let name = node_text(func, src);
             if is_valid_call_target(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -460,7 +460,7 @@ fn extract_calls_in_subtree(
                 if child.kind() == "identifier" {
                     let name = node_text(child, src);
                     if is_valid_call_target(&name) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -638,7 +638,7 @@ fn collect_all_call_expressions(
             name
         };
         if is_valid_call_target(&name) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: name,
                 kind: EdgeKind::Calls,

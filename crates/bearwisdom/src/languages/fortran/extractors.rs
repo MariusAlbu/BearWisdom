@@ -167,7 +167,7 @@ pub(super) fn extract_extends(
                         if ggc.kind() == "identifier" {
                             let base_name = text(ggc, src);
                             if !base_name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: base_name,
                                     kind: EdgeKind::Inherits,

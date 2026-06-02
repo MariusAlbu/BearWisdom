@@ -207,7 +207,7 @@ fn engine_resolve_returns_none_when_ref_has_no_chain() {
     let mut engine = Engine::build(std::slice::from_ref(&pf), &sym_ids, profiles, &lookup);
 
     let source = dummy_source();
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "x".to_string(),
         kind: EdgeKind::Reads,
@@ -249,7 +249,7 @@ fn engine_resolve_returns_none_for_unregistered_language() {
         }],
     };
     let source = dummy_source();
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
@@ -329,7 +329,7 @@ fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
         }],
     };
     let source = dummy_source();
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
@@ -402,7 +402,7 @@ fn engine_yields_none_when_last_segment_has_no_type() {
         ],
     };
     let source = dummy_source();
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "bar".to_string(),
         kind: EdgeKind::Calls,
@@ -451,7 +451,7 @@ fn engine_infer_yield_returns_class_typeid_for_instantiates() {
     profiles.insert("typescript", &DEFAULT_PROFILE);
 
     let mut engine = Engine::build(std::slice::from_ref(&pf), &sym_ids, profiles, &lookup);
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Foo".to_string(),
         kind: EdgeKind::Instantiates,

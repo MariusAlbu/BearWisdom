@@ -434,7 +434,7 @@ fn is_type_name(name: &str) -> bool {
 }
 
 fn make_typeref(source_symbol_index: usize, name: String, line: u32, byte_offset: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: name,
         kind: EdgeKind::TypeRef,
@@ -462,7 +462,7 @@ fn make_scoped_typeref(source_symbol_index: usize, full: String, line: u32, byte
         }
         _ => (None, full),
     };
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::TypeRef,
@@ -536,7 +536,7 @@ fn emit_inherits_from_trait_bounds(
             "type_identifier" | "identifier" => {
                 let name = node_text(&child, source);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Inherits,
@@ -559,7 +559,7 @@ fn emit_inherits_from_trait_bounds(
                         text.rsplit("::").next().unwrap_or(&text).to_string()
                     });
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Inherits,
@@ -577,7 +577,7 @@ fn emit_inherits_from_trait_bounds(
                 if let Some(base) = child.child_by_field_name("type") {
                     let name = node_text(&base, source);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Inherits,

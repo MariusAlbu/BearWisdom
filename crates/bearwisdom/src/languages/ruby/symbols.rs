@@ -83,7 +83,7 @@ pub(super) fn extract_class(
                 raw.trim_start_matches('<').trim().to_string()
             })
         };
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: super_name,
             kind: EdgeKind::Inherits,
@@ -348,7 +348,7 @@ pub(super) fn extract_call_statement(
                     if arg.is_named() {
                         let name = node_text(&arg, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: current_symbol_count.saturating_sub(1),
                                 target_name: name,
                                 kind: EdgeKind::Implements,
@@ -379,7 +379,7 @@ pub(super) fn extract_call_statement(
                     if arg.kind() == "simple_symbol" || arg.kind() == "symbol" {
                         let raw = node_text(&arg, src);
                         let assoc_name = raw.trim_start_matches(':').to_string();
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: current_symbol_count.saturating_sub(1),
                             target_name: assoc_name,
                             kind: EdgeKind::TypeRef,
@@ -403,7 +403,7 @@ pub(super) fn extract_call_statement(
                     let recv_text = node_text(&recv, src);
                     if let Some(mname) = method_name.as_deref() {
                         if mname == "new" {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: pidx,
                                 target_name: recv_text,
                                 kind: EdgeKind::Instantiates,
@@ -416,7 +416,7 @@ pub(super) fn extract_call_statement(
                                                             call_args: Vec::new(),
 });
                         } else {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: pidx,
                                 target_name: mname.to_string(),
                                 kind: EdgeKind::Calls,
@@ -431,7 +431,7 @@ pub(super) fn extract_call_statement(
                         }
                     }
                 } else if let Some(mname) = method_name.as_deref() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: pidx,
                         target_name: mname.to_string(),
                         kind: EdgeKind::Calls,
@@ -487,7 +487,7 @@ fn extract_require(
                     let stem = path.rsplit('/').next().unwrap_or(&path).to_string();
                     (stem, Some(path))
                 };
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,

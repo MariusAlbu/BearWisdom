@@ -155,7 +155,7 @@ fn extract_class(
             if sc_child.kind() == "type_identifier" || sc_child.kind() == "identifier" {
                 let target = node_text(&sc_child, src).to_string();
                 if !target.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: class_idx,
                         target_name: target,
                         kind: EdgeKind::Inherits,
@@ -334,7 +334,7 @@ fn extract_type_list_refs(
             "type_identifier" | "identifier" => {
                 let name = node_text(&child, src).to_string();
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind,
@@ -577,7 +577,7 @@ fn extract_import(
         (full_path.clone(), full_path.clone())
     };
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name,
         kind: EdgeKind::Imports,
@@ -622,7 +622,7 @@ pub(super) fn extract_call(
 
     let call_args = extract_call_args(node, src);
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: name,
         kind: EdgeKind::Calls,

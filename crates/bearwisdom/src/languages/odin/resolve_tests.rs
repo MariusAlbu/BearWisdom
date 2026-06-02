@@ -3,7 +3,7 @@ use crate::indexer::resolve::engine::{FileContext, RefContext};
 use crate::types::*;
 
 fn fixture(target: &str, module: &str, args: Vec<CallArg>) -> (ExtractedRef, ExtractedSymbol, FileContext) {
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,

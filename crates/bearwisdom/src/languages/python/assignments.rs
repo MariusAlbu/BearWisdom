@@ -188,7 +188,7 @@ fn infer_python_variable_type(
         _ => return,
     };
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: var_sym_idx,
         target_name: type_name,
         kind: EdgeKind::TypeRef,
@@ -257,7 +257,7 @@ pub(super) fn extract_augmented_assignment(
             if let Some(chain) = build_chain(&left, source) {
                 let target = chain.segments.last().map(|s| s.name.clone()).unwrap_or_default();
                 if !target.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
                         target_name: target,
                         kind: EdgeKind::Calls,

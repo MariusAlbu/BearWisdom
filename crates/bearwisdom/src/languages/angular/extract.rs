@@ -102,7 +102,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     // Custom element with hyphens (Angular component selector pattern)
     if tag.contains('-') && !is_html5_custom_element_builtin(&tag) {
         let pascal = kebab_to_pascal(&tag);
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: pascal,
             kind: EdgeKind::Calls,
@@ -118,7 +118,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
         && !BUILTIN_HTML_TAGS.contains(&tag.as_str())
     {
         // PascalCase tags (e.g. <UserCard>, <MatButton>) — component usages
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: tag,
             kind: EdgeKind::Calls,
@@ -187,7 +187,7 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     // *ngIf / *ngFor / *ngSwitch — structural directives
     if let Some(directive) = attr_name.strip_prefix('*') {
         let class_name = format!("{}Directive", to_pascal_case(directive));
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: class_name,
             kind: EdgeKind::Calls,
@@ -234,7 +234,7 @@ fn extract_handler_from_value(value: &str, node: &Node, refs: &mut Vec<Extracted
         return;
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: handler,
         kind: EdgeKind::Calls,
@@ -295,7 +295,7 @@ fn extract_pipes_from_expression(
         }
 
         let class_name = format!("{}Pipe", to_pascal_case(&pipe_name));
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: class_name,
             kind: EdgeKind::Calls,

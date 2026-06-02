@@ -682,7 +682,7 @@ fn extract_constructor_initializer_call(
     };
 
     if let Some(name) = target_name {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: sym_idx,
             target_name: name,
             kind: EdgeKind::Calls,
@@ -774,7 +774,7 @@ fn scan_all_type_positions(
             "implicit_object_creation_expression" => {
                 // Emit a placeholder Instantiates ref on this line so the coverage
                 // tool can correlate the node.  Target is empty (type inferred).
-                refs.push(crate::types::ExtractedRef {
+                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: String::new(),
                     kind: crate::types::EdgeKind::Instantiates,
@@ -859,7 +859,7 @@ fn emit_csharp_type_ref(
         "identifier" if node.is_named() => {
             let name = node_text(node, src);
             if !name.is_empty() && !is_builtin_type(&name) && !is_csharp_keyword(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -880,7 +880,7 @@ fn emit_csharp_type_ref(
                 if id_child.kind() == "identifier" && id_child.is_named() {
                     let name = node_text(id_child, src);
                     if !name.is_empty() && !is_builtin_type(&name) && !is_csharp_keyword(&name) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::TypeRef,

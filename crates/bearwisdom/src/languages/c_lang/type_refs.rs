@@ -83,7 +83,7 @@ pub(super) fn sweep_typerefs<'a>(
                     && !predicates::is_c_compiler_intrinsic(&name)
                     && !predicates::is_template_param(&name)
                 {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: default_sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -112,7 +112,7 @@ pub(super) fn sweep_typerefs<'a>(
                         "type_identifier" => {
                             let name = node_text(base, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: default_sym_idx,
                                     target_name: name,
                                     kind: EdgeKind::Inherits,
@@ -132,7 +132,7 @@ pub(super) fn sweep_typerefs<'a>(
                                 if inner.kind() == "type_identifier" {
                                     let name = node_text(inner, src);
                                     if !name.is_empty() {
-                                        refs.push(ExtractedRef {
+                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                             source_symbol_index: default_sym_idx,
                                             target_name: name,
                                             kind: EdgeKind::Inherits,

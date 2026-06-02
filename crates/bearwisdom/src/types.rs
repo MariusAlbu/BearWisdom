@@ -546,6 +546,18 @@ pub struct ExtractedRef {
     /// wired yet. The resolver's flow-emission hook uses the first argument
     /// for URL pattern extraction (HTTP calls, IPC commands, gql tags, etc.).
     pub call_args: Vec<CallArg>,
+    /// True only on an import STATEMENT's own binding ref — the `Foo` in
+    /// `import { Foo } from 'pkg'` — whose `source_symbol_index` is a positional
+    /// artifact (the next-to-be-defined symbol), not a real type attribution.
+    /// The per-symbol type-map build excludes these so they never pollute a
+    /// field/return type; module-tagged USAGE `TypeRef`s are kept.
+    pub is_import_binding: bool,
+    /// True when an `Imports` ref is a re-export (`export ... from`, Rust
+    /// `pub use`, a Python package `__init__` re-export) rather than a private
+    /// import. The re-export map is built only from these, so a name imported
+    /// through a re-export hop follows to its declaring symbol while a private
+    /// `use`/`import` does not.
+    pub is_reexport: bool,
 }
 
 /// An HTTP route attribute extracted from C#.

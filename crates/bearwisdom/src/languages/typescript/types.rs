@@ -30,7 +30,7 @@ pub(super) fn extract_type_ref_from_annotation(
     match type_node.kind() {
         "type_identifier" | "identifier" => {
             let type_name = node_text(type_node, src);
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -50,7 +50,7 @@ pub(super) fn extract_type_ref_from_annotation(
             if let Some(name) = type_node.child_by_field_name("name") {
                 let base_name = node_text(name, src);
                 // Emit base type ref (for edge resolution to the type itself).
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: base_name.clone(),
                     kind: EdgeKind::TypeRef,
@@ -93,7 +93,7 @@ pub(super) fn extract_type_ref_from_annotation(
                                     _ => node_text(arg, src),
                                 };
                                 if !arg_name.is_empty() {
-                                    refs.push(ExtractedRef {
+                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                         source_symbol_index,
                                         target_name: arg_name,
                                         kind: EdgeKind::TypeRef,
@@ -126,7 +126,7 @@ pub(super) fn extract_type_ref_from_annotation(
             // standard import-resolution pipeline picks it up the
             // same way `import { Readable } from 'node:stream'` does.
             if let Some((module, ty)) = parse_import_type_expression(&type_name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: ty,
                     kind: EdgeKind::TypeRef,
@@ -140,7 +140,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 });
                 return;
             }
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -298,7 +298,7 @@ pub(super) fn extract_type_ref_from_annotation(
             if let Some(expr) = type_node.child_by_field_name("name") {
                 let name = node_text(expr, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -318,7 +318,7 @@ pub(super) fn extract_type_ref_from_annotation(
                         if child.kind() != "typeof" {
                             let name = node_text(child, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -445,7 +445,7 @@ pub(super) fn extract_type_refs_recursive(
         "type_identifier" | "identifier" => {
             let name = node_text(*node, src);
             if !name.is_empty() && !is_ts_primitive(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -500,7 +500,7 @@ pub(super) fn extract_type_refs_recursive(
                         "type_identifier" | "identifier" => {
                             let name = node_text(child, src);
                             if !name.is_empty() && !is_ts_primitive(&name) {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,

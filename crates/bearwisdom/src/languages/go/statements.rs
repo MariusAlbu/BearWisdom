@@ -125,7 +125,7 @@ pub(super) fn extract_short_var_decl(
                                 .map(|s| s.name.clone())
                                 .unwrap_or_default();
                             if !target.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: target,
                                     kind: EdgeKind::TypeRef,
@@ -142,7 +142,7 @@ pub(super) fn extract_short_var_decl(
                             // Bare function call (single identifier) — still emit TypeRef.
                             let target = node_text(&func, source);
                             if !target.is_empty() && target != "_" {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: target,
                                     kind: EdgeKind::TypeRef,
@@ -176,7 +176,7 @@ pub(super) fn extract_short_var_decl(
                                 _ => node_text(&type_node, source),
                             };
                             if !type_name.is_empty() && !is_go_builtin_type(&type_name) {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,
@@ -361,7 +361,7 @@ fn extract_const_var_spec(
     // We do this once, not per-name, because all names share the same type.
     if let Some(ref t) = type_text {
         if !t.is_empty() && !is_go_builtin_type(t) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
                 target_name: t.clone(),
                 kind: EdgeKind::TypeRef,

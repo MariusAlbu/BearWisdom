@@ -189,7 +189,7 @@ fn extract_from(
 
     // Imports edge to the base image
     if let Some(img) = &image {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: img.clone(),
             kind: EdgeKind::Imports,
@@ -202,7 +202,7 @@ fn extract_from(
                     call_args: Vec::new(),
 });
         // Inherits edge: each stage inherits its base image
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: img.clone(),
             kind: EdgeKind::Inherits,
@@ -485,7 +485,7 @@ fn extract_copy(
                 } else {
                     raw_stage
                 };
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name,
                     kind: EdgeKind::Calls,
@@ -504,7 +504,7 @@ fn extract_copy(
     // For regular COPY/ADD (no --from), emit an Imports ref at the node's line
     // so the copy_instruction appears in coverage as matched.
     if !found_from_param {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: ".".to_string(),
             kind: EdgeKind::Imports,

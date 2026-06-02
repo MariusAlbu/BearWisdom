@@ -99,7 +99,7 @@ pub(super) fn extract_call_ref(
         && target_name.chars().next().map_or(false, |c| c.is_uppercase())
         && !super::helpers::is_go_builtin_type(&target_name)
     {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target_name.clone(),
             kind: EdgeKind::TypeRef,
@@ -115,7 +115,7 @@ pub(super) fn extract_call_ref(
 
     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
     let call_args = extract_call_args(&node, source);
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name,
         kind: EdgeKind::Calls,
@@ -166,7 +166,7 @@ fn extract_make_chan_type_ref(
                 }
                 let elem_name = go_type_node_name(&elem, source);
                 if !elem_name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: elem_name,
                         kind: EdgeKind::TypeRef,
@@ -240,7 +240,7 @@ pub(super) fn extract_composite_literal_ref(
         return;
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: type_name,
         kind: EdgeKind::Instantiates,
@@ -287,7 +287,7 @@ pub(super) fn extract_type_assertion_ref(
         return;
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: type_name,
         kind: EdgeKind::TypeRef,
@@ -328,7 +328,7 @@ pub(super) fn extract_type_switch_refs(
                     "type_identifier" | "pointer_type" | "qualified_type" => {
                         let name = go_type_node_name(&type_child, source);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,

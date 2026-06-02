@@ -38,7 +38,7 @@ fn make_symbol(
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -53,7 +53,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
 }
 /// Make an import binding ref — the TS extractor emits these as TypeRef with module set.
 fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::TypeRef,
@@ -1045,7 +1045,7 @@ fn index_empty() -> SymbolIndex {
 /// Build a re-export ref: `export { name } from 'module'`
 /// These are emitted by the TS extractor as EdgeKind::Imports with module set.
 fn make_reexport_ref(source_idx: usize, exported_name: &str, from_module: &str, line: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: exported_name.to_string(),
         kind: EdgeKind::Imports,
@@ -1777,7 +1777,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
     // Barrel: `export { QuickCreateButton } from "./quick-create-button"`
     // The TS extractor emits this as an Imports ref with module set. We
     // build the file with one such ref and no own symbols.
-    let barrel_ref = ExtractedRef {
+    let barrel_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "QuickCreateButton".to_string(),
         kind: EdgeKind::Imports,
@@ -2013,7 +2013,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
     use crate::indexer::resolve::engine::SymbolIndex;
 
     // Barrel: zero own symbols, one re-export ref pointing at a bare spec.
-    let barrel_ref = ExtractedRef {
+    let barrel_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Trans".to_string(),
         kind: EdgeKind::Imports,
@@ -2198,7 +2198,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         generic_params: Vec::new(),
 };
     // Return-type refs: chai.expect → chai.Assertion, chai.Assertion.toBe → chai.Assertion
-    let expect_rt_ref = ExtractedRef {
+    let expect_rt_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 1,
         target_name: "chai.Assertion".to_string(),
         kind: EdgeKind::TypeRef,
@@ -2210,7 +2210,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
-    let tobe_rt_ref = ExtractedRef {
+    let tobe_rt_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 2,
         target_name: "chai.Assertion".to_string(),
         kind: EdgeKind::TypeRef,
@@ -2248,7 +2248,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
     };
 
     // The consumer file: `import { expect } from 'chai'` + the chain ref.
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "toBe".to_string(),
         kind: EdgeKind::Calls,
@@ -2287,7 +2287,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
 };
-    let import_ref = ExtractedRef {
+    let import_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "expect".to_string(),
         kind: EdgeKind::TypeRef,
@@ -2410,7 +2410,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         generic_params: Vec::new(),
 };
     // TypeRef: __npm_globals__.expect → chai.Assertion
-    let globals_expect_ref = ExtractedRef {
+    let globals_expect_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 2, // npm_globals_expect_sym is index 2
         target_name: "chai.Assertion".to_string(),
         kind: EdgeKind::TypeRef,
@@ -2441,7 +2441,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
     };
 
     // Consumer file: NO import for `expect` — globals mode.
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "toHaveBeenCalledOnce".to_string(),
         kind: EdgeKind::Calls,
@@ -2677,7 +2677,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
 
     // TypeRef from UserManager.users → "UserMap" — the engine reads this
     // into field_type["UserManager.users"] = "UserMap".
-    let users_typeref = ExtractedRef {
+    let users_typeref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 3, // users_field
         target_name: "UserMap".to_string(),
         kind: EdgeKind::TypeRef,
@@ -2691,7 +2691,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
     };
 
     // The chain ref: this.users.get(k) emitted from `do`.
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 4, // do_method
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
@@ -2927,7 +2927,7 @@ fn alias_expansion_handles_array_type_form() {
         generic_params: Vec::new(),
 };
 
-    let ns_typeref = ExtractedRef {
+    let ns_typeref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 2, // ns_field
         target_name: "Numbers".to_string(),
         kind: EdgeKind::TypeRef,
@@ -2940,7 +2940,7 @@ fn alias_expansion_handles_array_type_form() {
         call_args: Vec::new(),
     };
 
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 3, // do_method
         target_name: "map".to_string(),
         kind: EdgeKind::Calls,
@@ -3101,7 +3101,7 @@ fn alias_expansion_refuses_union_aliases() {
         generic_params: Vec::new(),
 };
 
-    let s_typeref = ExtractedRef {
+    let s_typeref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 2,
         target_name: "Status".to_string(),
         kind: EdgeKind::TypeRef,
@@ -3114,7 +3114,7 @@ fn alias_expansion_refuses_union_aliases() {
         call_args: Vec::new(),
     };
 
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 3,
         target_name: "foo".to_string(),
         kind: EdgeKind::Calls,
@@ -3262,7 +3262,7 @@ fn typeof_alias_dereferences_to_value_type() {
         param_types: Vec::new(),
         generic_params: Vec::new(),
 };
-    let api_typeref = ExtractedRef {
+    let api_typeref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 2, // api_value
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
@@ -3322,7 +3322,7 @@ fn typeof_alias_dereferences_to_value_type() {
         generic_params: Vec::new(),
 };
 
-    let a_typeref = ExtractedRef {
+    let a_typeref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 5, // a_field
         target_name: "ApiType".to_string(),
         kind: EdgeKind::TypeRef,
@@ -3335,7 +3335,7 @@ fn typeof_alias_dereferences_to_value_type() {
         call_args: Vec::new(),
     };
 
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 6, // do_method
         target_name: "greet".to_string(),
         kind: EdgeKind::Calls,
@@ -3557,7 +3557,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         generic_params: Vec::new(),
 };
 
-    let p_typeref_partial = ExtractedRef {
+    let p_typeref_partial = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 4,
         target_name: "Partial".to_string(),
         kind: EdgeKind::TypeRef,
@@ -3569,7 +3569,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
-    let p_typeref_user = ExtractedRef {
+    let p_typeref_user = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 4,
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
@@ -3582,7 +3582,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         call_args: Vec::new(),
     };
 
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 5,
         target_name: "greet".to_string(),
         kind: EdgeKind::Calls,
@@ -3763,7 +3763,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         generic_params: Vec::new(),
 };
 
-    let base_db_typeref = ExtractedRef {
+    let base_db_typeref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 3,
         target_name: "Repo".to_string(),
         kind: EdgeKind::TypeRef,
@@ -3775,7 +3775,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
-    let child_inherits_base = ExtractedRef {
+    let child_inherits_base = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 4,
         target_name: "Base".to_string(),
         kind: EdgeKind::Inherits,
@@ -3788,7 +3788,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         call_args: Vec::new(),
     };
 
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 5,
         target_name: "find".to_string(),
         kind: EdgeKind::Calls,
@@ -3951,7 +3951,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         generic_params: Vec::new(),
 };
 
-    let grand_svc_typeref = ExtractedRef {
+    let grand_svc_typeref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 3,
         target_name: "Svc".to_string(),
         kind: EdgeKind::TypeRef,
@@ -3963,7 +3963,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
-    let mid_inherits = ExtractedRef {
+    let mid_inherits = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 4,
         target_name: "Grand".to_string(),
         kind: EdgeKind::Inherits,
@@ -3975,7 +3975,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
     };
-    let leaf_inherits = ExtractedRef {
+    let leaf_inherits = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 5,
         target_name: "Mid".to_string(),
         kind: EdgeKind::Inherits,
@@ -3988,7 +3988,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         call_args: Vec::new(),
     };
 
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 6,
         target_name: "run".to_string(),
         kind: EdgeKind::Calls,
@@ -4159,7 +4159,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
 
     // Each method's signature carries the `: this` return — the type
     // checker's signature parser populates return_type from this.
-    let chain_ref = ExtractedRef {
+    let chain_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 3,
         target_name: "setB".to_string(),
         kind: EdgeKind::Calls,
@@ -7157,7 +7157,7 @@ fn test_di_binding_inject_decorator_emits() {
     use crate::types::{EdgeKind, ExtractedRef};
 
     // Construct a synthetic TypeRef ref representing `@Inject('USER_REPO')`.
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Inject".to_string(),
         kind: EdgeKind::TypeRef,
@@ -7222,7 +7222,7 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
     use crate::types::{EdgeKind, ExtractedRef};
 
     // A non-`Inject` TypeRef ref must not emit a DiBinding.
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
@@ -7278,7 +7278,7 @@ fn test_di_binding_inject_without_token_still_emits() {
 
     // `@Inject()` with no string arg — still a DI binding intent; emit a
     // DiBinding with the bare `nestjs` container hint.
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Inject".to_string(),
         kind: EdgeKind::TypeRef,

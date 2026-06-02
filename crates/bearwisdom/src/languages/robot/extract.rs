@@ -188,7 +188,7 @@ fn extract_settings_line(
             if let Some(target) = cells.get(1) {
                 let t = target.trim().to_string();
                 if !t.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: t.clone(),
                         kind: EdgeKind::Imports,
@@ -309,7 +309,7 @@ fn emit_keyword_call(
     } else {
         (None, keyword_name.to_string())
     };
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name,
         kind: EdgeKind::Calls,
@@ -403,7 +403,7 @@ fn extract_keyword_invocation(
         (None, keyword_name.to_string())
     };
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name,
         kind: EdgeKind::Calls,

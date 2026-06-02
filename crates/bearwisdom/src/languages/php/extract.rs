@@ -339,7 +339,7 @@ fn scan_type_refs_inner(
                 .unwrap_or(&raw)
                 .to_string();
             if !name.is_empty() && !is_php_primitive(&name) {
-                refs.push(crate::types::ExtractedRef {
+                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
@@ -362,7 +362,7 @@ fn scan_type_refs_inner(
                 .unwrap_or(&raw)
                 .to_string();
             if !name.is_empty() && !is_php_primitive(&name) {
-                refs.push(crate::types::ExtractedRef {
+                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
@@ -405,7 +405,7 @@ fn scan_type_refs_inner(
                         .unwrap_or(&raw)
                         .to_string();
                     if !name.is_empty() && !is_php_primitive(&name) {
-                        refs.push(crate::types::ExtractedRef {
+                        refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: crate::types::EdgeKind::TypeRef,

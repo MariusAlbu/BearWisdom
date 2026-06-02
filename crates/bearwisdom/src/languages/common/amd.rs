@@ -53,7 +53,7 @@ pub fn append_amd_define_imports(
         if matches!(dep.as_str(), "require" | "exports" | "module") {
             continue;
         }
-        result.refs.push(crate::types::ExtractedRef {
+        result.refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: 0,
             target_name: param,
             kind: crate::types::EdgeKind::Imports,

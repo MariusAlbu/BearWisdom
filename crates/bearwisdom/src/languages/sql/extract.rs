@@ -294,7 +294,7 @@ fn extract_create_index(
 
     // TypeRef to the table the index is on (object_reference child)
     if let Some(table_name) = first_object_reference_name(node, src) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: table_name,
             kind: EdgeKind::TypeRef,
@@ -321,7 +321,7 @@ fn extract_alter_table(
 ) {
     // alter_table: first object_reference is the table being altered
     if let Some(name) = first_object_reference_name(node, src) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -740,7 +740,7 @@ fn extract_column(
 
     // TypeRef for custom type
     if let Some(ct) = custom_type {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: col_idx,
             target_name: ct,
             kind: EdgeKind::TypeRef,
@@ -778,7 +778,7 @@ fn extract_fk_refs(
             saw_references = true;
         } else if saw_references && child.kind() == "object_reference" {
             if let Some(name) = object_reference_name(&child, src) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,

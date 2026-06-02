@@ -39,7 +39,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                 let name = line.get(start..j).unwrap_or("").to_string();
                 if !name.is_empty() {
                     let line_start = line_starts.get(line_no).copied().unwrap_or(0);
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: 0,
                         target_name: name,
                         kind: EdgeKind::Calls,

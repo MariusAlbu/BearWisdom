@@ -152,7 +152,7 @@ fn handle_tag(
         }
         "extends" | "include" | "embed" => {
             if let Some(target) = read_string_arg(rest) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: template_name_from_twig_arg(&target),
                     kind: EdgeKind::Imports,
@@ -169,7 +169,7 @@ fn handle_tag(
         "use" | "import" => {
             // `{% use "components/forms.html.twig" %}` — first string arg.
             if let Some(target) = read_string_arg(rest) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: template_name_from_twig_arg(&target),
                     kind: EdgeKind::Imports,
@@ -188,7 +188,7 @@ fn handle_tag(
             // is the template; the imports themselves are macro names we
             // don't separately track (they're scoped lookups).
             if let Some(target) = read_string_arg(rest) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: template_name_from_twig_arg(&target),
                     kind: EdgeKind::Imports,

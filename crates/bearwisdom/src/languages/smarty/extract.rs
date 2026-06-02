@@ -31,7 +31,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         let file = &rest[start..start + end_rel];
                         let p = std::path::Path::new(file);
                         let target = p.file_stem().and_then(|s| s.to_str()).unwrap_or(file).to_string();
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: 0,
                             target_name: target,
                             kind: EdgeKind::Imports,

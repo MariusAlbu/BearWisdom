@@ -125,7 +125,7 @@ fn emit_import_ref(
         Some(full_path.to_string())
     };
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: current_symbol_count,
         target_name,
         kind: EdgeKind::Imports,
@@ -481,7 +481,7 @@ pub(super) fn extract_go_typed_params_as_symbols(
     generic_params: Vec::new(),
 });
 
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: param_idx,
                 target_name: type_name.clone(),
                 kind: EdgeKind::TypeRef,

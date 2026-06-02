@@ -94,7 +94,7 @@ fn emit_type_ref_for_type_node(
     if type_name.is_empty() {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: type_name,
         kind: EdgeKind::TypeRef,

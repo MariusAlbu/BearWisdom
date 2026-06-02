@@ -501,7 +501,7 @@ pub(super) fn extract_type_refs_recursive(
         "type_identifier" => {
             let name = node_text(type_node, src);
             if !name.is_empty() && !is_java_primitive(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -523,7 +523,7 @@ pub(super) fn extract_type_refs_recursive(
                     "type_identifier" | "scoped_type_identifier" => {
                         let name = type_node_simple_name(child, src);
                         if !name.is_empty() && !is_java_primitive(&name) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -556,7 +556,7 @@ pub(super) fn extract_type_refs_recursive(
         "scoped_type_identifier" => {
             let name = type_node_simple_name(type_node, src);
             if !name.is_empty() && !is_java_primitive(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -616,7 +616,7 @@ pub(super) fn push_import(
                 let full = node_text(child, src);
                 if has_wildcard {
                     // `import com.foo.*;` — wildcard: target_name = "*", module = package path.
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: "*".to_string(),
                         kind: EdgeKind::Imports,
@@ -631,7 +631,7 @@ pub(super) fn push_import(
                 } else {
                     // `import com.foo.Bar;` — exact import.
                     let imported = full.rsplit('.').next().unwrap_or(&full).to_string();
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: imported,
                         kind: EdgeKind::Imports,
@@ -648,7 +648,7 @@ pub(super) fn push_import(
             }
             "identifier" => {
                 let name = node_text(child, src);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: name.clone(),
                     kind: EdgeKind::Imports,
@@ -684,7 +684,7 @@ pub(super) fn extract_class_inheritance(
         for child in superclass_node.children(&mut cursor) {
             let name = type_node_simple_name(child, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Inherits,
@@ -750,7 +750,7 @@ fn extract_type_list_as_implements(
             for type_node in child.children(&mut cursor) {
                 let name = type_node_simple_name(type_node, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Implements,
@@ -833,7 +833,7 @@ pub(super) fn extract_java_typed_params_as_symbols(
     generic_params: Vec::new(),
 });
 
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: param_idx,
             target_name: type_name,
             kind: EdgeKind::TypeRef,

@@ -485,7 +485,7 @@ fn extract_class_parameter(
         // Extract the simple name from the type node and emit a TypeRef directly.
         let type_name = super::calls::kotlin_type_name(&tn, src);
         if !type_name.is_empty() {
-            refs.push(crate::types::ExtractedRef {
+            refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
                 target_name: type_name,
                 kind: crate::types::EdgeKind::TypeRef,
@@ -644,7 +644,7 @@ pub(super) fn emit_import(
                 if parts.is_empty() {
                     let full = node_text(child, src);
                     let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: target,
                         kind: EdgeKind::Imports,
@@ -659,7 +659,7 @@ pub(super) fn emit_import(
                 } else {
                     let target = parts.last().cloned().unwrap_or_default();
                     let full = parts.join(".");
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: target,
                         kind: EdgeKind::Imports,
@@ -677,7 +677,7 @@ pub(super) fn emit_import(
             "identifier" => {
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -721,7 +721,7 @@ pub(super) fn extract_delegation_specifiers(
                             } else {
                                 EdgeKind::Implements
                             };
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: source_idx,
                                 target_name: name,
                                 kind,

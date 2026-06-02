@@ -181,7 +181,7 @@ pub(super) fn extract_instance(
 
     // Implements edge: this type instance → the type class
     let source_idx = idx;
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: class_name,
         kind: EdgeKind::Implements,
@@ -257,7 +257,7 @@ fn collect_deriving_names(
             "name" | "constructor" => {
                 let name = node_text(child, src);
                 if !name.is_empty() && name != "deriving" {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Implements,
@@ -432,7 +432,7 @@ pub(super) fn extract_import(
         Some(a) => a.clone(),
         None => module.rsplit('.').next().unwrap_or(&module).to_string(),
     };
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name,
         kind: EdgeKind::Imports,

@@ -76,7 +76,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             continue;
                         }
                         if REFERENCING_DIRECTIVES.contains(&name.as_str()) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: host_index,
                                 target_name: arg,
                                 kind: EdgeKind::Imports,

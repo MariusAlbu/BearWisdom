@@ -314,7 +314,7 @@ fn extract_source_import(
                 .unwrap_or(&raw)
                 .trim_end_matches(".sh")
                 .to_string();
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -352,7 +352,7 @@ fn extract_command_call(
     if is_syntax_keyword(&cmd) {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: cmd,
         kind: EdgeKind::Calls,

@@ -205,7 +205,7 @@ pub(super) fn walk_node(
                                     // Plain symbol name in `only:` list.
                                     let sym_name = text(item, src);
                                     if !sym_name.is_empty() {
-                                        only_refs.push(ExtractedRef {
+                                        only_refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                             source_symbol_index: sym_idx,
                                             target_name: sym_name,
                                             kind: EdgeKind::Imports,
@@ -242,7 +242,7 @@ pub(super) fn walk_node(
                                     // Encode as: target_name = local, module = source
                                     // so the resolver can look up source in the module file.
                                     if !local.is_empty() {
-                                        only_refs.push(ExtractedRef {
+                                        only_refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                             source_symbol_index: sym_idx,
                                             target_name: local,
                                             kind: EdgeKind::Imports,
@@ -268,7 +268,7 @@ pub(super) fn walk_node(
 
             // Always emit the module-level import (wildcard if no only: list).
             if !module_name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: module_name.clone(),
                     kind: EdgeKind::Imports,
@@ -329,7 +329,7 @@ pub(super) fn walk_node(
                                         .unwrap_or_else(|| obj_text.clone());
                                     Some(resolved)
                                 };
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: method_text,
                                     kind: EdgeKind::Calls,
@@ -347,7 +347,7 @@ pub(super) fn walk_node(
                                 .map(|n| text(n, src))
                                 .unwrap_or_default();
                             if is_fortran_callable_text(&name) && !is_local(&name, locals) {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: name,
                                     kind: EdgeKind::Calls,
@@ -365,7 +365,7 @@ pub(super) fn walk_node(
                     _ => {
                         let name = text(sub_node, src);
                         if is_fortran_callable_text(&name) && !is_local(&name, locals) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: name,
                                 kind: EdgeKind::Calls,
@@ -396,7 +396,7 @@ pub(super) fn walk_node(
                     "identifier" => {
                         let name = text(callee, src);
                         if is_fortran_callable_text(&name) && !is_local(&name, locals) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: name,
                                 kind: EdgeKind::Calls,
@@ -430,7 +430,7 @@ pub(super) fn walk_node(
                                         .unwrap_or_else(|| obj_text.clone());
                                     Some(resolved)
                                 };
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: method_text,
                                     kind: EdgeKind::Calls,
@@ -449,7 +449,7 @@ pub(super) fn walk_node(
                                 .map(|n| text(n, src))
                                 .unwrap_or_default();
                             if is_fortran_callable_text(&name) && !is_local(&name, locals) {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: name,
                                     kind: EdgeKind::Calls,

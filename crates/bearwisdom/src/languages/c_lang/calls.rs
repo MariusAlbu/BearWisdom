@@ -82,7 +82,7 @@ pub(super) fn extract_calls_from_body(
                         && target_name != "defined"
                         && !is_c_compiler_intrinsic(&target_name)
                     {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -132,7 +132,7 @@ pub(super) fn extract_calls_from_body(
                                 if pchild.kind() == "identifier" || pchild.kind() == "type_identifier" {
                                     let name = node_text(pchild, src);
                                     if !name.is_empty() {
-                                        refs.push(ExtractedRef {
+                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                             source_symbol_index,
                                             target_name: name,
                                             kind: EdgeKind::TypeRef,
@@ -166,7 +166,7 @@ pub(super) fn extract_calls_from_body(
                         "type_identifier" => {
                             let name = node_text(inner, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name.clone(),
                                     kind: EdgeKind::Instantiates,
@@ -178,7 +178,7 @@ pub(super) fn extract_calls_from_body(
                                                                     namespace_segments: Vec::new(),
                                                                     call_args: Vec::new(),
 });
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -197,7 +197,7 @@ pub(super) fn extract_calls_from_body(
                                 if name_node.kind() == "type_identifier" {
                                     let name = node_text(name_node, src);
                                     if !name.is_empty() {
-                                        refs.push(ExtractedRef {
+                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                             source_symbol_index,
                                             target_name: name.clone(),
                                             kind: EdgeKind::Instantiates,
@@ -209,7 +209,7 @@ pub(super) fn extract_calls_from_body(
                                                                                     namespace_segments: Vec::new(),
                                                                                     call_args: Vec::new(),
 });
-                                        refs.push(ExtractedRef {
+                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                             source_symbol_index,
                                             target_name: name,
                                             kind: EdgeKind::TypeRef,
@@ -303,7 +303,7 @@ fn extract_lambda_param_typerefs(
                             if inner.kind() == "type_identifier" {
                                 let name = node_text(inner, src);
                                 if !name.is_empty() {
-                                    refs.push(ExtractedRef {
+                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                         source_symbol_index,
                                         target_name: name,
                                         kind: EdgeKind::TypeRef,
@@ -342,7 +342,7 @@ fn extract_catch_typerefs(
                     "type_identifier" => {
                         let name = node_text(inner, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -361,7 +361,7 @@ fn extract_catch_typerefs(
                         if let Some(name_node) = inner.child_by_field_name("name") {
                             let name = node_text(name_node, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,

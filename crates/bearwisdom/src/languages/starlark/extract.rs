@@ -231,7 +231,7 @@ fn extract_assignment(
                         callee
                     };
                     let sym_idx = parent_idx.unwrap_or(idx);
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name,
                         kind: EdgeKind::Calls,
@@ -357,7 +357,7 @@ fn extract_call(
                 name
             };
 
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: sym_idx,
                 target_name,
                 kind: EdgeKind::Calls,
@@ -467,7 +467,7 @@ fn extract_load_refs(
         if module_label.is_empty() {
             return;
         }
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: sym_idx,
             target_name: module_label.clone(),
             kind: EdgeKind::Imports,
@@ -500,7 +500,7 @@ fn extract_load_refs(
                 _ => String::new(),
             };
             if !sym.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: sym,
                     kind: EdgeKind::Imports,

@@ -179,7 +179,7 @@ fn collect_link_refs(
                                     .iter()
                                     .map(|c| c.len_utf8() as u32)
                                     .sum();
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: host_index,
                                     target_name: normalized,
                                     kind: EdgeKind::Imports,

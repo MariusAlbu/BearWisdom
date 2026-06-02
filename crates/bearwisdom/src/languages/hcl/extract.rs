@@ -281,7 +281,7 @@ fn extract_module_block(
 
     // Look for `source = "..."` attribute in the block body — emit as Imports
     if let Some(source_val) = find_attribute_value(node, src, "source") {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: source_val.clone(),
             kind: EdgeKind::Imports,
@@ -537,7 +537,7 @@ fn extract_reference_chain(
         return;
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::TypeRef,
@@ -559,7 +559,7 @@ fn extract_function_call_ref(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if let Some(name) = first_identifier_text(node, src) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::Calls,

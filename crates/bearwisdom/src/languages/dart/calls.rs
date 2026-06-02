@@ -250,7 +250,7 @@ pub(super) fn emit_dart_type_ref(
         }
     };
     if !name.is_empty() {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -316,7 +316,7 @@ pub(super) fn extract_dart_calls(
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee_node, refs);
                     if !target_name.is_empty() {
                         let call_args = extract_dart_call_args(&child, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -379,7 +379,7 @@ pub(super) fn extract_dart_calls(
                         }
                     };
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -537,7 +537,7 @@ fn extract_postfix_call(
 
     let target = last_member.or(callee_from_base).unwrap_or_default();
     if !target.is_empty() {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Calls,
@@ -642,7 +642,7 @@ fn extract_inline_call_from_statement(
 
     let target = last_member.or(callee_ident).unwrap_or_default();
     if !target.is_empty() {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Calls,
@@ -712,7 +712,7 @@ fn extract_new_expression_ref(
             }
         };
         if !name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -733,7 +733,7 @@ fn extract_new_expression_ref(
         if child.kind() == "type_identifier" || child.kind() == "identifier" {
             let name = node_text(child, src);
             if !name.is_empty() && name != "new" {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -1000,7 +1000,7 @@ pub(super) fn extract_const_object_refs(
             "type_identifier" | "identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() && name != "const" {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Instantiates,

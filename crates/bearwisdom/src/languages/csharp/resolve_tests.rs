@@ -33,7 +33,7 @@ fn make_symbol(
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -251,7 +251,7 @@ fn test_using_directive_resolution() {
         ],
         vec![make_ref(1, "Product", EdgeKind::TypeRef, 5)],
     );
-    file2.refs.push(ExtractedRef {
+    file2.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "App.Models".to_string(),
         kind: EdgeKind::Imports,
@@ -361,7 +361,7 @@ fn test_private_visibility_cross_file() {
         ],
         vec![make_ref(1, "Secret", EdgeKind::Calls, 5)],
     );
-    file2.refs.push(ExtractedRef {
+    file2.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "App.Internal".to_string(),
         kind: EdgeKind::Imports,
@@ -652,7 +652,7 @@ fn test_infer_no_false_positive_on_project_ref() {
         ],
         vec![make_ref(1, "MyService", EdgeKind::TypeRef, 5)],
     );
-    file.refs.push(ExtractedRef {
+    file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "App.Models".to_string(),
         kind: EdgeKind::Imports,
@@ -708,7 +708,7 @@ fn test_infer_without_project_context_fallback() {
         vec![make_ref(0, "Something", EdgeKind::TypeRef, 5)],
     );
     // Add a project using (non-external)
-    file.refs.push(ExtractedRef {
+    file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "App.Models".to_string(),
         kind: EdgeKind::Imports,
@@ -750,7 +750,7 @@ fn workspace_project_namespace_not_classified_as_external() {
     // `using Shared.Models;` where `Shared.csproj` is a sibling workspace
     // project must NOT surface as external, even if a NuGet root-prefix
     // match would otherwise catch it.
-    let make_import_ref = |source_idx, target: &str, line| ExtractedRef {
+    let make_import_ref = |source_idx, target: &str, line| ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
@@ -807,7 +807,7 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
     // The NuGet root-prefix classifier would normally say external; the
     // workspace guard must win.
     use crate::ecosystem::manifest::{ManifestData, ManifestKind};
-    let make_import_ref = |source_idx, target: &str, line| ExtractedRef {
+    let make_import_ref = |source_idx, target: &str, line| ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Imports,

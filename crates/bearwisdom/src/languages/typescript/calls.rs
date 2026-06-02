@@ -215,7 +215,7 @@ pub(super) fn emit_call_ref(
         crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
         if !target_name.is_empty() && target_name != "undefined" {
             let call_args = extract_call_args(call_node, src);
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name,
                 kind: EdgeKind::Calls,
@@ -277,7 +277,7 @@ pub(super) fn emit_new_ref(
                 first_string_arg_text(new_node, src),
             ) {
                 if matches!(name.as_str(), "Queue" | "Worker") {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: format!("__ts_bgjob_queue_binding__:{}", bound),
                         kind: EdgeKind::Imports,
@@ -291,7 +291,7 @@ pub(super) fn emit_new_ref(
                     });
                 }
             }
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::Instantiates,
@@ -479,7 +479,7 @@ fn emit_config_lookup_ref(
     // the `unresolved_refs` table even though they have no actual import
     // target. The flow detector still receives them via the dispatcher's
     // Imports-kind chain branch.
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: key,
         kind: EdgeKind::Imports,
@@ -568,7 +568,7 @@ pub(super) fn extract_calls(
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
                     if !target_name.is_empty() && target_name != "undefined" {
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -619,7 +619,7 @@ pub(super) fn extract_calls(
                                 vec![CallArg::TaggedTemplate { tag: target_name.clone(), body }]
                             })
                             .unwrap_or_default();
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -684,7 +684,7 @@ pub(super) fn emit_jsx_component_ref(
         .map(|s| s.name.clone())
         .unwrap_or(tag_name);
     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag_node, refs);
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::Calls,

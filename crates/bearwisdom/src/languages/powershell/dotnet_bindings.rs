@@ -41,7 +41,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
 
         if let Some((var_name, dotnet_type)) = binding {
             if is_dotnet_type_name(&dotnet_type) && emitted_vars.insert(var_name.clone()) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: 0,
                     target_name: DOTNET_BINDING_SENTINEL.to_string(),
                     kind: EdgeKind::Imports,
@@ -64,7 +64,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
             if line.contains(&pattern) || line.contains(&format!("${registry_var}.")) {
                 let key = registry_var.to_string();
                 if emitted_vars.insert(key.clone()) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: 0,
                         target_name: DOTNET_BINDING_SENTINEL.to_string(),
                         kind: EdgeKind::Imports,
@@ -84,7 +84,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         // If this line references `$_.` we emit a sentinel for `_` bound to
         // System.Windows.UIElement. One sentinel per file is enough.
         if line.contains("$_.") && emitted_vars.insert("_".to_string()) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: DOTNET_BINDING_SENTINEL.to_string(),
                 kind: EdgeKind::Imports,
@@ -103,7 +103,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         // module tag if `Get-Xxx` is in the cmdlet type table.
         if let Some(tag) = try_parse_cmdlet_result_chain(line) {
             if emitted_vars.insert(tag.clone()) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: 0,
                     target_name: DOTNET_BINDING_SENTINEL.to_string(),
                     kind: EdgeKind::Imports,
@@ -130,7 +130,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
             let bound = emitted_vars.contains(&rhs_root)
                 || HASHTABLE_REGISTRY_VARS.iter().any(|v| *v == rhs_root.as_str());
             if bound && emitted_vars.insert(lhs.clone()) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: 0,
                     target_name: DOTNET_BINDING_SENTINEL.to_string(),
                     kind: EdgeKind::Imports,

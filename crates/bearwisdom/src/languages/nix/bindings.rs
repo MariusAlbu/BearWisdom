@@ -93,7 +93,7 @@ pub(super) fn extract_inherit_from(
     // Emit an Imports ref to the source if it's a named variable
     let dummy_source_idx = symbols.len();
     if let Some(src_name) = &source_name {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: dummy_source_idx,
             target_name: src_name.clone(),
             kind: EdgeKind::Imports,

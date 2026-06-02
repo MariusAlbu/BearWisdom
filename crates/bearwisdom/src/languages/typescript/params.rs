@@ -312,7 +312,7 @@ pub(super) fn extract_for_loop_var(
                 &target,
             );
         if !target.is_empty() && !shadowed {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: idx,
                 target_name: target,
                 kind: EdgeKind::TypeRef,
@@ -335,7 +335,7 @@ pub(super) fn extract_for_loop_var(
             &target,
         );
         if !target.is_empty() && !shadowed {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: idx,
                 target_name: target,
                 kind: EdgeKind::TypeRef,

@@ -209,7 +209,7 @@ fn make_file_ctx_with_binding(var_name: &str) -> FileContext {
 }
 
 fn make_member_ref(target: &str, module: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind,
@@ -312,7 +312,7 @@ fn test_infer_external_ns_cmdlet_no_module() {
         file_namespace: None,
     };
     // Write-Host with no module — hits cmdlet branch.
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Write-Host".to_string(),
         kind: EdgeKind::Calls,

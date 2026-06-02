@@ -490,7 +490,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
     generic_params: Vec::new(),
 });
 
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: param_idx,
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
@@ -793,7 +793,7 @@ fn extract_superclass_refs(
         match child.kind() {
             "identifier" => {
                 let name = node_text(&child, source);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: class_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -812,7 +812,7 @@ fn extract_superclass_refs(
                     let obj = child
                         .child_by_field_name("object")
                         .map(|o| node_text(&o, source));
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: class_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,

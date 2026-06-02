@@ -732,7 +732,7 @@ fn method_return_type_id_interned_via_typeref() {
             param_types: Vec::new(),
             generic_params: Vec::new(),
         }],
-        refs: vec![crate::types::ExtractedRef {
+        refs: vec![crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
             kind: crate::types::EdgeKind::TypeRef,
             source_symbol_index: 0,
             target_name: "User".to_string(),
@@ -807,7 +807,7 @@ fn generic_return_type_decomposes_into_apply() {
             param_types: Vec::new(),
             generic_params: Vec::new(),
         }],
-        refs: vec![crate::types::ExtractedRef {
+        refs: vec![crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
             kind: crate::types::EdgeKind::TypeRef,
             source_symbol_index: 0,
             target_name: "Repository<User>".to_string(),

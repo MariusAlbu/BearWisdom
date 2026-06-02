@@ -143,7 +143,7 @@ pub(super) fn walk_node(
             && !is_local(node, src, &name, locals)
         {
             let ns = sym_lit_ns(node, src);
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -170,7 +170,7 @@ pub(super) fn walk_node(
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -249,7 +249,7 @@ fn process_list(
         && !is_clojure_skippable_symbol(&head)
         && !head_is_local
     {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: parent_idx.unwrap_or(0),
             target_name: head.clone(),
             kind: EdgeKind::Calls,
@@ -270,7 +270,7 @@ fn process_list(
                 return;
             }
             // Emit a ref for the name sym_lit so its sym_name node is covered.
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name.clone(),
                 kind: EdgeKind::Calls,
@@ -304,7 +304,7 @@ fn process_list(
             if name.is_empty() {
                 return;
             }
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name.clone(),
                 kind: EdgeKind::Calls,
@@ -331,7 +331,7 @@ fn process_list(
             if name.is_empty() {
                 return;
             }
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name.clone(),
                 kind: EdgeKind::Calls,
@@ -395,7 +395,7 @@ fn process_list(
             if name.is_empty() {
                 return;
             }
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name.clone(),
                 kind: EdgeKind::Calls,
@@ -427,7 +427,7 @@ fn process_list(
         "ns" => {
             let (ns_name, name_line) = list_second_name_with_line(node, src);
             if !ns_name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: ns_name.clone(),
                     kind: EdgeKind::Calls,
@@ -578,7 +578,7 @@ fn walk_def_macro_body(
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -668,7 +668,7 @@ fn walk_call_args(
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -791,7 +791,7 @@ fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx
                 if is_import {
                     let name = extract_first_sym(inner_child, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name.clone(),
                             kind: EdgeKind::Imports,
@@ -855,7 +855,7 @@ fn collect_refer_names(
                 if name.is_empty() {
                     continue;
                 }
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::Imports,

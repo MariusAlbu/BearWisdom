@@ -257,7 +257,7 @@ fn extract_calls(line: &str, line_num: u32, out: &mut Vec<ExtractedRef>) {
             // For a bare call `foo(...)`, `ident` is the callee directly.
             let target = ident.to_string();
 
-            out.push(ExtractedRef {
+            out.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: target,
                 kind: if is_method_call { EdgeKind::Calls } else { EdgeKind::Calls },
@@ -544,7 +544,7 @@ fn collect_import_block(lines: &[&str], start: usize) -> (String, usize) {
 
 /// Parse a fully-collected import statement string into ExtractedRefs.
 fn parse_collected_import(text: &str, line_num: u32, byte_offset: u32) -> Vec<ExtractedRef> {
-    let make_ref = |name: String| ExtractedRef {
+    let make_ref = |name: String| ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: name,
         kind: EdgeKind::Imports,
@@ -590,7 +590,7 @@ fn parse_include_line(line: &str, line_num: u32, byte_offset: u32) -> Option<Ext
     let rest = line.strip_prefix("include ")?;
     let name = rest.trim().split_whitespace().next()?.to_string();
     if name.is_empty() { return None; }
-    Some(ExtractedRef {
+    Some(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: name,
         kind: EdgeKind::Imports,

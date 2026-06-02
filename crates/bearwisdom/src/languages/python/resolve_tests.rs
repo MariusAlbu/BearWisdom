@@ -41,7 +41,7 @@ fn make_import_ref(
     module: &str,
     kind: EdgeKind,
 ) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -137,7 +137,7 @@ fn test_init_reexport_submodule_resolution() {
     // posthog/api/views.py imports Person from posthog.models
     let consumer_sym = make_sym("get_person", "get_person", SymbolKind::Function);
     let import_ref = make_import_ref(0, "Person", "posthog.models", EdgeKind::Imports);
-    let call_ref = ExtractedRef {
+    let call_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Person".to_string(),
         kind: EdgeKind::Calls,
@@ -194,7 +194,7 @@ fn test_init_reexport_windows_path() {
 
     let consumer_sym = make_sym("handler", "handler", SymbolKind::Function);
     let import_ref = make_import_ref(0, "Team", "myapp.models", EdgeKind::Imports);
-    let call_ref = ExtractedRef {
+    let call_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "Team".to_string(),
         kind: EdgeKind::TypeRef,

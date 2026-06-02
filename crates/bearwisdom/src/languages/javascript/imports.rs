@@ -50,7 +50,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                             .map(|n| node_text(n, src))
                             .unwrap_or_default();
                         if !exported.is_empty() {
-                            refs.push(Ref {
+                            refs.push(Ref { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: exported,
                                 kind: EdgeKind::Imports,
@@ -70,7 +70,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
             // `export * from './mod'` — the `*` child is a namespace_export or literal
             "namespace_export" => {
                 if let Some(mod_path) = &module_path {
-                    refs.push(Ref {
+                    refs.push(Ref { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: mod_path.clone(),
                         kind: EdgeKind::Imports,
@@ -89,7 +89,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
             "identifier" => {
                 let name = node_text(child, src);
                 if name != "default" && name != "export" && !name.is_empty() {
-                    refs.push(Ref {
+                    refs.push(Ref { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -123,7 +123,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                         if let Some(name_node) = decl.child_by_field_name("name") {
                             let name = node_text(name_node, src);
                             if !name.is_empty() {
-                                refs.push(Ref {
+                                refs.push(Ref { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::Imports,
@@ -162,7 +162,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                     if let Some(name_node) = child.child_by_field_name("name") {
                         let name = node_text(name_node, src);
                         if !name.is_empty() {
-                            refs.push(Ref {
+                            refs.push(Ref { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::Imports,
@@ -187,7 +187,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                     if let Some(name_node) = child.child_by_field_name("name") {
                         let name = node_text(name_node, src);
                         if !name.is_empty() {
-                            refs.push(Ref {
+                            refs.push(Ref { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::Imports,
@@ -215,7 +215,7 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
         let target = module_path
             .clone()
             .unwrap_or_else(|| "default".to_string());
-        refs.push(Ref {
+        refs.push(Ref { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target.clone(),
             kind: EdgeKind::Imports,
@@ -323,7 +323,7 @@ pub(super) fn extract_module_exports(
                 .unwrap_or_else(|| lhs.clone())
         };
 
-        refs.push(Ref {
+        refs.push(Ref { is_import_binding: false, is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: export_name,
             kind: EdgeKind::Imports,
@@ -472,7 +472,7 @@ pub(super) fn try_emit_require(
         return;
     }
     if let Some(module) = extract_require_path(init_node, src) {
-        refs.push(Ref {
+        refs.push(Ref { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: module.clone(),
             kind: EdgeKind::Imports,

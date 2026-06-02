@@ -181,7 +181,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
                     if !target_name.is_empty() {
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -206,7 +206,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 if let Some(type_node) = child.child_by_field_name("type") {
                     let name = type_node_simple_name(type_node, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Instantiates,
@@ -328,7 +328,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     found
                 };
                 if !target.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: target,
                         kind: EdgeKind::Calls,
@@ -405,7 +405,7 @@ fn extract_catch_clause_refs(
                     for type_node in param_child.children(&mut tc) {
                         let name = super::helpers::type_node_simple_name(type_node, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -466,7 +466,7 @@ fn extract_try_with_resources_refs(
                 if let Some(tn) = type_node {
                     let type_name = super::helpers::type_node_simple_name(tn, src);
                     if !type_name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
@@ -506,7 +506,7 @@ fn extract_cast_expression_refs(
     if let Some(type_node) = node.child_by_field_name("type") {
         let name = super::helpers::type_node_simple_name(type_node, src);
         if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::TypeRef,
@@ -559,7 +559,7 @@ fn extract_method_reference_calls(
 
     if let Some(name) = method_name {
         if !name.is_empty() && name != "new" {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -589,7 +589,7 @@ fn extract_method_reference_calls(
         if recv.kind() == "type_identifier" {
             let name = node_text(recv, src);
             if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -624,7 +624,7 @@ fn extract_enhanced_for_refs(
     if let Some(tn) = type_node {
         let type_name = super::helpers::type_node_simple_name(tn, src);
         if !type_name.is_empty() && !super::helpers::is_java_primitive(&type_name) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -673,7 +673,7 @@ fn extract_class_literal_ref(
         }
         let name = super::helpers::type_node_simple_name(child, src);
         if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::TypeRef,
@@ -737,7 +737,7 @@ fn extract_instanceof_refs(
         return;
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: type_name.clone(),
         kind: EdgeKind::TypeRef,
@@ -762,7 +762,7 @@ fn extract_instanceof_refs(
                 if !var_name.is_empty() {
                     let var_idx = syms.len();
                     syms.push(make_variable_symbol(var_name, &c, source_symbol_index));
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: var_idx,
                         target_name: type_name.clone(),
                         kind: EdgeKind::TypeRef,

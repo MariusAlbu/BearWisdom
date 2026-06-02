@@ -136,7 +136,7 @@ fn walk_node(
             if let Some(ns_node) = node.child_by_field_name("namespace") {
                 let name = text(ns_node, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -161,7 +161,7 @@ fn walk_node(
                     .take_while(|c| c.is_alphanumeric() || *c == '.' || *c == '_')
                     .collect();
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -184,7 +184,7 @@ fn walk_node(
                 if child.is_named() {
                     let name = text(child, src);
                     if !name.is_empty() && name != "Inherits" {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::Inherits,
@@ -209,7 +209,7 @@ fn walk_node(
                 if !name.is_empty()
                     && !super::keywords::OPERATOR_KEYWORDS.contains(&name.as_str())
                 {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -230,7 +230,7 @@ fn walk_node(
             if let Some(ty) = node.child_by_field_name("type") {
                 let name = text(ty, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Instantiates,
@@ -253,7 +253,7 @@ fn walk_node(
         "field_declaration" => {
             let sym_idx = parent_idx.unwrap_or(0);
             if let Some(base) = inherits_base_from_field_decl(node, src) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: base,
                     kind: EdgeKind::Inherits,

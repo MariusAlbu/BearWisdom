@@ -50,7 +50,7 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
             if let Some((name, consumed)) = scan_jsx_tag(&bytes[i..]) {
                 let line = line_of_byte(bytes, i);
                 let (target_name, chain) = build_jsx_ref(&name);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: host_index,
                     target_name,
                     kind: EdgeKind::Calls,

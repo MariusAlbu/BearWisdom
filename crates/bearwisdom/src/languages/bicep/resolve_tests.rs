@@ -59,7 +59,7 @@ fn make_sym(name: &str, kind: SymbolKind) -> ExtractedSymbol {
 }
 
 fn make_calls(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -74,7 +74,7 @@ fn make_calls(target: &str) -> ExtractedRef {
 }
 
 fn make_type_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::TypeRef,

@@ -200,7 +200,7 @@ pub(super) fn extract_calls_from_body(
                     let call_args = extract_call_args(&child, src);
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !target_name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -239,7 +239,7 @@ pub(super) fn extract_calls_from_body(
                         let target = seg.name.clone();
                         if !target.is_empty() {
                             crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &child, refs);
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: target,
                                 kind: EdgeKind::Calls,
@@ -359,7 +359,7 @@ pub(super) fn extract_type_ref_from_type_node(
 ) {
     let name = kotlin_type_name(node, src);
     if !name.is_empty() {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,

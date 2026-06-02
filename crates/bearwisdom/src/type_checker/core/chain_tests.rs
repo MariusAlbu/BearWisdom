@@ -63,7 +63,7 @@ fn sym_info_sig(
 }
 
 fn dummy_extracted_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -762,7 +762,7 @@ fn arg_driven_generic_binds_terminal_yield() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         call_args: vec![CallArg::Ident("u".to_string())],
         ..dummy_extracted_ref("wrap")
     };
@@ -846,7 +846,7 @@ fn arg_driven_generic_inferred_through_array_arg() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         call_args: vec![CallArg::Ident("items".to_string())],
         ..dummy_extracted_ref("firstOf")
     };
@@ -920,7 +920,7 @@ fn turbofish_overrides_arg_driven_inference() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         call_args: vec![CallArg::Ident("u".to_string())],
         ..dummy_extracted_ref("wrap")
     };
@@ -992,7 +992,7 @@ fn arg_driven_no_inference_when_arg_untyped() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         call_args: vec![CallArg::Ident("mystery".to_string())],
         ..dummy_extracted_ref("wrap")
     };
@@ -1072,7 +1072,7 @@ fn arg_driven_infers_owner_param_when_receiver_unbound() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         call_args: vec![CallArg::Ident("u".to_string())],
         ..dummy_extracted_ref("findOne")
     };
@@ -1154,7 +1154,7 @@ fn receiver_binding_wins_over_arg_driven_inference() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         call_args: vec![CallArg::Ident("u".to_string())],
         ..dummy_extracted_ref("findOne")
     };

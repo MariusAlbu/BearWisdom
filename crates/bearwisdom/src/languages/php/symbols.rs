@@ -103,7 +103,7 @@ pub(super) fn extract_class(
                         || base_child.kind() == "name"
                         || base_child.kind() == "identifier"
                     {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: idx,
                             target_name: node_text(&base_child, src),
                             kind: EdgeKind::Inherits,
@@ -131,7 +131,7 @@ pub(super) fn extract_class(
             let mut c = base.walk();
             for bc in base.children(&mut c) {
                 if bc.kind() == "qualified_name" || bc.kind() == "name" || bc.kind() == "identifier" {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: idx,
                         target_name: node_text(&bc, src),
                         kind: EdgeKind::Inherits,
@@ -170,7 +170,7 @@ pub(super) fn extract_interface_list(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "qualified_name" || child.kind() == "name" || child.kind() == "identifier" {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: class_idx,
                 target_name: node_text(&child, src),
                 kind: edge_kind,

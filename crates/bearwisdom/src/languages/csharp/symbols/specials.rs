@@ -379,7 +379,7 @@ pub(in super::super) fn push_using_directive(
                 match child.kind() {
                     "identifier" | "qualified_name" => {
                         let full = node_text(child, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: current_symbol_count,
                             target_name: full.clone(),
                             kind: EdgeKind::Imports,
@@ -408,7 +408,7 @@ pub(in super::super) fn push_using_directive(
         match child.kind() {
             "identifier" => {
                 let name = node_text(child, src);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: name.clone(),
                     kind: EdgeKind::Imports,
@@ -424,7 +424,7 @@ pub(in super::super) fn push_using_directive(
             }
             "qualified_name" => {
                 let full = node_text(child, src);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: full.clone(),
                     kind: EdgeKind::Imports,

@@ -6,7 +6,7 @@ use super::*;
 use crate::types::{EdgeKind, ExtractedRef};
 
 fn call_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,

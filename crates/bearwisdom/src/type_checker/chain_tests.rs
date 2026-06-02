@@ -243,7 +243,7 @@ fn seg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
 
 fn ref_with_chain(segments: Vec<ChainSegment>, kind: EdgeKind) -> ExtractedRef {
     let leaf = segments.last().unwrap().name.clone();
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: leaf,
         kind,

@@ -458,7 +458,7 @@ fn extract_from_node(
                         _ => (None, raw.to_string()),
                     };
                     if !target.is_empty() {
-                        refs.push(crate::types::ExtractedRef {
+                        refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: target,
                             kind: crate::types::EdgeKind::Calls,
@@ -557,7 +557,7 @@ fn scan_all_type_identifiers(
             "type_identifier" if child.is_named() => {
                 let name = helpers::node_text(&child, source);
                 if !name.is_empty() && !symbols::is_rust_primitive(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -581,7 +581,7 @@ fn scan_all_type_identifiers(
                         text.rsplit("::").next().unwrap_or(&text).to_string()
                     });
                 if !name.is_empty() && !symbols::is_rust_primitive(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,

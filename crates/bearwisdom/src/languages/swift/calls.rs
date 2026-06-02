@@ -27,7 +27,7 @@ pub(super) fn extract_calls_from_body(
                     let call_args = extract_swift_call_args(&child, src);
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !target_name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -150,7 +150,7 @@ pub(super) fn extract_type_ref_from_swift_type(
 ) {
     let name = swift_type_name(node, src);
     if !name.is_empty() {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -203,7 +203,7 @@ fn extract_all_type_identifiers(
                             && r.kind == EdgeKind::TypeRef
                     });
                     if !already_emitted {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -311,7 +311,7 @@ pub(super) fn extract_protocol_composition_refs(
     for child in node.children(&mut cursor) {
         let n = swift_type_name(&child, src);
         if !n.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: n,
                 kind: crate::types::EdgeKind::TypeRef,

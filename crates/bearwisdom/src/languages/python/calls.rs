@@ -310,7 +310,7 @@ pub(super) fn extract_calls_from_body(
                 // is satisfied (isinstance IS a call, just with extra semantics).
                 if func_name == "isinstance" {
                     extract_isinstance_type_ref(&child, source, source_symbol_index, refs);
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: "isinstance".to_string(),
                         kind: EdgeKind::Calls,
@@ -353,7 +353,7 @@ pub(super) fn extract_calls_from_body(
                 crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
                 if let Some(target_name) = target_name {
                     let call_args = extract_call_args(&child, source);
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name,
                         kind: EdgeKind::Calls,
@@ -426,7 +426,7 @@ fn emit_isinstance_type_node(
         "identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -447,7 +447,7 @@ fn emit_isinstance_type_node(
                 if child.kind() == "identifier" {
                     let name = node_text(&child, source);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -467,7 +467,7 @@ fn emit_isinstance_type_node(
         "attribute" => {
             let name = node_text(node, source);
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -572,7 +572,7 @@ pub(super) fn extract_import_statement(
                 } else {
                     None
                 };
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -595,7 +595,7 @@ pub(super) fn extract_import_statement(
                     } else {
                         None
                     };
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: target,
                         kind: EdgeKind::Imports,
@@ -641,7 +641,7 @@ pub(super) fn extract_import_from_statement(
         match child.kind() {
             "dotted_name" | "identifier" => {
                 let name = node_text(&child, source);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: name,
                     kind: EdgeKind::Imports,
@@ -657,7 +657,7 @@ pub(super) fn extract_import_from_statement(
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let name = node_text(&name_node, source);
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -672,7 +672,7 @@ pub(super) fn extract_import_from_statement(
                 }
             }
             "wildcard_import" => {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: "*".to_string(),
                     kind: EdgeKind::Imports,

@@ -287,7 +287,7 @@ fn visit(
                 let name = node_text(child, src);
                 if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
                     if let Some(sym_idx) = parent_index {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -315,7 +315,7 @@ fn visit(
                         let name = node_text(grandchild, src);
                         if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
                             if let Some(idx) = parent_index {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: idx,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -436,7 +436,7 @@ fn extract_factory_constructor_at_visit(
         if child.kind() == "type_identifier" && child.is_named() {
             let t = nt(child, src);
             if !t.is_empty() && !predicates::is_dart_primitive_type(&t) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: idx,
                     target_name: t,
                     kind: EdgeKind::TypeRef,
@@ -467,7 +467,7 @@ fn scan_all_type_identifiers(
         if child.kind() == "type_identifier" && child.is_named() {
             let name = node_text(child, src);
             if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,

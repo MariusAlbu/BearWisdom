@@ -155,7 +155,7 @@ fn extract_class_name_stmt(
         if base.is_empty() {
             return;
         }
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: base,
             kind: EdgeKind::Inherits,
@@ -194,7 +194,7 @@ fn extract_extends_stmt(
     if base.is_empty() {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: base,
         kind: EdgeKind::Inherits,
@@ -257,7 +257,7 @@ fn extract_inner_class(
 
     if let Some(base) = extends {
         if !base.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: idx,
                 target_name: base,
                 kind: EdgeKind::Inherits,
@@ -623,7 +623,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                 };
                 if !name.is_empty() {
                     let line = child.start_position().row as u32;
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name.clone(),
                         kind: EdgeKind::Calls,
@@ -656,7 +656,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                                 .trim_end_matches(".tres")
                                 .to_string();
                             if !target.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: source_idx,
                                     target_name: target,
                                     kind: EdgeKind::Imports,

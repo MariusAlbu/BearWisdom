@@ -286,7 +286,7 @@ pub(super) fn push_using_decl(
             "qualified_identifier" | "identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: name,
                         kind: EdgeKind::Imports,

@@ -324,7 +324,7 @@ fn extract_binary_operator(
                 }
                 // Still emit the Call edge for the R6Class/setClass call itself
                 let source_idx = parent_index.unwrap_or(0);
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: callee,
                     kind: EdgeKind::Calls,
@@ -431,7 +431,7 @@ fn extract_call(
                 // General case: emit dotted qname for cross-file member resolution.
                 format!("{lhs}.{rhs}")
             };
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: target,
                 kind: EdgeKind::Calls,
@@ -454,7 +454,7 @@ fn extract_call(
 
     if IMPORT_FUNCS.contains(&callee.as_str()) {
         if let Some(pkg) = get_first_string_arg(node, src) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: pkg.clone(),
                 kind: EdgeKind::Imports,
@@ -521,7 +521,7 @@ fn extract_call(
     }
 
     // Generic call → Calls edge
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: callee,
         kind: EdgeKind::Calls,
@@ -650,7 +650,7 @@ fn extract_namespace_operator(
     if pkg.is_empty() || func.is_empty() {
         return;
     }
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: func,
         kind: EdgeKind::Calls,

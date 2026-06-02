@@ -37,7 +37,7 @@ pub(super) fn extract_calls(
                     // require('foo') → Imports edge instead of Calls
                     if callee == "require" {
                         if let Some(module) = extract_require_path(&child, src) {
-                            refs.push(Ref {
+                            refs.push(Ref { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: module.clone(),
                                 kind: EdgeKind::Imports,
@@ -54,7 +54,7 @@ pub(super) fn extract_calls(
                     // import('foo') — dynamic import → Imports edge
                     else if callee == "import" {
                         if let Some(module) = extract_first_string_arg(&child, src) {
-                            refs.push(Ref {
+                            refs.push(Ref { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: module.clone(),
                                 kind: EdgeKind::Imports,
@@ -84,7 +84,7 @@ pub(super) fn extract_calls(
                         };
                         if !shadowed {
                             crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
-                            refs.push(Ref {
+                            refs.push(Ref { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: callee,
                                 kind: EdgeKind::Calls,
@@ -107,7 +107,7 @@ pub(super) fn extract_calls(
                 if let Some(constructor) = child.child_by_field_name("constructor") {
                     let name = callee_name(constructor, src);
                     if !name.is_empty() {
-                        refs.push(Ref {
+                        refs.push(Ref { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -129,7 +129,7 @@ pub(super) fn extract_calls(
                 if let Some(tag) = child.child_by_field_name("tag") {
                     let name = callee_name(tag, src);
                     if !name.is_empty() {
-                        refs.push(Ref {
+                        refs.push(Ref { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -182,7 +182,7 @@ pub(super) fn extract_calls(
                             &tag_node,
                             refs,
                         );
-                        refs.push(Ref {
+                        refs.push(Ref { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -279,7 +279,7 @@ pub(super) fn emit_call_ref_js(
 
     if callee == "require" {
         if let Some(module) = extract_require_path(call_node, src) {
-            refs.push(Ref {
+            refs.push(Ref { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: module.clone(),
                 kind: EdgeKind::Imports,
@@ -294,7 +294,7 @@ pub(super) fn emit_call_ref_js(
         }
     } else if callee == "import" {
         if let Some(module) = extract_first_string_arg(call_node, src) {
-            refs.push(Ref {
+            refs.push(Ref { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: module.clone(),
                 kind: EdgeKind::Imports,
@@ -329,7 +329,7 @@ pub(super) fn emit_call_ref_js(
         }
         // Emit a TypeRef for the chain receiver when it looks like a type name.
         crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
-        refs.push(Ref {
+        refs.push(Ref { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: callee,
             kind: EdgeKind::Calls,
@@ -486,7 +486,7 @@ pub(super) fn emit_new_ref_js(
     };
     let name = callee_name(constructor, src);
     if !name.is_empty() {
-        refs.push(Ref {
+        refs.push(Ref { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::Calls,

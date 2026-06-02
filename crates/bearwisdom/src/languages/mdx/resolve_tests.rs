@@ -34,7 +34,7 @@ fn make_symbol(
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -49,7 +49,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
 }
 
 fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::TypeRef,

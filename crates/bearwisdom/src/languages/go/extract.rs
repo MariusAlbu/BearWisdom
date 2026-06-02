@@ -218,7 +218,7 @@ fn scan_all_type_identifiers(
             "type_identifier" if child.is_named() => {
                 let name = helpers::node_text(&child, source);
                 if !name.is_empty() && !helpers::is_go_builtin_type(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -237,7 +237,7 @@ fn scan_all_type_identifiers(
                 let text = helpers::node_text(&child, source);
                 let name = text.rsplit('.').next().unwrap_or(&text).to_string();
                 if !name.is_empty() && !helpers::is_go_builtin_type(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,

@@ -227,7 +227,7 @@ fn walk_node(
                             .copied()
                             == Some(b'{');
                         if !method_text.is_empty() && !is_cell_index {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: method_text,
                                 kind: EdgeKind::Calls,
@@ -273,7 +273,7 @@ fn walk_node(
                         .map_or(false, |&b| b.is_ascii_alphabetic() || b == b'_');
 
                 if !target.is_empty() && !has_brace && !is_truncated {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: target,
                         kind: EdgeKind::Calls,

@@ -166,7 +166,7 @@ pub(super) fn extract_rescue(
                         "constant" | "scope_resolution" => {
                             let type_name = node_text(&exc, src);
                             if !type_name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,

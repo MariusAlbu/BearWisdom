@@ -126,7 +126,7 @@ fn collect_include_refs(source: &str) -> Vec<ExtractedRef> {
         let target = raw.trim();
         if !target.is_empty() {
             let line = line_at(bytes, absolute);
-            out.push(ExtractedRef {
+            out.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: 0,
                 target_name: target.to_string(),
                 kind: EdgeKind::Imports,

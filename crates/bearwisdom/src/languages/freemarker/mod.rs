@@ -114,7 +114,7 @@ fn field(stem: &str, name: &str, line: u32, sig: &str) -> ExtractedSymbol {
 fn imports_ref(name: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     let p = std::path::Path::new(name);
     let target = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
-    ExtractedRef { source_symbol_index: 0, target_name: target,
+    ExtractedRef { is_import_binding: false, is_reexport: false, source_symbol_index: 0, target_name: target,
         kind: EdgeKind::Imports, line, col: 0, module: None,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),

@@ -195,7 +195,7 @@ fn visit(
             let name = node_text(child, src);
             if !name.is_empty() {
                 let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
@@ -256,7 +256,7 @@ fn dispatch_call(
             let qualified = call_qualified_name(node, src).unwrap_or_else(|| callee.clone());
             let name = qualified.rsplit('.').next().unwrap_or(&qualified).to_string();
             let module = qualified.rfind('.').map(|i| qualified[..i].to_string());
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: sym_idx,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -565,7 +565,7 @@ fn extract_implementation(
 });
 
     // Emit TypeRef to the protocol being implemented
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: idx,
         target_name: impl_name,
         kind: EdgeKind::TypeRef,
@@ -639,7 +639,7 @@ fn dispatch_attribute(
             if let Some(target_name) = target {
                 // Use the parent symbol index if available; otherwise use current symbol count.
                 let source_idx = parent_index.unwrap_or(symbols.len());
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name,
                     kind: EdgeKind::TypeRef,

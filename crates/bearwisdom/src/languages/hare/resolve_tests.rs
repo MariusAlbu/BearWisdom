@@ -5,7 +5,7 @@ use crate::types::*;
 #[test]
 fn test_hare_http_emit() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
@@ -35,7 +35,7 @@ fn test_hare_http_emit() {
 
 #[test]
 fn test_hare_no_emit_for_non_http_module() {
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
@@ -65,7 +65,7 @@ fn test_hare_no_emit_for_non_http_module() {
 
 #[test]
 fn test_hare_no_emit_for_non_url_arg() {
-    let r = ExtractedRef {
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,

@@ -67,7 +67,7 @@ impl LanguagePlugin for VelocityPlugin {
                         if let Some(e) = s.find('"') {
                             let file = &s[..e];
                             let target = std::path::Path::new(file).file_stem().and_then(|s| s.to_str()).unwrap_or(file).to_string();
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index: 0, target_name: target,
                                 kind: EdgeKind::Imports,
                                 line: line_no as u32, module: None, chain: None,

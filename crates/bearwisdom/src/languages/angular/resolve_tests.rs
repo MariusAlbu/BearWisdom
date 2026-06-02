@@ -138,7 +138,7 @@ fn selector_map_hit_resolves_to_class() {
         generic_params: Vec::new(),
 };
 
-    let extracted = ExtractedRef {
+    let extracted = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "AppUserCard".to_string(),
         kind: EdgeKind::Calls,
@@ -196,7 +196,7 @@ fn selector_map_miss_falls_through() {
         generic_params: Vec::new(),
 };
 
-    let extracted = ExtractedRef {
+    let extracted = ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "AppUserCard".to_string(),
         kind: EdgeKind::Calls,

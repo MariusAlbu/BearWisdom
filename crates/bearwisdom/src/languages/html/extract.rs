@@ -55,7 +55,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     // to accept every unusual syntax.
     let mut refs: Vec<ExtractedRef> = extract_script_refs(source)
         .into_iter()
-        .map(|sr| ExtractedRef {
+        .map(|sr| ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: host_index,
             target_name: sr.url.clone(),
             kind: EdgeKind::Imports,

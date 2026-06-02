@@ -37,7 +37,7 @@ pub(super) fn extract_class_definition(
 
     // Check for `inherits <parent>` — emit Inherits edge.
     if let Some(parent) = find_inherits_name(node, src) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: parent,
             kind: EdgeKind::Inherits,

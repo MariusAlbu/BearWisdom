@@ -217,7 +217,7 @@ pub fn extract(source: &str) -> ExtractionResult {
         if in_proc && !is_continuation {
             let source_idx = current_proc.unwrap_or(0);
             if let Some(target) = parse_call_stmt(&upper, line) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: target,
                     kind: EdgeKind::Calls,

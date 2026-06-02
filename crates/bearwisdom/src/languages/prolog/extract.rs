@@ -207,7 +207,7 @@ fn process_directive(
                 .to_string()
         };
         if !module_name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: module_name.clone(),
                 kind: EdgeKind::Imports,
@@ -251,7 +251,7 @@ fn process_directive(
             inner.trim_matches('\'').trim_matches('"').to_string()
         };
         if !module_name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: module_name.clone(),
                 kind: EdgeKind::Imports,
@@ -320,7 +320,7 @@ fn extract_body_goals(
         if is_prolog_operator(functor) {
             continue;
         }
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: source_idx,
             target_name: functor.to_string(),
             kind: EdgeKind::Calls,

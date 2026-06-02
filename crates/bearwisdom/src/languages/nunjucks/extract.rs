@@ -73,7 +73,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     }
                 } else if let Some(rest) = trimmed.strip_prefix("extends ") {
                     if let Some(name) = strip_quotes(rest.trim()) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: strip_extension(&name),
                             kind: EdgeKind::Imports,
@@ -88,7 +88,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     }
                 } else if let Some(rest) = trimmed.strip_prefix("include ") {
                     if let Some(name) = strip_quotes(rest.trim()) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: strip_extension(&name),
                             kind: EdgeKind::Imports,
@@ -104,7 +104,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                 } else if let Some(rest) = trimmed.strip_prefix("import ") {
                     let tok = rest.split_whitespace().next().unwrap_or("");
                     if let Some(name) = strip_quotes(tok.trim()) {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: strip_extension(&name),
                             kind: EdgeKind::Imports,

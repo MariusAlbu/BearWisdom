@@ -68,7 +68,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         } else if let Some(rest) = trimmed.strip_prefix("include ") {
             let target = normalize_template_path(rest.trim());
             if !target.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -84,7 +84,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         } else if let Some(rest) = trimmed.strip_prefix("extends ") {
             let target = normalize_template_path(rest.trim());
             if !target.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: target,
                     kind: EdgeKind::Imports,

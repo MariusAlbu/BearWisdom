@@ -274,7 +274,7 @@ pub(super) fn extract_class(
                         "identifier" => {
                             let parent_name = node_text(tc, src);
                             if !parent_name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: idx,
                                     target_name: parent_name,
                                     kind: EdgeKind::Inherits,
@@ -292,7 +292,7 @@ pub(super) fn extract_class(
                         "typerefDot" => {
                             let (member, qualifier) = split_dot_node(tc, src);
                             if !member.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: idx,
                                     target_name: member,
                                     kind: EdgeKind::Inherits,
@@ -494,7 +494,7 @@ pub(super) fn extract_uses(
         if child.kind() == "moduleName" || child.kind() == "identifier" {
             let name = node_text(child, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name.clone(),
                     kind: EdgeKind::Imports,

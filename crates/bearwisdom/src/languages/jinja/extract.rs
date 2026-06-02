@@ -402,7 +402,7 @@ fn is_valid_jinja_ident(s: &str) -> bool {
 }
 
 fn make_imports_ref(source_idx: usize, target: String, line: u32, byte_offset: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target,
         kind: EdgeKind::Imports,

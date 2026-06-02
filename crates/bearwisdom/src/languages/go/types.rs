@@ -167,7 +167,7 @@ fn emit_alias_head_ref(
         return;
     }
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: head,
         kind: EdgeKind::TypeRef,
@@ -451,7 +451,7 @@ fn extract_field_declaration(
     if let Some(et) = embedded_type {
         if !et.is_empty() {
             // Emit Inherits edge from the struct (parent_index) to the embedded type.
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
                 target_name: et.clone(),
                 kind: EdgeKind::Inherits,
@@ -550,7 +550,7 @@ fn emit_type_refs_from_subtree(
         "type_identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() && !is_go_builtin_type(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -584,7 +584,7 @@ fn emit_type_refs_from_subtree(
                 .map(|n| node_text(&n, source))
                 .unwrap_or_default();
             if !name.is_empty() && !is_go_builtin_type(&name) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,

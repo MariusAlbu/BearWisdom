@@ -58,7 +58,7 @@ fn emit_annotation(
 ) {
     if let Some(name) = annotation_name(node, src) {
         let first_arg = extract_first_string_arg(node, src);
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -209,7 +209,7 @@ fn extract_pattern_refs(
             // type field → type_identifier | stable_type_identifier
             if let Some(type_node) = node.child_by_field_name("type") {
                 if let Some(name) = extract_type_name(&type_node, src) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -231,7 +231,7 @@ fn extract_pattern_refs(
                 match child.kind() {
                     "type_identifier" | "stable_type_identifier" | "generic_type" => {
                         if let Some(name) = extract_type_name(&child, src) {
-                            refs.push(ExtractedRef {
+                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,

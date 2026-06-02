@@ -75,7 +75,7 @@ pub fn extract(source: &str) -> ExtractionResult {
             // use Module::Name qw(...);
             if let Some(module) = parse_use(trimmed) {
                 let src_idx = current_sub_idx.unwrap_or_else(|| symbols.len().saturating_sub(1));
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: src_idx,
                     target_name: module.clone(),
                     kind: EdgeKind::Imports,

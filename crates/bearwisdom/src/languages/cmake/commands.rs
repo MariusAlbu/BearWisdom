@@ -42,7 +42,7 @@ pub(super) fn extract_normal_command(
     // Builtin commands are resolved to external automatically; emitting Calls refs
     // for them produces unresolved noise against the project symbol index.
     if !is_cmake_builtin(&cmd) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: sym_idx,
             target_name: cmd.clone(),
             kind: EdgeKind::Calls,
@@ -487,7 +487,7 @@ fn extract_include_command(
         Some(p) => p,
         None => return,
     };
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: path.clone(),
         kind: EdgeKind::Imports,
@@ -520,7 +520,7 @@ fn extract_find_package_command(
         Some(p) => p,
         None => return,
     };
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: pkg.clone(),
         kind: EdgeKind::Imports,
@@ -588,7 +588,7 @@ fn extract_add_subdirectory_command(
         Some(d) => d,
         None => return,
     };
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: dir.clone(),
         kind: EdgeKind::Imports,
@@ -646,7 +646,7 @@ fn extract_target_link_libraries(
             || raw.trim_start().starts_with("$ENV{")
             || raw.trim_start().starts_with("$CACHE{");
         let kind = if was_var_ref { EdgeKind::TypeRef } else { EdgeKind::Calls };
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: target_idx,
             target_name: norm.clone(),
             kind,
@@ -766,7 +766,7 @@ pub(super) fn collect_all_normal_commands(
             ));
             // Only emit Calls ref for user-defined (non-builtin) commands.
             if !is_cmake_builtin(&cmd) {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: cmd,
                     kind: EdgeKind::Calls,

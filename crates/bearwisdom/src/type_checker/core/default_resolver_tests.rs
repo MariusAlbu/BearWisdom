@@ -214,7 +214,7 @@ fn file_ctx(imports: Vec<ImportEntry>, ns: Option<&str>) -> FileContext {
 }
 
 fn extracted_call(target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,

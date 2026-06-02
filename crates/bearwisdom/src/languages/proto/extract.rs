@@ -181,7 +181,7 @@ fn extract_import(
             Some(format!("import \"{}\"", stripped)),
             None,
         ));
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: stripped.clone(),
             kind: EdgeKind::Imports,
@@ -332,7 +332,7 @@ fn extract_rpc(
 
     // TypeRef to request type
     if !req_type.is_empty() && !is_primitive(&req_type) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: req_type,
             kind: EdgeKind::TypeRef,
@@ -348,7 +348,7 @@ fn extract_rpc(
 
     // TypeRef to response type
     if !resp_type.is_empty() && !is_primitive(&resp_type) {
-        refs.push(ExtractedRef {
+        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index: idx,
             target_name: resp_type,
             kind: EdgeKind::TypeRef,
@@ -467,7 +467,7 @@ fn extract_field(
     // TypeRef to field type (non-primitive message/enum types only)
     if let Some(t) = type_name {
         if !is_primitive(&t) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: idx,
                 target_name: t,
                 kind: EdgeKind::TypeRef,
@@ -518,7 +518,7 @@ fn extract_map_field(
     // TypeRef to value type if it's a message/enum type
     if let Some(t) = val_type {
         if !is_primitive(&t) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: idx,
                 target_name: t,
                 kind: EdgeKind::TypeRef,
@@ -596,7 +596,7 @@ fn extract_extend(
         None,
     ));
 
-    refs.push(ExtractedRef {
+    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: idx,
         target_name: target,
         kind: EdgeKind::TypeRef,

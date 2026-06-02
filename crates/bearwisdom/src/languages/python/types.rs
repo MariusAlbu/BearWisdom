@@ -86,7 +86,7 @@ fn extract_type_refs_from_annotation(
         "identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() && name != "None" {
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: symbol_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -113,7 +113,7 @@ fn extract_type_refs_from_annotation(
                         .child_by_field_name("object")
                         .map(|o| node_text(&o, source))
                         .filter(|s| !s.is_empty());
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: symbol_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,

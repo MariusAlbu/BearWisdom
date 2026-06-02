@@ -51,7 +51,7 @@ pub(super) fn extract_decorators(
             // makes decorator refs indistinguishable from imports, and
             // downstream consumers (controller-prefix pre-pass, route-decorator
             // detector) misroute one for the other.
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::TypeRef,

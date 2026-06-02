@@ -134,7 +134,7 @@ pub(super) fn emit_misparsed_base_class_refs(
                 if text.is_empty() || matches!(text, "public" | "private" | "protected" | "virtual") {
                     continue;
                 }
-                refs.push(ExtractedRef {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: text.to_string(),
                     kind: EdgeKind::Inherits,

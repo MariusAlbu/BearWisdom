@@ -9,7 +9,7 @@ use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguagePr
 use crate::types::{CallArg, EdgeKind, ExtractedRef};
 
 fn bare_ref(kind: EdgeKind, target: &str) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind,

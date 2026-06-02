@@ -84,7 +84,7 @@ fn mk_sym(name: &str, kind: SymbolKind, start_line: u32) -> ExtractedSymbol {
 }
 
 fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
-    ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -294,7 +294,7 @@ fn flow_type_args_populate_chain_segment() {
     //   '.findOne' = 4..12
     //   findOne at bytes 5..12 (property_identifier: 'findOne')
     let symbols: Vec<ExtractedSymbol> = Vec::new();
-    let mut refs = vec![ExtractedRef {
+    let mut refs = vec![ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: 0,
         target_name: "findOne".to_string(),
         kind: EdgeKind::Calls,

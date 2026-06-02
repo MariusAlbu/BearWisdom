@@ -69,7 +69,7 @@ pub(super) fn extract_calls_from_body(
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !target_name.is_empty() {
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -97,7 +97,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(op) = child.child_by_field_name("operator") {
                     let target_name = node_text(op, src);
                     if !target_name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -123,7 +123,7 @@ pub(super) fn extract_calls_from_body(
                         "type_identifier" => {
                             let name = node_text(inner, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::Calls,
@@ -142,7 +142,7 @@ pub(super) fn extract_calls_from_body(
                             let name = node_text(inner, src);
                             let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                             if !simple.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index,
                                     target_name: simple,
                                     kind: EdgeKind::Calls,
@@ -194,7 +194,7 @@ fn extract_type_refs_from_type_arguments(
             "type_identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,

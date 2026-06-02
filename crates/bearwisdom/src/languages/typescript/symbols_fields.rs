@@ -114,7 +114,7 @@ fn infer_field_type_from_initializer(
             if type_name.is_empty() {
                 return;
             }
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: field_idx,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -141,7 +141,7 @@ fn infer_field_type_from_initializer(
                         if arg_name.is_empty() {
                             continue;
                         }
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: field_idx,
                             target_name: arg_name,
                             kind: EdgeKind::TypeRef,

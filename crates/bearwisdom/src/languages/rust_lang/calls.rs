@@ -89,7 +89,7 @@ pub(super) fn extract_impl(
 
         // TypeRef to the implementing type — coverage signal for ref_node_kinds.
         if !is_rust_primitive(&type_name) {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: impl_sym_idx,
                 target_name: type_name.clone(),
                 kind: EdgeKind::TypeRef,
@@ -112,7 +112,7 @@ pub(super) fn extract_impl(
     if let Some(trait_node) = node.child_by_field_name("trait") {
         let trait_name = rust_type_node_name(&trait_node, source);
         if !trait_name.is_empty() {
-            refs.push(ExtractedRef {
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                 source_symbol_index: impl_sym_idx,
                 target_name: trait_name,
                 kind: EdgeKind::Implements,
@@ -228,7 +228,7 @@ pub(super) fn extract_impl(
                         if let Some(ty_node) = child.child_by_field_name("type") {
                             let type_name = rust_type_node_name(&ty_node, source);
                             if !type_name.is_empty() {
-                                refs.push(ExtractedRef {
+                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,
@@ -493,7 +493,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     };
                     if !target.is_empty() {
                         let call_args = extract_macro_string_args(&child, source);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -530,7 +530,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 if let Some(type_node) = child.child_by_field_name("type") {
                     let type_name = rust_type_node_name(&type_node, source);
                     if !type_name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
@@ -613,7 +613,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let name = rust_type_node_name(&name_node, source);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name.clone(),
                             kind: EdgeKind::Calls,
@@ -626,7 +626,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                                     call_args: Vec::new(),
 });
                         // Also emit TypeRef so the type graph is connected.
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -689,7 +689,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
 
                     if !target_name.is_empty() {
                         let call_args = extract_call_args(&child, source);
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -727,7 +727,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
             "type_identifier" => {
                 let name = node_text(&child, source);
                 if !name.is_empty() && !is_rust_primitive(&name) {
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -758,7 +758,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         }
                         _ => (None, full_name),
                     };
-                    refs.push(ExtractedRef {
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: target,
                         kind: EdgeKind::TypeRef,
@@ -1121,7 +1121,7 @@ fn infer_rust_variable_type(
             if let Some(name_node) = value_node.child_by_field_name("name") {
                 let type_name = rust_type_node_name(&name_node, source);
                 if !type_name.is_empty() && !is_rust_primitive(&type_name) {
-                    refs.push(crate::types::ExtractedRef {
+                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: var_sym_idx,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -1167,7 +1167,7 @@ fn infer_rust_variable_type(
                     _ => String::new(),
                 };
                 if !type_name.is_empty() && !is_rust_primitive(&type_name) {
-                    refs.push(crate::types::ExtractedRef {
+                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: var_sym_idx,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -1208,7 +1208,7 @@ fn infer_rust_variable_type(
                     let leaf_name = chain.segments.last().unwrap().name.clone();
                     let byte_offset = func.start_byte() as u32;
                     let line = func.start_position().row as u32;
-                    refs.push(crate::types::ExtractedRef {
+                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index: var_sym_idx,
                         target_name: leaf_name,
                         kind: EdgeKind::TypeRef,

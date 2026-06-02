@@ -48,7 +48,7 @@ impl LanguagePlugin for GspPlugin {
                     let start = idx + 10;
                     if let Some(end) = rest[start..].find('"') {
                         let name = rest[start..start + end].trim_start_matches('_').to_string();
-                        refs.push(ExtractedRef {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index: 0, target_name: name,
                             kind: EdgeKind::Imports,
                             line: line_no as u32, module: None, chain: None,
