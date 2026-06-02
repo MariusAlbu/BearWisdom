@@ -1118,7 +1118,7 @@ fn test_barrel_named_reexport() {
     assert!(result.is_some(), "UserService should resolve through barrel file");
     let res = result.unwrap();
     assert_eq!(res.confidence, 1.0);
-    assert_eq!(res.strategy, "ts_reexport_chain");
+    assert_eq!(res.strategy, "reexport_chain");
     assert_eq!(
         res.target_symbol_id,
         *id_map
@@ -1179,7 +1179,7 @@ fn test_barrel_aliased_reexport() {
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "AuthService should resolve through aliased barrel re-export");
     let res = result.unwrap();
-    assert_eq!(res.strategy, "ts_reexport_chain");
+    assert_eq!(res.strategy, "reexport_chain");
     assert_eq!(
         res.target_symbol_id,
         *id_map
@@ -1240,7 +1240,7 @@ fn test_barrel_wildcard_reexport() {
     let res = result.unwrap();
     // Wildcard resolution uses 0.95 confidence.
     assert_eq!(res.confidence, 0.95);
-    assert_eq!(res.strategy, "ts_reexport_star");
+    assert_eq!(res.strategy, "reexport_star");
     assert_eq!(
         res.target_symbol_id,
         *id_map
@@ -1846,7 +1846,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
     // Either tsconfig_alias (if landed directly) or reexport_chain (if
     // the barrel walk surfaced the result).
     assert!(
-        res.strategy == "ts_tsconfig_alias" || res.strategy == "ts_reexport_chain",
+        res.strategy == "ts_tsconfig_alias" || res.strategy == "reexport_chain",
         "got unexpected strategy: {}",
         res.strategy
     );

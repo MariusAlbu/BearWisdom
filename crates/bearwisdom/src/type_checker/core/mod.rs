@@ -12,6 +12,7 @@ pub mod generics;
 pub mod inference;
 pub mod members;
 pub mod pattern;
+pub mod reexport;
 pub mod supertype;
 pub mod symbol_types;
 pub mod types;

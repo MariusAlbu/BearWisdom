@@ -27,6 +27,10 @@ struct Lookup {
     parents: FxHashMap<String, String>,
     path_aliases: FxHashMap<String, String>,
     generics: FxHashMap<String, Vec<String>>,
+    /// file_path → [(exported_name, source_module_spec)] (the per-file re-export map)
+    reexports_map: FxHashMap<String, Vec<(String, String)>>,
+    /// module_spec → resolved file_path
+    module_files: FxHashMap<String, String>,
 }
 
 impl Lookup {
@@ -43,7 +47,20 @@ impl Lookup {
             parents: Default::default(),
             path_aliases: Default::default(),
             generics: Default::default(),
+            reexports_map: Default::default(),
+            module_files: Default::default(),
         }
+    }
+    fn with_reexport_entry(mut self, file: &str, name: &str, source: &str) -> Self {
+        self.reexports_map
+            .entry(file.to_string())
+            .or_default()
+            .push((name.to_string(), source.to_string()));
+        self
+    }
+    fn with_module_file(mut self, spec: &str, file: &str) -> Self {
+        self.module_files.insert(spec.to_string(), file.to_string());
+        self
     }
     fn with_generics(mut self, qname: &str, params: &[&str]) -> Self {
         self.generics
@@ -137,8 +154,20 @@ impl SymbolLookup for Lookup {
     fn generic_params(&self, qname: &str) -> Option<&[String]> {
         self.generics.get(qname).map(|v| v.as_slice())
     }
-    fn reexports_from(&self, _: &str) -> &[(String, String)] {
-        &self.empty_pairs
+    fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
+        self.reexports_map
+            .get(file_path)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty_pairs)
+    }
+    fn resolve_module_from(&self, _source_file: &str, spec: &str) -> Option<&str> {
+        self.module_files.get(spec).map(|s| s.as_str())
+    }
+    fn in_module_from(&self, _source_file: &str, spec: &str) -> &[SymbolInfo] {
+        match self.module_files.get(spec) {
+            Some(file) => self.in_file(file),
+            None => &self.empty,
+        }
     }
     fn is_external_name(&self, _: &str, _: &str) -> bool {
         false
@@ -848,6 +877,85 @@ fn reexport_chain_skips_relative_specifiers() {
         kind_compatible: accept_any,
     };
     assert!(d.resolve_via_reexport_chain().is_none());
+}
+
+#[test]
+fn reexport_following_resolves_pub_use_hop() {
+    // foo re-exports Thing from bar (Rust `pub use crate::bar::Thing`); bar
+    // defines Thing. A ref to Thing imported `from foo` resolves to bar's
+    // definition by following the re-export hop.
+    let lookup = Lookup::new()
+        .with(sym(1, "Thing", "bar.Thing", "class", "bar.rs"))
+        .with_in_file("bar.rs", sym(1, "Thing", "bar.Thing", "class", "bar.rs"))
+        .with_reexport_entry("foo.rs", "Thing", "barmod")
+        .with_module_file("foomod", "foo.rs")
+        .with_module_file("barmod", "bar.rs");
+    let r = extracted_call("Thing");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Thing", Some("foomod"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_reexport_following()
+        .expect("pub-use re-export hop resolves");
+    assert_eq!(resolved.target_symbol_id, 1);
+    assert_eq!(resolved.strategy, "reexport_chain");
+}
+
+#[test]
+fn reexport_following_blocks_private_use() {
+    // The soundness gate (Invariant #2): a PRIVATE `use crate::bar::Thing` in
+    // foo is is_reexport=false, so foo has NO entry in the re-export map — even
+    // though the caller imported Thing `from foo`. The hop must NOT fire;
+    // following it would bind Thing through a module that merely imports it.
+    let lookup = Lookup::new()
+        .with(sym(1, "Thing", "bar.Thing", "class", "bar.rs"))
+        .with_in_file("bar.rs", sym(1, "Thing", "bar.Thing", "class", "bar.rs"))
+        // No re-export entry for foo — the private use never enters the map.
+        .with_module_file("foomod", "foo.rs")
+        .with_module_file("barmod", "bar.rs");
+    let r = extracted_call("Thing");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Thing", Some("foomod"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_reexport_following().is_none(),
+        "a private use must not forward a name through a re-export hop"
+    );
+}
+
+#[test]
+fn reexport_following_skips_external_module() {
+    // The imported module resolves to an external (`ext:`) file → no internal
+    // hop; cross-package re-exports are `resolve_via_reexport_chain`'s job.
+    let lookup = Lookup::new()
+        .with_reexport_entry("ext:node_modules/pkg/index.d.ts", "Thing", "deep")
+        .with_module_file("pkg", "ext:node_modules/pkg/index.d.ts");
+    let r = extracted_call("Thing");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Thing", Some("pkg"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_reexport_following().is_none(),
+        "an import resolving to an ext: file must not trigger the internal hop"
+    );
 }
 
 #[test]

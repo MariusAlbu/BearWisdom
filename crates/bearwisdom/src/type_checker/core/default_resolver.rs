@@ -17,6 +17,7 @@
 // context — same inputs always produce the same output.
 // =============================================================================
 
+use super::reexport::follow_reexports;
 use crate::indexer::resolve::engine::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -352,6 +353,59 @@ impl<'a> DefaultResolver<'a> {
         None
     }
 
+    /// Strategy — follow re-export chains from an imported module.
+    ///
+    /// When the file imports `target` from a module that does not itself
+    /// define it but RE-EXPORTS it (`export { X } from './y'`, Rust
+    /// `pub use crate::bar::X`), walk the re-export chain to the module that
+    /// actually defines `target`.
+    ///
+    /// The walk consults `reexports_from`, which carries ONLY refs the
+    /// extractor tagged `is_reexport=true`. A private import
+    /// (`use crate::bar::X;` without `pub`, `import { X } from 'pkg'`) is
+    /// `is_reexport=false` and never enters that map, so a private import
+    /// cannot forward a name here (Invariant #2). Imports whose module
+    /// resolves to an external (`ext:`) file — or doesn't resolve to a
+    /// project file at all — are skipped: cross-package re-exports are the
+    /// externals stage's job, handled by `resolve_via_reexport_chain`.
+    pub fn resolve_via_reexport_following(&self) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty() {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let from_file = self.file_ctx.file_path.as_str();
+
+        for import in &self.file_ctx.imports {
+            if import.is_wildcard || import.imported_name != target {
+                continue;
+            }
+            let Some(module) = import.module_path.as_deref() else {
+                continue;
+            };
+            if module.is_empty() {
+                continue;
+            }
+            // Resolve the imported module to a project file. None / `ext:` →
+            // external or unknown; no project-internal re-export hop possible.
+            let resolved = match self.lookup.resolve_module_from(from_file, module) {
+                Some(p) if !p.starts_with("ext:") => p.to_string(),
+                _ => continue,
+            };
+            if let Some(res) = follow_reexports(
+                &resolved,
+                target,
+                edge_kind,
+                self.kind_compatible,
+                self.lookup,
+                0,
+            ) {
+                return Some(res);
+            }
+        }
+        None
+    }
+
     /// Strategy 10 — ambient-package preference.
     ///
     /// Bare target whose only candidate that's kind-compatible lives in a
@@ -682,14 +736,15 @@ impl<'a> DefaultResolver<'a> {
     ///   7.  chain prefix — second-to-last chain segment matches an import
     ///   8.  reexport chain — import points at a re-exporting package
     ///   9.  file import  — bare target matches an imported name
-    ///   10. aliased import — import specifier rewritten through a path alias
-    ///   11. namespace import — dotted import expanded against the target
-    ///   12. ambient namespace path — qname ends with the dotted target
-    ///   13. same namespace — file's declared namespace + target
-    ///   14. imported namespace — candidate qname is prefixed by an import
-    ///   15. ambient package — candidate lives in a declared ambient pkg
-    ///   16. wildcard import — bare target under a wildcard import's namespace
-    ///   17. generic param — bare target matches a declared generic parameter
+    ///   10. reexport follow — import points at a module that re-exports the name
+    ///   11. aliased import — import specifier rewritten through a path alias
+    ///   12. namespace import — dotted import expanded against the target
+    ///   13. ambient namespace path — qname ends with the dotted target
+    ///   14. same namespace — file's declared namespace + target
+    ///   15. imported namespace — candidate qname is prefixed by an import
+    ///   16. ambient package — candidate lives in a declared ambient pkg
+    ///   17. wildcard import — bare target under a wildcard import's namespace
+    ///   18. generic param — bare target matches a declared generic parameter
     ///
     /// Every strategy binds through scope or import structure. There is no
     /// global `by_name` search in this ladder — a name binds through that
@@ -709,6 +764,7 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_chain_prefix())
             .or_else(|| self.resolve_via_reexport_chain())
             .or_else(|| self.resolve_via_file_import())
+            .or_else(|| self.resolve_via_reexport_following())
             .or_else(|| self.resolve_via_aliased_import())
             .or_else(|| self.resolve_via_namespace_import())
             .or_else(|| self.resolve_via_ambient_namespace_path())

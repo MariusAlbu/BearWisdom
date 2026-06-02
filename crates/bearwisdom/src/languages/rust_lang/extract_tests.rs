@@ -912,3 +912,42 @@ impl Tree {
         );
     }
 
+    #[test]
+    fn pub_use_tags_reexport_private_use_does_not() {
+        // `pub use` re-exports a name onto the module surface (is_reexport=true);
+        // a bare `use` only brings it into local scope (is_reexport=false). The
+        // binder follows only the former — the gate that keeps a private import
+        // from forwarding a name through a module that merely imports it.
+        let source = "pub use crate::bar::Thing;\n\
+                      use crate::baz::Other;\n\
+                      pub(crate) use crate::qux::Shared;\n\
+                      pub use crate::wild::*;";
+        let r = extract::extract(source);
+        let imports: Vec<_> = r
+            .refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Imports)
+            .collect();
+
+        let find = |name: &str| {
+            imports
+                .iter()
+                .find(|rf| rf.target_name == name)
+                .unwrap_or_else(|| panic!("expected import ref for {name:?}"))
+        };
+
+        assert!(find("Thing").is_reexport, "`pub use` must set is_reexport=true");
+        assert!(
+            find("Shared").is_reexport,
+            "`pub(crate) use` must set is_reexport=true"
+        );
+        assert!(
+            find("*").is_reexport,
+            "`pub use ...::*` must set is_reexport=true on the wildcard ref"
+        );
+        assert!(
+            !find("Other").is_reexport,
+            "private `use` must keep is_reexport=false"
+        );
+    }
+

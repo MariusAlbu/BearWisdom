@@ -2,8 +2,8 @@
 // rust/calls_imports.rs  —  `extern crate` and `use` declaration ref extraction
 // =============================================================================
 
-use super::helpers::node_text;
-use crate::types::{EdgeKind, ExtractedRef};
+use super::helpers::{detect_visibility, node_text};
+use crate::types::{EdgeKind, ExtractedRef, Visibility};
 use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------
@@ -59,6 +59,12 @@ pub(super) fn extract_use_names(
     refs: &mut Vec<ExtractedRef>,
     current_symbol_count: usize,
 ) {
+    // A `pub` / `pub(crate)` / `pub(super)` use re-exports the imported names
+    // onto the module's surface — those names are genuine re-exports the binder
+    // may follow to their definition. A private `use` only brings names into
+    // local scope and must NOT enter the re-export map: following it would bind
+    // a name through a module that merely imports it (Invariant #2).
+    let is_reexport = !matches!(detect_visibility(node), Some(Visibility::Private));
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -68,7 +74,7 @@ pub(super) fn extract_use_names(
             | "use_wildcard"
             | "identifier"
             | "use_list" => {
-                walk_use_tree(&child, source, refs, current_symbol_count, "");
+                walk_use_tree(&child, source, refs, current_symbol_count, "", is_reexport);
             }
             _ => {}
         }
@@ -81,6 +87,7 @@ fn walk_use_tree(
     refs: &mut Vec<ExtractedRef>,
     current_symbol_count: usize,
     prefix: &str,
+    is_reexport: bool,
 ) {
     match node.kind() {
         "scoped_identifier" => {
@@ -98,7 +105,7 @@ fn walk_use_tree(
             }
 
             let module = build_module_path(prefix, &path);
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport,
                 source_symbol_index: current_symbol_count,
                 target_name: name,
                 kind: EdgeKind::Imports,
@@ -120,7 +127,7 @@ fn walk_use_tree(
             let new_prefix = build_module_path(prefix, &path);
 
             if let Some(list) = node.child_by_field_name("list") {
-                walk_use_tree(&list, source, refs, current_symbol_count, &new_prefix);
+                walk_use_tree(&list, source, refs, current_symbol_count, &new_prefix, is_reexport);
             }
         }
 
@@ -129,7 +136,7 @@ fn walk_use_tree(
             for child in node.children(&mut cursor) {
                 match child.kind() {
                     "{" | "}" | "," => {}
-                    _ => walk_use_tree(&child, source, refs, current_symbol_count, prefix),
+                    _ => walk_use_tree(&child, source, refs, current_symbol_count, prefix, is_reexport),
                 }
             }
         }
@@ -194,7 +201,7 @@ fn walk_use_tree(
                 None
             };
 
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport,
                 source_symbol_index: current_symbol_count,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -214,7 +221,7 @@ fn walk_use_tree(
             } else {
                 Some(prefix.to_string())
             };
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport,
                 source_symbol_index: current_symbol_count,
                 target_name: "*".to_string(),
                 kind: EdgeKind::Imports,
@@ -238,7 +245,7 @@ fn walk_use_tree(
             } else {
                 Some(prefix.to_string())
             };
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef { is_import_binding: false, is_reexport,
                 source_symbol_index: current_symbol_count,
                 target_name: name,
                 kind: EdgeKind::Imports,
@@ -255,7 +262,7 @@ fn walk_use_tree(
         _ => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                walk_use_tree(&child, source, refs, current_symbol_count, prefix);
+                walk_use_tree(&child, source, refs, current_symbol_count, prefix, is_reexport);
             }
         }
     }

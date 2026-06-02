@@ -25,10 +25,10 @@ use crate::types::{EdgeKind, ParsedFile};
 use tracing::debug;
 
 use super::aliases::{
-    classify_passthrough_alias, definitely_typed_qname_prefixes, follow_reexports,
-    is_npm_package_match, resolve_via_alias, resolve_workspace_package,
-    sub_path_for_deep_import,
+    classify_passthrough_alias, definitely_typed_qname_prefixes, is_npm_package_match,
+    resolve_via_alias, resolve_workspace_package, sub_path_for_deep_import,
 };
+use crate::type_checker::core::reexport::follow_reexports;
 use super::flow_detectors::{
     BGJOB_QUEUE_BINDING_KEY, CONTROLLER_PREFIX_KEY,
 };
@@ -307,7 +307,9 @@ pub(crate) fn resolve(
             // Neither direct lookup found anything — the module may be a barrel
             // file that re-exports the symbol from a deeper module.  Follow the
             // re-export chain up to 5 hops.
-            if let Some(res) = follow_reexports(module, target, edge_kind, lookup, 0) {
+            if let Some(res) =
+                follow_reexports(module, target, edge_kind, predicates::kind_compatible, lookup, 0)
+            {
                 return Some(res);
             }
 
@@ -399,13 +401,13 @@ pub(crate) fn resolve(
                     .map(|s| s.to_string());
                 if let Some(path) = resolved_path.as_deref() {
                     if let Some(res) =
-                        follow_reexports(path, target, edge_kind, lookup, 0)
+                        follow_reexports(path, target, edge_kind, predicates::kind_compatible, lookup, 0)
                     {
                         return Some(res);
                     }
                 }
                 if let Some(res) =
-                    follow_reexports(module_path, target, edge_kind, lookup, 0)
+                    follow_reexports(module_path, target, edge_kind, predicates::kind_compatible, lookup, 0)
                 {
                     return Some(res);
                 }

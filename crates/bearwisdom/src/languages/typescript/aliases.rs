@@ -14,6 +14,7 @@ use tracing::debug;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{Resolution, SymbolInfo, SymbolLookup};
+use crate::type_checker::core::reexport::follow_reexports;
 
 use super::predicates;
 
@@ -158,7 +159,9 @@ pub(super) fn resolve_via_alias(
     // shape. Follows `export { X } from './y'` and `export * from './z'`
     // up to the existing 5-hop depth limit.
     for candidate in &candidates {
-        if let Some(res) = follow_reexports(candidate, target, edge_kind, lookup, 0) {
+        if let Some(res) =
+            follow_reexports(candidate, target, edge_kind, predicates::kind_compatible, lookup, 0)
+        {
             return Some(res);
         }
     }
@@ -273,126 +276,6 @@ pub(super) fn sub_path_for_deep_import(specifier: &str, lookup: &dyn SymbolLooku
             return Some(specifier[path.len() + 1..].to_string());
         }
     }
-    None
-}
-
-/// Follow re-export chains through barrel files.
-///
-/// When `in_file(module_path)` returns no match for `target_name`, this
-/// function checks whether `module_path` is a barrel file that re-exports
-/// the symbol from another module — and recurses until the definition is
-/// found or the depth limit is reached.
-///
-/// Handles:
-///   `export { X } from './y'`   — named re-export; follow to `./y`
-///   `export { X as Z } from './y'` — aliased; the stored `target_name` is the
-///                                    *original* name (before `as`), matching
-///                                    what we're looking for in the source file
-///   `export * from './y'`       — wildcard; try `target_name` in every
-///                                 wildcard source module
-pub(super) fn follow_reexports(
-    module_path: &str,
-    target_name: &str,
-    edge_kind: crate::types::EdgeKind,
-    lookup: &dyn SymbolLookup,
-    depth: u32,
-) -> Option<Resolution> {
-    const MAX_DEPTH: u32 = 5;
-    if depth >= MAX_DEPTH {
-        return None;
-    }
-
-    let reexports = lookup.reexports_from(module_path);
-    if reexports.is_empty() {
-        return None;
-    }
-
-    // Collect wildcard sources separately — they are tried only when no named
-    // re-export matched, to avoid false positives from `export * from`.
-    let mut wildcard_sources: Vec<&str> = Vec::new();
-
-    for (exported_name, source_module) in reexports {
-        if predicates::is_bare_specifier(source_module) {
-            continue;
-        }
-
-        if exported_name == "*" {
-            wildcard_sources.push(source_module.as_str());
-            continue;
-        }
-
-        if exported_name != target_name {
-            continue;
-        }
-
-        // Named match: look up `target_name` in `source_module` from the
-        // CONTAINING barrel's perspective. `./quick-create-button` inside
-        // `apps/web/.../index.ts` resolves to a different file than the
-        // same spec from elsewhere — per-source resolution is mandatory.
-        for sym in lookup.in_module_from(module_path, source_module) {
-            if sym.name == target_name && predicates::kind_compatible(edge_kind, &sym.kind) {
-                debug!(
-                    strategy = "ts_reexport_chain",
-                    via = %module_path,
-                    source = %source_module,
-                    target = %target_name,
-                    depth = depth,
-                    "resolved via re-export"
-                );
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "ts_reexport_chain",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
-        // Not directly in `source_module` — recurse (it may itself be a barrel).
-        // Prefer the resolved file path so the next hop's reexports_from
-        // lookup hits its file-keyed map directly.
-        let next = lookup
-            .resolve_module_from(module_path, source_module)
-            .map(|s| s.to_string());
-        let next_path: &str = next.as_deref().unwrap_or(source_module);
-        if let Some(res) = follow_reexports(next_path, target_name, edge_kind, lookup, depth + 1) {
-            return Some(res);
-        }
-    }
-
-    // No named match. Try wildcard sources in order.
-    for source_module in wildcard_sources {
-        for sym in lookup.in_module_from(module_path, source_module) {
-            if sym.name == target_name && predicates::kind_compatible(edge_kind, &sym.kind) {
-                debug!(
-                    strategy = "ts_reexport_star",
-                    via = %module_path,
-                    source = %source_module,
-                    target = %target_name,
-                    depth = depth,
-                    "resolved via export-star"
-                );
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "ts_reexport_star",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
-        // Recurse into wildcard sources too — chase via resolved file path.
-        let next = lookup
-            .resolve_module_from(module_path, source_module)
-            .map(|s| s.to_string());
-        let next_path: &str = next.as_deref().unwrap_or(source_module);
-        if let Some(res) = follow_reexports(next_path, target_name, edge_kind, lookup, depth + 1) {
-            return Some(res);
-        }
-    }
-
     None
 }
 
