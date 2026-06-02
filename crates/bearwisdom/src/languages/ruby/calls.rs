@@ -6,10 +6,16 @@ use super::helpers::{get_call_method_name, node_text};
 use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
 use tree_sitter::Node;
 
+/// Maximum nesting depth for recursive `CallArg` construction. Arguments
+/// deeper than this collapse to `CallArg::Other` rather than recursing further.
+const MAX_ARG_DEPTH: u32 = 8;
+
 /// Extract positional arguments from a Ruby `call`/`method_call`/`command_call`
 /// node's argument list. Captures string literals, symbol literals,
-/// identifiers, constants (PascalCase model references), and numeric /
-/// boolean / nil literals. Anything else becomes `CallArg::Other`.
+/// identifiers, constants (PascalCase model references), numeric / boolean /
+/// nil literals, and the recursive expression shapes (ternary `conditional`,
+/// `array`, splat, `element_reference` subscript, `binary`). Anything else
+/// becomes `CallArg::Other`.
 pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     let args_node = match call_node.child_by_field_name("arguments") {
         Some(n) => n,
@@ -30,25 +36,107 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     let mut out = Vec::new();
     let mut cursor = args_node.walk();
     for child in args_node.named_children(&mut cursor) {
-        let arg = match child.kind() {
-            "string" | "string_literal" => {
-                CallArg::StringLit(strip_ruby_string(&node_text(&child, src)))
-            }
-            // `:symbol` — emit as Ident so symbol-keyed lookups work the
-            // same as identifiers.
-            "simple_symbol" | "symbol" => {
-                let raw = node_text(&child, src);
-                CallArg::Ident(raw.trim_start_matches(':').to_string())
-            }
-            "identifier" => CallArg::Ident(node_text(&child, src)),
-            "constant" => CallArg::Ident(node_text(&child, src)),
-            "integer" | "float" => CallArg::Literal(node_text(&child, src)),
-            "true" | "false" | "nil" => CallArg::Literal(child.kind().to_string()),
-            _ => CallArg::Other,
-        };
-        out.push(arg);
+        out.push(extract_arg(&child, src, 0));
     }
     out
+}
+
+/// Convert a single Ruby argument expression node to a `CallArg`, recursing for
+/// composite expression kinds up to `MAX_ARG_DEPTH`.
+fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    match node.kind() {
+        "string" | "string_literal" => {
+            CallArg::StringLit(strip_ruby_string(&node_text(node, src)))
+        }
+        // `:symbol` — emit as Ident so symbol-keyed lookups work the
+        // same as identifiers.
+        "simple_symbol" | "symbol" => {
+            let raw = node_text(node, src);
+            CallArg::Ident(raw.trim_start_matches(':').to_string())
+        }
+        "identifier" => CallArg::Ident(node_text(node, src)),
+        "constant" => CallArg::Ident(node_text(node, src)),
+        "integer" | "float" => CallArg::Literal(node_text(node, src)),
+        "true" | "false" | "nil" => CallArg::Literal(node.kind().to_string()),
+        // `cond ? then : else` — the condition is discarded; both value
+        // branches are preserved for downstream typing.
+        "conditional" => {
+            let then_branch = node
+                .child_by_field_name("consequence")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let else_branch = node
+                .child_by_field_name("alternative")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Ternary {
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+        }
+        // `[elem0, elem1, ...]` — recurse on each named child. Splat elements
+        // inside become `CallArg::Spread` children.
+        "array" => {
+            let mut cursor = node.walk();
+            let elements = node
+                .named_children(&mut cursor)
+                .map(|child| extract_arg(&child, src, depth + 1))
+                .collect();
+            CallArg::ArrayLiteral { elements }
+        }
+        // `*args` — the splat operand is the sole named child.
+        "splat_argument" => {
+            let inner = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Spread { expr: Box::new(inner) }
+        }
+        // `container[index]` — `object` field is the container; the index is
+        // the first named child that is neither the object nor a trailing
+        // block.
+        "element_reference" => {
+            let container = node
+                .child_by_field_name("object")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let object_id = node.child_by_field_name("object").map(|n| n.id());
+            let mut cursor = node.walk();
+            let index = node
+                .named_children(&mut cursor)
+                .find(|c| Some(c.id()) != object_id && c.kind() != "block" && c.kind() != "do_block")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::IndexAccess {
+                container: Box::new(container),
+                index: Box::new(index),
+            }
+        }
+        // `left op right` — capture operator text and recurse on operands.
+        "binary" => {
+            let op = node
+                .child_by_field_name("operator")
+                .map(|n| node_text(&n, src))
+                .unwrap_or_default();
+            let left = node
+                .child_by_field_name("left")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = node
+                .child_by_field_name("right")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+        _ => CallArg::Other,
+    }
 }
 
 fn strip_ruby_string(raw: &str) -> String {

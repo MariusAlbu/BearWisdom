@@ -6,11 +6,125 @@
 // subtrees collecting calls.
 // =============================================================================
 
-use crate::types::{ChainSegment, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, ExtractedRef, MemberChain, SegmentKind};
 use super::predicates;
 use super::node_helpers::{named_field_text, node_text};
 use std::collections::HashMap;
 use tree_sitter::Node;
+
+/// Maximum nesting depth for recursive `CallArg` construction. Arguments
+/// deeper than this collapse to `CallArg::Other` rather than recursing further.
+const MAX_ARG_DEPTH: u32 = 8;
+
+/// Extract the positional arguments from a `method_invocation`'s `arguments`
+/// (`argument_list`) node.
+///
+/// Walks named children of the argument list, converting each to a `CallArg`.
+/// Handles string/number/boolean/null literals, bare identifiers, and the
+/// recursive expression shapes Groovy expresses (ternary, array literal,
+/// subscript, binary). Groovy has no `await` and the grammar models no spread
+/// argument node, so those shapes never arise. Recursion is capped at
+/// `MAX_ARG_DEPTH` levels.
+pub(super) fn extract_call_args(call_node: &Node, src: &str) -> Vec<CallArg> {
+    let Some(args_node) = call_node.child_by_field_name("arguments") else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        result.push(extract_arg(&child, src, 0));
+    }
+    result
+}
+
+/// Convert a single argument expression node to a `CallArg`, recursing for
+/// composite expression kinds up to `MAX_ARG_DEPTH`.
+fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    match node.kind() {
+        "string_literal" => {
+            // `"text"` or `'text'` — strip surrounding quotes.
+            let raw = node_text(node, src);
+            let inner = raw
+                .trim_start_matches(['"', '\''])
+                .trim_end_matches(['"', '\''])
+                .to_string();
+            CallArg::StringLit(inner)
+        }
+        "identifier" => CallArg::Ident(node_text(node, src).to_string()),
+        "decimal_integer_literal"
+        | "decimal_floating_point_literal"
+        | "hex_integer_literal"
+        | "hex_floating_point_literal"
+        | "octal_integer_literal"
+        | "binary_integer_literal"
+        | "character_literal" => CallArg::Literal(node_text(node, src).to_string()),
+        "true" | "false" | "null_literal" => CallArg::Literal(node.kind().to_string()),
+        // `cond ? consequence : alternative` — the condition's type does not
+        // affect the value type; only the two branches are preserved.
+        "ternary_expression" => {
+            let then_branch = node
+                .child_by_field_name("consequence")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let else_branch = node
+                .child_by_field_name("alternative")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Ternary {
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+        }
+        // `[elem0, elem1, ...]` — recurse on each named child element.
+        "array_literal" => {
+            let mut cursor = node.walk();
+            let elements = node
+                .named_children(&mut cursor)
+                .map(|child| extract_arg(&child, src, depth + 1))
+                .collect();
+            CallArg::ArrayLiteral { elements }
+        }
+        // `container[index]` — recurse on both sides.
+        "array_access" => {
+            let container = node
+                .child_by_field_name("array")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let index = node
+                .child_by_field_name("index")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::IndexAccess {
+                container: Box::new(container),
+                index: Box::new(index),
+            }
+        }
+        // `left op right` — capture operator text and recurse on operands.
+        "binary_expression" => {
+            let op = node
+                .child_by_field_name("operator")
+                .map(|n| node_text(&n, src).to_string())
+                .unwrap_or_default();
+            let left = node
+                .child_by_field_name("left")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = node
+                .child_by_field_name("right")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+        _ => CallArg::Other,
+    }
+}
 
 /// Build a MemberChain from the `object` field of a `method_invocation` node
 /// plus the final call segment name.

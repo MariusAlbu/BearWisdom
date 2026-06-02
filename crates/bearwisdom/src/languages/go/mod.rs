@@ -26,6 +26,10 @@ pub use hooks::GoResolver;
 pub use profile::GO_PROFILE;
 
 #[cfg(test)]
+#[path = "calls_tests.rs"]
+mod calls_tests;
+
+#[cfg(test)]
 #[path = "extract_tests.rs"]
 mod extract_tests;
 

@@ -7,11 +7,17 @@ use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, S
 use std::collections::HashMap;
 use tree_sitter::Node;
 
+/// Maximum nesting depth for recursive `CallArg` construction. Arguments
+/// deeper than this collapse to `CallArg::Other` rather than recursing further.
+const MAX_ARG_DEPTH: u32 = 32;
+
 /// Extract positional arguments from a Python `call` node's `argument_list`.
 /// Captures string literals (including triple-quoted forms), bare
-/// identifiers, integer / float / `True` / `False` / `None`, and lists of
-/// string literals (used by Flask's `methods=['GET']`). Keyword args and
-/// complex expressions become `CallArg::Other`.
+/// identifiers, integer / float / `True` / `False` / `None`, lists of
+/// string literals (used by Flask's `methods=['GET']`), and the recursive
+/// expression shapes (conditional, list, await, splat, subscript, binary).
+/// Keyword args and shapes the recursion doesn't cover become
+/// `CallArg::Other`.
 pub(super) fn extract_call_args(call_node: &Node, src: &str) -> Vec<CallArg> {
     let Some(args_node) = call_node.child_by_field_name("arguments") else {
         return Vec::new();
@@ -19,22 +25,156 @@ pub(super) fn extract_call_args(call_node: &Node, src: &str) -> Vec<CallArg> {
     let mut out = Vec::new();
     let mut cursor = args_node.walk();
     for child in args_node.named_children(&mut cursor) {
-        let arg = match child.kind() {
-            "string" => CallArg::StringLit(strip_python_string(&node_text(&child, src))),
-            "concatenated_string" => CallArg::StringLit(
-                node_text(&child, src)
-                    .replace('"', "")
-                    .replace('\'', "")
-                    .replace("\\n", ""),
-            ),
-            "identifier" => CallArg::Ident(node_text(&child, src)),
-            "integer" | "float" => CallArg::Literal(node_text(&child, src)),
-            "true" | "false" | "none" => CallArg::Literal(node_text(&child, src)),
-            _ => CallArg::Other,
-        };
-        out.push(arg);
+        out.push(extract_arg(&child, src, 0));
     }
     out
+}
+
+/// Convert a single argument expression node to a `CallArg`, recursing for
+/// composite expression kinds up to `MAX_ARG_DEPTH`.
+fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    match node.kind() {
+        "string" => CallArg::StringLit(strip_python_string(&node_text(node, src))),
+        "concatenated_string" => CallArg::StringLit(
+            node_text(node, src)
+                .replace('"', "")
+                .replace('\'', "")
+                .replace("\\n", ""),
+        ),
+        "identifier" => CallArg::Ident(node_text(node, src)),
+        "integer" | "float" => CallArg::Literal(node_text(node, src)),
+        "true" | "false" | "none" => CallArg::Literal(node_text(node, src)),
+
+        // `a if cond else b` — the condition's type does not affect the
+        // result type; only the two value branches are preserved. The
+        // grammar exposes no fields: the three named children are in source
+        // order `[then, cond, else]`.
+        "conditional_expression" => {
+            let then_branch = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let else_branch = node
+                .named_child(2)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Ternary {
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+        }
+
+        // `[elem0, elem1, ...]` — recurse on each named child. Splat elements
+        // inside (`*xs`) surface as `CallArg::Spread` children.
+        "list" => {
+            let mut cursor = node.walk();
+            let elements = node
+                .named_children(&mut cursor)
+                .map(|child| extract_arg(&child, src, depth + 1))
+                .collect();
+            CallArg::ArrayLiteral { elements }
+        }
+
+        // `await expr` — single primary-expression child, no field.
+        "await" => {
+            let inner = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Await { expr: Box::new(inner) }
+        }
+
+        // `*xs` (iterable unpack) / `**kw` (mapping unpack) — single child,
+        // no field. Both map to the spread operand.
+        "list_splat" | "dictionary_splat" => {
+            let inner = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Spread { expr: Box::new(inner) }
+        }
+
+        // `container[index]` — `value` is the container, `subscript` is the
+        // (possibly multiple) index; take the first index expression.
+        "subscript" => {
+            let container = node
+                .child_by_field_name("value")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let index = node
+                .child_by_field_name("subscript")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::IndexAccess {
+                container: Box::new(container),
+                index: Box::new(index),
+            }
+        }
+
+        // `left op right` for arithmetic (`+`, `*`, ...) and boolean
+        // (`and` / `or`) operators — both expose `left` / `operator` /
+        // `right` fields.
+        "binary_operator" | "boolean_operator" => {
+            let op = node
+                .child_by_field_name("operator")
+                .map(|n| node_text(&n, src))
+                .unwrap_or_default();
+            let left = node
+                .child_by_field_name("left")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = node
+                .child_by_field_name("right")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+
+        // `a == b`, `a < b`, `a is not b`, ... — the grammar gives no
+        // left/right fields here: operands are the named children and the
+        // operator is the unnamed token between them (`is not` / `not in`
+        // are single tokens). Capture the first two operands and that
+        // operator token.
+        "comparison_operator" => {
+            let mut cursor = node.walk();
+            let operands: Vec<Node> = node.named_children(&mut cursor).collect();
+            let op = first_anonymous_token_text(node, src);
+            let left = operands
+                .first()
+                .map(|n| extract_arg(n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = operands
+                .get(1)
+                .map(|n| extract_arg(n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+
+        _ => CallArg::Other,
+    }
+}
+
+/// Return the source text of the first unnamed (operator) token child of
+/// `node`. Used for `comparison_operator`, whose operator has no field.
+fn first_anonymous_token_text(node: &Node, src: &str) -> String {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if !child.is_named() {
+            return node_text(&child, src);
+        }
+    }
+    String::new()
 }
 
 /// Strip surrounding quotes (single, double, triple-single, triple-double)

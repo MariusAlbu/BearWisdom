@@ -23,11 +23,17 @@ pub(super) use super::chain::build_chain;
 pub(super) use super::refs::extract_refs_from_body;
 pub(super) use super::type_refs::extract_fn_signature_type_refs;
 
+/// Maximum nesting depth for recursive `CallArg` construction. Arguments
+/// deeper than this collapse to `CallArg::Other` rather than recursing further.
+const MAX_ARG_DEPTH: u32 = 8;
+
 /// Extract positional arguments from a Go `call_expression`'s
 /// `argument_list`. Captures interpreted/raw string literals, identifiers
 /// (incl. `&entity` unary-pointer wrappers), integers, floats, and
 /// booleans. The address-of unary expression (`&User{}`) is detected and
 /// stored as `Ident(name)` to support gorm model-pointer extraction.
+/// Variadic spread (`args...`), subscript (`m[k]`), and binary expressions
+/// produce the corresponding recursive `CallArg` variants.
 pub(super) fn extract_call_args(call_node: &Node, src: &str) -> Vec<CallArg> {
     let Some(args_node) = call_node.child_by_field_name("arguments") else {
         return Vec::new();
@@ -35,53 +41,106 @@ pub(super) fn extract_call_args(call_node: &Node, src: &str) -> Vec<CallArg> {
     let mut out = Vec::new();
     let mut cursor = args_node.walk();
     for child in args_node.named_children(&mut cursor) {
-        let arg = match child.kind() {
-            "interpreted_string_literal" | "raw_string_literal" => {
-                let raw = node_text(&child, src);
-                CallArg::StringLit(strip_go_string(&raw))
-            }
-            "identifier" | "type_identifier" => CallArg::Ident(node_text(&child, src)),
-            // `&User{...}` — address-of a composite literal. Extract the
-            // type name so gorm `db.First(&user)` style detection can
-            // resolve to the model.
-            "unary_expression" => {
-                if let Some(operand) = (0..child.named_child_count())
-                    .find_map(|i| child.named_child(i))
-                {
-                    match operand.kind() {
-                        "composite_literal" => {
-                            if let Some(type_node) = operand.child_by_field_name("type") {
-                                CallArg::Ident(node_text(&type_node, src))
-                            } else {
-                                CallArg::Other
-                            }
-                        }
-                        "identifier" => CallArg::Ident(node_text(&operand, src)),
-                        _ => CallArg::Other,
-                    }
-                } else {
-                    CallArg::Other
-                }
-            }
-            // `&[]User{}` — slice address-of. Operand is composite_literal
-            // whose type is a slice_type.
-            "composite_literal" => {
-                if let Some(type_node) = child.child_by_field_name("type") {
-                    let raw = node_text(&type_node, src);
-                    CallArg::Ident(raw)
-                } else {
-                    CallArg::Other
-                }
-            }
-            "int_literal" | "float_literal" | "imaginary_literal" => {
-                CallArg::Literal(node_text(&child, src))
-            }
-            "true" | "false" | "nil" => CallArg::Literal(child.kind().to_string()),
-            _ => CallArg::Other,
-        };
-        out.push(arg);
+        out.push(extract_arg(&child, src, 0));
     }
     out
+}
+
+/// Convert a single Go argument expression node to a `CallArg`, recursing for
+/// composite expression kinds up to `MAX_ARG_DEPTH`.
+fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    match node.kind() {
+        "interpreted_string_literal" | "raw_string_literal" => {
+            let raw = node_text(node, src);
+            CallArg::StringLit(strip_go_string(&raw))
+        }
+        "identifier" | "type_identifier" => CallArg::Ident(node_text(node, src)),
+        // `&User{...}` — address-of a composite literal. Extract the
+        // type name so gorm `db.First(&user)` style detection can
+        // resolve to the model.
+        "unary_expression" => {
+            if let Some(operand) = (0..node.named_child_count())
+                .find_map(|i| node.named_child(i))
+            {
+                match operand.kind() {
+                    "composite_literal" => {
+                        if let Some(type_node) = operand.child_by_field_name("type") {
+                            CallArg::Ident(node_text(&type_node, src))
+                        } else {
+                            CallArg::Other
+                        }
+                    }
+                    "identifier" => CallArg::Ident(node_text(&operand, src)),
+                    _ => CallArg::Other,
+                }
+            } else {
+                CallArg::Other
+            }
+        }
+        // `&[]User{}` — slice address-of. Operand is composite_literal
+        // whose type is a slice_type.
+        "composite_literal" => {
+            if let Some(type_node) = node.child_by_field_name("type") {
+                let raw = node_text(&type_node, src);
+                CallArg::Ident(raw)
+            } else {
+                CallArg::Other
+            }
+        }
+        "int_literal" | "float_literal" | "imaginary_literal" => {
+            CallArg::Literal(node_text(node, src))
+        }
+        "true" | "false" | "nil" => CallArg::Literal(node.kind().to_string()),
+        // `args...` — variadic spread. The single named child is the spread
+        // operand; recurse on it.
+        "variadic_argument" => {
+            let inner = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Spread { expr: Box::new(inner) }
+        }
+        // `m[k]` — subscript / index access. Recurse on operand and index.
+        "index_expression" => {
+            let container = node
+                .child_by_field_name("operand")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let index = node
+                .child_by_field_name("index")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::IndexAccess {
+                container: Box::new(container),
+                index: Box::new(index),
+            }
+        }
+        // `left op right` — binary expression. Capture operator text and
+        // recurse on both operands.
+        "binary_expression" => {
+            let op = node
+                .child_by_field_name("operator")
+                .map(|n| node_text(&n, src))
+                .unwrap_or_default();
+            let left = node
+                .child_by_field_name("left")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = node
+                .child_by_field_name("right")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+        _ => CallArg::Other,
+    }
 }
 
 fn strip_go_string(raw: &str) -> String {

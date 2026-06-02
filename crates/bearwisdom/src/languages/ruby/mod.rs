@@ -33,6 +33,10 @@ mod resolve_tests;
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
 
+#[cfg(test)]
+#[path = "calls_tests.rs"]
+mod calls_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;

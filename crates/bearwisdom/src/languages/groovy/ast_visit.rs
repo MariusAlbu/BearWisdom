@@ -9,7 +9,7 @@ use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility,
 };
 use super::predicates;
-use super::calls::{build_receiver_chain, scan_local_types, visit_for_calls};
+use super::calls::{build_receiver_chain, extract_call_args, scan_local_types, visit_for_calls};
 use super::node_helpers::{build_qualified_name, named_field_text, node_text};
 use std::collections::HashMap;
 use tree_sitter::Node;
@@ -620,6 +620,8 @@ pub(super) fn extract_call(
     let chain = node.child_by_field_name("object")
         .and_then(|obj| build_receiver_chain(&obj, &name, src, local_types));
 
+    let call_args = extract_call_args(node, src);
+
     refs.push(ExtractedRef {
         source_symbol_index,
         target_name: name,
@@ -630,6 +632,6 @@ pub(super) fn extract_call(
         chain,
         byte_offset: node.start_byte() as u32,
         namespace_segments: Vec::new(),
-        call_args: Vec::new(),
+        call_args,
     });
 }

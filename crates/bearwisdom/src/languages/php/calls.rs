@@ -6,6 +6,10 @@ use super::helpers::node_text;
 use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
+/// Maximum nesting depth for recursive `CallArg` construction. Expressions
+/// deeper than this collapse to `CallArg::Other` rather than recursing further.
+const MAX_ARG_DEPTH: u32 = 8;
+
 // ---------------------------------------------------------------------------
 // Argument extraction
 // ---------------------------------------------------------------------------
@@ -14,7 +18,8 @@ use tree_sitter::Node;
 /// member_call / static_call / function_call. Captures string and encapsed
 /// string literals, name and qualified_name identifiers (so chains like
 /// `Model::class` resolve to the bare class name), numeric and boolean
-/// literals. Anything else is `CallArg::Other`.
+/// literals, and the recursive expression shapes (ternary, array, spread,
+/// subscript, binary). Recursion is capped at `MAX_ARG_DEPTH` levels.
 pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     let args_node = match call_node.child_by_field_name("arguments") {
         Some(n) => n,
@@ -49,40 +54,144 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
         } else {
             child
         };
-        let arg = match value_node.kind() {
-            "string" => CallArg::StringLit(strip_php_string(&node_text(&value_node, src))),
-            "encapsed_string" => {
-                CallArg::TemplateLit(strip_php_string(&node_text(&value_node, src)))
-            }
-            "integer" | "float" => CallArg::Literal(node_text(&value_node, src)),
-            "true" | "false" | "null" => CallArg::Literal(value_node.kind().to_string()),
-            "name" | "identifier" | "qualified_name" => {
-                let raw = node_text(&value_node, src);
-                let simple = raw.rsplit('\\').next().unwrap_or(&raw).to_string();
-                CallArg::Ident(simple)
-            }
-            // `User::class` — class_constant_access_expression (PHP 8 grammar).
-            "class_constant_access_expression" | "scoped_property_access_expression" => {
-                let class_node = value_node
-                    .child_by_field_name("scope")
-                    .or_else(|| value_node.child_by_field_name("class"));
-                if let Some(cn) = class_node {
-                    let raw = node_text(&cn, src);
-                    let simple = raw.rsplit('\\').next().unwrap_or(&raw).to_string();
-                    CallArg::Ident(simple)
-                } else {
-                    CallArg::Other
-                }
-            }
-            "variable_name" => {
-                let raw = node_text(&value_node, src);
-                CallArg::Ident(raw.trim_start_matches('$').to_string())
-            }
-            _ => CallArg::Other,
-        };
-        out.push(arg);
+        out.push(extract_arg(&value_node, src, 0));
     }
     out
+}
+
+/// Convert a single PHP expression node to a `CallArg`, recursing for composite
+/// expression kinds up to `MAX_ARG_DEPTH`.
+fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    match node.kind() {
+        "string" => CallArg::StringLit(strip_php_string(&node_text(node, src))),
+        "encapsed_string" => CallArg::TemplateLit(strip_php_string(&node_text(node, src))),
+        "integer" | "float" => CallArg::Literal(node_text(node, src)),
+        "true" | "false" | "null" => CallArg::Literal(node.kind().to_string()),
+        "name" | "identifier" | "qualified_name" => {
+            let raw = node_text(node, src);
+            let simple = raw.rsplit('\\').next().unwrap_or(&raw).to_string();
+            CallArg::Ident(simple)
+        }
+        // `User::class` — class_constant_access_expression (PHP 8 grammar).
+        "class_constant_access_expression" | "scoped_property_access_expression" => {
+            let class_node = node
+                .child_by_field_name("scope")
+                .or_else(|| node.child_by_field_name("class"));
+            if let Some(cn) = class_node {
+                let raw = node_text(&cn, src);
+                let simple = raw.rsplit('\\').next().unwrap_or(&raw).to_string();
+                CallArg::Ident(simple)
+            } else {
+                CallArg::Other
+            }
+        }
+        "variable_name" => {
+            let raw = node_text(node, src);
+            CallArg::Ident(raw.trim_start_matches('$').to_string())
+        }
+        // Recursive expression shapes — produce structured variants instead of Other.
+        // `cond ? body : alternative` (and the short form `cond ?: alternative`,
+        // where `body` is absent and the then-value is the condition itself).
+        // The condition's type does not affect the result type; only the two
+        // value branches are preserved.
+        "conditional_expression" => {
+            let then_node = node
+                .child_by_field_name("body")
+                .or_else(|| node.child_by_field_name("condition"));
+            let else_node = node.child_by_field_name("alternative");
+            let then_branch = then_node
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let else_branch = else_node
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Ternary {
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+        }
+        // `[$a, $b]` / `array($a, $b)` — each element is wrapped in an
+        // `array_element_initializer`. Recurse on the element value; `...$x`
+        // spreads inside the array surface as `CallArg::Spread` children.
+        "array_creation_expression" => {
+            let mut cursor = node.walk();
+            let elements = node
+                .named_children(&mut cursor)
+                .filter(|c| c.kind() == "array_element_initializer")
+                .map(|elem| extract_array_element(&elem, src, depth + 1))
+                .collect();
+            CallArg::ArrayLiteral { elements }
+        }
+        // `...$args` — variadic unpacking carries the unpacked operand as its
+        // sole named child.
+        "variadic_unpacking" => {
+            let inner = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Spread {
+                expr: Box::new(inner),
+            }
+        }
+        // `$arr[$i]` — positional children: container then index. `$arr[]`
+        // (append) has no index child, leaving the index `Other`.
+        "subscript_expression" => {
+            let container = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let index = node
+                .named_child(1)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::IndexAccess {
+                container: Box::new(container),
+                index: Box::new(index),
+            }
+        }
+        // `$a + $b`, `$a . $b` — capture operator text and recurse on operands.
+        "binary_expression" => {
+            let op = node
+                .child_by_field_name("operator")
+                .map(|n| node_text(&n, src))
+                .unwrap_or_default();
+            let left = node
+                .child_by_field_name("left")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = node
+                .child_by_field_name("right")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+        _ => CallArg::Other,
+    }
+}
+
+/// Convert one `array_element_initializer` to a `CallArg`. A plain element
+/// (`$v`) recurses on its value; a key=>value pair (`$k => $v`) takes the
+/// value (last expression child); a `...$x` element produces a `Spread`.
+fn extract_array_element(node: &Node, src: &[u8], depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    let mut cursor = node.walk();
+    let exprs: Vec<Node> = node
+        .named_children(&mut cursor)
+        .filter(|c| c.kind() != "by_ref")
+        .collect();
+    match exprs.last() {
+        Some(value) => extract_arg(value, src, depth),
+        None => CallArg::Other,
+    }
 }
 
 fn strip_php_string(raw: &str) -> String {

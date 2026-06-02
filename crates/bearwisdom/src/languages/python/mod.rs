@@ -28,6 +28,10 @@ pub use profile::PYTHON_PROFILE;
 mod extract_tests;
 
 #[cfg(test)]
+#[path = "calls_tests.rs"]
+mod calls_tests;
+
+#[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 

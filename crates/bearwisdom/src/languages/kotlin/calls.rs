@@ -7,10 +7,19 @@ use super::helpers::{call_target_name, node_text};
 use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
+#[cfg(test)]
+#[path = "calls_tests.rs"]
+mod tests;
+
+/// Maximum nesting depth for recursive `CallArg` construction. Arguments
+/// deeper than this collapse to `CallArg::Other` rather than recursing further.
+const MAX_ARG_DEPTH: u32 = 32;
+
 /// Extract positional args from a Kotlin `call_expression` / navigation call.
-/// Captures string-literal, identifier, integer/float, boolean literals.
-/// Tree-sitter-kotlin wraps args in `value_arguments` with nested
-/// `value_argument` children that contain the expression.
+/// Captures string-literal, identifier, integer/float, boolean literals plus
+/// the recursive expression shapes (`if`-as-ternary, collection literal, spread,
+/// index access, binary). Tree-sitter-kotlin-ng wraps args in `value_arguments`
+/// with nested `value_argument` children that contain the expression.
 pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     let mut args_node: Option<Node> = None;
     let mut cursor = call_node.walk();
@@ -24,7 +33,12 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     let mut out = Vec::new();
     let mut ac = args.walk();
     for child in args.named_children(&mut ac) {
-        let value_node = if child.kind() == "value_argument" {
+        // A `value_argument` is `[name =] [*] expression`: the optional name
+        // label and the optional spread `*` are absorbed at this level (a bare
+        // `*` token, not a `spread_expression` node), so detect the spread here.
+        let (value_node, is_spread) = if child.kind() == "value_argument" {
+            let spread = (0..child.child_count())
+                .any(|i| child.child(i).map(|c| c.kind() == "*").unwrap_or(false));
             let mut found: Option<Node> = None;
             let mut vc = child.walk();
             for v in child.named_children(&mut vc) {
@@ -35,26 +49,129 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
                 found = Some(v);
             }
             match found {
-                Some(n) => n,
+                Some(n) => (n, spread),
                 None => continue,
             }
         } else {
-            child
+            (child, false)
         };
-        let arg = match value_node.kind() {
-            "string_literal" | "line_string_literal" | "multi_line_string_literal" => {
-                let raw = node_text(value_node, src);
-                CallArg::StringLit(strip_kt_string(&raw))
-            }
-            "simple_identifier" | "identifier" => CallArg::Ident(node_text(value_node, src)),
-            "integer_literal" | "long_literal" | "real_literal" | "hex_literal"
-            | "bin_literal" | "unsigned_literal" => CallArg::Literal(node_text(value_node, src)),
-            "boolean_literal" | "null_literal" => CallArg::Literal(value_node.kind().to_string()),
-            _ => CallArg::Other,
-        };
-        out.push(arg);
+        let arg = extract_arg(&value_node, src, 0);
+        out.push(if is_spread {
+            CallArg::Spread { expr: Box::new(arg) }
+        } else {
+            arg
+        });
     }
     out
+}
+
+/// Convert a single Kotlin expression node to a `CallArg`, recursing for
+/// composite expression kinds up to `MAX_ARG_DEPTH`.
+fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    match node.kind() {
+        "string_literal" | "line_string_literal" | "multi_line_string_literal" => {
+            let raw = node_text(*node, src);
+            CallArg::StringLit(strip_kt_string(&raw))
+        }
+        "simple_identifier" | "identifier" => CallArg::Ident(node_text(*node, src)),
+        "integer_literal" | "long_literal" | "real_literal" | "hex_literal"
+        | "bin_literal" | "unsigned_literal" => CallArg::Literal(node_text(*node, src)),
+        "boolean_literal" | "null_literal" => CallArg::Literal(node.kind().to_string()),
+
+        // `if (cond) a else b` — Kotlin's `if` is an expression and the direct
+        // analog of a ternary: the condition does not affect the value type, so
+        // only the two value branches are preserved. The `condition` field is
+        // discarded; the remaining named children are the then/else branches in
+        // source order.
+        "if_expression" => {
+            let cond = node.child_by_field_name("condition");
+            let mut branches: Vec<Node> = Vec::new();
+            let mut bc = node.walk();
+            for ch in node.named_children(&mut bc) {
+                if Some(ch) == cond {
+                    continue;
+                }
+                branches.push(ch);
+            }
+            let then_branch = branches
+                .first()
+                .map(|n| extract_arg(n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let else_branch = branches
+                .get(1)
+                .map(|n| extract_arg(n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Ternary {
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+        }
+
+        // `[a, b, c]` — collection literal. Recurse on each element expression.
+        "collection_literal" => {
+            let mut cursor = node.walk();
+            let elements = node
+                .named_children(&mut cursor)
+                .map(|child| extract_arg(&child, src, depth + 1))
+                .collect();
+            CallArg::ArrayLiteral { elements }
+        }
+
+        // `*xs` — spread operand. The sole named child is the spread expression.
+        "spread_expression" => {
+            let inner = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Spread { expr: Box::new(inner) }
+        }
+
+        // `container[index]` — first named child is the container, the second
+        // is the (first) index expression. Multi-index `a[i, j]` keeps only the
+        // first index, which is all the `IndexAccess` variant carries.
+        "index_expression" => {
+            let container = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let index = node
+                .named_child(1)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::IndexAccess {
+                container: Box::new(container),
+                index: Box::new(index),
+            }
+        }
+
+        // `left op right` — capture operator text and recurse on operands. The
+        // Elvis operator (`a ?: b`) lands here too, as `binary_expression` with
+        // operator `?:`.
+        "binary_expression" => {
+            let op = node
+                .child_by_field_name("operator")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default();
+            let left = node
+                .child_by_field_name("left")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = node
+                .child_by_field_name("right")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+
+        _ => CallArg::Other,
+    }
 }
 
 fn strip_kt_string(raw: &str) -> String {

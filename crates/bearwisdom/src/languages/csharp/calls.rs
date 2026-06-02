@@ -13,12 +13,30 @@ use crate::types::{
 };
 use tree_sitter::Node;
 
+/// Maximum nesting depth for recursive `CallArg` construction. Arguments
+/// deeper than this collapse to `CallArg::Other` rather than recursing further.
+const MAX_ARG_DEPTH: u32 = 8;
+
+/// First named child of `node` whose kind is `kind`, searched by index so the
+/// returned node carries the tree lifetime. A `TreeCursor`-based search would
+/// tie the result to a local cursor and fail to outlive it.
+fn named_child_of_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut i = 0;
+    while let Some(child) = node.named_child(i) {
+        if child.kind() == kind {
+            return Some(child);
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Extract positional arguments from a C# `invocation_expression`'s
 /// `argument_list`. Each `argument` named child wraps the value
 /// expression. Captures string literals, verbatim strings, interpolated
-/// strings without interpolation, identifiers, and number / bool / null
-/// literals. Anything else (object initializers, lambdas, complex
-/// expressions) becomes `CallArg::Other`.
+/// strings without interpolation, identifiers, number / bool / null
+/// literals, and the recursive expression shapes (ternary, array literal,
+/// await, subscript, binary). Recursion is capped at `MAX_ARG_DEPTH`.
 pub(super) fn extract_call_args(invocation: &Node, src: &[u8]) -> Vec<CallArg> {
     let Some(args_node) = invocation.child_by_field_name("arguments") else {
         return Vec::new();
@@ -35,51 +53,135 @@ pub(super) fn extract_call_args(invocation: &Node, src: &[u8]) -> Vec<CallArg> {
             out.push(CallArg::Other);
             continue;
         };
-        let arg = match expr.kind() {
-            "string_literal" | "verbatim_string_literal" | "raw_string_literal" => {
-                let raw = node_text(expr, src);
-                let stripped = raw
-                    .trim_start_matches('@')
-                    .trim_start_matches('$')
-                    .trim_start_matches(['"', '\''])
-                    .trim_end_matches(['"', '\''])
-                    .to_string();
-                CallArg::StringLit(stripped)
-            }
-            "interpolated_string_expression" => {
-                // C# interpolated strings: `$"..."` (verbatim: `$@"..."`).
-                // Strip the leading `$`, optional `@`, and surrounding
-                // quotes; then replace any `{...}` interpolation holes
-                // with `{}` placeholders. Pure-literal flat strings
-                // become `StringLit`; those with at least one
-                // interpolation become `TemplateLit`.
-                let raw = node_text(expr, src);
-                let inner = raw
-                    .trim_start_matches('$')
-                    .trim_start_matches('@')
-                    .trim_start_matches('$')
-                    .trim_start_matches(['"', '\''])
-                    .trim_end_matches(['"', '\''])
-                    .to_string();
-                let has_interp = (0..expr.child_count()).any(|i| {
-                    expr.child(i)
-                        .map(|c| c.kind() == "interpolation")
-                        .unwrap_or(false)
-                });
-                if has_interp {
-                    CallArg::TemplateLit(replace_csharp_interpolations(&inner))
-                } else {
-                    CallArg::StringLit(inner)
-                }
-            }
-            "identifier" => CallArg::Ident(node_text(expr, src)),
-            "integer_literal" | "real_literal" => CallArg::Literal(node_text(expr, src)),
-            "boolean_literal" | "null_literal" => CallArg::Literal(node_text(expr, src)),
-            _ => CallArg::Other,
-        };
-        out.push(arg);
+        out.push(extract_arg(&expr, src, 0));
     }
     out
+}
+
+/// Convert a single C# expression node to a `CallArg`, recursing for composite
+/// expression kinds up to `MAX_ARG_DEPTH`.
+fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    match node.kind() {
+        "string_literal" | "verbatim_string_literal" | "raw_string_literal" => {
+            let raw = node_text(*node, src);
+            let stripped = raw
+                .trim_start_matches('@')
+                .trim_start_matches('$')
+                .trim_start_matches(['"', '\''])
+                .trim_end_matches(['"', '\''])
+                .to_string();
+            CallArg::StringLit(stripped)
+        }
+        "interpolated_string_expression" => {
+            // C# interpolated strings: `$"..."` (verbatim: `$@"..."`).
+            // Strip the leading `$`, optional `@`, and surrounding
+            // quotes; then replace any `{...}` interpolation holes
+            // with `{}` placeholders. Pure-literal flat strings
+            // become `StringLit`; those with at least one
+            // interpolation become `TemplateLit`.
+            let raw = node_text(*node, src);
+            let inner = raw
+                .trim_start_matches('$')
+                .trim_start_matches('@')
+                .trim_start_matches('$')
+                .trim_start_matches(['"', '\''])
+                .trim_end_matches(['"', '\''])
+                .to_string();
+            let has_interp = (0..node.child_count()).any(|i| {
+                node.child(i)
+                    .map(|c| c.kind() == "interpolation")
+                    .unwrap_or(false)
+            });
+            if has_interp {
+                CallArg::TemplateLit(replace_csharp_interpolations(&inner))
+            } else {
+                CallArg::StringLit(inner)
+            }
+        }
+        "identifier" => CallArg::Ident(node_text(*node, src)),
+        "integer_literal" | "real_literal" => CallArg::Literal(node_text(*node, src)),
+        "boolean_literal" | "null_literal" => CallArg::Literal(node_text(*node, src)),
+        // `cond ? consequence : alternative` — the condition's type does not
+        // affect the value type; only the two branches are preserved.
+        "conditional_expression" => {
+            let then_branch = node
+                .child_by_field_name("consequence")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let else_branch = node
+                .child_by_field_name("alternative")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Ternary {
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+        }
+        // `new int[]{ a, b }` / `new[]{ a, b }` — the elements live in the
+        // `initializer_expression` child as named `expression` nodes.
+        "array_creation_expression" | "implicit_array_creation_expression" => {
+            let elements = named_child_of_kind(node, "initializer_expression")
+                .map(|init| {
+                    let mut cursor = init.walk();
+                    init.named_children(&mut cursor)
+                        .map(|el| extract_arg(&el, src, depth + 1))
+                        .collect()
+                })
+                .unwrap_or_default();
+            CallArg::ArrayLiteral { elements }
+        }
+        // `await expr` — the awaited expression is the only named child.
+        "await_expression" => {
+            let inner = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Await { expr: Box::new(inner) }
+        }
+        // `container[index]` — `expression` is the container, `subscript` is a
+        // `bracketed_argument_list` whose first `argument` wraps the index.
+        "element_access_expression" => {
+            let container = node
+                .child_by_field_name("expression")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let index = node
+                .child_by_field_name("subscript")
+                .and_then(|sub| named_child_of_kind(&sub, "argument"))
+                .and_then(|arg| arg.named_child(0))
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::IndexAccess {
+                container: Box::new(container),
+                index: Box::new(index),
+            }
+        }
+        // `left op right` — capture the operator source text and recurse on
+        // both operands.
+        "binary_expression" => {
+            let op = node
+                .child_by_field_name("operator")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default();
+            let left = node
+                .child_by_field_name("left")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = node
+                .child_by_field_name("right")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+        _ => CallArg::Other,
+    }
 }
 
 /// Replace `{...}` interpolation holes in a C# interpolated string with

@@ -19,6 +19,10 @@ pub use hooks::JavaResolver;
 pub use profile::JAVA_PROFILE;
 
 #[cfg(test)]
+#[path = "calls_tests.rs"]
+mod calls_tests;
+
+#[cfg(test)]
 #[path = "extract_tests.rs"]
 mod extract_tests;
 

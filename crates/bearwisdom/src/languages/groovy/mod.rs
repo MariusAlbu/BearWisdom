@@ -26,6 +26,10 @@ pub use hooks::GROOVY_HOOKS;
 pub use profile::GROOVY_PROFILE;
 
 #[cfg(test)]
+#[path = "calls_tests.rs"]
+mod calls_tests;
+
+#[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
