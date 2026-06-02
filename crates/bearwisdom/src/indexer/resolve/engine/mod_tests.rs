@@ -525,6 +525,95 @@ fn signature_derived_return_type_id_interned() {
 }
 
 #[test]
+fn module_tagged_usage_typeref_feeds_field_type_binding_excluded() {
+    // EXT-2: a field whose type is a module-tagged USAGE TypeRef now feeds
+    // field_type; the import STATEMENT's own binding ref (is_import_binding)
+    // stays excluded so it is never mis-attributed as a type. The binding ref
+    // is placed FIRST — were it not excluded, field_type would wrongly take its
+    // target ("Account") as the first TypeRef instead of the usage's ("User").
+    use crate::types::{EdgeKind, ExtractedRef};
+    let pf = ParsedFile {
+        path: "ext:pkg/svc.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "repo".to_string(),
+            qualified_name: "Svc.repo".to_string(),
+            kind: SymbolKind::Property,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: Some("Svc".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![
+            ExtractedRef {
+                is_import_binding: true,
+                is_reexport: false,
+                source_symbol_index: 0,
+                target_name: "Account".to_string(),
+                kind: EdgeKind::TypeRef,
+                line: 0,
+                col: 0,
+                module: Some("@pkg".to_string()),
+                chain: None,
+                byte_offset: 0,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
+            ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
+                source_symbol_index: 0,
+                target_name: "User".to_string(),
+                kind: EdgeKind::TypeRef,
+                line: 0,
+                col: 0,
+                module: Some("@pkg".to_string()),
+                chain: None,
+                byte_offset: 0,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            },
+        ],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("ext:pkg/svc.ts".to_string(), "Svc.repo".to_string()), 1);
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    // The module-tagged USAGE TypeRef fed the field type; the binding ("Account",
+    // placed first) was excluded, so field_type is "User", not "Account".
+    assert_eq!(index.field_type_name("Svc.repo"), Some("User"));
+}
+
+#[test]
 fn signature_derived_return_type_arrow_form() {
     // An external Method with a Python-style arrow signature (`(args) -> Ret`)
     // and no TypeRef refs gets its return type via the arrow-form scan in

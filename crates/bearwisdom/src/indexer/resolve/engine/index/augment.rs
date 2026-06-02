@@ -125,7 +125,10 @@ impl SymbolIndex {
         for pf in new_files {
             let mut type_refs_by_sym: Vec<Vec<&str>> = vec![Vec::new(); pf.symbols.len()];
             for r in &pf.refs {
-                if r.kind != EdgeKind::TypeRef || r.module.is_some() {
+                // Module-tagged USAGE TypeRefs feed the per-symbol type maps;
+                // only an import STATEMENT's own binding ref is excluded (its
+                // `source_symbol_index` is positional, not a type attribution).
+                if r.kind != EdgeKind::TypeRef || r.is_import_binding {
                     continue;
                 }
                 let idx = r.source_symbol_index;

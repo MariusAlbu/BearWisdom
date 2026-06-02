@@ -235,7 +235,12 @@ impl SymbolIndex {
             // inner scan was the dominant term in build_with_context.
             let mut type_refs_by_sym: Vec<Vec<&str>> = vec![Vec::new(); pf.symbols.len()];
             for r in &pf.refs {
-                if r.kind != EdgeKind::TypeRef || r.module.is_some() {
+                // Module-tagged USAGE TypeRefs (a field/param/return whose type
+                // resolves to an imported symbol) feed the per-symbol type maps;
+                // only an import STATEMENT's own binding ref is excluded — its
+                // `source_symbol_index` is a positional artifact, not a real type
+                // attribution.
+                if r.kind != EdgeKind::TypeRef || r.is_import_binding {
                     continue;
                 }
                 let idx = r.source_symbol_index;

@@ -148,7 +148,7 @@ fn emit_clause_refs(
         match item.kind() {
             // `import Foo from 'pkg'` — default import.
             "identifier" => {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef { is_import_binding: true, is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: text_of(item, src),
                     kind: EdgeKind::TypeRef,
@@ -174,7 +174,7 @@ fn emit_clause_refs(
                         .child_by_field_name("name")
                         .map(|n| text_of(n, src))
                         .unwrap_or_else(|| text_of(spec, src));
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef { is_import_binding: true, is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: imported_name,
                         kind: EdgeKind::TypeRef,
@@ -193,7 +193,7 @@ fn emit_clause_refs(
                 let mut nc = item.walk();
                 for ns_child in item.children(&mut nc) {
                     if ns_child.kind() == "identifier" {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef { is_import_binding: true, is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: text_of(ns_child, src),
                             kind: EdgeKind::TypeRef,
