@@ -354,6 +354,8 @@ impl MembersIndex {
                                     t.arg_types,
                                     arena,
                                     t.lookup,
+                                    self,
+                                    t.symbol_types,
                                     profile.primitive_mapping,
                                 )
                             {

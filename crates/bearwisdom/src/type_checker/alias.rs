@@ -17,6 +17,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::SymbolLookup;
+use crate::type_checker::core::members::MembersIndex;
+use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::types::{LitValue, Type, TypeArena, TypeId};
 use crate::type_checker::subtype::{
     is_assignable_to, is_assignable_to_typed, SubtypeResult,
@@ -334,6 +336,8 @@ pub fn expand_alias_typed(
     arena: &TypeArena,
     aliases: &AliasIndex,
     lookup: &dyn SymbolLookup,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
 ) -> Option<TypeId> {
     let target = aliases.get(&alias_ty)?.clone();
     match target {
@@ -385,7 +389,7 @@ pub fn expand_alias_typed(
         } => {
             let check_id = arena.class(&check);
             let extends_id = arena.class(&extends);
-            match is_assignable_to_typed(check_id, extends_id, arena, lookup) {
+            match is_assignable_to_typed(check_id, extends_id, arena, lookup, members, symbol_types) {
                 SubtypeResult::Yes => Some(arena.class(&true_branch)),
                 SubtypeResult::No => Some(arena.class(&false_branch)),
                 SubtypeResult::Unknown => None,

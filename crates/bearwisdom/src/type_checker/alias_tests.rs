@@ -4,9 +4,26 @@
 
 use super::*;
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::type_checker::core::members::MembersIndex;
+use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::types::{LitValue, Type, TypeArena};
 use crate::types::AliasTarget;
 use std::collections::HashMap;
+
+/// Empty member table for alias tests. The TypeId-form expander only consults
+/// members in the structural arm of its `Conditional` subtype check; none of
+/// these alias tests exercise structural conditionals, so an empty index keeps
+/// the conditional arm on its nominal-only path.
+fn empty_members() -> MembersIndex {
+    MembersIndex::new()
+}
+
+/// Empty per-symbol type map for alias tests. Same rationale as
+/// `empty_members`: the structural member-type comparison never fires on these
+/// nominal-only conditionals, so an empty map suffices.
+fn empty_symbol_types() -> SymbolTypeMap {
+    SymbolTypeMap::new()
+}
 
 // ---------------------------------------------------------------------------
 // Test fixture — a minimal SymbolLookup that only exposes `alias_target`
@@ -643,7 +660,7 @@ fn typed_unknown_alias_returns_none() {
     let lookup = AliasFixture::new();
     let aliases = build_alias_index(&[], &mut arena);
     let cls = arena.class("Nope");
-    assert_eq!(expand_alias_typed(cls, &mut arena, &aliases, &lookup), None);
+    assert_eq!(expand_alias_typed(cls, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
 }
 
 #[test]
@@ -660,7 +677,7 @@ fn typed_application_no_args_returns_root_class() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let id_ty = arena.class("Id");
-    let out = expand_alias_typed(id_ty, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(id_ty, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     assert_eq!(arena.get(out), Type::Class("string".into()));
 }
 
@@ -679,7 +696,7 @@ fn typed_application_with_args_builds_apply() {
     let aliases = build_alias_index(&pairs, &mut arena);
     let usermap_ty = arena.class("UserMap");
 
-    let out = expand_alias_typed(usermap_ty, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(usermap_ty, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     let map_ty = arena.class("Map");
     let string_ty = arena.class("string");
     let user_ty = arena.class("User");
@@ -702,7 +719,7 @@ fn typed_union_builds_union_type() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let status = arena.class("Status");
-    let out = expand_alias_typed(status, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(status, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     let ok_ty = arena.class("Ok");
     let err_ty = arena.class("Err");
     assert_eq!(arena.get(out), Type::Union(vec![ok_ty, err_ty]));
@@ -718,7 +735,7 @@ fn typed_intersection_builds_intersection_type() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let mix = arena.class("Mix");
-    let out = expand_alias_typed(mix, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(mix, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     let a = arena.class("A");
     let b = arena.class("B");
     assert_eq!(arena.get(out), Type::Intersection(vec![a, b]));
@@ -735,7 +752,7 @@ fn typed_typeof_uses_field_type_lookup() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     assert_eq!(arena.get(out), Type::Class("User".into()));
 }
 
@@ -749,7 +766,7 @@ fn typed_typeof_falls_back_to_return_type() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     assert_eq!(arena.get(out), Type::Class("Result".into()));
 }
 
@@ -763,7 +780,7 @@ fn typed_typeof_misses_when_value_unknown() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    assert_eq!(expand_alias_typed(foo, &mut arena, &aliases, &lookup), None);
+    assert_eq!(expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
 }
 
 #[test]
@@ -780,7 +797,7 @@ fn typed_indexed_access_uses_dotted_field_lookup() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     assert_eq!(arena.get(out), Type::Class("string".into()));
 }
 
@@ -798,7 +815,7 @@ fn typed_transparent_mapped_returns_source() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     assert_eq!(arena.get(out), Type::Class("User".into()));
 }
 
@@ -815,7 +832,7 @@ fn typed_non_transparent_mapped_returns_none() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    assert_eq!(expand_alias_typed(foo, &mut arena, &aliases, &lookup), None);
+    assert_eq!(expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
 }
 
 #[test]
@@ -834,7 +851,7 @@ fn typed_conditional_picks_true_branch_on_assignable() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let c = arena.class("C");
-    let out = expand_alias_typed(c, &mut arena, &aliases, &lookup).expect("expanded");
+    let out = expand_alias_typed(c, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
     assert_eq!(arena.get(out), Type::Class("Yes".into()));
 }
 
@@ -855,7 +872,7 @@ fn typed_conditional_returns_none_when_undecidable() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let c = arena.class("C");
-    assert_eq!(expand_alias_typed(c, &mut arena, &aliases, &lookup), None);
+    assert_eq!(expand_alias_typed(c, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
 }
 
 #[test]
@@ -871,9 +888,9 @@ fn typed_keyof_object_other_return_none() {
     let k1 = arena.class("K1");
     let k2 = arena.class("K2");
     let k3 = arena.class("K3");
-    assert_eq!(expand_alias_typed(k1, &mut arena, &aliases, &lookup), None);
-    assert_eq!(expand_alias_typed(k2, &mut arena, &aliases, &lookup), None);
-    assert_eq!(expand_alias_typed(k3, &mut arena, &aliases, &lookup), None);
+    assert_eq!(expand_alias_typed(k1, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
+    assert_eq!(expand_alias_typed(k2, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
+    assert_eq!(expand_alias_typed(k3, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
 }
 
 #[test]
@@ -886,7 +903,7 @@ fn typed_keyof_expands_to_string_literal_union() {
     let pairs = vec![("Keys".to_string(), AliasTarget::Keyof("User".to_string()))];
     let aliases = build_alias_index(&pairs, &mut arena);
     let keys = arena.class("Keys");
-    let out = expand_alias_typed(keys, &mut arena, &aliases, &lookup).expect("keyof expands");
+    let out = expand_alias_typed(keys, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("keyof expands");
     match arena.get(out) {
         Type::Union(branches) => {
             let lits: Vec<String> = branches

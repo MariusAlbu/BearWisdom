@@ -739,7 +739,14 @@ impl<'a> ChainWalker<'a> {
     fn expand_aliases(&self, current_ty: TypeId) -> TypeId {
         let mut ty = current_ty;
         for _ in 0..8 {
-            match expand_alias_typed(ty, self.arena, self.aliases, self.lookup) {
+            match expand_alias_typed(
+                ty,
+                self.arena,
+                self.aliases,
+                self.lookup,
+                self.members,
+                self.symbol_types,
+            ) {
                 Some(next) if next != ty => {
                     ty = next;
                 }

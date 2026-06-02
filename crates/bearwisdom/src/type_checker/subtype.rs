@@ -23,10 +23,26 @@
 //   - `infer` clauses — they require a separate matcher.
 //   - Union / intersection branch checks.
 //
-// PR 16.
+// The TypeId form (`is_assignable_to_typed_with`) adds one ADDITIONAL positive
+// path on top of the nominal arms: a SHAPE-based check between two shape-bearing
+// types (Class/Interface/Struct). A source structurally satisfies a target when
+// it carries every one of the target's direct members with a matching name, a
+// matching kind, AND a member type assignable in the right variance (method
+// returns covariant, method params contravariant, field types covariant) — TS
+// structural typing and Go implicit interface satisfaction. The structural arm
+// is gated hard for soundness: it only ever turns an Unknown into Yes, never an
+// inheritance/primitive answer into something looser, and it returns Yes ONLY
+// when the full member set of both sides is enumerable, every target member is
+// present with a matching kind, and both matched members carry recorded type
+// data whose comparison is definitely assignable. A matched member with no
+// recorded `SymbolTypeData` keeps the arm at Unknown — declaring assignable on
+// name+kind alone (ignoring parameter / return types) is the unsound path this
+// check exists to avoid.
 // =============================================================================
 
-use crate::indexer::resolve::engine::SymbolLookup;
+use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::type_checker::core::members::MembersIndex;
+use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena, TypeId};
 
 /// TypeScript primitives the conservative branch uses to detect
@@ -124,8 +140,10 @@ pub fn is_assignable_to_typed(
     target: TypeId,
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
 ) -> SubtypeResult {
-    is_assignable_to_typed_with(source, target, arena, lookup, &[])
+    is_assignable_to_typed_with(source, target, arena, lookup, members, symbol_types, &[])
 }
 
 /// Map a type to its primitive kind for disjointness checks. A structural
@@ -153,7 +171,10 @@ fn prim_kind_of(ty: &Type, prims: &[(&str, PrimKind)]) -> Option<PrimKind> {
 /// - `Union` source: assignable when *every* branch is.
 /// - `Union` target: assignable when *any* branch is.
 /// - `Class` → `Class`: walk inheritance via parent_class_qname (capped to
-///   `MAX_INHERITANCE_HOPS` matching the string form).
+///   `MAX_INHERITANCE_HOPS` matching the string form). When the nominal walk
+///   finds no relationship, an ADDITIONAL structural arm decides Yes when the
+///   source carries every direct member of the target with a matching name and
+///   kind (see [`structurally_assignable`]).
 /// - `Primitive` → `Primitive`: equal kinds → Yes, different kinds → No.
 ///
 /// Everything else returns `Unknown`.
@@ -162,7 +183,33 @@ pub fn is_assignable_to_typed_with(
     target: TypeId,
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
     prims: &[(&str, PrimKind)],
+) -> SubtypeResult {
+    assignable_inner(source, target, arena, lookup, members, symbol_types, prims, 0)
+}
+
+/// Maximum nesting of the structural member-type re-entry before the structural
+/// arm bails to Unknown. A member's type check can re-enter
+/// `structurally_assignable` (e.g. `A.f: B`, `B.g: A`), so the depth bounds that
+/// recursion against cyclic shapes. Kept small: real structural-satisfaction
+/// shapes match within a hop or two; a deeper chase is almost certainly a cycle.
+const MAX_STRUCTURAL_DEPTH: u8 = 4;
+
+/// Depth-carrying core of [`is_assignable_to_typed_with`]. `depth` counts how
+/// many times the structural arm has re-entered for member-type comparison and
+/// bounds that recursion; all other arms pass it through unchanged.
+#[allow(clippy::too_many_arguments)]
+fn assignable_inner(
+    source: TypeId,
+    target: TypeId,
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
+    prims: &[(&str, PrimKind)],
+    depth: u8,
 ) -> SubtypeResult {
     if source == target {
         return SubtypeResult::Yes;
@@ -193,7 +240,7 @@ pub fn is_assignable_to_typed_with(
 
     // Optional target: peel one layer. `T` is assignable to `T | undefined`.
     if let Type::Optional(inner) = tgt_ty {
-        return is_assignable_to_typed_with(source, inner, arena, lookup, prims);
+        return assignable_inner(source, inner, arena, lookup, members, symbol_types, prims, depth);
     }
 
     // Union source: every branch must be assignable; one Unknown taints the
@@ -201,7 +248,7 @@ pub fn is_assignable_to_typed_with(
     if let Type::Union(branches) = &src_ty {
         let mut any_unknown = false;
         for b in branches {
-            match is_assignable_to_typed_with(*b, target, arena, lookup, prims) {
+            match assignable_inner(*b, target, arena, lookup, members, symbol_types, prims, depth) {
                 SubtypeResult::Yes => continue,
                 SubtypeResult::No => return SubtypeResult::No,
                 SubtypeResult::Unknown => any_unknown = true,
@@ -219,7 +266,7 @@ pub fn is_assignable_to_typed_with(
     if let Type::Union(branches) = &tgt_ty {
         let mut any_unknown = false;
         for b in branches {
-            match is_assignable_to_typed_with(source, *b, arena, lookup, prims) {
+            match assignable_inner(source, *b, arena, lookup, members, symbol_types, prims, depth) {
                 SubtypeResult::Yes => return SubtypeResult::Yes,
                 SubtypeResult::No => continue,
                 SubtypeResult::Unknown => any_unknown = true,
@@ -250,7 +297,7 @@ pub fn is_assignable_to_typed_with(
         let mut ancestor = src_q.clone();
         for _ in 0..MAX_INHERITANCE_HOPS {
             let Some(parent) = lookup.parent_class_qname(&ancestor) else {
-                return SubtypeResult::Unknown;
+                break;
             };
             if parent == tgt_q {
                 return SubtypeResult::Yes;
@@ -260,14 +307,225 @@ pub fn is_assignable_to_typed_with(
             }
             ancestor = parent.to_string();
         }
-        // Walked the full chain without finding the target. We don't know
-        // the full supertype lattice yet (interfaces, structural types,
-        // multi-inheritance) so call this Unknown rather than No — matches
-        // the string form's "primitive vs user-type is undecidable" stance.
-        return SubtypeResult::Unknown;
+        // The nominal walk found no inheritance link. Try the structural arm:
+        // a source that carries every direct member of the target with a
+        // matching name, matching kind, and an assignable member type satisfies
+        // the target's shape (TS structural typing, Go implicit interface
+        // satisfaction). The structural check is itself conservative — it only
+        // ever yields Yes, never No, and stays Unknown when either member set
+        // can't be fully enumerated OR a matched member lacks recorded type
+        // data. We don't know the full supertype lattice yet (interfaces,
+        // multi-inheritance) so a structural miss stays Unknown rather than No.
+        return structurally_assignable(
+            source,
+            target,
+            arena,
+            lookup,
+            members,
+            symbol_types,
+            prims,
+            depth,
+        );
     }
 
     SubtypeResult::Unknown
+}
+
+/// Maximum direct members compared on either side before the structural arm
+/// bails to Unknown. A shape this wide is almost certainly a god-object whose
+/// member set the extractor may not fully capture; treating it as
+/// non-enumerable keeps the arm from declaring a false Yes on partial data.
+const MAX_STRUCTURAL_MEMBERS: usize = 256;
+
+/// Decide structural assignability between two shape-bearing types.
+///
+/// `source` is structurally assignable to `target` when, for every direct
+/// member of `target`, `source` carries a member with the same name, the same
+/// kind, AND a member type that is assignable in the correct variance:
+/// - methods — source return covariant (assignable to the target's return) and
+///   parameters contravariant (each target parameter assignable to the source's
+///   at the same position);
+/// - fields — source declared type covariant (assignable to the target's).
+///
+/// "Direct member" means `direct_of ∪ extensions_of` for each side — extension
+/// members (C# extension methods, Rust `impl Trait for T`) are real members of
+/// the shape. The supertype graph is NOT walked here: the nominal arm already
+/// climbed the inheritance chain. Member-type comparison re-enters the typed
+/// assignability check, bounded by `MAX_STRUCTURAL_DEPTH` against cyclic shapes.
+///
+/// Returns:
+/// - `Yes` — every target member is present on the source with a matching kind
+///   and a recorded, definitely-assignable member type.
+/// - `Unknown` — either member set is empty (type has no recorded members, or is
+///   an external whose members aren't hydrated), exceeds `MAX_STRUCTURAL_MEMBERS`
+///   (treated as non-enumerable), the depth budget is exhausted, a matched
+///   member lacks recorded `SymbolTypeData`, or a matched member's type is not
+///   definitely assignable. NEVER `No`.
+///
+/// The arm never returns `No`: a missing or type-incompatible member means
+/// "this shape doesn't match" for the positive structural path, but the
+/// caller's nominal lattice is incomplete, so a structural miss is reported as
+/// Unknown (undecidable) rather than a definite non-subtype. This preserves the
+/// invariant that the structural arm only ever adds positive results.
+///
+/// Conservatism: matching a target member by `(name, kind)` alone — without
+/// comparing the matched members' parameter / return types — would declare
+/// `Writer{ Write(s: string) }` satisfied by `S{ Write(n: number) }`. That is a
+/// false Yes. So a member whose type data is absent on either side, or whose
+/// types are not definitely assignable, keeps the whole arm at Unknown.
+#[allow(clippy::too_many_arguments)]
+fn structurally_assignable(
+    source: TypeId,
+    target: TypeId,
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
+    prims: &[(&str, PrimKind)],
+    depth: u8,
+) -> SubtypeResult {
+    // Gate to shape-bearing kinds only. A non-Class type never reaches here
+    // (the caller restricts the arm to Class → Class), but assert it locally
+    // so the function stays sound if a future caller widens the entry point.
+    if !matches!(arena.get(source), Type::Class(_)) || !matches!(arena.get(target), Type::Class(_))
+    {
+        return SubtypeResult::Unknown;
+    }
+
+    // Depth budget: member-type comparison can re-enter this function (A.f: B,
+    // B.g: A). Out of budget → undecidable, not a guessed Yes.
+    if depth >= MAX_STRUCTURAL_DEPTH {
+        return SubtypeResult::Unknown;
+    }
+
+    let tgt_members = member_infos(target, members);
+    let src_members = member_infos(source, members);
+
+    // Enumeration conservatism: an empty set on either side means the type's
+    // shape is unknown to us (no recorded members, or an external whose members
+    // aren't hydrated). A type with zero members is also vacuously satisfied by
+    // anything, which would be a false Yes — so empty → Unknown either way.
+    if tgt_members.is_empty() || src_members.is_empty() {
+        return SubtypeResult::Unknown;
+    }
+    if tgt_members.len() > MAX_STRUCTURAL_MEMBERS || src_members.len() > MAX_STRUCTURAL_MEMBERS {
+        return SubtypeResult::Unknown;
+    }
+
+    // Every target member must be present on the source with a matching name and
+    // kind AND a definitely-assignable member type. Kind is compared by exact
+    // string equality: within one type's member set source and target are the
+    // same language, so a `field` requirement is satisfied only by a `field` and
+    // a `method` only by a `method`. A near-miss shape (missing member, a field
+    // where a method is required, a member with no recorded type data, or an
+    // incompatible parameter / return type) leaves the arm at Unknown.
+    for needed in &tgt_members {
+        let Some(have) = src_members
+            .iter()
+            .find(|have| have.name == needed.name && have.kind == needed.kind)
+        else {
+            return SubtypeResult::Unknown;
+        };
+        if member_types_assignable(have, needed, arena, lookup, members, symbol_types, prims, depth)
+            != SubtypeResult::Yes
+        {
+            return SubtypeResult::Unknown;
+        }
+    }
+    SubtypeResult::Yes
+}
+
+/// Decide whether the source member's type is assignable to the target
+/// member's, in the correct variance. Returns `Yes` only when BOTH members
+/// carry the type data the comparison needs and that data is definitely
+/// assignable; any missing-type-info case returns `Unknown` (the load-bearing
+/// conservatism — never fall back to name+kind when type data is absent).
+///
+/// Variance:
+/// - method-shaped member (`return_type` recorded): source return covariant
+///   (`source_return` assignable to `target_return`) and parameters
+///   contravariant (each target parameter assignable to the source's at the
+///   same position, via `args_assignable(source_params, target_params)`).
+/// - field-shaped member (`declared_type` recorded): source declared type
+///   covariant (assignable to the target's).
+#[allow(clippy::too_many_arguments)]
+fn member_types_assignable(
+    source: &SymbolInfo,
+    target: &SymbolInfo,
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
+    prims: &[(&str, PrimKind)],
+    depth: u8,
+) -> SubtypeResult {
+    // Both members must have recorded type data. Missing on either side →
+    // Unknown. This is the conservatism that keeps a (name, kind) match from
+    // standing in for an actual type comparison.
+    let (Some(src_data), Some(tgt_data)) =
+        (symbol_types.get(source.id), symbol_types.get(target.id))
+    else {
+        return SubtypeResult::Unknown;
+    };
+
+    let next = depth + 1;
+
+    // Method-shaped: a recorded return type on the target signals a callable
+    // member. Require the source to be callable too (its own return recorded),
+    // then check return covariance and parameter contravariance.
+    if let Some(tgt_return) = tgt_data.return_type {
+        let Some(src_return) = src_data.return_type else {
+            return SubtypeResult::Unknown;
+        };
+        // Return covariance: source return must be assignable to target return.
+        if assignable_inner(
+            src_return, tgt_return, arena, lookup, members, symbol_types, prims, next,
+        ) != SubtypeResult::Yes
+        {
+            return SubtypeResult::Unknown;
+        }
+        // Parameter contravariance: each target parameter must be assignable to
+        // the source's at the same position. `args_assignable(params, args)`
+        // checks each `arg` assignable to `param`, so params = source's,
+        // args = target's. A length mismatch makes it false → Unknown. A param
+        // typed Unknown is treated as assignable (args_assignable is lenient on
+        // missing arg-position info) — acceptable because the presence of a
+        // recorded return type already established both members are callable.
+        if !args_assignable_inner(
+            &src_data.param_types,
+            &tgt_data.param_types,
+            arena,
+            lookup,
+            members,
+            symbol_types,
+            prims,
+            next,
+        ) {
+            return SubtypeResult::Unknown;
+        }
+        return SubtypeResult::Yes;
+    }
+
+    // Field-shaped: covariance on the declared type. Both sides must declare it.
+    match (src_data.declared_type, tgt_data.declared_type) {
+        (Some(src_decl), Some(tgt_decl)) => assignable_inner(
+            src_decl, tgt_decl, arena, lookup, members, symbol_types, prims, next,
+        ),
+        // No comparable type data recorded for this member → Unknown.
+        _ => SubtypeResult::Unknown,
+    }
+}
+
+/// Collect the direct + extension members of `ty`. The returned `SymbolInfo`
+/// carries `name`, `kind`, and the DB symbol `id` the member-type comparison
+/// uses to recover `SymbolTypeData`. Returns an empty Vec when the type has no
+/// recorded members.
+fn member_infos(ty: TypeId, members: &MembersIndex) -> Vec<&SymbolInfo> {
+    members
+        .direct_of(ty)
+        .iter()
+        .chain(members.extensions_of(ty).iter())
+        .collect()
 }
 
 /// True when every `arg` is assignable to the `param` at the same position
@@ -276,18 +534,38 @@ pub fn is_assignable_to_typed_with(
 /// resolution. Shared by the dispatch axes and the receiver-overload pick in
 /// member lookup. `prims` is the language `primitive_mapping` so nominal
 /// primitive names are recognized as disjoint.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn args_assignable(
     params: &[TypeId],
     args: &[TypeId],
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
     prims: &[(&str, PrimKind)],
+) -> bool {
+    args_assignable_inner(params, args, arena, lookup, members, symbol_types, prims, 0)
+}
+
+/// Depth-carrying core of [`args_assignable`]. Threads the structural-recursion
+/// `depth` into each position's assignability check so a parameter comparison
+/// that re-enters the structural arm stays bounded.
+#[allow(clippy::too_many_arguments)]
+fn args_assignable_inner(
+    params: &[TypeId],
+    args: &[TypeId],
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
+    prims: &[(&str, PrimKind)],
+    depth: u8,
 ) -> bool {
     if params.len() != args.len() {
         return false;
     }
     for (param, arg) in params.iter().zip(args.iter()) {
-        match is_assignable_to_typed_with(*arg, *param, arena, lookup, prims) {
+        match assignable_inner(*arg, *param, arena, lookup, members, symbol_types, prims, depth) {
             SubtypeResult::Yes | SubtypeResult::Unknown => continue,
             SubtypeResult::No => return false,
         }

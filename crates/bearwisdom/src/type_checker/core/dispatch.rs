@@ -104,7 +104,15 @@ fn select_multi_arg(
     for candidate in candidates(query, members, supertypes) {
         match symbol_types.get(candidate.id) {
             Some(data) => {
-                if args_assignable(&data.param_types, query.arg_types, arena, lookup, prims) {
+                if args_assignable(
+                    &data.param_types,
+                    query.arg_types,
+                    arena,
+                    lookup,
+                    members,
+                    symbol_types,
+                    prims,
+                ) {
                     matches.push(candidate);
                 }
             }
@@ -125,7 +133,7 @@ fn select_multi_arg(
     // Prefer the most specific overload: the candidate whose parameter types are
     // assignable to (subtypes of) every other match's at each position. When no
     // single candidate dominates the set, the first match wins.
-    let best = most_specific_index(&matches, symbol_types, arena, lookup, prims);
+    let best = most_specific_index(&matches, symbol_types, members, arena, lookup, prims);
     Some(matches.swap_remove(best))
 }
 
@@ -135,6 +143,7 @@ fn select_multi_arg(
 fn most_specific_index(
     matches: &[SymbolInfo],
     symbol_types: &SymbolTypeMap,
+    members: &MembersIndex,
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
     prims: &[(&str, PrimKind)],
@@ -157,7 +166,7 @@ fn most_specific_index(
             }
             let dominates = pi.iter().zip(pj.iter()).all(|(a, b)| {
                 matches!(
-                    is_assignable_to_typed_with(*a, *b, arena, lookup, prims),
+                    is_assignable_to_typed_with(*a, *b, arena, lookup, members, symbol_types, prims),
                     SubtypeResult::Yes
                 )
             });
@@ -188,7 +197,15 @@ fn select_return_type(
                 continue;
             };
             if matches!(
-                is_assignable_to_typed_with(return_ty, expected, arena, lookup, profile.primitive_mapping),
+                is_assignable_to_typed_with(
+                    return_ty,
+                    expected,
+                    arena,
+                    lookup,
+                    members,
+                    symbol_types,
+                    profile.primitive_mapping
+                ),
                 SubtypeResult::Yes
             ) {
                 return Some(candidate);
