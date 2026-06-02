@@ -10,7 +10,7 @@ use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{
-    AliasTarget, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain,
+    AliasTarget, CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain,
     SegmentKind, SymbolKind, Visibility,
 };
 use std::sync::Arc;
@@ -682,6 +682,495 @@ fn turbofish_binds_method_own_generic() {
         .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: repo_ty })
         .expect("name resolves on the turbofish-bound return type");
     assert_eq!(result.target_symbol_id, 2);
+}
+
+// ---------------------------------------------------------------------------
+// INFER-8 — argument-driven generic inference at a terminal call
+// ---------------------------------------------------------------------------
+
+// A minimal root resolver that returns a fixed prebuilt type.
+struct InferFixedRoot {
+    ty: TypeId,
+}
+impl RootResolver for InferFixedRoot {
+    fn resolve(
+        &self,
+        _seg: &ChainSegment,
+        _ref_ctx: &RefContext,
+        _file_ctx: &FileContext,
+        _arena: &TypeArena,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<TypeId> {
+        Some(self.ty)
+    }
+}
+
+#[test]
+fn arg_driven_generic_binds_terminal_yield() {
+    // class Box { wrap<T>(x: T): T }  — box.wrap(u) with a local `u: User` and
+    // no turbofish binds T from the argument, so the call yields User. The
+    // return + param are stored param-blind (Class("T"), the prod shape);
+    // `generic_param_type_ids` supplies the canonical Generic(T).
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let box_ty = arena.class("Box");
+    let user_ty = arena.class("User");
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),    // param-blind Class("T")
+            param_types: vec![class_t],    // x: T, also param-blind
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(box_ty, sym_info(1, "wrap", "Box.wrap", "method", Some("Box")));
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("Box.wrap", vec![gen_t])
+        .with_local("u", "User");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("box", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("wrap", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = ExtractedRef {
+        call_args: vec![CallArg::Ident("u".to_string())],
+        ..dummy_extracted_ref("wrap")
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: box_ty })
+        .expect("wrap resolves");
+    assert_eq!(result.target_symbol_id, 1);
+    // T was inferred from the argument's type → yield is User, not unbound T.
+    assert_eq!(result.resolved_yield_type, user_ty);
+}
+
+#[test]
+fn arg_driven_generic_inferred_through_array_arg() {
+    // class Svc { firstOf<T>(xs: Array<T>): T }  — svc.firstOf(items) with a
+    // local `items: Array<User>` recurses into the Array application to bind
+    // T → User, so the call yields User.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let svc_ty = arena.class("Svc");
+    let user_ty = arena.class("User");
+    let class_t = arena.class("T");
+    let array_cls = arena.class("Array");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+    // Declared param `xs: Array<T>`, param-blind: Apply{Array, [Class("T")]}.
+    let array_of_t = arena.intern(Type::Apply {
+        base: array_cls,
+        args: vec![class_t],
+    });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![array_of_t],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        svc_ty,
+        sym_info(1, "firstOf", "Svc.firstOf", "method", Some("Svc")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("Svc.firstOf", vec![gen_t])
+        .with_local("items", "Array<User>");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("svc", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("firstOf", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = ExtractedRef {
+        call_args: vec![CallArg::Ident("items".to_string())],
+        ..dummy_extracted_ref("firstOf")
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: svc_ty })
+        .expect("firstOf resolves");
+    assert_eq!(result.target_symbol_id, 1);
+    assert_eq!(result.resolved_yield_type, user_ty);
+}
+
+#[test]
+fn turbofish_overrides_arg_driven_inference() {
+    // box.wrap<Admin>(u) with `u: User` — the explicit turbofish binds T=Admin
+    // and arg-driven inference is gated off, so the call yields Admin not User.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let box_ty = arena.class("Box");
+    let admin_ty = arena.class("Admin");
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![class_t],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(box_ty, sym_info(1, "wrap", "Box.wrap", "method", Some("Box")));
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("Box.wrap", vec![gen_t])
+        .with_local("u", "User");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("box", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                type_args: vec!["Admin".to_string()],
+                ..seg("wrap", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = ExtractedRef {
+        call_args: vec![CallArg::Ident("u".to_string())],
+        ..dummy_extracted_ref("wrap")
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: box_ty })
+        .expect("wrap resolves");
+    assert_eq!(result.target_symbol_id, 1);
+    assert_eq!(result.resolved_yield_type, admin_ty);
+}
+
+#[test]
+fn arg_driven_no_inference_when_arg_untyped() {
+    // box.wrap(mystery) where `mystery` has no known local type — the argument
+    // resolves to Unknown, so T stays unbound and the call yields the generic
+    // T unchanged (byte-identical to the pre-inference behavior).
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let box_ty = arena.class("Box");
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![class_t],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(box_ty, sym_info(1, "wrap", "Box.wrap", "method", Some("Box")));
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // No local type for `mystery` → argument types to Unknown.
+    let lookup = EmptyLookup::new().with_generic_param_type_ids("Box.wrap", vec![gen_t]);
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("box", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("wrap", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = ExtractedRef {
+        call_args: vec![CallArg::Ident("mystery".to_string())],
+        ..dummy_extracted_ref("wrap")
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: box_ty })
+        .expect("wrap resolves");
+    assert_eq!(result.target_symbol_id, 1);
+    // T was not inferable → the yield is the unbound generic, not a guess.
+    assert_eq!(result.resolved_yield_type, gen_t);
+}
+
+#[test]
+fn arg_driven_infers_owner_param_when_receiver_unbound() {
+    // class Repository<T> { findOne(filter: T): T }  — the method declares no
+    // generics of its own; T is the OWNING type's parameter. With a raw
+    // `Repository` receiver (no type args), the receiver leaves T unbound, so
+    // the argument's type fills it: repo.findOne(u) with `u: User` yields User.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let repo_ty = arena.class("Repository");
+    let user_ty = arena.class("User");
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![class_t],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        repo_ty,
+        sym_info(1, "findOne", "Repository.findOne", "method", Some("Repository")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // T is declared on the OWNER (`Repository`), not on the method.
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("Repository", vec![gen_t])
+        .with_local("u", "User");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("repo", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("findOne", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = ExtractedRef {
+        call_args: vec![CallArg::Ident("u".to_string())],
+        ..dummy_extracted_ref("findOne")
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: repo_ty })
+        .expect("findOne resolves");
+    assert_eq!(result.target_symbol_id, 1);
+    assert_eq!(result.resolved_yield_type, user_ty);
+}
+
+#[test]
+fn receiver_binding_wins_over_arg_driven_inference() {
+    // Same Repository<T> { findOne(filter: T): T }, but the receiver is
+    // `Repository<Account>` — the receiver binds T → Account first, so an
+    // argument of a different type does NOT clobber it: findOne(u) with
+    // `u: User` still yields Account.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let repo_ty = arena.class("Repository");
+    let account_ty = arena.class("Account");
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+    let repo_of_account = arena.intern(Type::Apply {
+        base: repo_ty,
+        args: vec![account_ty],
+    });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![class_t],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        repo_ty,
+        sym_info(1, "findOne", "Repository.findOne", "method", Some("Repository")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("Repository", vec![gen_t])
+        .with_local("u", "User");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("repo", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("findOne", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = ExtractedRef {
+        call_args: vec![CallArg::Ident("u".to_string())],
+        ..dummy_extracted_ref("findOne")
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: repo_of_account })
+        .expect("findOne resolves");
+    assert_eq!(result.target_symbol_id, 1);
+    // Receiver pinned T → Account; the User argument must not override it.
+    assert_eq!(result.resolved_yield_type, account_ty);
 }
 
 #[test]

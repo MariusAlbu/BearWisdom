@@ -33,8 +33,8 @@
 use super::types::{GenericParamId, Type, TypeArena, TypeId};
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
 use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
-use crate::type_checker::core::generics::{substitute, GenericEnv};
-use rustc_hash::FxHashMap;
+use crate::type_checker::core::generics::{substitute, unify_into, GenericEnv};
+use rustc_hash::{FxHashMap, FxHashSet};
 use crate::type_checker::core::dispatch::{resolve_arg_types, select_method, DispatchQuery};
 use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
@@ -486,6 +486,43 @@ impl<'a> ChainWalker<'a> {
                             .map(|s| self.arena.intern_type_str(s))
                             .collect();
                         env.bind_positional(&params, &arg_ids);
+                    }
+                }
+            }
+
+            // G2: argument-driven generic inference (INFER-8). With no
+            // explicit turbofish, unify the called method's declared parameter
+            // types against the resolved argument types to bind the type
+            // parameters its return resolves through, so a method returning one
+            // of them yields the concrete type. The bindable param set and the
+            // canonical `Generic` ids both come from `owner_param_type_map` —
+            // the SAME map `yield_type_of` rebinds the return with — so a bound
+            // param and the substituted return agree on the `GenericParamId`.
+            // Both the method's own params and the owning type's are bindable;
+            // `unify_into` binds only an UNBOUND slot, so the receiver binding
+            // already set by `bind_apply_args` stays authoritative — an argument
+            // can FILL an owner param the receiver left unbound (raw
+            // `Repository`) but never override a receiver-pinned one
+            // (`Repository<Account>`). The declared param types are interned
+            // param-blind (`Class("T")`), so they are rebound to the canonical
+            // ids before unifying.
+            if is_call_seg && seg.type_args.is_empty() {
+                let name_to_id = self.owner_param_type_map(&member.qualified_name);
+                let bindable: FxHashSet<GenericParamId> = name_to_id
+                    .values()
+                    .filter_map(|&id| match self.arena.get(id) {
+                        Type::Generic { param } => Some(param),
+                        _ => None,
+                    })
+                    .collect();
+                if !bindable.is_empty() {
+                    if let Some(data) = self.symbol_types.get(member.id) {
+                        for (param_ty, &arg_ty) in
+                            data.param_types.iter().zip(arg_type_ids.iter())
+                        {
+                            let canon = self.arena.rebind_class_params(*param_ty, &name_to_id);
+                            unify_into(canon, arg_ty, &bindable, &mut env, self.arena);
+                        }
                     }
                 }
             }

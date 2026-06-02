@@ -292,3 +292,182 @@ fn substitute_apply_with_no_changes_is_identity() {
     let out = substitute(apply, &env, &mut arena);
     assert_eq!(out, apply);
 }
+
+// ---------------------------------------------------------------------------
+// unify_into — argument-driven generic binding (INFER-8)
+// ---------------------------------------------------------------------------
+
+fn bindable(params: &[GenericParamId]) -> rustc_hash::FxHashSet<GenericParamId> {
+    params.iter().copied().collect()
+}
+
+#[test]
+fn unify_binds_bare_generic_param() {
+    // identity<T>(x: T) called with a User arg → T binds to User.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let user = arena.class("User");
+
+    let mut env = GenericEnv::new();
+    unify_into(gen_t, user, &bindable(&[t]), &mut env, &arena);
+    assert_eq!(env.get(t), Some(user));
+}
+
+#[test]
+fn unify_skips_param_not_in_bindable_set() {
+    // A param outside `bindable` (e.g. the owner's T) is never bound from an
+    // argument — the receiver type owns that binding.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let user = arena.class("User");
+
+    let mut env = GenericEnv::new();
+    unify_into(gen_t, user, &bindable(&[]), &mut env, &arena);
+    assert_eq!(env.get(t), None);
+}
+
+#[test]
+fn unify_skips_unknown_arg() {
+    // An untyped argument leaves the slot unbound rather than binding Unknown,
+    // so a later concrete position can still bind it.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let unknown = arena.intern(Type::Unknown);
+
+    let mut env = GenericEnv::new();
+    unify_into(gen_t, unknown, &bindable(&[t]), &mut env, &arena);
+    assert_eq!(env.get(t), None);
+}
+
+#[test]
+fn unify_does_not_overwrite_existing_binding() {
+    // First concrete position wins; a later unify never clobbers it.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let user = arena.class("User");
+    let admin = arena.class("Admin");
+
+    let mut env = GenericEnv::new();
+    env.bind(t, user);
+    unify_into(gen_t, admin, &bindable(&[t]), &mut env, &arena);
+    assert_eq!(env.get(t), Some(user));
+}
+
+#[test]
+fn unify_first_concrete_position_wins_across_calls() {
+    // f<T>(a: T, b: T) called f(user, admin): position 0 binds User, position
+    // 1 does not overwrite.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let user = arena.class("User");
+    let admin = arena.class("Admin");
+
+    let set = bindable(&[t]);
+    let mut env = GenericEnv::new();
+    unify_into(gen_t, user, &set, &mut env, &arena);
+    unify_into(gen_t, admin, &set, &mut env, &arena);
+    assert_eq!(env.get(t), Some(user));
+}
+
+#[test]
+fn unify_recurses_into_matching_apply() {
+    // f<T>(xs: Array<T>) called with Array<User> → T binds to User.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let array = arena.class("Array");
+    let user = arena.class("User");
+    let param = arena.intern(Type::Apply { base: array, args: vec![gen_t] });
+    let arg = arena.intern(Type::Apply { base: array, args: vec![user] });
+
+    let mut env = GenericEnv::new();
+    unify_into(param, arg, &bindable(&[t]), &mut env, &arena);
+    assert_eq!(env.get(t), Some(user));
+}
+
+#[test]
+fn unify_skips_apply_with_different_base() {
+    // Array<T> ⇄ List<User> — different constructors, nothing inferred.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let array = arena.class("Array");
+    let list = arena.class("List");
+    let user = arena.class("User");
+    let param = arena.intern(Type::Apply { base: array, args: vec![gen_t] });
+    let arg = arena.intern(Type::Apply { base: list, args: vec![user] });
+
+    let mut env = GenericEnv::new();
+    unify_into(param, arg, &bindable(&[t]), &mut env, &arena);
+    assert_eq!(env.get(t), None);
+}
+
+#[test]
+fn unify_recurses_into_function_param_and_return() {
+    // f<T, U>(g: (x: T) => U) called with (x: User) => Account → T=User, U=Account.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let u = make_param(&arena, "U");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let gen_u = arena.intern(Type::Generic { param: u });
+    let user = arena.class("User");
+    let account = arena.class("Account");
+    let param = arena.intern(Type::Function { params: vec![gen_t], return_: gen_u });
+    let arg = arena.intern(Type::Function { params: vec![user], return_: account });
+
+    let mut env = GenericEnv::new();
+    unify_into(param, arg, &bindable(&[t, u]), &mut env, &arena);
+    assert_eq!(env.get(t), Some(user));
+    assert_eq!(env.get(u), Some(account));
+}
+
+#[test]
+fn unify_peels_optional_param_against_bare_arg() {
+    // f<T>(x?: T) called with a plain User → T binds to User.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let opt_t = arena.intern(Type::Optional(gen_t));
+    let user = arena.class("User");
+
+    let mut env = GenericEnv::new();
+    unify_into(opt_t, user, &bindable(&[t]), &mut env, &arena);
+    assert_eq!(env.get(t), Some(user));
+}
+
+#[test]
+fn unify_tuple_element_wise() {
+    // f<T, U>(p: [T, U]) called with [User, Account] → T=User, U=Account.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let u = make_param(&arena, "U");
+    let gen_t = arena.intern(Type::Generic { param: t });
+    let gen_u = arena.intern(Type::Generic { param: u });
+    let user = arena.class("User");
+    let account = arena.class("Account");
+    let param = arena.intern(Type::Tuple(vec![gen_t, gen_u]));
+    let arg = arena.intern(Type::Tuple(vec![user, account]));
+
+    let mut env = GenericEnv::new();
+    unify_into(param, arg, &bindable(&[t, u]), &mut env, &arena);
+    assert_eq!(env.get(t), Some(user));
+    assert_eq!(env.get(u), Some(account));
+}
+
+#[test]
+fn unify_concrete_param_binds_nothing() {
+    // A non-generic declared parameter (`x: Foo`) learns nothing from its arg.
+    let arena = TypeArena::new();
+    let t = make_param(&arena, "T");
+    let foo = arena.class("Foo");
+    let user = arena.class("User");
+
+    let mut env = GenericEnv::new();
+    unify_into(foo, user, &bindable(&[t]), &mut env, &arena);
+    assert!(env.is_empty());
+}
