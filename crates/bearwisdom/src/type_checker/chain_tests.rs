@@ -17,6 +17,7 @@ use crate::indexer::resolve::engine::{
 };
 use crate::languages::csharp::hooks::CSHARP_CHAIN_CONFIG;
 use crate::languages::go::hooks::GO_CHAIN_CONFIG;
+use crate::languages::java::hooks::JAVA_CHAIN_CONFIG;
 use crate::languages::typescript::hooks::TS_CHAIN_CONFIG;
 use crate::types::{
     AliasTarget, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
@@ -992,4 +993,165 @@ fn go_chain_empty_chain_returns_none() {
     let r = ref_with_chain(vec![seg("Foo", SegmentKind::Identifier, false)], EdgeKind::Calls);
     let fc = file_ctx_with_imports(vec![]);
     assert_eq!(run(&GO_CHAIN_CONFIG, &r, &fc, &lookup), None);
+}
+
+// ---------------------------------------------------------------------------
+// Java differential tests (QUAL-2b-java).
+//
+// Anchor the JAVA_CHAIN_CONFIG case-space that the deleted walk_java_chain
+// covered, now through the generic engine: SelfRef enclosing-type root
+// (implicit `this.method()`), static-type root + by_qualified_name final at
+// 1.0, field-type root progression, the wildcard-import namespace final hit at
+// 0.95 (`NamespaceLookup::WildcardOnly`), and the inheritance climb for an
+// inherited member (the bespoke walker's members_of/0.90 last resort folds
+// into the shared walk_inheritance ladder). A NONE-gate guard proves the
+// inheritance climb requires the flag.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn java_chain_self_ref_implicit_this() {
+    // `this.create()` inside `com.example.OrderService` — SelfRef resolves the
+    // enclosing class from the scope chain, then `create` resolves under it at
+    // confidence 1.0.
+    let lookup = FakeLookup::default()
+        .sym(1, "com.example.OrderService", "class")
+        .sym(2, "com.example.OrderService.create", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("this", SegmentKind::SelfRef, false),
+            seg("create", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(
+        &JAVA_CHAIN_CONFIG,
+        &r,
+        &fc,
+        vec!["com.example.OrderService".to_string()],
+        &lookup,
+    )
+    .expect("this.create() resolves via SelfRef enclosing class");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(res.strategy, "java_chain_resolution");
+}
+
+#[test]
+fn java_chain_static_type_root_by_qname_final() {
+    // `Foo.staticMethod()` where `Foo` is a known type — static-type root, then
+    // `staticMethod` resolves via by_qualified_name at confidence 1.0.
+    let lookup = FakeLookup::default()
+        .sym(1, "Foo", "class")
+        .sym(2, "Foo.staticMethod", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("Foo", SegmentKind::Identifier, false),
+            seg("staticMethod", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("Foo.staticMethod() resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(res.strategy, "java_chain_resolution");
+}
+
+#[test]
+fn java_chain_field_type_root() {
+    // `repo.findOne()` where `repo: UserRepository` is a field on the enclosing
+    // class. Phase 1 resolves the field type, Phase 3 resolves the member.
+    let lookup = FakeLookup::default()
+        .sym(1, "com.example.Svc", "class")
+        .field("com.example.Svc.repo", "UserRepository")
+        .sym(2, "UserRepository.findOne", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("findOne", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run_res(
+            &JAVA_CHAIN_CONFIG,
+            &r,
+            &fc,
+            vec!["com.example.Svc".to_string()],
+            &lookup,
+        )
+        .map(|res| res.target_symbol_id),
+        Some(2)
+    );
+}
+
+#[test]
+fn java_chain_wildcard_namespace_final() {
+    // `Foo.staticMethod()` with `import java.util.*;`. `Foo` is a known type so
+    // the root resolves, but `staticMethod` is keyed only under the wildcard
+    // namespace (`java.util.Foo.staticMethod`). The namespace-qualified final
+    // hit lands at confidence 0.95.
+    let lookup = FakeLookup::default()
+        .sym(1, "Foo", "class")
+        .sym(2, "java.util.Foo.staticMethod", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("Foo", SegmentKind::Identifier, false),
+            seg("staticMethod", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![wildcard_import("java.util")]);
+    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("wildcard-import namespace final resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, 0.95);
+    assert_eq!(res.strategy, "java_chain_resolution");
+}
+
+#[test]
+fn java_chain_inheritance_final_segment() {
+    // `repo.findOne()` where `repo: UserRepo extends BaseRepo` and `findOne` is
+    // declared on the parent. walk_inheritance climbs the `extends` chain to
+    // BaseRepo — folds in the bespoke walker's inherited-member coverage.
+    let lookup = FakeLookup::default()
+        .local("repo", "UserRepo")
+        .sym(1, "UserRepo", "class")
+        .parent("UserRepo", "BaseRepo")
+        .sym(2, "BaseRepo.findOne", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("findOne", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("repo.findOne() resolves via inheritance climb");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.strategy, "java_chain_inheritance");
+}
+
+#[test]
+fn java_chain_inheritance_gated_by_none() {
+    // The inheritance fixture under ChainExtensions::NONE: the climb is gated
+    // off, so the inherited `findOne` never binds.
+    let lookup = FakeLookup::default()
+        .local("repo", "UserRepo")
+        .sym(1, "UserRepo", "class")
+        .parent("UserRepo", "BaseRepo")
+        .sym(2, "BaseRepo.findOne", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("findOne", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
 }
