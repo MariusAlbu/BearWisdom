@@ -473,6 +473,61 @@ fn ref_extension_function_receiver_type() {
 }
 
 #[test]
+fn extension_function_signature_carries_this_receiver() {
+    // The receiver type is folded into the signature as a leading `this <Recv>`
+    // parameter so the generic extension-method fallback can bind the call by
+    // receiver type.
+    let r = extract("fun String.shout(): String = this.uppercase()");
+    let sig = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "shout")
+        .and_then(|s| s.signature.clone())
+        .unwrap_or_default();
+    assert!(
+        sig.contains("(this String"),
+        "expected `shout` signature to carry `(this String`; got {sig:?}"
+    );
+}
+
+#[test]
+fn extension_function_signature_prepends_receiver_before_params() {
+    // A receiver plus real parameters: the receiver leads, the declared params
+    // follow it inside the same parameter list.
+    let r = extract("fun String.repeatTimes(n: Int): String = this");
+    let sig = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "repeatTimes")
+        .and_then(|s| s.signature.clone())
+        .unwrap_or_default();
+    assert!(
+        sig.contains("(this String,"),
+        "expected receiver before declared params; got {sig:?}"
+    );
+    assert!(
+        sig.contains("n: Int"),
+        "expected declared parameter `n: Int` preserved; got {sig:?}"
+    );
+}
+
+#[test]
+fn plain_function_signature_has_no_this_receiver() {
+    // A non-extension function must not gain a synthetic `this` receiver.
+    let r = extract("fun greet(name: String): String = name");
+    let sig = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "greet")
+        .and_then(|s| s.signature.clone())
+        .unwrap_or_default();
+    assert!(
+        !sig.contains("this "),
+        "plain function must not carry a `this` receiver; got {sig:?}"
+    );
+}
+
+#[test]
 fn ref_explicit_delegation() {
     // `class C(val r: Repo) : Service by r` — explicit_delegation emits Implements edge.
     let r = extract("interface Service {}\nclass Impl : Service {}\nclass C(val impl: Impl) : Service by impl");

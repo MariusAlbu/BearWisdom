@@ -55,7 +55,14 @@ impl KotlinResolver {
                 use_generics: true,
                 namespace_lookup: NamespaceLookup::WildcardOnly,
                 kind_compatible: predicates::kind_compatible,
-                extensions: ChainExtensions::NONE,
+                // Extension functions (`fun String.shout()`) bind by receiver
+                // type at the chain's final segment. The receiver is folded into
+                // the function signature as a leading `this <Recv>` parameter at
+                // extract time, which the generic extension-method fallback reads.
+                extensions: ChainExtensions {
+                    extension_method_fallback: true,
+                    ..ChainExtensions::NONE
+                },
             };
             if let Some(res) = chain::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,

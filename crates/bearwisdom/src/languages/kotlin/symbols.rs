@@ -186,7 +186,32 @@ pub(super) fn push_function_decl(
         .child_by_field_name("type")
         .map(|t| format!(": {}", node_text(t, src)))
         .unwrap_or_default();
-    let signature = Some(format!("fun {name}{params}{ret}"));
+
+    // Extension function: `fun String.shout()` parses the receiver `String` as
+    // a bare `type` child appearing before the `name` field. The qname is just
+    // `shout`, so receiver-typed chain lookups (`"hi".shout()`) miss the
+    // member. Fold the receiver into the signature as a leading `(this <Recv>`
+    // parameter — the shape the generic extension-method fallback reads via
+    // `signature_is_extension_on` — so the chain walker binds the call by
+    // receiver type without per-language resolution code. The declared
+    // parameter list (read by kind, since it isn't a named field on
+    // `function_declaration`) follows the receiver inside the same `(...)`.
+    let signature = match extension_receiver_name(node, &name_node, src) {
+        Some(recv) => {
+            let declared = find_child_by_kind(node, "function_value_parameters")
+                .map(|p| node_text(p, src))
+                .unwrap_or_default();
+            let inner = declared
+                .strip_prefix('(')
+                .and_then(|s| s.strip_suffix(')'));
+            let param_list = match inner {
+                Some(rest) if !rest.trim().is_empty() => format!("(this {recv}, {rest})"),
+                _ => format!("(this {recv})"),
+            };
+            Some(format!("fun {name}{param_list}{ret}"))
+        }
+        None => Some(format!("fun {name}{params}{ret}")),
+    };
 
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
@@ -209,6 +234,34 @@ pub(super) fn push_function_decl(
     generic_params: Vec::new(),
 });
     Some(idx)
+}
+
+/// Return the receiver type's simple name for an extension function
+/// (`fun String.shout()` → `Some("String")`), or `None` for a plain function.
+///
+/// kotlin-ng exposes the receiver as a bare `type`/`user_type`/`nullable_type`
+/// child with no distinguishing field — the only signal is position: the
+/// receiver precedes the `name` identifier in source order, while the return
+/// type follows the parameter list. Match the first type-kind child whose start
+/// byte is before the `name` node's start byte.
+fn extension_receiver_name(node: &Node, name_node: &Node, src: &[u8]) -> Option<String> {
+    let name_start = name_node.start_byte();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.start_byte() >= name_start {
+            break;
+        }
+        if matches!(
+            child.kind(),
+            "type" | "user_type" | "nullable_type" | "non_nullable_type" | "parenthesized_type"
+        ) {
+            let recv = super::calls::kotlin_type_name(&child, src);
+            if !recv.is_empty() {
+                return Some(recv);
+            }
+        }
+    }
+    None
 }
 
 pub(super) fn push_property_decl(
