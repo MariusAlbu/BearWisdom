@@ -163,6 +163,41 @@ pub(crate) fn detect_flow_inner(
     Vec::new()
 }
 
+/// Classify a Dart import URI to its external namespace, or `None` when the
+/// URI names project-local code. `dart:` URIs map to `dart.stdlib`;
+/// `package:<pkg>/...` URIs map to `<pkg>` when the package is a manifest
+/// dependency or matches the known-external predicate.
+pub(crate) fn classify_dart_import_uri(
+    uri: &str,
+    file_package_id: Option<i64>,
+    project_ctx: Option<&ProjectContext>,
+) -> Option<String> {
+    if predicates::is_external_dart_import(uri) {
+        let ns = if uri.starts_with("dart:") {
+            "dart.stdlib"
+        } else if let Some(pkg_path) = uri.strip_prefix("package:") {
+            pkg_path.split('/').next().unwrap_or(pkg_path)
+        } else {
+            uri
+        };
+        return Some(ns.to_string());
+    }
+    if let Some(pkg_path) = uri.strip_prefix("package:") {
+        let pkg_name = pkg_path.split('/').next().unwrap_or(pkg_path);
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx
+                .manifests_for(file_package_id)
+                .get(&ManifestKind::Pubspec)
+            {
+                if manifest.dependencies.contains(pkg_name) {
+                    return Some(pkg_name.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 impl LanguageEngineHooks for DartHooks {
     fn classify_external(
         &self,
@@ -174,35 +209,21 @@ impl LanguageEngineHooks for DartHooks {
         let target = &ref_ctx.extracted_ref.target_name;
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let uri = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            if predicates::is_external_dart_import(uri) {
-                let ns = if uri.starts_with("dart:") {
-                    "dart.stdlib"
-                } else if let Some(pkg_path) = uri.strip_prefix("package:") {
-                    pkg_path.split('/').next().unwrap_or(pkg_path)
-                } else {
-                    uri
-                };
-                return Some(ns.to_string());
-            }
-            if uri.starts_with("package:") {
-                if let Some(ctx) = project_ctx {
-                    if let Some(manifest) = ctx
-                        .manifests_for(ref_ctx.file_package_id)
-                        .get(&ManifestKind::Pubspec)
-                    {
-                        let pkg_name = uri
-                            .strip_prefix("package:")
-                            .unwrap_or(uri)
-                            .split('/')
-                            .next()
-                            .unwrap_or(uri);
-                        if manifest.dependencies.contains(pkg_name) {
-                            return Some(pkg_name.to_string());
-                        }
-                    }
+            return classify_dart_import_uri(uri, ref_ctx.file_package_id, project_ctx);
+        }
+        // A qualified reference `i0.Value` carries its library prefix on
+        // `namespace_segments[0]` and the prefix's import URI on `module` (the
+        // extractor splits the prefix from the name and routes it through the
+        // import). Classify off that URI directly — when it names an external
+        // library the ref is external.
+        if !ref_ctx.extracted_ref.namespace_segments.is_empty() {
+            if let Some(uri) = ref_ctx.extracted_ref.module.as_deref() {
+                if let Some(ns) =
+                    classify_dart_import_uri(uri, ref_ctx.file_package_id, project_ctx)
+                {
+                    return Some(ns);
                 }
             }
-            return None;
         }
         let simple = target.split('.').next().unwrap_or(target);
         for import in &file_ctx.imports {
@@ -321,6 +342,34 @@ impl LanguageEngineHooks for DartHooks {
             ) {
                 return Some(res);
             }
+        }
+        // Library-prefix binding: `i0.Value` carries its prefix on
+        // `namespace_segments[0]` and the prefix's import URI on `module`. Bind
+        // the bare name in the prefix's module. A relative module resolves to a
+        // project file (`i2.X` → `package:app/x.dart` or `./x.dart`); an
+        // external one (drift, dart:async) has no local file and is left for
+        // `classify_external` to brand.
+        if !ref_ctx.extracted_ref.namespace_segments.is_empty() {
+            if let Some(module) = ref_ctx.extracted_ref.module.as_deref() {
+                for sym in lookup.in_module_from(&file_ctx.file_path, module) {
+                    if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "dart_library_prefix",
+                            resolved_yield_type: None,
+                            flow_emit: None,
+                        });
+                    }
+                }
+            }
+            // A prefixed ref names a symbol in the prefix's library, never a
+            // local same-named symbol. When the module lookup misses (an
+            // external library with no indexed file), decline so Tier-1.5
+            // `classify_external` can brand it — falling through to the
+            // scope-chain / same-file bare-name strategies would bind the wrong,
+            // local symbol at confidence 1.0.
+            return None;
         }
         let effective_target = target.strip_prefix("this.").unwrap_or(target);
         for scope in &ref_ctx.scope_chain {

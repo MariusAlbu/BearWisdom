@@ -1,4 +1,4 @@
-use super::hooks::{detect_dart_drift_emission, detect_dart_grpc_emission, detect_dart_http_chain, detect_dart_shelf_route};
+use super::hooks::{classify_dart_import_uri, detect_dart_drift_emission, detect_dart_grpc_emission, detect_dart_http_chain, detect_dart_shelf_route};
 use crate::types::*;
 
 fn make_chain(segments: &[&str]) -> MemberChain {
@@ -103,4 +103,30 @@ fn test_dart_grpc_emits_rpc_call() {
 fn test_dart_grpc_rejects_non_client() {
     let chain = make_chain(&["UserService", "getUser"]);
     assert!(detect_dart_grpc_emission(&chain).is_none());
+}
+
+#[test]
+fn classify_package_uri_brands_external() {
+    // The URI a library prefix routes through (`i0` → `package:drift/...`)
+    // classifies to the package namespace with no manifest needed.
+    assert_eq!(
+        classify_dart_import_uri("package:drift/drift.dart", None, None).as_deref(),
+        Some("drift")
+    );
+}
+
+#[test]
+fn classify_dart_scheme_brands_stdlib() {
+    assert_eq!(
+        classify_dart_import_uri("dart:async", None, None).as_deref(),
+        Some("dart.stdlib")
+    );
+}
+
+#[test]
+fn classify_relative_uri_is_project_local() {
+    // A relative import (`i2` → `tables.dart`) is project-local, so the
+    // prefixed ref is bound in the index rather than branded external.
+    assert!(classify_dart_import_uri("tables.dart", None, None).is_none());
+    assert!(classify_dart_import_uri("../models/user.dart", None, None).is_none());
 }

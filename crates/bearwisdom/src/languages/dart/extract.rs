@@ -44,30 +44,29 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         scan_all_type_identifiers(tree.root_node(), source, 0, &mut refs);
     }
 
-    // Drop refs whose target is a bare Dart library prefix (the `i1` in
-    // `import 'package:foo/foo.dart' as i1`). Generated code (Drift,
-    // auto_route, json_serializable, freezed, riverpod_generator) writes
-    // qualified references like `i1.AssetFaceEntityCompanion` and
-    // `extends i0.BaseReferences<...>`; the tree-sitter walk records the
-    // prefix and the qualified name as separate refs. The bare prefix is a
-    // namespace anchor, never a symbol reference, so it is dropped for every
-    // usage kind (type position, instantiation, inheritance, implements,
-    // calls). The import directive itself (`Imports`) is kept. The qualified
-    // name after the prefix is left in place and resolves on its own.
-    let aliases = collect_dart_import_aliases(source);
-    if !aliases.is_empty() {
-        refs.retain(|r| {
-            r.kind == EdgeKind::Imports || !aliases.contains(&r.target_name)
-        });
+    // Bind qualified references through their library prefix, then drop the
+    // bare prefix refs. `import 'package:foo/foo.dart' as i1` makes `i1` a
+    // library prefix; generated code (Drift, auto_route, json_serializable,
+    // freezed, riverpod_generator) writes qualified references like
+    // `i1.AssetFaceEntityCompanion` and `extends i0.BaseReferences<...>`. The
+    // tree-sitter walk records the prefix `type_identifier` and the qualified
+    // name `type_identifier` as two separate refs (the grammar's `_type_name`
+    // recursion emits `i0`, `.`, `Value` as sibling nodes). For each qualified
+    // name, the prefix is carried onto `namespace_segments[0]` so the Dart
+    // resolver can route the lookup through the prefix's import module; the
+    // bare prefix ref is then a namespace anchor, never a symbol reference, so
+    // it is dropped for every usage kind. The import directive (`Imports`) is
+    // kept.
+    let alias_uris = collect_dart_import_aliases(source);
+    if !alias_uris.is_empty() {
+        bind_prefixed_refs(&mut refs, &alias_uris);
     }
 
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 
-/// Scan a Dart source for `import '<uri>' as <name>` directives,
-/// returning the set of `<name>` library prefixes. Used by `extract` to
-/// drop `type_ref` refs whose target is just a library prefix rather than
-/// a real type.
+/// Scan a Dart source for `import '<uri>' as <name>` directives, returning
+/// a `<name> → <uri>` map of library prefixes to their source module.
 ///
 /// Dart's `as <prefix>` only appears in `import` directives — it's the
 /// library prefix for qualified references (`import 'foo.dart' as p;
@@ -81,23 +80,105 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 ///     as i1
 ///     show Bar;
 /// ```
-fn collect_dart_import_aliases(source: &str) -> std::collections::HashSet<String> {
+fn collect_dart_import_aliases(source: &str) -> std::collections::HashMap<String, String> {
     use regex::Regex;
     use std::sync::OnceLock;
     static IMPORT_AS_RE: OnceLock<Regex> = OnceLock::new();
     let re = IMPORT_AS_RE.get_or_init(|| {
-        // import ... as <ident> ... ; — `\s` covers newlines for
-        // multi-line directives. `(?s)` lets `.` cross newlines.
-        Regex::new(r"(?s)\bimport\b[^;]*?\bas\s+([A-Za-z_][A-Za-z0-9_]*)[^;]*?;")
-            .expect("static regex compiles")
+        // import '<uri>' ... as <ident> ... ; — capture the URI string and the
+        // prefix. `\s` covers newlines for multi-line directives; `(?s)` lets
+        // `.` cross newlines. The URI alternation handles both quote styles.
+        Regex::new(
+            r#"(?s)\bimport\b\s*(?:'([^']*)'|"([^"]*)")[^;]*?\bas\s+([A-Za-z_][A-Za-z0-9_]*)[^;]*?;"#,
+        )
+        .expect("static regex compiles")
     });
-    let mut out = std::collections::HashSet::new();
+    let mut out = std::collections::HashMap::new();
     for cap in re.captures_iter(source) {
-        if let Some(m) = cap.get(1) {
-            out.insert(m.as_str().to_string());
-        }
+        let Some(prefix) = cap.get(3) else { continue };
+        let uri = cap
+            .get(1)
+            .or_else(|| cap.get(2))
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
+        out.insert(prefix.as_str().to_string(), uri);
     }
     out
+}
+
+/// Carry the library prefix onto each qualified reference's
+/// `namespace_segments[0]` (and its source module onto `module`), then drop
+/// the bare prefix refs.
+///
+/// The grammar emits `i0.Value` as two adjacent sibling `type_identifier`
+/// nodes, so the prefix ref and the qualified-name ref appear as separate
+/// `ExtractedRef`s sharing a `source_symbol_index`, with the prefix's
+/// `byte_offset` immediately before the name's. For each prefix ref the
+/// qualified partner is the ref with the smallest `byte_offset` strictly
+/// greater than the prefix's, same source symbol — the `name` after the `.`.
+/// The nuclear type scan can emit duplicate refs at one byte offset, so every
+/// ref at the partner offset is stamped. `Imports` refs are never prefixes.
+fn bind_prefixed_refs(
+    refs: &mut Vec<ExtractedRef>,
+    alias_uris: &std::collections::HashMap<String, String>,
+) {
+    // Phase 1 (immutable): collect each prefix occurrence and resolve its
+    // qualified partner's byte offset — the nearest following ref in the same
+    // source symbol that is not itself a prefix.
+    struct Binding {
+        partner_byte: u32,
+        sym_idx: usize,
+        prefix: String,
+        uri: String,
+    }
+    let mut bindings: Vec<Binding> = Vec::new();
+    for p in refs.iter() {
+        if p.kind == EdgeKind::Imports {
+            continue;
+        }
+        let Some(uri) = alias_uris.get(&p.target_name) else {
+            continue;
+        };
+        let partner_byte = refs
+            .iter()
+            .filter(|r| {
+                r.kind != EdgeKind::Imports
+                    && r.source_symbol_index == p.source_symbol_index
+                    && r.byte_offset > p.byte_offset
+                    && !alias_uris.contains_key(&r.target_name)
+            })
+            .map(|r| r.byte_offset)
+            .min();
+        if let Some(partner_byte) = partner_byte {
+            bindings.push(Binding {
+                partner_byte,
+                sym_idx: p.source_symbol_index,
+                prefix: p.target_name.clone(),
+                uri: uri.clone(),
+            });
+        }
+    }
+
+    // Phase 2 (mutable): stamp the prefix + module onto every ref at a partner
+    // offset. The nuclear type scan can emit duplicate refs at one offset, so
+    // all are stamped; an already-stamped ref (multi-prefix edge cases) is
+    // left as-is.
+    for b in &bindings {
+        for r in refs.iter_mut() {
+            if r.kind != EdgeKind::Imports
+                && r.source_symbol_index == b.sym_idx
+                && r.byte_offset == b.partner_byte
+                && r.namespace_segments.is_empty()
+            {
+                r.namespace_segments = vec![b.prefix.clone()];
+                r.module = Some(b.uri.clone());
+            }
+        }
+    }
+
+    // Phase 3: drop the bare prefix refs (every non-Imports ref whose name is
+    // a known library prefix).
+    refs.retain(|r| r.kind == EdgeKind::Imports || !alias_uris.contains_key(&r.target_name));
 }
 
 // ---------------------------------------------------------------------------
