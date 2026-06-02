@@ -16,6 +16,7 @@ use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
 };
 use crate::languages::csharp::hooks::CSHARP_CHAIN_CONFIG;
+use crate::languages::go::hooks::GO_CHAIN_CONFIG;
 use crate::languages::typescript::hooks::TS_CHAIN_CONFIG;
 use crate::types::{
     AliasTarget, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
@@ -61,6 +62,10 @@ impl FakeLookup {
     }
     fn ret(mut self, qname: &str, ty: &str) -> Self {
         self.return_types.push((qname.to_string(), ty.to_string()));
+        self
+    }
+    fn field(mut self, qname: &str, ty: &str) -> Self {
+        self.field_types.push((qname.to_string(), ty.to_string()));
         self
     }
     fn parent(mut self, child: &str, parent: &str) -> Self {
@@ -794,4 +799,197 @@ fn none_config_skips_extension_method() {
     );
     let fc = file_ctx_with_imports(vec![]);
     assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
+}
+
+// ---------------------------------------------------------------------------
+// Go differential tests (QUAL-2b-go).
+//
+// Anchor the GO_CHAIN_CONFIG case-space that the deleted walk_go_chain
+// covered: identifier-rooted chains (no SelfRef), field-type progression,
+// method return-type yield, static-type roots, scope-chain field roots, and
+// the one Go delta — embedded-struct promotion — riding the shared
+// walk_inheritance climb. A NONE-gate guard proves the embed promotion
+// requires the flag. `enclosing_type_kinds`/SelfRef are absent in Go.
+// ---------------------------------------------------------------------------
+
+/// A segment whose `declared_type` seeds the chain root, mirroring the Go
+/// extractor's `d: pkg.Derived` annotation on a receiver identifier.
+fn seg_typed(name: &str, declared_type: &str) -> ChainSegment {
+    let mut s = seg(name, SegmentKind::Identifier, false);
+    s.declared_type = Some(declared_type.to_string());
+    s
+}
+
+#[test]
+fn go_chain_local_type_member_access() {
+    // `u.Save()` where `u` is a local typed `User`, `Save` a method on `User`.
+    let lookup = FakeLookup::default()
+        .local("u", "User")
+        .sym(1, "User", "struct")
+        .sym(2, "User.Save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("u", SegmentKind::Identifier, false),
+            seg("Save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&GO_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("u.Save() resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(res.strategy, "go_chain_resolution");
+}
+
+#[test]
+fn go_chain_field_type_progression() {
+    // `s.repo.Find()` — s: Server, Server.repo: Repo, Repo.Find a method.
+    let lookup = FakeLookup::default()
+        .local("s", "Server")
+        .sym(1, "Server", "struct")
+        .field("Server.repo", "Repo")
+        .sym(2, "Repo", "struct")
+        .sym(3, "Repo.Find", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("s", SegmentKind::Identifier, false),
+            seg("repo", SegmentKind::Property, false),
+            seg("Find", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run(&GO_CHAIN_CONFIG, &r, &fc, &lookup),
+        Some(3),
+        "s.repo.Find() walks the field type to Repo"
+    );
+}
+
+#[test]
+fn go_chain_method_return_type_yield() {
+    // `c.DB().Begin()` — c: Client, Client.DB() returns Conn, Conn.Begin a method.
+    let lookup = FakeLookup::default()
+        .local("c", "Client")
+        .sym(1, "Client", "struct")
+        .ret("Client.DB", "Conn")
+        .sym(2, "Conn", "struct")
+        .sym(3, "Conn.Begin", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("c", SegmentKind::Identifier, false),
+            seg("DB", SegmentKind::Property, true),
+            seg("Begin", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run(&GO_CHAIN_CONFIG, &r, &fc, &lookup),
+        Some(3),
+        "c.DB().Begin() walks the return type to Conn"
+    );
+}
+
+#[test]
+fn go_chain_static_type_root() {
+    // `Logger.New()` where `Logger` is itself a type name (no local, no field).
+    let lookup = FakeLookup::default()
+        .sym(1, "Logger", "struct")
+        .sym(2, "Logger.New", "function");
+    let r = ref_with_chain(
+        vec![
+            seg("Logger", SegmentKind::Identifier, false),
+            seg("New", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&GO_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+#[test]
+fn go_chain_scope_field_root() {
+    // `handler.Serve()` where `handler` is a field on the enclosing scope's
+    // type — the root identifier resolves via scope-chain field lookup, not a
+    // local or a type name. Mirrors the Phase-1 enclosing-field branch.
+    let lookup = FakeLookup::default()
+        .field("server.Server.handler", "Mux")
+        .sym(1, "Mux", "struct")
+        .sym(2, "Mux.Serve", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("handler", SegmentKind::Identifier, false),
+            seg("Serve", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run_res(
+            &GO_CHAIN_CONFIG,
+            &r,
+            &fc,
+            vec!["server.Server.Run".to_string(), "server.Server".to_string()],
+            &lookup,
+        )
+        .map(|res| res.target_symbol_id),
+        Some(2)
+    );
+}
+
+#[test]
+fn go_chain_embedded_struct_promotion() {
+    // `d.Hello()` where d: Derived, Derived embeds Base (Inherits edge →
+    // parent_class_qname), and Hello is a method on Base. The Go delta:
+    // walk_inheritance climbs the embed and binds the promoted method.
+    let lookup = FakeLookup::default()
+        .sym(1, "pkg.Derived", "struct")
+        .parent("pkg.Derived", "pkg.Base")
+        .sym(2, "pkg.Base", "struct")
+        .sym(3, "pkg.Base.Hello", "method");
+    let r = ref_with_chain(
+        vec![
+            seg_typed("d", "pkg.Derived"),
+            seg("Hello", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&GO_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("d.Hello() resolves via embedded promotion");
+    assert_eq!(res.target_symbol_id, 3);
+    assert_eq!(res.strategy, "go_chain_inheritance");
+}
+
+#[test]
+fn go_chain_embedded_promotion_gated_by_none() {
+    // The same embedded-promotion fixture under ChainExtensions::NONE: the
+    // inheritance climb is gated off, so `Hello` never binds — proves the
+    // promotion is the walk_inheritance flag, not the base walk.
+    let lookup = FakeLookup::default()
+        .sym(1, "pkg.Derived", "struct")
+        .parent("pkg.Derived", "pkg.Base")
+        .sym(2, "pkg.Base", "struct")
+        .sym(3, "pkg.Base.Hello", "method");
+    let r = ref_with_chain(
+        vec![
+            seg_typed("d", "pkg.Derived"),
+            seg("Hello", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
+}
+
+#[test]
+fn go_chain_empty_chain_returns_none() {
+    // A single-segment chain (len < 2) is not a member walk — both the deleted
+    // walker and resolve_via_chain return None.
+    let lookup = FakeLookup::default().sym(1, "Foo", "struct");
+    let r = ref_with_chain(vec![seg("Foo", SegmentKind::Identifier, false)], EdgeKind::Calls);
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&GO_CHAIN_CONFIG, &r, &fc, &lookup), None);
 }
