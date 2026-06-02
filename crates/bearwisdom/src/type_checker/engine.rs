@@ -24,7 +24,7 @@ use crate::type_checker::core::symbol_types::{SymbolIdMap, SymbolTypeMap};
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::type_checker::profile::language_profile::LanguageProfile;
-use crate::types::ParsedFile;
+use crate::types::{EdgeKind, ParsedFile};
 
 /// Per-workspace engine state. Built once per indexing pass; `resolve` is
 /// called per ref. The arena is shared via `Arc` with the
@@ -226,21 +226,24 @@ impl<'a> Engine<'a> {
                     });
                 }
             } else {
-                // Chain-less ref: bare-name path.
-                if let Some(h) = hooks {
-                    if let Some(r) = h.resolve_bare_pre(ref_ctx, file_ctx, lookup) {
-                        return Some(r);
-                    }
-                }
-                if let Some(r) =
-                    crate::type_checker::bare::resolve_bare(ref_ctx, file_ctx, lookup, profile)
-                {
+                // Chain-less ref: bare-name path. Hook pre-pass, then the
+                // generic bare resolver, then the hook post-pass; fill an
+                // argument-driven generic yield on whichever succeeds so a
+                // `const x = genericFn(u)` binding types `x` precisely
+                // (INFER-8 at the bare-name site).
+                let bare = hooks
+                    .and_then(|h| h.resolve_bare_pre(ref_ctx, file_ctx, lookup))
+                    .or_else(|| {
+                        crate::type_checker::bare::resolve_bare(
+                            ref_ctx, file_ctx, lookup, profile,
+                        )
+                    })
+                    .or_else(|| {
+                        hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup))
+                    });
+                if let Some(mut r) = bare {
+                    self.fill_bare_call_yield(&mut r, ref_ctx, lookup, profile);
                     return Some(r);
-                }
-                if let Some(h) = hooks {
-                    if let Some(r) = h.resolve_bare_post(ref_ctx, file_ctx, lookup) {
-                        return Some(r);
-                    }
                 }
             }
         }
@@ -248,7 +251,61 @@ impl<'a> Engine<'a> {
         // Hook fallback. Carries the full per-language resolver (workspace
         // packages, tsconfig alias, DefinitelyTyped, barrel re-exports,
         // inheritance walks) for languages whose hook owns dispatch.
-        hooks.and_then(|h| h.resolve_ref(file_ctx, ref_ctx, lookup))
+        let mut resolved = hooks.and_then(|h| h.resolve_ref(file_ctx, ref_ctx, lookup))?;
+        // A chain-less call the hook resolved (e.g. a relative-imported generic
+        // factory the generic bare resolver couldn't reach) still gets an
+        // argument-driven yield; chain refs already yield via the walker.
+        if ref_ctx.extracted_ref.chain.is_none() {
+            if let Some(profile) = profile {
+                self.fill_bare_call_yield(&mut resolved, ref_ctx, lookup, profile);
+            }
+        }
+        Some(resolved)
+    }
+
+    /// INFER-8 at the bare-name site. When a chain-less call resolved to a
+    /// generic function/method whose declared return is one of its own type
+    /// parameters, bind those parameters from the resolved argument types and
+    /// set the resolution's yield to the substituted concrete return — so the
+    /// forward-flow cache types `const x = genericFn(u)` precisely. A no-op
+    /// unless the ref is a call carrying arguments and the resolution has no
+    /// yield yet; the actual inference lives on `ChainWalker` so the chain and
+    /// bare paths share one implementation.
+    fn fill_bare_call_yield(
+        &self,
+        r: &mut Resolution,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+        profile: &LanguageProfile,
+    ) {
+        if r.resolved_yield_type.is_some()
+            || ref_ctx.extracted_ref.call_args.is_empty()
+            || !matches!(
+                ref_ctx.extracted_ref.kind,
+                EdgeKind::Calls | EdgeKind::Instantiates
+            )
+        {
+            return;
+        }
+        let target_id = r.target_symbol_id;
+        let Some(sym) = lookup
+            .by_name(&ref_ctx.extracted_ref.target_name)
+            .iter()
+            .find(|s| s.id == target_id)
+        else {
+            return;
+        };
+        let walker = ChainWalker::new(
+            &self.arena,
+            &self.members,
+            &self.supertypes,
+            &self.symbol_types,
+            &self.aliases,
+            profile,
+            lookup,
+        );
+        r.resolved_yield_type =
+            walker.infer_bare_call_yield(sym, &ref_ctx.extracted_ref.call_args);
     }
 
     /// Same as `resolve` but exposes a caller-supplied `RootResolver` so

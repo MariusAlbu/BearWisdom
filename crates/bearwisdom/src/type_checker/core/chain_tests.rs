@@ -1174,6 +1174,219 @@ fn receiver_binding_wins_over_arg_driven_inference() {
 }
 
 #[test]
+fn bare_call_binds_generic_return_from_arg() {
+    // function makeThing<T>(x: T): T — a chain-less `makeThing(u)` with a
+    // local `u: User` binds T from the argument, so the bare call yields User
+    // instead of the unbindable bare parameter. The return + param are stored
+    // param-blind (Class("T")); `generic_param_type_ids` supplies Generic(T).
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let user_ty = arena.class("User");
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![class_t],
+            ..Default::default()
+        },
+    );
+
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("makeThing", vec![gen_t])
+        .with_local("u", "User");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let sym = sym_info(1, "makeThing", "makeThing", "function", None);
+    let yielded = walker
+        .infer_bare_call_yield(&sym, &[CallArg::Ident("u".to_string())])
+        .expect("generic bare call yields the bound return");
+    assert_eq!(yielded, user_ty);
+}
+
+#[test]
+fn bare_call_binds_generic_through_array_arg() {
+    // function firstOf<T>(xs: Array<T>): T — `firstOf(items)` with a local
+    // `items: Array<User>` recurses into the Array application to bind T → User.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let user_ty = arena.class("User");
+    let class_t = arena.class("T");
+    let array_cls = arena.class("Array");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+    let array_of_t = arena.intern(Type::Apply {
+        base: array_cls,
+        args: vec![class_t],
+    });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![array_of_t],
+            ..Default::default()
+        },
+    );
+
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("firstOf", vec![gen_t])
+        .with_local("items", "Array<User>");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let sym = sym_info(1, "firstOf", "firstOf", "function", None);
+    let yielded = walker
+        .infer_bare_call_yield(&sym, &[CallArg::Ident("items".to_string())])
+        .expect("array-generic bare call yields the element type");
+    assert_eq!(yielded, user_ty);
+}
+
+#[test]
+fn bare_call_non_generic_returns_none() {
+    // function build(x): User — no generic params, so the bare-call inference
+    // declines; the concrete return flows through the loop's return-type
+    // fallback instead of being duplicated here.
+    let mut arena = TypeArena::new();
+    let user_ty = arena.class("User");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(user_ty),
+            param_types: vec![user_ty],
+            ..Default::default()
+        },
+    );
+
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local("u", "User");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let sym = sym_info(1, "build", "build", "function", None);
+    assert_eq!(
+        walker.infer_bare_call_yield(&sym, &[CallArg::Ident("u".to_string())]),
+        None
+    );
+}
+
+#[test]
+fn bare_call_untyped_arg_returns_none() {
+    // Generic function, but the argument has no known type, so T can't bind —
+    // the inference declines rather than guessing or recording bare T.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![class_t],
+            ..Default::default()
+        },
+    );
+
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // `mystery` has no registered local type → the arg resolves to Unknown.
+    let lookup = EmptyLookup::new().with_generic_param_type_ids("makeThing", vec![gen_t]);
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let sym = sym_info(1, "makeThing", "makeThing", "function", None);
+    assert_eq!(
+        walker.infer_bare_call_yield(&sym, &[CallArg::Ident("mystery".to_string())]),
+        None
+    );
+}
+
+#[test]
+fn bare_call_no_args_returns_none() {
+    // A zero-argument call can bind nothing — decline.
+    let mut arena = TypeArena::new();
+    let symbol_types = SymbolTypeMap::new();
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let sym = sym_info(1, "makeThing", "makeThing", "function", None);
+    assert_eq!(walker.infer_bare_call_yield(&sym, &[]), None);
+}
+
+#[test]
 fn cast_segment_adopts_asserted_type() {
     // (x as Admin).ban() — the cast asserts Admin, so `ban` resolves on Admin
     // regardless of x's own (here irrelevant) type.

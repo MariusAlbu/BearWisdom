@@ -40,7 +40,7 @@ use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::profile::language_profile::{DispatchAxis, LanguageProfile};
-use crate::types::{ChainSegment, EdgeKind, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, MemberChain, SegmentKind};
 
 /// Engine-side resolution result for a chain. Distinct from the legacy
 /// `Resolution` (which still carries `Option<String>` for the yield); the
@@ -507,24 +507,12 @@ impl<'a> ChainWalker<'a> {
             // param-blind (`Class("T")`), so they are rebound to the canonical
             // ids before unifying.
             if is_call_seg && seg.type_args.is_empty() {
-                let name_to_id = self.owner_param_type_map(&member.qualified_name);
-                let bindable: FxHashSet<GenericParamId> = name_to_id
-                    .values()
-                    .filter_map(|&id| match self.arena.get(id) {
-                        Type::Generic { param } => Some(param),
-                        _ => None,
-                    })
-                    .collect();
-                if !bindable.is_empty() {
-                    if let Some(data) = self.symbol_types.get(member.id) {
-                        for (param_ty, &arg_ty) in
-                            data.param_types.iter().zip(arg_type_ids.iter())
-                        {
-                            let canon = self.arena.rebind_class_params(*param_ty, &name_to_id);
-                            unify_into(canon, arg_ty, &bindable, &mut env, self.arena);
-                        }
-                    }
-                }
+                self.bind_call_arg_generics(
+                    &member.qualified_name,
+                    member.id,
+                    &arg_type_ids,
+                    &mut env,
+                );
             }
 
             match self.yield_type_of(&member, seg, &env, current_ty) {
@@ -923,6 +911,98 @@ impl<'a> ChainWalker<'a> {
             }
         }
         map
+    }
+
+    /// Bind a callee's generic type parameters from resolved argument types
+    /// (INFER-8). Rebinds the param-blind declared parameter types to the
+    /// callee's canonical `Generic` ids (via `owner_param_type_map` — the same
+    /// map the return is rebound through), then unifies each against the
+    /// matching argument type, filling only UNBOUND bindable slots so a
+    /// receiver-pinned owner parameter stays authoritative. Shared by the
+    /// in-chain terminal-call branch and the bare-name call site.
+    fn bind_call_arg_generics(
+        &self,
+        member_qname: &str,
+        member_id: i64,
+        arg_type_ids: &[TypeId],
+        env: &mut GenericEnv,
+    ) {
+        let name_to_id = self.owner_param_type_map(member_qname);
+        let bindable: FxHashSet<GenericParamId> = name_to_id
+            .values()
+            .filter_map(|&id| match self.arena.get(id) {
+                Type::Generic { param } => Some(param),
+                _ => None,
+            })
+            .collect();
+        if bindable.is_empty() {
+            return;
+        }
+        if let Some(data) = self.symbol_types.get(member_id) {
+            for (param_ty, &arg_ty) in data.param_types.iter().zip(arg_type_ids.iter()) {
+                let canon = self.arena.rebind_class_params(*param_ty, &name_to_id);
+                unify_into(canon, arg_ty, &bindable, env, self.arena);
+            }
+        }
+    }
+
+    /// Infer the yield type of a chain-less (bare-name) call from its arguments
+    /// (INFER-8 at the bare-name site). For `const x = genericFn(u)` where
+    /// `genericFn<T>(x: T): T`, binds `T` to the resolved type of `u` and
+    /// yields the substituted return, so the forward-flow cache types `x`
+    /// precisely instead of as the unbindable bare parameter `T`.
+    ///
+    /// Returns `None` — leaving the resolver loop's signature/return-type
+    /// fallback unchanged — when the callee is non-generic, carries no
+    /// arguments, has no inferable return, or the bound result is still a bare
+    /// generic. It reports only a strict gain over that fallback, never a
+    /// regression (the fallback already records the unbound parameter today).
+    pub fn infer_bare_call_yield(
+        &self,
+        sym: &SymbolInfo,
+        call_args: &[CallArg],
+    ) -> Option<TypeId> {
+        if call_args.is_empty()
+            || !matches!(sym.kind.as_str(), "method" | "function" | "constructor")
+        {
+            return None;
+        }
+        // A non-generic callee binds nothing; its concrete return flows through
+        // the loop's return-type fallback, so don't duplicate it here.
+        let name_to_id = self.owner_param_type_map(&sym.qualified_name);
+        if name_to_id.is_empty() {
+            return None;
+        }
+        // Declared return, param-blind from the SymbolTypeMap (or the string
+        // fallback), rebound to the callee's canonical `Generic` ids so
+        // substitution can resolve it.
+        let raw = self
+            .symbol_types
+            .get(sym.id)
+            .and_then(|d| d.return_type)
+            .or_else(|| {
+                self.lookup
+                    .return_type_name(&sym.qualified_name)
+                    .map(|s| self.arena.intern_type_str(s.trim().trim_end_matches('.')))
+            })?;
+        let raw = self.arena.rebind_class_params(raw, &name_to_id);
+
+        let arg_type_ids =
+            resolve_arg_types(call_args, self.arena, self.lookup, self.profile);
+        let mut env = GenericEnv::new();
+        self.bind_call_arg_generics(&sym.qualified_name, sym.id, &arg_type_ids, &mut env);
+
+        let yielded = substitute(raw, &env, self.arena);
+        // Report only a strict improvement: a binding actually rewrote the
+        // return, and the result is neither `Unknown` nor a still-unbound
+        // `Generic` (both of which are no better than the existing fallback).
+        if yielded == raw {
+            return None;
+        }
+        match self.arena.get(yielded) {
+            Type::Unknown | Type::Generic { .. } => None,
+            _ => Some(yielded),
+        }
     }
 }
 
