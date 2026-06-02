@@ -40,6 +40,7 @@
 use crate::indexer::resolve::engine::strip_generic_args;
 use crate::types::{
     ChainSegment, DiscriminantNarrowing, ExtractedRef, ExtractedSymbol, FlowMeta, Narrowing,
+    SymbolKind,
 };
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
 
@@ -114,6 +115,7 @@ pub fn run_flow_queries(
     run_type_guard_query(&root, src_bytes, cfg, &mut meta);
     run_discriminant_guard_query(&root, src_bytes, cfg, &mut meta);
     run_type_args_query(&root, src_bytes, cfg, refs);
+    run_return_query(&root, src_bytes, cfg, symbols, refs, &mut meta);
 
     let reassignments = collect_reassignment_sites(&root, src_bytes, cfg);
     kill_narrowings_at_reassignments(&mut meta, &reassignments);
@@ -315,6 +317,99 @@ fn run_assignment_query(
                     meta.flow_binding_unwrap.insert(lhs_idx);
                 }
             }
+        }
+    }
+}
+
+/// Return-expression query for a language, keyed by `strategy_prefix`. Mirrors
+/// `cfg_node_kinds_for`: a grammar opts into body-based return-type inference
+/// by supplying a query here rather than carrying it on every `FlowConfig`
+/// literal. An empty string opts out (no return capture).
+fn return_query_for(strategy_prefix: &str) -> &'static str {
+    match strategy_prefix {
+        "ts" => crate::languages::typescript::flow::TS_RETURN_QUERY,
+        _ => "",
+    }
+}
+
+/// Capture each `return <expr>` as a candidate for its function's inferred
+/// return type. For every match the query's `@return.fn` (the function/method
+/// name) correlates to the enclosing function symbol by name + nearest
+/// preceding declaration line, and `@return.expr` correlates to the ref it
+/// contains (furthest-right by byte offset) — the ref whose resolved yield
+/// becomes a return-type candidate. Populates `flow_return_lhs[ref_idx] =
+/// fn_symbol_idx`. No-op when the language supplies no return query.
+fn run_return_query(
+    root: &Node,
+    src: &[u8],
+    cfg: &FlowConfig,
+    symbols: &[ExtractedSymbol],
+    refs: &[ExtractedRef],
+    meta: &mut FlowMeta,
+) {
+    let query_src = return_query_for(cfg.strategy_prefix);
+    if query_src.is_empty() {
+        return;
+    }
+    let Ok(query) = Query::new(&root.language(), query_src) else {
+        return;
+    };
+    let Some(fn_cap) = query.capture_index_for_name("return.fn") else {
+        return;
+    };
+    let Some(expr_cap) = query.capture_index_for_name("return.expr") else {
+        return;
+    };
+
+    let mut cursor = QueryCursor::new();
+    let mut it = cursor.matches(&query, *root, src);
+    while let Some(m) = it.next() {
+        let mut fn_node: Option<Node> = None;
+        let mut expr_node: Option<Node> = None;
+        for cap in m.captures {
+            if cap.index == fn_cap {
+                fn_node = Some(cap.node);
+            } else if cap.index == expr_cap {
+                expr_node = Some(cap.node);
+            }
+        }
+        let (Some(fn_name_node), Some(expr)) = (fn_node, expr_node) else {
+            continue;
+        };
+        let Ok(fn_name) = fn_name_node.utf8_text(src) else {
+            continue;
+        };
+
+        // Correlate the function name → its symbol_idx (function-like kinds
+        // only, nearest declaration at or above the name's row).
+        let fn_line = fn_name_node.start_position().row as u32;
+        let fn_idx = symbols
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                s.name == fn_name
+                    && s.start_line <= fn_line
+                    && matches!(
+                        s.kind,
+                        SymbolKind::Function | SymbolKind::Method | SymbolKind::Constructor
+                    )
+            })
+            .max_by_key(|(_, s)| s.start_line)
+            .map(|(i, _)| i);
+        let Some(fn_idx) = fn_idx else { continue };
+
+        // Correlate the return expression's byte range → the ref it contains
+        // (furthest-right), mirroring the assignment RHS correlation.
+        let e_start = expr.start_byte() as u32;
+        let e_end = expr.end_byte() as u32;
+        let ref_idx = refs
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.byte_offset >= e_start && r.byte_offset < e_end)
+            .max_by_key(|(_, r)| r.byte_offset)
+            .map(|(i, _)| i);
+        if let Some(ref_idx) = ref_idx {
+            meta.flow_return_lhs.insert(ref_idx, fn_idx);
         }
     }
 }

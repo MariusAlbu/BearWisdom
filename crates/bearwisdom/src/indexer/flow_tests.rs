@@ -143,6 +143,41 @@ fn flow_reassignment_also_binds() {
 }
 
 #[test]
+fn flow_return_binds_call_to_function() {
+    // function makeUser() { return build(); }
+    // `build` starts at byte 31 (line 1).
+    let source = "function makeUser() {\n  return build();\n}\n";
+    let symbols = vec![mk_sym("makeUser", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("build", 1, 31)];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_return_lhs.get(&0),
+        Some(&0),
+        "the return expression ref (build call) should bind to function symbol 0 (makeUser)"
+    );
+}
+
+#[test]
+fn flow_return_ignores_nested_callback_return() {
+    // function f() { items.forEach(x => { return g(); }); }
+    // The inner arrow's `return g()` is NOT a direct child of f's body block,
+    // so it must not be attributed to f (soundness: no nested-scope leakage).
+    // `g` starts at byte 45 (line 1).
+    let source = "function f() {\n  items.forEach(x => { return g(); });\n}\n";
+    let symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("g", 1, 45)];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert!(
+        meta.flow_return_lhs.is_empty(),
+        "a return inside a nested callback must not bind to the enclosing function"
+    );
+}
+
+#[test]
 fn flow_narrowing_captures_instanceof_body() {
     let source = "function f(x: Base) {\n  if (x instanceof Derived) {\n    x.foo();\n  }\n}\n";
     let symbols: Vec<ExtractedSymbol> = Vec::new();

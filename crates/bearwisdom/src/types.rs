@@ -860,6 +860,12 @@ pub struct DiscriminantNarrowing {
 ///   fallible-unwrap operator (Rust `?`). The operator guarantees the RHS is a
 ///   single-arg fallible wrapper (`Result<T>` / `Option<T>`), so the resolver
 ///   peels one generic layer off the resolved yield before recording it.
+/// - `flow_return_lhs`: sparse map `ref_idx → fn_symbol_idx`. Present when a
+///   ref is a `return <expr>` expression in a function/method body; the
+///   resolver records the resolved yield type as a candidate return type for
+///   the named function symbol, joining candidates across the function's
+///   returns and propagating the inferred type through the resolve fixpoint
+///   (INFER-3 / INFER-2). The mirror of `flow_binding_lhs` for returns.
 /// - `ref_byte_offsets`: parallel to `refs`; the byte offset of each ref's
 ///   site in the source. Empty means "unknown — treat as 0" (used as a
 ///   cursor when looking up narrowings). Same convention as
@@ -871,6 +877,7 @@ pub struct FlowMeta {
     pub flow_binding_lhs: HashMap<usize, usize>,
     pub flow_binding_decl_type: HashMap<usize, String>,
     pub flow_binding_unwrap: std::collections::HashSet<usize>,
+    pub flow_return_lhs: HashMap<usize, usize>,
     pub ref_byte_offsets: Vec<u32>,
     /// Per-function control-flow graphs for the file, built at extract time
     /// from the same tree the query runner uses. Empty when the language has

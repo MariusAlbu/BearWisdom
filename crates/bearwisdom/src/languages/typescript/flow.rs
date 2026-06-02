@@ -14,6 +14,24 @@
 
 use crate::indexer::flow::FlowConfig;
 
+/// Return-expression query for body-based return-type inference (INFER-3).
+/// Matches a `return <expr>` that is a DIRECT statement of a named
+/// function's or method's body block — `@return.fn` names the function (for
+/// symbol correlation) and `@return.expr` is the returned expression (for
+/// ref correlation). Direct-child scoping is deliberate: a return nested in a
+/// callback/arrow is not a direct child of the outer block, so it is never
+/// misattributed to the enclosing named function. Returns inside `if`/`for`
+/// blocks are out of this first cut for the same soundness reason.
+pub const TS_RETURN_QUERY: &str = r#"
+    (function_declaration
+        name: (identifier) @return.fn
+        body: (statement_block (return_statement (_) @return.expr)))
+
+    (method_definition
+        name: (property_identifier) @return.fn
+        body: (statement_block (return_statement (_) @return.expr)))
+"#;
+
 /// TypeScript flow-typing queries. Singleton — registered on the plugin via
 /// `LanguagePlugin::flow_config()`.
 pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
