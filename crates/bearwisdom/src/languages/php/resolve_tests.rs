@@ -618,8 +618,8 @@ fn test_static_eloquent_call_via_type_access() {
         res.strategy
     );
     assert!(
-        res.strategy == "php_chain_inherited",
-        "Expected php_chain_inherited strategy, got {}",
+        res.strategy == "php_chain_inheritance",
+        "Expected php_chain_inheritance strategy, got {}",
         res.strategy
     );
 }

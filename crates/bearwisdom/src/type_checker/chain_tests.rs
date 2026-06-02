@@ -15,9 +15,13 @@ use super::{
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
 };
+use crate::languages::c_lang::hooks::C_LANG_CHAIN_CONFIG;
 use crate::languages::csharp::hooks::CSHARP_CHAIN_CONFIG;
 use crate::languages::go::hooks::GO_CHAIN_CONFIG;
 use crate::languages::java::hooks::JAVA_CHAIN_CONFIG;
+use crate::languages::php::hooks::PHP_CHAIN_CONFIG;
+use crate::languages::python::hooks::PYTHON_CHAIN_CONFIG;
+use crate::languages::ruby::hooks::RUBY_CHAIN_CONFIG;
 use crate::languages::typescript::hooks::TS_CHAIN_CONFIG;
 use crate::types::{
     AliasTarget, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
@@ -1154,4 +1158,459 @@ fn java_chain_inheritance_gated_by_none() {
     );
     let fc = file_ctx_with_imports(vec![]);
     assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
+}
+
+// ---------------------------------------------------------------------------
+// Python differential tests (QUAL-2b-python).
+//
+// Anchor the PYTHON_CHAIN_CONFIG case-space the deleted walk_python_chain
+// covered: `self.`-rooted chains resolving the enclosing class, local-typed
+// roots, static-type-name roots, field-type progression, method return-type
+// yield, and the by_qualified_name final hit. Python is `use_generics: false`
+// with `ChainExtensions::NONE` — no inheritance climb, no namespace lookup.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn python_chain_self_ref_root() {
+    // `self.save()` inside `app.User` — SelfRef resolves the enclosing class
+    // from the scope chain, then `save` resolves under it.
+    let lookup = FakeLookup::default()
+        .sym(1, "app.User", "class")
+        .sym(2, "app.User.save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("self", SegmentKind::SelfRef, false),
+            seg("save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&PYTHON_CHAIN_CONFIG, &r, &fc, vec!["app.User".to_string()], &lookup)
+        .expect("self.save() resolves via SelfRef enclosing class");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(res.strategy, "python_chain_resolution");
+}
+
+#[test]
+fn python_chain_local_type_member_access() {
+    // `u.save()` where `u` is a local typed `User`, `save` a method on `User`.
+    let lookup = FakeLookup::default()
+        .local("u", "User")
+        .sym(1, "User", "class")
+        .sym(2, "User.save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("u", SegmentKind::Identifier, false),
+            seg("save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&PYTHON_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+#[test]
+fn python_chain_field_type_progression() {
+    // `s.repo.find()` — s: Service, Service.repo: Repo, Repo.find a method.
+    let lookup = FakeLookup::default()
+        .local("s", "Service")
+        .sym(1, "Service", "class")
+        .field("Service.repo", "Repo")
+        .sym(2, "Repo", "class")
+        .sym(3, "Repo.find", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("s", SegmentKind::Identifier, false),
+            seg("repo", SegmentKind::Property, false),
+            seg("find", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&PYTHON_CHAIN_CONFIG, &r, &fc, &lookup), Some(3));
+}
+
+#[test]
+fn python_chain_method_return_type_yield() {
+    // `c.db().begin()` — c: Client, Client.db() returns Conn, Conn.begin a method.
+    let lookup = FakeLookup::default()
+        .local("c", "Client")
+        .sym(1, "Client", "class")
+        .ret("Client.db", "Conn")
+        .sym(2, "Conn", "class")
+        .sym(3, "Conn.begin", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("c", SegmentKind::Identifier, false),
+            seg("db", SegmentKind::Property, true),
+            seg("begin", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&PYTHON_CHAIN_CONFIG, &r, &fc, &lookup), Some(3));
+}
+
+#[test]
+fn python_chain_static_type_root() {
+    // `Logger.get()` where `Logger` is itself a class name (no local, no field).
+    let lookup = FakeLookup::default()
+        .sym(1, "Logger", "class")
+        .sym(2, "Logger.get", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("Logger", SegmentKind::Identifier, false),
+            seg("get", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&PYTHON_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+// ---------------------------------------------------------------------------
+// Ruby differential tests (QUAL-2b-ruby).
+//
+// Anchor the RUBY_CHAIN_CONFIG case-space the deleted walk_ruby_chain covered:
+// `self`-rooted chains resolving the enclosing class/module (`namespace` kind),
+// local-typed roots, field-type progression, and the by_qualified_name final.
+// Ruby is `use_generics: false` with `ChainExtensions::NONE`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ruby_chain_self_ref_root_namespace_enclosing() {
+    // `self.process` inside an `Admin` module (indexed as `namespace`) — SelfRef
+    // resolves the enclosing module, then `process` resolves under it.
+    let lookup = FakeLookup::default()
+        .sym(1, "Admin", "namespace")
+        .sym(2, "Admin.process", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("self", SegmentKind::SelfRef, false),
+            seg("process", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&RUBY_CHAIN_CONFIG, &r, &fc, vec!["Admin".to_string()], &lookup)
+        .expect("self.process resolves via SelfRef enclosing module");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.strategy, "ruby_chain_resolution");
+}
+
+#[test]
+fn ruby_chain_local_type_member_access() {
+    // `u.save` where `u` is a local typed `User`, `save` a method on `User`.
+    let lookup = FakeLookup::default()
+        .local("u", "User")
+        .sym(1, "User", "class")
+        .sym(2, "User.save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("u", SegmentKind::Identifier, false),
+            seg("save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&RUBY_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+#[test]
+fn ruby_chain_field_type_progression() {
+    // `s.client.call` — s: Service, Service.client: Client, Client.call a method.
+    let lookup = FakeLookup::default()
+        .local("s", "Service")
+        .sym(1, "Service", "class")
+        .field("Service.client", "Client")
+        .sym(2, "Client", "class")
+        .sym(3, "Client.call", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("s", SegmentKind::Identifier, false),
+            seg("client", SegmentKind::Property, false),
+            seg("call", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&RUBY_CHAIN_CONFIG, &r, &fc, &lookup), Some(3));
+}
+
+// ---------------------------------------------------------------------------
+// PHP differential tests (QUAL-2b-php).
+//
+// Anchor the PHP_CHAIN_CONFIG case-space the deleted walk_php_chain covered:
+// `$this->`-rooted chains, the `ClassName::method()` TypeAccess static root
+// (`root_type_access`), local-typed field/return progression, the
+// `use`-statement namespace final hit (`NamespaceLookup::AllImports`), the
+// external-qname promotion hop (`promote_external_qname`), and the inheritance
+// climb for `__callStatic`-forwarded members (`walk_inheritance`). PHP is
+// `use_generics: false`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn php_chain_self_ref_root() {
+    // `$this->save()` inside `App.Models.User` — SelfRef resolves the enclosing
+    // class, then `save` resolves under it.
+    let lookup = FakeLookup::default()
+        .sym(1, "App.Models.User", "class")
+        .sym(2, "App.Models.User.save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("this", SegmentKind::SelfRef, false),
+            seg("save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run_res(
+            &PHP_CHAIN_CONFIG,
+            &r,
+            &fc,
+            vec!["App.Models.User".to_string()],
+            &lookup,
+        )
+        .map(|res| res.target_symbol_id),
+        Some(2)
+    );
+}
+
+#[test]
+fn php_chain_type_access_static_root() {
+    // `User::find()` — the TypeAccess root resolves to the type's qualified name
+    // (`App.Models.User`), then `find` resolves under it via by_qualified_name.
+    let lookup = FakeLookup::default()
+        .sym(1, "App.Models.User", "class")
+        .sym(2, "App.Models.User.find", "method");
+    let mut type_access = seg("User", SegmentKind::TypeAccess, false);
+    type_access.node_kind = "name".to_string();
+    let r = ref_with_chain(
+        vec![type_access, seg("find", SegmentKind::Property, true)],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&PHP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("User::find() resolves via TypeAccess static root");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, 1.0);
+}
+
+#[test]
+fn php_chain_type_access_root_gated_by_none() {
+    // The same TypeAccess fixture under ChainExtensions::NONE: the root arm is
+    // gated off, so the static call never resolves through the chain walk.
+    let lookup = FakeLookup::default()
+        .sym(1, "App.Models.User", "class")
+        .sym(2, "App.Models.User.find", "method");
+    let mut type_access = seg("User", SegmentKind::TypeAccess, false);
+    type_access.node_kind = "name".to_string();
+    let r = ref_with_chain(
+        vec![type_access, seg("find", SegmentKind::Property, true)],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
+}
+
+#[test]
+fn php_chain_field_type_progression() {
+    // `$this->repo->find()` — root is `$this` (Repo field on the enclosing
+    // class), then walk to Repo and resolve `find`.
+    let lookup = FakeLookup::default()
+        .sym(1, "App.Svc", "class")
+        .field("App.Svc.repo", "Repo")
+        .sym(2, "Repo", "class")
+        .sym(3, "Repo.find", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("this", SegmentKind::SelfRef, false),
+            seg("repo", SegmentKind::Property, false),
+            seg("find", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run_res(&PHP_CHAIN_CONFIG, &r, &fc, vec!["App.Svc".to_string()], &lookup)
+            .map(|res| res.target_symbol_id),
+        Some(3)
+    );
+}
+
+#[test]
+fn php_chain_namespace_use_statement_final() {
+    // `helper->run()` where `helper: Helper` and `Helper.run` is keyed under a
+    // `use App\Utils` import (`App.Utils.Helper.run`). AllImports namespace
+    // final hit lands at confidence 0.95.
+    let lookup = FakeLookup::default()
+        .local("helper", "Helper")
+        .sym(1, "App.Utils.Helper.run", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("helper", SegmentKind::Identifier, false),
+            seg("run", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![import("Helper", "App.Utils")]);
+    let res = run_res(&PHP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("use-statement namespace final resolves");
+    assert_eq!(res.target_symbol_id, 1);
+    assert_eq!(res.confidence, 0.95);
+}
+
+#[test]
+fn php_chain_external_qname_promotion() {
+    // `m->where()` where the local resolves to the short `Builder` but the
+    // member lives under the external `Illuminate.Builder.where`. The promotion
+    // hop rewrites `Builder` → `Illuminate.Builder`.
+    let lookup = FakeLookup::default()
+        .local("m", "Builder")
+        .sym(1, "Illuminate.Builder", "class")
+        .sym(2, "Illuminate.Builder.where", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("m", SegmentKind::Identifier, false),
+            seg("where", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&PHP_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+#[test]
+fn php_chain_inheritance_final_segment() {
+    // `m->save()` where `m: Post extends Model` and `save` is declared on the
+    // parent. walk_inheritance climbs the `extends` chain to Model — the
+    // bespoke walker's `__callStatic`-forwarding coverage.
+    let lookup = FakeLookup::default()
+        .local("m", "Post")
+        .sym(1, "Post", "class")
+        .parent("Post", "Model")
+        .sym(2, "Model.save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("m", SegmentKind::Identifier, false),
+            seg("save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&PHP_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("m->save() resolves via inheritance climb");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.strategy, "php_chain_inheritance");
+}
+
+// ---------------------------------------------------------------------------
+// C/C++ differential tests (QUAL-2b-c_lang).
+//
+// Anchor the C_LANG_CHAIN_CONFIG case-space the deleted walk_c_lang_chain
+// covered: local-typed roots, `::`→`.` type-name normalization on a C++
+// qualified root, field-type progression, the by_qualified_name final hit, and
+// the typedef-dereference post-hop that collapses a project-defined pointer
+// typedef to its aliased struct mid-walk. C is `use_generics: false`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn c_chain_local_type_member_access() {
+    // `s.open()` where `s` is a local typed `Socket`, `open` a method on `Socket`.
+    let lookup = FakeLookup::default()
+        .local("s", "Socket")
+        .sym(1, "Socket", "struct")
+        .sym(2, "Socket.open", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("s", SegmentKind::Identifier, false),
+            seg("open", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&C_LANG_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("s.open() resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.strategy, "c_chain_resolution");
+}
+
+#[test]
+fn c_chain_cpp_namespace_normalization_root() {
+    // `s.handle()` where `s` is a local typed with a C++ `::`-qualified name
+    // `net::Server`; normalize_type rewrites it to `net.Server` so the member
+    // keys correctly.
+    let lookup = FakeLookup::default()
+        .local("s", "net::Server")
+        .sym(1, "net.Server", "class")
+        .sym(2, "net.Server.handle", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("s", SegmentKind::Identifier, false),
+            seg("handle", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&C_LANG_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+#[test]
+fn c_chain_field_type_progression() {
+    // `c.conn.send()` — c: Client, Client.conn: Conn, Conn.send a method.
+    let lookup = FakeLookup::default()
+        .local("c", "Client")
+        .sym(1, "Client", "struct")
+        .field("Client.conn", "Conn")
+        .sym(2, "Conn", "struct")
+        .sym(3, "Conn.send", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("c", SegmentKind::Identifier, false),
+            seg("conn", SegmentKind::Property, false),
+            seg("send", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&C_LANG_CHAIN_CONFIG, &r, &fc, &lookup), Some(3));
+}
+
+#[test]
+fn c_chain_typedef_via_alias_expansion() {
+    // `c.channel().write()` — Client.channel() returns the pointer typedef
+    // `TChannelPtr` (a `type_alias` whose AliasTarget is `Channel`).
+    // The generic alias-expansion path (`expand_aliases: true` in
+    // C_LANG_CHAIN_CONFIG) rewrites `TChannelPtr` → `Channel` at each hop so
+    // `write` resolves on the struct. No separate fn-pointer is needed.
+    let lookup = FakeLookup::default()
+        .local("c", "Client")
+        .sym(1, "Client", "struct")
+        .ret("Client.channel", "TChannelPtr")
+        .sym(2, "TChannelPtr", "type_alias")
+        .alias(
+            "TChannelPtr",
+            AliasTarget::Application {
+                root: "Channel".to_string(),
+                args: Vec::new(),
+            },
+        )
+        .sym(3, "Channel", "struct")
+        .sym(4, "Channel.write", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("c", SegmentKind::Identifier, false),
+            seg("channel", SegmentKind::Property, true),
+            seg("write", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(
+        run(&C_LANG_CHAIN_CONFIG, &r, &fc, &lookup),
+        Some(4),
+        "typedef pointer collapses to Channel via alias expansion mid-walk"
+    );
 }

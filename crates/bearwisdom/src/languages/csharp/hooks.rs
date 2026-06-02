@@ -54,6 +54,7 @@ pub(crate) static CSHARP_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
             root_construction: false,
             extension_method_fallback: true,
             root_fallback: None,
+            root_type_access: false,
         },
     };
 

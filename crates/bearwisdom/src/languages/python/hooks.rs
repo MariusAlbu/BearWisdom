@@ -23,14 +23,35 @@ use super::flow_detectors::{
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
-use crate::type_checker::chain::simple_yield_type;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::{EdgeKind, MemberChain, ParsedFile, SegmentKind};
+use crate::types::{EdgeKind, ParsedFile};
 use tracing::debug;
 
 pub struct PythonResolver;
+
+/// Python `ChainConfig` for the unified `resolve_via_chain`.
+///
+/// Python is the bare three-phase walk: `has_self_ref` for `self.`-rooted
+/// chains, an `Identifier` root resolved through `local_type` → static-type-name
+/// → enclosing-field type → declared type, then field/return/members_of
+/// progression. No generics (`use_generics: false`), no namespace-qualified
+/// lookups (module resolution lives in the resolver's non-chain paths), and no
+/// `ChainExtensions` — Python has no type aliases, no external-qname promotion,
+/// no construction roots, no inheritance climb, and no static `::` roots.
+pub(crate) static PYTHON_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
+    crate::type_checker::chain::ChainConfig {
+        strategy_prefix: "python",
+        normalize_type: crate::type_checker::chain::identity_normalize,
+        has_self_ref: true,
+        enclosing_type_kinds: &["class", "struct", "interface"],
+        static_type_kinds: &["class", "struct", "interface", "enum", "type_alias"],
+        use_generics: false,
+        namespace_lookup: crate::type_checker::chain::NamespaceLookup::None,
+        kind_compatible: predicates::kind_compatible,
+        extensions: crate::type_checker::chain::ChainExtensions::NONE,
+    };
 
 impl PythonResolver {
     pub(crate) fn build_file_context(
@@ -51,7 +72,9 @@ impl PythonResolver {
         let edge_kind = ref_ctx.extracted_ref.kind;
 
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = walk_python_chain(chain_val, edge_kind, ref_ctx, lookup) {
+            if let Some(res) = crate::type_checker::chain::resolve_via_chain(
+                &PYTHON_CHAIN_CONFIG, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            ) {
                 return Some(res);
             }
         }
@@ -369,152 +392,6 @@ impl PythonResolver {
 
         None
     }
-}
-
-/// Python chain walker.
-pub(crate) fn walk_python_chain(
-    chain_ref: &MemberChain,
-    edge_kind: EdgeKind,
-    ref_ctx: &RefContext,
-    lookup: &dyn SymbolLookup,
-) -> Option<Resolution> {
-    let segments = &chain_ref.segments;
-    if segments.len() < 2 {
-        return None;
-    }
-
-    // Phase 1: Determine the root type.
-    let root_type = match segments[0].kind {
-        SegmentKind::SelfRef => find_enclosing_class(&ref_ctx.scope_chain, lookup),
-        SegmentKind::Identifier => {
-            let name = &segments[0].name;
-
-            if let Some(local_type) = lookup.local_type(name) {
-                Some(local_type)
-            } else {
-                let is_type = lookup.types_by_name(name).iter().any(|s| {
-                    matches!(
-                        s.kind.as_str(),
-                        "class" | "struct" | "interface" | "enum" | "type_alias"
-                    )
-                });
-                if is_type {
-                    Some(name.clone())
-                } else {
-                    let mut found = None;
-                    for scope in &ref_ctx.scope_chain {
-                        let field_qname = format!("{scope}.{name}");
-                        if let Some(type_name) = lookup.field_type_str(&field_qname) {
-                            found = Some(type_name.to_string());
-                            break;
-                        }
-                    }
-                    found.or_else(|| segments[0].declared_type.clone())
-                }
-            }
-        }
-        _ => None,
-    };
-
-    let mut current_type = root_type?;
-
-    // Phase 2: Walk intermediate segments.
-    for seg in &segments[1..segments.len() - 1] {
-        let member_qname = format!("{current_type}.{}", seg.name);
-
-        if let Some(next_type) = lookup.field_type_str(&member_qname) {
-            current_type = next_type.to_string();
-            continue;
-        }
-        if let Some(next_type) = lookup.return_type_str(&member_qname) {
-            current_type = next_type.to_string();
-            continue;
-        }
-
-        let mut found = false;
-        for sym in lookup.members_of(&current_type) {
-            if sym.name != seg.name {
-                continue;
-            }
-            if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
-                current_type = ft.to_string();
-                found = true;
-                break;
-            }
-            if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
-                current_type = rt.to_string();
-                found = true;
-                break;
-            }
-        }
-        if found {
-            continue;
-        }
-
-        lookup.record_chain_miss(ChainMiss {
-            current_type: current_type.clone(),
-            target_name: seg.name.clone(),
-            module: None,
-        });
-        return None;
-    }
-
-    // Phase 3: Final segment.
-    let last = &segments[segments.len() - 1];
-    let candidate = format!("{current_type}.{}", last.name);
-
-    if let Some(sym) = lookup.by_qualified_name(&candidate) {
-        if predicates::kind_compatible(edge_kind, &sym.kind) {
-            debug!(
-                strategy = "python_chain_resolution",
-                chain_len = segments.len(),
-                resolved_type = %current_type,
-                target = %last.name,
-                "resolved"
-            );
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 1.0,
-                strategy: "python_chain_resolution",
-                resolved_yield_type: intern_yield_type(simple_yield_type(sym, lookup), lookup),
-                flow_emit: None,
-            });
-        }
-    }
-
-    for sym in lookup.members_of(&current_type) {
-        if sym.name == last.name && predicates::kind_compatible(edge_kind, &sym.kind) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.95,
-                strategy: "python_chain_resolution",
-                resolved_yield_type: intern_yield_type(simple_yield_type(sym, lookup), lookup),
-                flow_emit: None,
-            });
-        }
-    }
-
-    lookup.record_chain_miss(ChainMiss {
-        current_type: current_type.clone(),
-        target_name: last.name.clone(),
-        module: None,
-    });
-    None
-}
-
-/// Find the enclosing class name from the scope chain.
-fn find_enclosing_class(
-    scope_chain: &[String],
-    lookup: &dyn SymbolLookup,
-) -> Option<String> {
-    for scope in scope_chain {
-        if let Some(sym) = lookup.by_qualified_name(scope) {
-            if matches!(sym.kind.as_str(), "class" | "struct" | "interface") {
-                return Some(scope.clone());
-            }
-        }
-    }
-    scope_chain.last().cloned()
 }
 
 pub(crate) fn detect_flow_inner(

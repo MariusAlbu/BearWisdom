@@ -302,11 +302,10 @@ impl SymbolIndex {
                         }
                     }
                     // Type aliases (typedefs, `using Alias = Type`): first TypeRef
-                    // is the aliased type. This populates field_type_name("AliasName")
-                    // so chain walkers can dereference typedef aliases.
+                    // is the aliased type. This populates field_type_str("AliasName")
+                    // so the generic alias-expansion path can collapse pointer typedefs.
                     // e.g., `typedef SocketChannel* SocketChannelPtr;`
                     //   → field_type("SocketChannelPtr") = "SocketChannel"
-                    // Used by the C/C++ chain walker's dereference_typedef step.
                     SymbolKind::TypeAlias => {
                         let Some(&first) = type_refs.first() else {
                             continue;

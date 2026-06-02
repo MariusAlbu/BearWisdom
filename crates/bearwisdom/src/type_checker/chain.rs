@@ -104,6 +104,12 @@ pub struct ChainExtensions {
     /// scan missed — carries the per-ecosystem ambient-globals probe (e.g.
     /// jest/vitest `globals: true`). Returns the root type name.
     pub root_fallback: Option<fn(&str, &dyn SymbolLookup) -> Option<String>>,
+
+    /// Accept a `TypeAccess` root segment (`ClassName::method()`): the root
+    /// resolves to the named type's qualified name (falling back to the bare
+    /// name when no type-kind symbol owns it). The receiver is then that type.
+    pub root_type_access: bool,
+
 }
 
 impl ChainExtensions {
@@ -116,6 +122,7 @@ impl ChainExtensions {
         root_construction: false,
         extension_method_fallback: false,
         root_fallback: None,
+        root_type_access: false,
     };
 }
 
@@ -174,6 +181,20 @@ pub fn resolve_via_chain(
     let root_type = match segments[0].kind {
         SegmentKind::SelfRef if config.has_self_ref => {
             find_enclosing_type(&ref_ctx.scope_chain, lookup, config.enclosing_type_kinds)
+                .map(|t| (config.normalize_type)(&t))
+        }
+        SegmentKind::TypeAccess if config.extensions.root_type_access => {
+            // `ClassName::method()` — the static-access root names a type.
+            // Resolve to that type's qualified name so members key under the
+            // namespaced qname; fall back to the bare name when unindexed.
+            let name = &segments[0].name;
+            let qualified = lookup
+                .types_by_name(name)
+                .iter()
+                .find(|s| config.static_type_kinds.iter().any(|&k| s.kind == k))
+                .map(|s| s.qualified_name.clone())
+                .unwrap_or_else(|| name.clone());
+            Some((config.normalize_type)(&qualified))
         }
         SegmentKind::Construction if config.extensions.root_construction => {
             // `new X().m()` — the constructed type is the receiver. Accept it
@@ -812,9 +833,13 @@ pub fn find_enclosing_type(
 /// alias-aware walking. A value typed as a type-alias name (`type UserMap =
 /// Map<string, User>`) has no members of its own — rewrite it to the alias's
 /// concrete head and bind the alias's type args into a fresh `env` scope so
-/// deeper segments substitute consistently. No-op when extensions are off, the
-/// type isn't an alias, or there's no `env` (alias expansion drives generic
-/// substitution, so it rides on `use_generics`).
+/// deeper segments substitute consistently. No-op when extensions are off or
+/// the type isn't an alias.
+///
+/// When `env` is `None` (non-generic languages like C), a throwaway
+/// `TypeEnvironment` serves the alias lookup — arg bindings are discarded
+/// since the language has no generics to substitute. This allows no-args
+/// typedefs (`type Foo = Bar`) to collapse even without `use_generics`.
 fn expand_current_type(
     config: &ChainConfig,
     current_type: &mut String,
@@ -825,18 +850,33 @@ fn expand_current_type(
     if !config.extensions.expand_aliases {
         return;
     }
-    let Some(env) = env else { return };
-    let Some((root, args)) = expand_alias(current_type, current_args_hint, lookup, env) else {
-        return;
-    };
-    *current_type = root;
-    if !args.is_empty() {
-        env.push_scope();
-        env.enter_generic_context(current_type, &args, |n| {
-            lookup.generic_params(n).map(|p| p.to_vec())
-        });
+    match env {
+        Some(env) => {
+            let Some((root, args)) = expand_alias(current_type, current_args_hint, lookup, env)
+            else {
+                return;
+            };
+            *current_type = root;
+            if !args.is_empty() {
+                env.push_scope();
+                env.enter_generic_context(current_type, &args, |n| {
+                    lookup.generic_params(n).map(|p| p.to_vec())
+                });
+            }
+        }
+        None => {
+            // Non-generic language: use a throwaway env — arg bindings are
+            // discarded, but the root rewrite still fires for no-args aliases.
+            let mut throwaway = TypeEnvironment::new();
+            if let Some((root, _)) =
+                expand_alias(current_type, current_args_hint, lookup, &mut throwaway)
+            {
+                *current_type = root;
+            }
+        }
     }
 }
+
 
 /// Climb `parent_class_qname` from `current_type` (depth-10, cycle-guarded)
 /// retrying the member on each ancestor. Returns the next chain type when an
@@ -1062,6 +1102,8 @@ fn chain_strategy_inheritance(prefix: &str) -> &'static str {
         "csharp" => "csharp_chain_inheritance",
         "java" => "java_chain_inheritance",
         "go" => "go_chain_inheritance",
+        "php" => "php_chain_inheritance",
+        "c" => "c_chain_inheritance",
         "kotlin" => "kotlin_chain_inheritance",
         "scala" => "scala_chain_inheritance",
         "dart" => "dart_chain_inheritance",

@@ -99,6 +99,7 @@ pub(crate) static TS_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
             root_construction: true,
             extension_method_fallback: false,
             root_fallback: Some(ts_root_globals_fallback),
+            root_type_access: false,
         },
     };
 

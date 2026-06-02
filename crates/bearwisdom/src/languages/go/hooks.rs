@@ -55,6 +55,7 @@ pub(crate) static GO_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
             root_construction: false,
             extension_method_fallback: false,
             root_fallback: None,
+            root_type_access: false,
         },
     };
 
