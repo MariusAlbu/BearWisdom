@@ -4,8 +4,8 @@
 // =============================================================================
 
 use super::helpers::{
-    build_method_elem_signature, extract_go_doc_comment, go_visibility, is_go_builtin_type,
-    node_text, pointer_type_name, qualify, scope_from_prefix,
+    build_method_elem_signature, extract_go_doc_comment, extract_go_type_name, go_visibility,
+    is_go_builtin_type, node_text, pointer_type_name, qualify, scope_from_prefix,
 };
 use super::tags;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -43,6 +43,7 @@ pub(super) fn extract_type_declaration(
                     &child,
                     source,
                     symbols,
+                    refs,
                     parent_index,
                     qualified_prefix,
                 );
@@ -61,10 +62,19 @@ pub(super) fn extract_type_declaration(
 ///   "="                     (anonymous)
 ///   type: _type             "Bar"
 /// ```
+///
+/// `type Foo = Bar` is a Go TRUE alias: `Foo` shares `Bar`'s full method set.
+/// We emit exactly one `TypeRef` naming the RHS head when that head is a
+/// nameable, non-builtin type (`Bar`, `pkg.Bar`, `List[T]`), so the alias's
+/// `field_type` collapses to its target and alias expansion can walk through
+/// it. When the RHS is a structural type (`[]T`, `map[K]V`, `func(...)`,
+/// `chan T`, `struct{…}`, `*T`) we emit no head ref — there is no nameable
+/// target to walk to, so the alias stays a no-op for member resolution.
 fn extract_type_alias_decl(
     node: &Node,
     source: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
@@ -77,8 +87,8 @@ fn extract_type_alias_decl(
         return;
     }
 
-    let type_text = node
-        .child_by_field_name("type")
+    let type_node = node.child_by_field_name("type");
+    let type_text = type_node
         .map(|n| node_text(&n, source))
         .unwrap_or_default();
 
@@ -91,6 +101,7 @@ fn extract_type_alias_decl(
         format!("type {name} = {type_text}")
     };
 
+    let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name,
         qualified_name,
@@ -110,6 +121,64 @@ fn extract_type_alias_decl(
     param_types: Vec::new(),
     generic_params: Vec::new(),
 });
+
+    if let Some(rhs) = type_node {
+        emit_alias_head_ref(&rhs, source, idx, refs);
+    }
+}
+
+/// Emit the single alias-target `TypeRef` for a Go alias RHS, but only when the
+/// RHS head is a nameable, non-builtin type identifier. The head ref's
+/// `target_name` is what `field_type` collapses to and what alias expansion
+/// rewrites the alias type to.
+///
+/// Nameable heads (`Bar`, `pkg.Bar`, `Map[K]V`) emit one ref. Structural RHS
+/// shapes (`slice_type`, `map_type`, `function_type`, `channel_type`,
+/// `struct_type`, `interface_type`, `pointer_type`, `array_type`) have no
+/// nameable head — emitting the inner element/key/param as the head would
+/// rewrite the alias to the wrong type, so we emit nothing.
+fn emit_alias_head_ref(
+    rhs: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let (head, module) = match rhs.kind() {
+        "type_identifier" => (node_text(rhs, source), None),
+        "qualified_type" => {
+            let pkg = (0..rhs.named_child_count())
+                .filter_map(|i| rhs.named_child(i))
+                .find(|c| c.kind() == "package_identifier")
+                .map(|n| node_text(&n, source));
+            let name = (0..rhs.named_child_count())
+                .filter_map(|i| rhs.named_child(i))
+                .find(|c| c.kind() == "type_identifier")
+                .map(|n| node_text(&n, source))
+                .unwrap_or_default();
+            (name, pkg)
+        }
+        // `List[int]` (Go 1.18+) — the head is the generic base name.
+        "generic_type" => (extract_go_type_name(rhs, source), None),
+        // Structural RHS — no nameable head.
+        _ => return,
+    };
+
+    if head.is_empty() || is_go_builtin_type(&head) {
+        return;
+    }
+
+    refs.push(ExtractedRef {
+        source_symbol_index,
+        target_name: head,
+        kind: EdgeKind::TypeRef,
+        line: rhs.start_position().row as u32,
+        col: 0,
+        module,
+        chain: None,
+        byte_offset: rhs.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 /// `type_spec` children (positional, named):
@@ -215,7 +284,14 @@ fn extract_type_spec(
         }
 
         _ => {
-            // Defined type or alias (`type Foo Bar` / `type Foo = Bar`).
+            // Defined type (`type Foo Bar`, `type Stack []Item`). A Go defined
+            // type does NOT share the underlying type's method set — its own
+            // methods live under qname `Foo.M` and must resolve against `Foo`.
+            // So it emits no alias-target ref: with no `field_type`, no
+            // expandable `AliasTarget` is synthesized and alias expansion stays
+            // a no-op for the defined type. True aliases (`type Foo = Bar`, the
+            // `type_alias` node) are the only Go form that synthesizes an
+            // expandable target — see `extract_type_alias_decl`.
             let type_text = node_text(&type_node, source);
             let sig = format!("type {name} {type_text}");
             symbols.push(ExtractedSymbol {

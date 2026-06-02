@@ -1655,3 +1655,111 @@ fn test_go_nhooyr_accept_emits_ws_consumer() {
         _ => panic!("expected NamedChannel"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Alias-target synthesis: TRUE alias vs DEFINED type (end-to-end)
+//
+// These build a real SymbolIndex from extracted Go source — which runs the
+// build.rs `field_type → AliasTarget` synthesis — and assert which type names
+// become expandable aliases. A Go defined type must NOT (alias expansion would
+// rewrite its receiver to the underlying type and drop its own method set); a
+// Go true alias (`=` form) MUST (it shares the target's members).
+// ---------------------------------------------------------------------------
+
+/// Build a `SymbolIndex` from Go source by running the real extractor, so the
+/// build.rs alias-target synthesis fires on the extracted refs.
+fn index_from_go_source(path: &str, source: &str) -> SymbolIndex {
+    let res = super::extract::extract(source);
+    let pf = make_file(path, res.symbols, res.refs);
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for sym in &pf.symbols {
+        id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+        next_id += 1;
+    }
+    SymbolIndex::build(&[pf], &id_map)
+}
+
+#[test]
+fn composite_defined_type_synthesizes_no_alias_target() {
+    // (a) `type Stack []Item`: `s.Push()` must NOT resolve to `Item.Push`. The
+    // engine only mis-resolves when `Stack` carries an expandable AliasTarget;
+    // the fix is that the composite defined type synthesizes none, so expansion
+    // stays a no-op and the receiver keeps its own type.
+    use crate::indexer::resolve::engine::SymbolLookup;
+    let index = index_from_go_source(
+        "coll/stack.go",
+        r#"package coll
+
+type Item struct{ V int }
+
+func (i Item) Push() {}
+
+type Stack []Item
+"#,
+    );
+    assert!(
+        index.alias_target("Stack").is_none(),
+        "composite defined type Stack must have no AliasTarget (would mis-resolve s.Push to Item.Push)"
+    );
+    assert!(
+        index.alias_target("coll.Stack").is_none(),
+        "composite defined type coll.Stack must have no AliasTarget"
+    );
+}
+
+#[test]
+fn defined_type_with_method_synthesizes_no_alias_target() {
+    // (b) `type Foo Bar` with `func (f Foo) M()`: `f.M()` must resolve to
+    // `Foo.M`, NOT be rewritten to `Bar`. A defined type carries no expandable
+    // AliasTarget, so the receiver `Foo` is never rewritten away from itself.
+    use crate::indexer::resolve::engine::SymbolLookup;
+    let index = index_from_go_source(
+        "m/foo.go",
+        r#"package m
+
+type Bar struct{ X int }
+
+type Foo Bar
+
+func (f Foo) M() {}
+"#,
+    );
+    assert!(
+        index.alias_target("Foo").is_none(),
+        "defined type Foo must have no AliasTarget (would rewrite f.M to Bar.M)"
+    );
+    // Its own method is recorded under qname Foo.M, ready to resolve against Foo.
+    let foo_m = index.by_qualified_name("m.Foo.M");
+    assert!(foo_m.is_some(), "expected method m.Foo.M to be indexed");
+}
+
+#[test]
+fn true_alias_synthesizes_expandable_alias_target() {
+    // (c) `type Alias = Bar`: a value typed `Alias` resolves members through
+    // `Bar`. The true alias synthesizes an expandable AliasTarget naming Bar,
+    // which alias expansion rewrites to before member lookup.
+    use crate::indexer::resolve::engine::SymbolLookup;
+    let index = index_from_go_source(
+        "m/alias.go",
+        r#"package m
+
+type Bar struct{ X int }
+
+func (b Bar) Member() {}
+
+type Alias = Bar
+"#,
+    );
+    let target = index.alias_target("Alias");
+    assert!(
+        target.is_some(),
+        "true alias Alias must synthesize an expandable AliasTarget naming Bar"
+    );
+    match target.unwrap() {
+        AliasTarget::Application { root, .. } => {
+            assert_eq!(root, "Bar", "alias root must be Bar");
+        }
+        other => panic!("expected Application{{root: Bar}}, got {other:?}"),
+    }
+}

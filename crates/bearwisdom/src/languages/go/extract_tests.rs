@@ -368,6 +368,138 @@ type StringSlice = []string
     }
 
     // -----------------------------------------------------------------------
+    // Alias-target emission: TRUE alias vs DEFINED type
+    //
+    // A Go defined type (`type Foo Bar`, `type Stack []Item`) does NOT share
+    // the underlying method set, so it must emit NO alias-target TypeRef —
+    // otherwise alias expansion would rewrite `Foo`/`Stack` to the wrong type
+    // and the defined type's own methods would stop resolving. A TRUE alias
+    // (`type Foo = Bar`, the `=` form) DOES share the target's members, so it
+    // emits one head-only TypeRef naming the target.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn defined_type_emits_no_alias_target_ref() {
+        // `type Celsius Temperature` is a Go defined type. It shares no methods
+        // with Temperature, so it must emit no alias-target TypeRef — no
+        // field_type, no expandable AliasTarget.
+        let source = r#"package units
+
+type Temperature struct{ Value float64 }
+type Celsius Temperature
+"#;
+        let r = extract::extract(source);
+        let celsius_idx = r
+            .symbols
+            .iter()
+            .position(|s| s.name == "Celsius")
+            .expect("no Celsius symbol");
+        assert_eq!(r.symbols[celsius_idx].kind, SymbolKind::TypeAlias);
+        let target = r.refs.iter().find(|rf| {
+            rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == celsius_idx
+        });
+        assert!(
+            target.is_none(),
+            "defined type Celsius must emit no alias-target TypeRef, got: {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == celsius_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn composite_defined_type_emits_no_alias_target_ref() {
+        // `type Stack []Item` is a composite defined type. The element type
+        // (Item) must NOT be emitted as the alias head — that would rewrite
+        // `Stack` to `Item` and mis-resolve `s.Push()` to `Item.Push`.
+        let source = r#"package coll
+
+type Item struct{ V int }
+type Stack []Item
+"#;
+        let r = extract::extract(source);
+        let stack_idx = r
+            .symbols
+            .iter()
+            .position(|s| s.name == "Stack")
+            .expect("no Stack symbol");
+        assert_eq!(r.symbols[stack_idx].kind, SymbolKind::TypeAlias);
+        let head = r.refs.iter().find(|rf| {
+            rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == stack_idx
+        });
+        assert!(
+            head.is_none(),
+            "composite defined type Stack must emit no alias-target TypeRef \
+             (and never Item as the head), got: {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == stack_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn true_alias_emits_head_target_ref() {
+        // `type Alias = Bar` is a Go TRUE alias (the `=` form). It shares Bar's
+        // members, so it emits exactly one head TypeRef naming Bar — populating
+        // field_type so alias expansion can walk `Alias` → `Bar`.
+        let source = r#"package m
+
+type Bar struct{ X int }
+type Alias = Bar
+"#;
+        let r = extract::extract(source);
+        let alias_idx = r
+            .symbols
+            .iter()
+            .position(|s| s.name == "Alias")
+            .expect("no Alias symbol");
+        assert_eq!(r.symbols[alias_idx].kind, SymbolKind::TypeAlias);
+        let head_refs: Vec<_> = r
+            .refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == alias_idx)
+            .collect();
+        assert_eq!(
+            head_refs.len(),
+            1,
+            "true alias Alias must emit exactly one head TypeRef, got: {head_refs:?}"
+        );
+        assert_eq!(head_refs[0].target_name, "Bar");
+        assert!(head_refs[0].module.is_none());
+    }
+
+    #[test]
+    fn true_alias_to_composite_emits_no_head_ref() {
+        // `type Items = []Item` is a TRUE alias to a structural (slice) type.
+        // There is no nameable head to walk to, so it emits no head ref (the
+        // element Item must not become the head — same wrong-head trap).
+        let source = r#"package m
+
+type Item struct{ V int }
+type Items = []Item
+"#;
+        let r = extract::extract(source);
+        let items_idx = r
+            .symbols
+            .iter()
+            .position(|s| s.name == "Items")
+            .expect("no Items symbol");
+        let head = r.refs.iter().find(|rf| {
+            rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == items_idx
+        });
+        assert!(
+            head.is_none(),
+            "alias to a slice has no nameable head; must emit no alias-target ref, got: {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == items_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
     // Const / var
     // -----------------------------------------------------------------------
 

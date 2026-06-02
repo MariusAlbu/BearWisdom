@@ -49,7 +49,7 @@ pub(crate) static RUST_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
         namespace_lookup: crate::type_checker::chain::NamespaceLookup::None,
         kind_compatible: predicates::kind_compatible,
         extensions: crate::type_checker::chain::ChainExtensions {
-            expand_aliases: false,
+            expand_aliases: true,
             walk_inheritance: true,
             promote_external_qname: false,
             root_construction: false,

@@ -1839,3 +1839,167 @@ fn rust_chain_empty_chain_returns_none() {
     let fc = file_ctx_with_imports(vec![]);
     assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), None);
 }
+
+// ---------------------------------------------------------------------------
+// Generic type-alias expansion across the languages that carry type aliases
+// AND a populated `alias_target` (INFER-10). Each flips `expand_aliases: true`
+// on its `<LANG>_CHAIN_CONFIG`; a value typed as an alias name walks to the
+// alias's concrete target before member lookup. Scala builds its config inline
+// (no exported static) so the test mirrors it with the same flag set.
+//
+// A no-op guard proves expansion never rewrites a non-alias type: with the
+// flag on, a value typed as a class still resolves its member against the
+// class, not a guessed target.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn go_chain_true_alias_via_alias_expansion() {
+    // `um.Get()` where `um: UserMap` and `type UserMap = MapImpl` (a Go TRUE
+    // alias, the `=` form). It shares MapImpl's members; expansion rewrites
+    // `UserMap` → `MapImpl`, where `Get` lives. A Go defined type (`type X Y`,
+    // no `=`) would synthesize no AliasTarget and stay a no-op here.
+    let lookup = FakeLookup::default()
+        .local("um", "UserMap")
+        .sym(1, "UserMap", "type_alias")
+        .alias(
+            "UserMap",
+            AliasTarget::Application {
+                root: "MapImpl".to_string(),
+                args: Vec::new(),
+            },
+        )
+        .sym(2, "MapImpl.Get", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("um", SegmentKind::Identifier, false),
+            seg("Get", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&GO_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+#[test]
+fn rust_chain_type_alias_via_alias_expansion() {
+    // `repo.get()` where `repo: Repo` and `type Repo = HashMapStore`. The alias
+    // is members-less; expansion walks `Repo` → `HashMapStore` where `get` lives.
+    let lookup = FakeLookup::default()
+        .local("repo", "Repo")
+        .sym(1, "Repo", "type_alias")
+        .alias(
+            "Repo",
+            AliasTarget::Application {
+                root: "HashMapStore".to_string(),
+                args: Vec::new(),
+            },
+        )
+        .sym(2, "HashMapStore.get", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("get", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+#[test]
+fn python_chain_type_alias_via_alias_expansion() {
+    // `users.append()` where `users: UserList` and `type UserList = ListImpl`.
+    // The alias has no members; expansion walks `UserList` → `ListImpl`.
+    let lookup = FakeLookup::default()
+        .local("users", "UserList")
+        .sym(1, "UserList", "type_alias")
+        .alias(
+            "UserList",
+            AliasTarget::Application {
+                root: "ListImpl".to_string(),
+                args: Vec::new(),
+            },
+        )
+        .sym(2, "ListImpl.append", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("users", SegmentKind::Identifier, false),
+            seg("append", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&PYTHON_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+/// Scala's `ChainConfig` is built inline in its resolver (no exported static),
+/// so mirror it here with `expand_aliases: true` to exercise the same flip.
+/// The `kind_compatible` predicate is harness-only (Scala's own is `pub(super)`,
+/// like the `none_config` helper) — it does not affect alias expansion.
+fn scala_alias_config() -> ChainConfig {
+    ChainConfig {
+        strategy_prefix: "scala",
+        normalize_type: identity_normalize,
+        has_self_ref: true,
+        enclosing_type_kinds: &["class", "trait", "object"],
+        static_type_kinds: &["class", "trait", "object", "enum", "type_alias"],
+        use_generics: true,
+        namespace_lookup: NamespaceLookup::WildcardOnly,
+        kind_compatible: crate::languages::typescript::predicates::kind_compatible,
+        extensions: ChainExtensions {
+            expand_aliases: true,
+            ..ChainExtensions::NONE
+        },
+    }
+}
+
+#[test]
+fn scala_chain_type_member_via_alias_expansion() {
+    // `assoc.get()` where `assoc: Assoc` and `type Assoc = MapImpl` (a Scala
+    // type member). Expansion walks `Assoc` → `MapImpl` where `get` lives.
+    let lookup = FakeLookup::default()
+        .local("assoc", "Assoc")
+        .sym(1, "Assoc", "type_alias")
+        .alias(
+            "Assoc",
+            AliasTarget::Application {
+                root: "MapImpl".to_string(),
+                args: Vec::new(),
+            },
+        )
+        .sym(2, "MapImpl.get", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("assoc", SegmentKind::Identifier, false),
+            seg("get", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&scala_alias_config(), &r, &fc, &lookup), Some(2));
+}
+
+#[test]
+fn alias_expansion_noop_on_non_alias_type() {
+    // With `expand_aliases: true`, a value typed as a plain class (NOT an alias)
+    // must NOT be rewritten: `alias_target("User")` is None, so expansion is a
+    // no-op and the member resolves against `User` directly. This guards the
+    // conservatism invariant — flipping the flag widens alias chains only and
+    // never mis-resolves a non-alias receiver to a guessed target.
+    let lookup = FakeLookup::default()
+        .local("u", "User")
+        .sym(1, "User", "struct")
+        .sym(2, "User.save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("u", SegmentKind::Identifier, false),
+            seg("save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    // RUST_CHAIN_CONFIG now carries expand_aliases: true. The non-alias receiver
+    // still binds `User.save` (id 2) — the bare member walk, unchanged. No alias
+    // entry for "User" means expand_alias returns None and current_type stays.
+    assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}

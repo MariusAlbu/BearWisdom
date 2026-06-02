@@ -37,9 +37,10 @@ pub struct PythonResolver;
 /// chains, an `Identifier` root resolved through `local_type` → static-type-name
 /// → enclosing-field type → declared type, then field/return/members_of
 /// progression. No generics (`use_generics: false`), no namespace-qualified
-/// lookups (module resolution lives in the resolver's non-chain paths), and no
-/// `ChainExtensions` — Python has no type aliases, no external-qname promotion,
-/// no construction roots, no inheritance climb, and no static `::` roots.
+/// lookups (module resolution lives in the resolver's non-chain paths), no
+/// external-qname promotion, no construction roots, no inheritance climb, and no
+/// static `::` roots. `expand_aliases` is on: a value typed as a PEP 613 /
+/// `type X = ...` alias name walks to the alias's target before member lookup.
 pub(crate) static PYTHON_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
     crate::type_checker::chain::ChainConfig {
         strategy_prefix: "python",
@@ -50,7 +51,15 @@ pub(crate) static PYTHON_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
         use_generics: false,
         namespace_lookup: crate::type_checker::chain::NamespaceLookup::None,
         kind_compatible: predicates::kind_compatible,
-        extensions: crate::type_checker::chain::ChainExtensions::NONE,
+        extensions: crate::type_checker::chain::ChainExtensions {
+            expand_aliases: true,
+            walk_inheritance: false,
+            promote_external_qname: false,
+            root_construction: false,
+            extension_method_fallback: false,
+            root_fallback: None,
+            root_type_access: false,
+        },
     };
 
 impl PythonResolver {

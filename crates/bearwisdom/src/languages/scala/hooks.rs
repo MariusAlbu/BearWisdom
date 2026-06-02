@@ -48,7 +48,12 @@ impl ScalaResolver {
                 use_generics: true,
                 namespace_lookup: NamespaceLookup::WildcardOnly,
                 kind_compatible: predicates::kind_compatible,
-                extensions: ChainExtensions::NONE,
+                // A value typed as a Scala `type` member alias walks to the
+                // alias's target before member lookup.
+                extensions: ChainExtensions {
+                    expand_aliases: true,
+                    ..ChainExtensions::NONE
+                },
             };
             if let Some(res) = chain::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
