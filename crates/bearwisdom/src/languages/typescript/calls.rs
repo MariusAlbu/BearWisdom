@@ -2,11 +2,17 @@ use super::helpers::node_text;
 use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
+/// Maximum nesting depth for recursive `CallArg` construction. Arguments
+/// deeper than this collapse to `CallArg::Other` rather than recursing further.
+const MAX_ARG_DEPTH: u32 = 32;
+
 /// Extract the positional arguments from a `call_expression`'s `arguments` node.
 ///
 /// Walks named children of the `arguments` list, converting each to a `CallArg`.
 /// Handles string literals, template literals with/without interpolation, tagged
-/// template bodies, bare identifiers, and numeric/boolean literals.
+/// template bodies, bare identifiers, numeric/boolean literals, and the six
+/// recursive expression shapes (ternary, array, await, spread, subscript,
+/// binary). Recursion is capped at `MAX_ARG_DEPTH` levels.
 pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     let Some(args_node) = call_node.child_by_field_name("arguments") else {
         return Vec::new();
@@ -14,66 +20,150 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     let mut result = Vec::new();
     let mut cursor = args_node.walk();
     for child in args_node.named_children(&mut cursor) {
-        let arg = match child.kind() {
-            "string" => {
-                // `"text"` or `'text'` — strip surrounding quotes.
-                let raw = node_text(child, src);
-                let inner = raw
-                    .trim_start_matches(['"', '\'', '`'])
-                    .trim_end_matches(['"', '\'', '`'])
-                    .to_string();
-                CallArg::StringLit(inner)
-            }
-            "template_string" => {
-                // `` `text ${expr} more` `` — check for substitution children.
-                let has_substitution = (0..child.child_count()).any(|i| {
-                    child.child(i)
-                        .map(|c| c.kind() == "template_substitution")
-                        .unwrap_or(false)
-                });
-                if has_substitution {
-                    // Replace each `${...}` span with `{}` placeholder.
-                    let raw = node_text(child, src);
-                    let replaced = replace_template_substitutions(&raw);
-                    CallArg::TemplateLit(replaced)
-                } else {
-                    // No interpolation — treat as a plain string literal.
-                    let raw = node_text(child, src);
-                    let inner = raw.trim_matches('`').to_string();
-                    CallArg::StringLit(inner)
-                }
-            }
-            "tagged_template_expression" => {
-                // `` gql`query Foo { ... }` `` — capture tag + body.
-                let tag_node = child.child_by_field_name("tag");
-                let tmpl_node = child.child_by_field_name("template");
-                let tag = tag_node.map(|n| node_text(n, src)).unwrap_or_default();
-                let body = tmpl_node
-                    .map(|n| {
-                        let raw = node_text(n, src);
-                        raw.trim_matches('`').to_string()
-                    })
-                    .unwrap_or_default();
-                CallArg::TaggedTemplate { tag, body }
-            }
-            "identifier" => CallArg::Ident(node_text(child, src)),
-            "number" => CallArg::Literal(node_text(child, src)),
-            "true" | "false" | "null" | "undefined" => {
-                CallArg::Literal(child.kind().to_string())
-            }
-            "object" => {
-                let pairs = extract_object_property_pairs(&child, src);
-                if pairs.is_empty() {
-                    CallArg::Other
-                } else {
-                    CallArg::ObjectKeys(pairs)
-                }
-            }
-            _ => CallArg::Other,
-        };
-        result.push(arg);
+        result.push(extract_arg(&child, src, 0));
     }
     result
+}
+
+/// Convert a single AST expression node to a `CallArg`, recursing for composite
+/// expression kinds up to `MAX_ARG_DEPTH`.
+fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
+    if depth >= MAX_ARG_DEPTH {
+        return CallArg::Other;
+    }
+    match node.kind() {
+        "string" => {
+            // `"text"` or `'text'` — strip surrounding quotes.
+            let raw = node_text(*node, src);
+            let inner = raw
+                .trim_start_matches(['"', '\'', '`'])
+                .trim_end_matches(['"', '\'', '`'])
+                .to_string();
+            CallArg::StringLit(inner)
+        }
+        "template_string" => {
+            // `` `text ${expr} more` `` — check for substitution children.
+            let has_substitution = (0..node.child_count()).any(|i| {
+                node.child(i)
+                    .map(|c| c.kind() == "template_substitution")
+                    .unwrap_or(false)
+            });
+            if has_substitution {
+                let raw = node_text(*node, src);
+                let replaced = replace_template_substitutions(&raw);
+                CallArg::TemplateLit(replaced)
+            } else {
+                let raw = node_text(*node, src);
+                let inner = raw.trim_matches('`').to_string();
+                CallArg::StringLit(inner)
+            }
+        }
+        "tagged_template_expression" => {
+            // `` gql`query Foo { ... }` `` — capture tag + body.
+            let tag_node = node.child_by_field_name("tag");
+            let tmpl_node = node.child_by_field_name("template");
+            let tag = tag_node.map(|n| node_text(n, src)).unwrap_or_default();
+            let body = tmpl_node
+                .map(|n| {
+                    let raw = node_text(n, src);
+                    raw.trim_matches('`').to_string()
+                })
+                .unwrap_or_default();
+            CallArg::TaggedTemplate { tag, body }
+        }
+        "identifier" => CallArg::Ident(node_text(*node, src)),
+        "number" => CallArg::Literal(node_text(*node, src)),
+        "true" | "false" | "null" | "undefined" => {
+            CallArg::Literal(node.kind().to_string())
+        }
+        "object" => {
+            let pairs = extract_object_property_pairs(node, src);
+            if pairs.is_empty() {
+                CallArg::Other
+            } else {
+                CallArg::ObjectKeys(pairs)
+            }
+        }
+        // Recursive expression shapes — produce structured variants instead of Other.
+        "ternary_expression" => {
+            // `cond ? consequence : alternative` — the condition's type does not
+            // affect the value type; only the two branches are preserved.
+            let then_node = node.child_by_field_name("consequence");
+            let else_node = node.child_by_field_name("alternative");
+            let then_branch = then_node
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let else_branch = else_node
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Ternary {
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            }
+        }
+        "array" => {
+            // `[elem0, elem1, ...]` — recurse on each named child. Spread
+            // elements inside the array become `CallArg::Spread` children.
+            let mut cursor = node.walk();
+            let elements = node
+                .named_children(&mut cursor)
+                .map(|child| extract_arg(&child, src, depth + 1))
+                .collect();
+            CallArg::ArrayLiteral { elements }
+        }
+        "await_expression" => {
+            // `await expr` — recurse on the awaited expression.
+            let inner = node
+                .child_by_field_name("value")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Await { expr: Box::new(inner) }
+        }
+        "spread_element" => {
+            // `...expr` — recurse on the spread operand.
+            let inner = node
+                .named_child(0)
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Spread { expr: Box::new(inner) }
+        }
+        "subscript_expression" => {
+            // `container[index]` — recurse on both sides.
+            let container = node
+                .child_by_field_name("object")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let index = node
+                .child_by_field_name("index")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::IndexAccess {
+                container: Box::new(container),
+                index: Box::new(index),
+            }
+        }
+        "binary_expression" => {
+            // `left op right` — capture operator text and recurse on operands.
+            let op = node
+                .child_by_field_name("operator")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default();
+            let left = node
+                .child_by_field_name("left")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            let right = node
+                .child_by_field_name("right")
+                .map(|n| extract_arg(&n, src, depth + 1))
+                .unwrap_or(CallArg::Other);
+            CallArg::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+        _ => CallArg::Other,
+    }
 }
 
 /// Replace `${...}` spans in a raw template literal text with `{}` placeholders.

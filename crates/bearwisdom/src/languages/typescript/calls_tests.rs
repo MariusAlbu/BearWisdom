@@ -146,3 +146,79 @@ function caller() { doThing(); }
         assert!(r.call_args.is_empty(), "expected empty call_args for no-arg call, got: {:?}", r.call_args);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Recursive variant extraction (INFER-4 slice 1ab)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn call_args_ternary_expression_produces_ternary_variant() {
+    let src = r#"
+function caller(a, b, c) { f(a ? b : c); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter().any(|a| matches!(a, CallArg::Ternary { .. })),
+        "expected Ternary variant for ternary arg, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_array_literal_produces_array_literal_variant() {
+    let src = r#"
+function caller(x, y) { f([x, y]); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        "expected ArrayLiteral variant for array arg, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_await_expression_produces_await_variant() {
+    let src = r#"
+async function caller(p) { f(await p); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter().any(|a| matches!(a, CallArg::Await { .. })),
+        "expected Await variant for await arg, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_spread_element_produces_spread_variant() {
+    let src = r#"
+function caller(xs) { f(...xs); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter().any(|a| matches!(a, CallArg::Spread { .. })),
+        "expected Spread variant for spread arg, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_subscript_expression_produces_index_access_variant() {
+    let src = r#"
+function caller(a, i) { f(a[i]); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        "expected IndexAccess variant for subscript arg, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_binary_expression_produces_binary_variant() {
+    let src = r#"
+function caller(a, b) { f(a + b); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        "expected Binary variant with op \"+\" for addition arg, got: {args:?}"
+    );
+}

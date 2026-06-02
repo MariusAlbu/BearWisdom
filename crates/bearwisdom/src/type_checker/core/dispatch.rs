@@ -274,7 +274,14 @@ fn resolve_arg_type(arg: &CallArg, arena: &TypeArena, lookup: &dyn SymbolLookup)
             Some(ty) if !ty.is_empty() => arena.intern_type_str(&ty),
             _ => arena.intern(Type::Unknown),
         },
-        CallArg::ObjectKeys(_) | CallArg::Other => arena.intern(Type::Unknown),
+        CallArg::ObjectKeys(_)
+        | CallArg::Other
+        | CallArg::Ternary { .. }
+        | CallArg::ArrayLiteral { .. }
+        | CallArg::Await { .. }
+        | CallArg::Spread { .. }
+        | CallArg::IndexAccess { .. }
+        | CallArg::Binary { .. } => arena.intern(Type::Unknown),
     }
 }
 

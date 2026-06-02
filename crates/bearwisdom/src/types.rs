@@ -457,6 +457,33 @@ pub enum CallArg {
     /// the `template:` value AND by handler-registration detectors that only
     /// need the keys (`server.addService(SvcDef, { m1: h, m2: h })`).
     ObjectKeys(Vec<(String, Option<String>)>),
+    /// Conditional (ternary) expression: `cond ? then_branch : else_branch`.
+    /// The condition is discarded; both value branches are preserved for
+    /// downstream typing of the result type.
+    Ternary {
+        then_branch: Box<CallArg>,
+        else_branch: Box<CallArg>,
+    },
+    /// Array literal: `[elem0, elem1, ...]`. Each element is a nested `CallArg`
+    /// so spread elements inside are represented as `Spread` children.
+    ArrayLiteral { elements: Vec<CallArg> },
+    /// Awaited expression: `await expr`. Carries the inner expression so the
+    /// resolver can unwrap the promise type.
+    Await { expr: Box<CallArg> },
+    /// Spread element: `...expr`. Carries the inner expression.
+    Spread { expr: Box<CallArg> },
+    /// Subscript / index access: `container[index]`.
+    IndexAccess {
+        container: Box<CallArg>,
+        index: Box<CallArg>,
+    },
+    /// Binary expression: `left op right`. `op` is the operator source text
+    /// (e.g. `"+"`, `"&&"`).
+    Binary {
+        op: String,
+        left: Box<CallArg>,
+        right: Box<CallArg>,
+    },
     /// Any argument shape not covered by the above variants.
     Other,
 }
