@@ -584,6 +584,121 @@ fn signature_derived_return_type_arrow_form() {
 }
 
 #[test]
+fn set_inferred_return_gap_fills_only_when_return_absent() {
+    // INFER-3: `makeUser` has no declared/signature return; `Svc.GetUser` has a
+    // signature-derived one. set_inferred_return must fill the gap on the first
+    // and refuse to override the second — and report newly-filled via its bool.
+    let pf = ParsedFile {
+        path: "a.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![
+            ExtractedSymbol {
+                name: "makeUser".to_string(),
+                qualified_name: "makeUser".to_string(),
+                kind: SymbolKind::Function,
+                visibility: Some(Visibility::Public),
+                start_line: 1,
+                end_line: 3,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: None,
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            },
+            ExtractedSymbol {
+                name: "GetUser".to_string(),
+                qualified_name: "Svc.GetUser".to_string(),
+                kind: SymbolKind::Method,
+                visibility: Some(Visibility::Public),
+                start_line: 5,
+                end_line: 5,
+                start_col: 0,
+                end_col: 0,
+                signature: Some("GetUser(): User".to_string()),
+                doc_comment: None,
+                scope_path: Some("Svc".to_string()),
+                parent_index: None,
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            },
+        ],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("a.ts".to_string(), "makeUser".to_string()), 1);
+    id_map.insert(("a.ts".to_string(), "Svc.GetUser".to_string()), 2);
+
+    let mut index = SymbolIndex::build(&[pf], &id_map);
+
+    // makeUser has no return → the inferred return fills the gap and reports true.
+    assert_eq!(index.return_type_name("makeUser"), None);
+    assert!(index.set_inferred_return("makeUser".to_string(), "User".to_string()));
+    assert_eq!(index.return_type_name("makeUser"), Some("User"));
+    // Re-applying does NOT override and reports false (drives fixpoint convergence).
+    assert!(!index.set_inferred_return("makeUser".to_string(), "Admin".to_string()));
+    assert_eq!(index.return_type_name("makeUser"), Some("User"));
+
+    // Svc.GetUser has a signature-derived return → never overridden by inference.
+    assert_eq!(index.return_type_name("Svc.GetUser"), Some("User"));
+    assert!(!index.set_inferred_return("Svc.GetUser".to_string(), "Wrong".to_string()));
+    assert_eq!(index.return_type_name("Svc.GetUser"), Some("User"));
+}
+
+#[test]
+fn join_inferred_returns_skips_conflicts_and_cross_file_collisions() {
+    use crate::indexer::resolve::loop_body::join_inferred_returns;
+    let c = |q: &str, id: i64, t: &str| (q.to_string(), id, t.to_string());
+
+    // Agreement: one function (db_id 1), two returns both "User" → infer User.
+    let agree = vec![c("makeUser", 1, "User"), c("makeUser", 1, "User")];
+    assert_eq!(
+        join_inferred_returns(&agree, |_| false).get("makeUser"),
+        Some(&"User".to_string())
+    );
+
+    // Conflict: one function, two returns of different types → infer nothing.
+    let conflict = vec![c("pick", 2, "User"), c("pick", 2, "Account")];
+    assert!(join_inferred_returns(&conflict, |_| false).is_empty());
+
+    // Cross-file collision: two distinct functions (db_id 3 and 4) share the
+    // qname "helper" and even agree on the type — still infer nothing, because
+    // the qname-keyed type map cannot tell them apart (applying one's return to
+    // the other would be wrong).
+    let collision = vec![c("helper", 3, "User"), c("helper", 4, "User")];
+    assert!(join_inferred_returns(&collision, |_| false).is_empty());
+
+    // already_known filters out a qname that already carries a return.
+    assert!(join_inferred_returns(&agree, |q| q == "makeUser").is_empty());
+}
+
+#[test]
 fn method_return_type_id_interned_via_typeref() {
     // A Method symbol with a `TypeRef` ref to "User" gets `return_type`
     // populated from that ref. The post-merge intern pass turns the string

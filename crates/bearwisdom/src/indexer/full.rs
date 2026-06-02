@@ -747,6 +747,60 @@ pub fn full_index(
             rstats.chain_misses.len(),
         );
     }
+
+    // --- INFER-3 / INFER-2: return-type inference fixpoint. ---
+    //
+    // The resolve passes above harvested return-type candidates from
+    // `return <expr>` sites (`rstats.inferred_returns`, joined per function,
+    // conflict-filtered, declared returns excluded). Gap-fill them into the
+    // cached index and re-resolve so callers read the inferred return — which
+    // can make further returns inferable (a factory's return unlocks its
+    // caller's return, transitively). Iterate to a fixpoint, bounded.
+    //
+    // Cost is proportional to value: a pass that fills no new return makes
+    // `applied == 0` and the loop exits immediately, so a project with no
+    // inferable returns (e.g. no language with a return query wired, or all
+    // returns annotated) pays nothing. Runs after the externals loop so the
+    // cached index is settled; returns that unlock *external* chains are a
+    // follow-on (no expand step here).
+    const MAX_RETURN_ITERATIONS: usize = 3;
+    for ret_iteration in 0..MAX_RETURN_ITERATIONS {
+        let mut applied = 0usize;
+        if let Some(idx) = cached_index.as_mut() {
+            for (qname, ty) in &rstats.inferred_returns {
+                if idx.set_inferred_return(qname.clone(), ty.clone()) {
+                    applied += 1;
+                }
+            }
+        }
+        if applied == 0 {
+            break;
+        }
+        db.conn()
+            .execute("DELETE FROM unresolved_refs", [])
+            .context("Failed to clear unresolved_refs before return-inference re-resolve")?;
+        db.conn()
+            .execute("DELETE FROM external_refs", [])
+            .context("Failed to clear external_refs before return-inference re-resolve")?;
+        rstats = resolve::resolve_iteration_with_cached_index_and_arena(
+            db,
+            &parsed,
+            &symbol_id_map,
+            Some(&project_ctx),
+            &mut cached_index,
+            &[],
+            std::sync::Arc::clone(&workspace_arena),
+        )
+        .context("Failed to re-resolve after return-type inference")?;
+        info!(
+            "Return-inference iteration {}: {} edges resolved, {} inferred returns applied",
+            ret_iteration + 1,
+            rstats.resolved,
+            applied,
+        );
+        mem_probe::probe(&format!("10_return_infer_iter_{}", ret_iteration + 1));
+    }
+
     // Materialize incoming_edge_count once, after the loop settles.
     resolve::finalize_resolution(db)
         .context("Failed to finalize resolution")?;

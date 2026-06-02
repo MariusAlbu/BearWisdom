@@ -28,6 +28,13 @@ pub(super) struct FileWriteBuf {
     /// Each entry: (file_path, source_line, emission).
     /// The file_path is resolved to a DB file_id during flush.
     pub(super) flow_emissions: Vec<(String, u32, FlowEmission)>,
+    /// Return-type candidates harvested from `return <expr>` sites this pass:
+    /// `(function_qname, function_db_id, resolved_yield_type_name)`. Not flushed
+    /// to SQL — the orchestrator joins these per function (conflict → skip;
+    /// qname owned by >1 function → skip) and gap-fills the cached index so
+    /// callers read the inferred return (INFER-3/2). The db_id distinguishes
+    /// two functions that share a qname across files.
+    pub(super) inferred_returns: Vec<(String, i64, String)>,
 }
 
 impl FileWriteBuf {
@@ -36,6 +43,7 @@ impl FileWriteBuf {
         self.externals.append(&mut other.externals);
         self.unresolved.append(&mut other.unresolved);
         self.flow_emissions.append(&mut other.flow_emissions);
+        self.inferred_returns.append(&mut other.inferred_returns);
     }
 }
 

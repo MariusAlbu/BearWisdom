@@ -401,6 +401,23 @@ impl SymbolIndex {
         self.external_paths = paths;
     }
 
+    /// Gap-fill an inferred return type for `qname` (INFER-3 / INFER-2). Only
+    /// fills when the function has NO existing return type — an inferred return
+    /// never overrides a declared or signature-derived one (soundness: declared
+    /// wins). Returns `true` only when it newly filled a gap, which the
+    /// orchestrator uses to drive the inference fixpoint to convergence: once
+    /// every inferable return is filled, a pass sets nothing new and the loop
+    /// stops.
+    pub fn set_inferred_return(&mut self, qname: String, ty: String) -> bool {
+        let entry = self.type_info.entry(qname).or_default();
+        if entry.return_type.is_none() {
+            entry.return_type = Some(ty);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Load all symbols from the database into the index, filling gaps left by
     /// an incremental build where only changed files were parsed.
     ///

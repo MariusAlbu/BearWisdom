@@ -41,6 +41,59 @@ use super::indexes;
 use super::write_buf::{flush_resolve_buf, FileStats, FileWriteBuf};
 use super::ResolutionStats;
 
+/// Join harvested return-type candidates into per-function inferred returns.
+///
+/// Each candidate is `(function_qname, function_db_id, yield_type)`. Rules,
+/// all conservative — widen what resolves, never infer a wrong type:
+///   - a qname claimed by more than one distinct `db_id` (the same simple name
+///     defined in different files) is ambiguous in the qname-keyed type map, so
+///     it infers nothing — applying one function's return to the others would
+///     be wrong;
+///   - for a uniquely-owned qname, the inferred return is the single type all
+///     its candidates agree on; any disagreement infers nothing;
+///   - `already_known(qname)` drops a qname that already has a declared or
+///     previously-inferred return (inference only fills genuine gaps).
+pub(super) fn join_inferred_returns(
+    candidates: &[(String, i64, String)],
+    already_known: impl Fn(&str) -> bool,
+) -> HashMap<String, String> {
+    use std::collections::HashSet;
+    // Distinct function db_ids per qname → detects cross-file collisions.
+    let mut ids_by_qname: HashMap<&str, HashSet<i64>> = HashMap::new();
+    for (qname, db_id, _) in candidates {
+        ids_by_qname.entry(qname.as_str()).or_default().insert(*db_id);
+    }
+    // Conflict-join the yield types for uniquely-owned qnames.
+    // qname → Some(agreed type) | None (conflict sentinel).
+    let mut by_fn: HashMap<&str, Option<&str>> = HashMap::new();
+    for (qname, _db_id, ty) in candidates {
+        if ids_by_qname
+            .get(qname.as_str())
+            .map_or(true, |ids| ids.len() != 1)
+        {
+            continue;
+        }
+        match by_fn.get(qname.as_str()) {
+            None => {
+                by_fn.insert(qname, Some(ty));
+            }
+            Some(Some(prev)) if *prev != ty.as_str() => {
+                by_fn.insert(qname, None);
+            }
+            _ => {}
+        }
+    }
+    let mut out = HashMap::new();
+    for (qname, agreed) in by_fn {
+        if let Some(ty) = agreed {
+            if !already_known(qname) {
+                out.insert(qname.to_string(), ty.to_string());
+            }
+        }
+    }
+    out
+}
+
 pub(super) fn resolve_iteration_inner(
     db: &mut Database,
     parsed: &[ParsedFile],
@@ -504,6 +557,64 @@ fn resolve_iteration_body(
                         }
                     }
 
+                    // INFER-3: harvest a return-type candidate. When this ref
+                    // is a `return <expr>` of a function with no declared or
+                    // already-known return type, record its resolved yield as a
+                    // candidate; the orchestrator joins candidates per function
+                    // (conflict → skip) and gap-fills the index, re-resolving so
+                    // callers read the inferred return.
+                    if let Some(fn_idx) = pf.flow.flow_return_lhs.get(&ref_idx).copied() {
+                        // The function's own DB id keys the candidate so the
+                        // join can detect a qname claimed by more than one
+                        // function (same simple name in different files) and
+                        // skip it — inference would be unsound there.
+                        let fn_db_id = file_symbol_ids.get(fn_idx).and_then(|id| *id);
+                        if let (Some(fn_sym), Some(fn_db_id)) =
+                            (pf.symbols.get(fn_idx), fn_db_id)
+                        {
+                            if fn_sym.return_type.is_none()
+                                && index.return_type_name(&fn_sym.qualified_name).is_none()
+                            {
+                                let yield_str = resolution
+                                    .resolved_yield_type
+                                    .and_then(|id| {
+                                        index.type_arena().map(|arena| arena.format_type(id))
+                                    })
+                                    .or_else(|| {
+                                        let target_id = resolution.target_symbol_id;
+                                        index
+                                            .by_name(&r.target_name)
+                                            .iter()
+                                            .find(|s| s.id == target_id)
+                                            .and_then(|s| {
+                                                index.return_type_str(&s.qualified_name).or_else(
+                                                    || index.field_type_str(&s.qualified_name),
+                                                )
+                                            })
+                                    });
+                                if let Some(ys) = yield_str {
+                                    // Skip the Unknown sentinel (format_type
+                                    // emits lowercase "unknown") and a bare
+                                    // generic-parameter name (e.g. `T`) — neither
+                                    // is a real, bindable return type.
+                                    let is_generic_param = index
+                                        .generic_params(&fn_sym.qualified_name)
+                                        .map_or(false, |g| g.iter().any(|p| p == &ys));
+                                    if !ys.is_empty()
+                                        && !ys.eq_ignore_ascii_case("unknown")
+                                        && !is_generic_param
+                                    {
+                                        buf.inferred_returns.push((
+                                            fn_sym.qualified_name.clone(),
+                                            fn_db_id,
+                                            ys,
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     buf.edges.push((
                         source_id,
                         resolution.target_symbol_id,
@@ -783,6 +894,14 @@ fn resolve_iteration_body(
     stats.engine_resolved += local_stats_total.engine_resolved;
     stats.unresolved += local_stats_total.unresolved;
     stats.external += local_stats_total.external;
+
+    // INFER-3: join return-type candidates per function (see
+    // `join_inferred_returns`). Skip any qname still carrying a known return.
+    if !combined_buf.inferred_returns.is_empty() {
+        stats.inferred_returns = join_inferred_returns(&combined_buf.inferred_returns, |q| {
+            index.return_type_name(q).is_some()
+        });
+    }
 
     tx.commit()
         .context("Failed to commit resolution transaction")?;

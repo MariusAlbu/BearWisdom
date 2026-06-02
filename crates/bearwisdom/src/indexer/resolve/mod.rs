@@ -72,6 +72,12 @@ pub struct ResolutionStats {
     /// (full.rs) feeds these into `expand_chain_reachability` to drive a
     /// second-pass `Ecosystem::resolve_symbol` reload.
     pub chain_misses: Vec<ChainMiss>,
+    /// Function return types inferred from `return <expr>` sites this pass
+    /// (qname → joined type), already conflict-filtered and limited to
+    /// functions with no declared/known return. The orchestrator gap-fills
+    /// these into the cached index and re-resolves so callers read the
+    /// inferred return (INFER-3 / INFER-2).
+    pub inferred_returns: std::collections::HashMap<String, String>,
 }
 
 impl ResolutionStats {
