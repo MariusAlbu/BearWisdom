@@ -637,14 +637,18 @@ impl SymbolIndex {
             }
         }
 
-        // Build re-export map from Imports refs that have a module set.
-        // These are emitted by the TS/JS extractor for:
+        // Build re-export map from re-export refs that have a module set:
         //   export { X } from './y'   → Imports ref, target_name="X", module="./y"
         //   export * from './y'       → Imports ref, target_name="*", module="./y"
+        //   Rust `pub use foo::Bar`   → Imports ref, target_name="Bar", module="foo"
+        // The `is_reexport` gate is load-bearing for soundness: a PRIVATE import
+        // (`import { X } from 'pkg'`, Rust `use foo::Bar`) is `is_reexport=false`
+        // and must NOT enter this map — following it would bind a name through a
+        // module that merely imports it, violating scope-directed resolution.
         let mut reexport_map: FxHashMap<String, Vec<(String, String)>> = FxHashMap::default();
         for pf in parsed {
             for r in &pf.refs {
-                if r.kind != EdgeKind::Imports {
+                if r.kind != EdgeKind::Imports || !r.is_reexport {
                     continue;
                 }
                 let Some(ref mod_path) = r.module else {

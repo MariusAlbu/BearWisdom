@@ -1045,7 +1045,7 @@ fn index_empty() -> SymbolIndex {
 /// Build a re-export ref: `export { name } from 'module'`
 /// These are emitted by the TS extractor as EdgeKind::Imports with module set.
 fn make_reexport_ref(source_idx: usize, exported_name: &str, from_module: &str, line: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef { is_import_binding: false, is_reexport: true,
         source_symbol_index: source_idx,
         target_name: exported_name.to_string(),
         kind: EdgeKind::Imports,
@@ -1777,7 +1777,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
     // Barrel: `export { QuickCreateButton } from "./quick-create-button"`
     // The TS extractor emits this as an Imports ref with module set. We
     // build the file with one such ref and no own symbols.
-    let barrel_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let barrel_ref = ExtractedRef { is_import_binding: false, is_reexport: true,
         source_symbol_index: 0,
         target_name: "QuickCreateButton".to_string(),
         kind: EdgeKind::Imports,
@@ -2013,7 +2013,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
     use crate::indexer::resolve::engine::SymbolIndex;
 
     // Barrel: zero own symbols, one re-export ref pointing at a bare spec.
-    let barrel_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let barrel_ref = ExtractedRef { is_import_binding: false, is_reexport: true,
         source_symbol_index: 0,
         target_name: "Trans".to_string(),
         kind: EdgeKind::Imports,
