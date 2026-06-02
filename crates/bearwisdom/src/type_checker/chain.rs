@@ -1104,6 +1104,7 @@ fn chain_strategy_inheritance(prefix: &str) -> &'static str {
         "go" => "go_chain_inheritance",
         "php" => "php_chain_inheritance",
         "c" => "c_chain_inheritance",
+        "rust" => "rust_chain_inheritance",
         "kotlin" => "kotlin_chain_inheritance",
         "scala" => "scala_chain_inheritance",
         "dart" => "dart_chain_inheritance",
