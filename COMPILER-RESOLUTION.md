@@ -102,7 +102,9 @@ explicitly rejected.
 | INFER-10 | Generic type-alias expansion in the shared walker — `expand_aliases` flipped for Rust/Python/Scala (TS/C already on); Go head-only alias-target emission for true `=` aliases (defined types non-expandable). Kotlin deferred (extractor emits no alias TypeRef). | `a948e965` |
 | INFER-4 (prereq, slice 1ab) | Recursive `CallArg` variants (`Ternary`/`ArrayLiteral`/`Await`/`Spread`/`IndexAccess`/`Binary`) + TS extraction | `32104a9d` |
 | INFER-4 (slice 1c) | Conservative expression-typing arms in `resolve_arg_type` — ternary/array/await/spread/index/binary, Unknown over a guess; sound `&&`/`\|\|`/`??` operand-join | `8b5fd790` |
-| INFER-8 | Argument-driven generic inference at a terminal call — `unify_into` (structural inverse of `substitute`) + the `chain.rs` G2 branch; binds a callee's type params (own + owner) from resolved arg types, `is_none`-guarded so the receiver binding stays authoritative. Terminal-call scope (per-segment args + bare-name site are follow-ons). | _(this change)_ |
+| INFER-8 | Argument-driven generic inference at a terminal call — `unify_into` (structural inverse of `substitute`) + the `chain.rs` G2 branch; binds a callee's type params (own + owner) from resolved arg types, `is_none`-guarded so the receiver binding stays authoritative. Terminal-call scope (per-segment args + bare-name site are follow-ons). | `828c869e` |
+| INFER-3 (capture) | `return_query` keyed by `strategy_prefix` (`return_query_for`) → `FlowMeta::flow_return_lhs`; TS direct-body returns of named fns/methods, nested-callback returns not misattributed | `b77b5587` |
+| INFER-3 + INFER-2 (fixpoint) | Harvest return-type candidates → `join_inferred_returns` (conflict-skip, cross-file-qname-collision-skip via db_id) → `set_inferred_return` gap-fill (never overrides declared) → bounded re-resolve in `full.rs` (cap 3, zero-cost when no inferable returns). Cross-file inferred returns; `u.greet()→User.greet @1.0` proven end-to-end | `c810e6a3` |
 
 ts-immich: grep-baseline 6,179 → **4,627** unresolved, with honest structural edges.
 
@@ -185,17 +187,22 @@ the corpus gap without per-language code; finish it before any `LANG-*` work.**
 
 **Deps:** — (foundational; INFER-2/3/4 depend on this)
 
-### INFER-2 — Interprocedural type propagation  ·  [generic]  ·  ❌
-**Compiler feature:** an *inferred* (un-annotated) return/local type crosses call + file boundaries.
-**Gap:** `LocalTypeCache` is per-file, per-thread (`index/mod.rs:210`). Only declared/signature types cross files; inferred types die at the file edge.
-**Fix:** persist inferred return/field types into the shared type maps so other files' chains read them.
-**Deps:** INFER-3 (for the inferred returns to exist)
+### INFER-2 — Interprocedural type propagation  ·  [generic]  ·  ✅ (inferred return types)
+**Done.** An *inferred* return type now crosses the file edge. The resolve orchestrator (`full.rs`) harvests per-pass return-type candidates (`ResolutionStats::inferred_returns`), gap-fills them into the cached `SymbolIndex` (`set_inferred_return` — fills `type_info[qname].return_type` only when absent, so a declared/signature return is never overridden), and re-resolves, iterating to a fixpoint bounded by `MAX_RETURN_ITERATIONS=3` and exiting the instant a pass fills nothing new. A function's inferred return is then read by chains in OTHER files on the next iteration. Built jointly with INFER-3 (capture `b77b5587`, fixpoint `c810e6a3`).
+**Scope:** carries inferred *return* types (INFER-3's product). Inferred *local* types still live in the per-file `LocalTypeCache` (within-file forward flow); external-chain interplay (an inferred return unlocking a fresh external demand) is a follow-on — the fixpoint runs after the externals loop with no expand step.
+**Deps:** INFER-3 ✅.
 
-### INFER-3 — Body-based return-type inference  ·  [generic]  ·  ❌
-**Compiler feature:** infer a function's return type from its `return` statements when unannotated.
-**Gap:** `return_type` is sourced from signature/declaration only.
-**Fix:** when no annotation, infer from the function body's return expressions (reuses INFER-4).
-**Deps:** INFER-4
+### INFER-3 — Body-based return-type inference  ·  [generic]  ·  ✅ (TS; direct-body returns)
+**Done.** An un-annotated function's return type is inferred from its `return <expr>` expressions and propagated through the INFER-2 fixpoint.
+```ts
+export function makeUser() { return new User(); }   // ✅ return inferred User (from `new User()`), no annotation
+const u = makeUser(); u.greet();                     // ✅ u:User via forward-cache → u.greet() → User.greet @1.0, CROSS-FILE
+function pick(c) { return c ? a() : b(); }           // ⚠️ return nested in nothing here, but a return inside if/for is NOT captured (direct-body only)
+items.forEach(x => { return x.id; });                // ✅ inner-callback return NOT misattributed to the enclosing fn (direct-child query scope)
+```
+Capture: a `return_query` keyed by `strategy_prefix` (`flow.rs::return_query_for`, TS only) matches a `return <expr>` that is a DIRECT statement of a named function/method body → `FlowMeta::flow_return_lhs`. Harvest (`loop_body.rs`) records `(qname, fn_db_id, resolved_yield)`; `join_inferred_returns` infers the one type all of a function's returns agree on (conflict → skip), skipping qnames owned by >1 function (cross-file collision) and the `unknown` / bare-generic sentinels.
+**Scope / follow-ons (sound conservative misses):** TS named functions/methods, direct-body returns only. Not yet — returns nested in `if`/`for` (widen the query), arrow-const bodies, other languages (per-language `return_query`).
+**Deps:** INFER-4 ✅.
 
 ### INFER-4 — Expression-level type inference  ·  [generic]  ·  ⚠️ (TS done; 9 langs pending extraction)
 **Compiler feature:** type an arbitrary RHS expression.
@@ -420,7 +427,7 @@ rules; it closes by finishing the generic capabilities and **moving every langua
 onto them**. Per-language % is a *consequence* of that, measured once at closeout (DOC-4).
 
 1. **QUAL-2b — consolidate the chain walkers — ✅ DONE.** All **9** `MemberChain` walkers retired onto `resolve_via_chain` (Ada is a name resolver, not a chain fork — out of scope). **14 languages** on one algorithm, **−1,294** production LOC, 1 fn-pointer, 0 regressions. The gate is enforced; everything below now lands as data/capability on the survivor.
-2. **§B generic inference.** **INFER-5 ✅** (structural assignability, `d7626b76`). **INFER-10 ✅** (alias expansion, `a948e965`). The expression-typing track's `CallArg`-recursive prerequisite **landed** (`32104a9d`/`8b5fd790`): **INFER-4 ✅ for TS** (the other 9 languages emit `CallArg::Other → Unknown` until their `calls.rs` extraction is wired), and **INFER-8 ✅** (arg-driven generics at a terminal call) rides on it. Remaining track work: **INFER-3** (body-return inference, deps INFER-4 ✅), **INFER-2** (interprocedural, deps INFER-3), **INFER-9** (callback-param typing, deps INFER-8 ✅ + INFER-6), plus the two INFER-8 follow-ons (per-segment call args so mid-chain generic calls infer; a bare-name-resolver INFER-8 site) and the breadth fan-out of `CallArg` extraction to the other 9 languages.
+2. **§B generic inference.** **INFER-5 ✅** (structural assignability, `d7626b76`). **INFER-10 ✅** (alias expansion, `a948e965`). The expression-typing track's `CallArg`-recursive prerequisite **landed** (`32104a9d`/`8b5fd790`): **INFER-4 ✅ for TS** (the other 9 languages emit `CallArg::Other → Unknown` until their `calls.rs` extraction is wired), and **INFER-8 ✅** (arg-driven generics at a terminal call) rides on it. **INFER-3 ✅ + INFER-2 ✅** (body-return inference + the interprocedural fixpoint that carries inferred returns cross-file). Remaining track work: **INFER-9** (callback-param typing, deps INFER-8 ✅ + INFER-6), the two INFER-8 follow-ons (per-segment call args so mid-chain generic calls infer; a bare-name-resolver INFER-8 site), the breadth fan-out of `CallArg` extraction to the other 9 languages, and INFER-3 widenings (nested/conditional returns, arrow bodies, per-language `return_query`).
 3. **CODEGEN-1 — the third symbol source.** Lombok / derive / source-gen are a large unresolved slice; one generic hook + per-language recognizers.
 4. **EXT-2 finish + EXT-5 + INFER-6** — external return types, framework ambient globals, container generics (each gated on hydration).
 5. **BIND-2e (generic re-export) + BIND-4 (bare-name overload)** — generic binder completeness across languages.
@@ -429,7 +436,7 @@ onto them**. Per-language % is a *consequence* of that, measured once at closeou
 
 **State (2026-06-02):** foundations done — externals (EXT-1 / EXT-2 slice-1 / EXT-3 / EXT-4), three-state metric (QUAL-5), CFG narrowing with end-to-end `Union` dispatch across 14 languages (INFER-1), binder shadowing (BIND-1), visibility-blind over-resolve (BIND-3). **QUAL-2 ✅** — all **9** chain-walker forks retired onto `resolve_via_chain`: **14 languages on one algorithm, −1,294 production LOC, 1 fn-pointer, 6,100 lib tests green, 0 regressions** (commits `58ad2b24` · `329c5a51` · `c406434e` · `22c4adc7` · `73a578b3` · `b2c20fa3`). The "one engine" invariant is now **true** for chain resolution. **INFER-5 ✅** (`d7626b76`) + **INFER-10 ✅** (`a948e965`, alias expansion for 6 languages). **Expression-typing track (2026-06-02):** the `CallArg`-recursive prerequisite landed (`32104a9d`/`8b5fd790`), so **INFER-4 ✅ for TS** (9 langs pending extraction) and **INFER-8 ✅** (arg-driven generics, terminal call) — `unify_into` + the `chain.rs` G2 branch, adversarially reviewed (one missed-inference gap found and fixed: owner params are bindable, `is_none`-guarded). Newly tracked after the 2026-06-02 audit: **INFER-9, BIND-2e, BIND-4, CODEGEN-1**; re-scoped **INFER-7, LANG-CPP-1**; corrected **LANG-DART-1c ✅, CORPUS-1 (HTML only), CORPUS-2 (astro dropped)**. Remaining: INFER-3/INFER-2 (body-return → interprocedural), INFER-9, the two INFER-8 follow-ons (per-segment call args, bare-name site) + the `CallArg` breadth fan-out, CODEGEN-1, BIND-2e/4, `LANG-*` as data, DOC-4 closeout recapture.
 
-**Single best next move:** **INFER-3 — body-based return-type inference** (infer an un-annotated function's return type from its `return` expressions, reusing the now-landed INFER-4 arms), then **INFER-2** to carry inferred returns across the file edge. This is the next link in the inference spine: INFER-8 already binds generics from args at a call leaf, but its yields (and any other inferred type) still die at the file boundary (`LocalTypeCache` is per-file) — INFER-2/3 are what make the typed expressions cross procedures. All `[generic]`. (QUAL-2b and INFER-4/INFER-8, the prior single-best-moves, are ✅ done.)
+**Single best next move:** widen WHERE inference fires, now that INFER-3/INFER-2 carry inferred returns cross-file. In leverage order: (a) per-segment `ChainSegment` call args so mid-chain generic calls (`repo.find(u).name` in one expression) infer, not only terminal ones; (b) a bare-name-resolver INFER-8 site for `const x = genericFunc(u)` (chain:None routes there, not the chain walker); (c) the `CallArg` extraction fan-out to the other 9 languages, which lights up INFER-4 + INFER-8 corpus-wide. (QUAL-2b, INFER-4/5/8/10, and INFER-3/INFER-2 — the prior single-best-moves — are ✅ done.)
 
 ---
 
