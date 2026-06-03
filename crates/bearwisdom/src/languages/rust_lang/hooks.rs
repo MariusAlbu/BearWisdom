@@ -82,7 +82,11 @@ pub(crate) fn resolve(
 
         // `Self` → resolve to the enclosing struct/enum/trait.
         if target == "Self" {
-            let enclosing = find_enclosing_type(&ref_ctx.scope_chain, lookup)?;
+            let enclosing = find_enclosing_type(
+                &ref_ctx.source_symbol.qualified_name,
+                &ref_ctx.scope_chain,
+                lookup,
+            )?;
             let sym = lookup.by_qualified_name(&enclosing)?;
             if predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
@@ -128,9 +132,11 @@ pub(crate) fn resolve(
         // blocks, which the chain walker can't see when the type-ref pass
         // emits a chain-less ref.
         if ref_ctx.extracted_ref.module.as_deref() == Some("Self") {
-            if let Some(enclosing) =
-                find_enclosing_type(&ref_ctx.scope_chain, lookup)
-            {
+            if let Some(enclosing) = find_enclosing_type(
+                &ref_ctx.source_symbol.qualified_name,
+                &ref_ctx.scope_chain,
+                lookup,
+            ) {
                 let candidate = format!("{enclosing}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
                     if predicates::kind_compatible(edge_kind, &sym.kind) {
@@ -619,11 +625,20 @@ pub(crate) fn resolve(
 
 }
 
-/// Find the enclosing struct/impl/trait name from the scope chain.
+/// Find the struct/enum/trait that encloses the reference's source symbol, used
+/// to resolve `Self` / `Self::X`.
+///
+/// Prefers the structural enclosing type from the source symbol's containment
+/// chain; falls back to a kind-walk of `scope_chain` for lookups without the
+/// structural map.
 fn find_enclosing_type(
+    source_qname: &str,
     scope_chain: &[String],
     lookup: &dyn SymbolLookup,
 ) -> Option<String> {
+    if let Some(qname) = lookup.enclosing_type_qname(source_qname) {
+        return Some(qname.to_string());
+    }
     for scope in scope_chain {
         if let Some(sym) = lookup.by_qualified_name(scope) {
             if matches!(sym.kind.as_str(), "struct" | "enum" | "trait" | "class") {
@@ -631,10 +646,7 @@ fn find_enclosing_type(
             }
         }
     }
-    if scope_chain.len() >= 2 {
-        return Some(scope_chain[scope_chain.len() - 2].clone());
-    }
-    scope_chain.last().cloned()
+    None
 }
 
 pub(super) fn infer_external_inner(

@@ -180,8 +180,13 @@ pub fn resolve_via_chain(
 
     let root_type = match segments[0].kind {
         SegmentKind::SelfRef if config.has_self_ref => {
-            find_enclosing_type(&ref_ctx.scope_chain, lookup, config.enclosing_type_kinds)
-                .map(|t| (config.normalize_type)(&t))
+            find_enclosing_type(
+                &ref_ctx.source_symbol.qualified_name,
+                &ref_ctx.scope_chain,
+                lookup,
+                config.enclosing_type_kinds,
+            )
+            .map(|t| (config.normalize_type)(&t))
         }
         SegmentKind::TypeAccess if config.extensions.root_type_access => {
             // `ClassName::method()` — the static-access root names a type.
@@ -818,13 +823,23 @@ fn resolve_import_root_type(
     None
 }
 
-/// Find the enclosing type from the scope chain, matching against
-/// the specified set of type kinds.
+/// Find the type that encloses the reference's source symbol, used to resolve a
+/// `self`/`this` chain root.
+///
+/// Prefers the structural enclosing type derived from the source symbol's
+/// containment chain (`SymbolLookup::enclosing_type_qname`). Falls back to a
+/// kind-walk of `scope_chain` for lookups that don't expose the structural map
+/// (synthetic test doubles, augmented indexes) — the first scope entry whose
+/// indexed kind is in `type_kinds`.
 pub fn find_enclosing_type(
+    source_qname: &str,
     scope_chain: &[String],
     lookup: &dyn SymbolLookup,
     type_kinds: &[&str],
 ) -> Option<String> {
+    if let Some(qname) = lookup.enclosing_type_qname(source_qname) {
+        return Some(qname.to_string());
+    }
     for scope in scope_chain {
         if let Some(sym) = lookup.by_qualified_name(scope) {
             if type_kinds.iter().any(|&k| sym.kind == k) {
@@ -832,11 +847,7 @@ pub fn find_enclosing_type(
             }
         }
     }
-    // Fallback: penultimate scope is often the class (method → class → package).
-    if scope_chain.len() >= 2 {
-        return Some(scope_chain[scope_chain.len() - 2].clone());
-    }
-    scope_chain.last().cloned()
+    None
 }
 
 /// Expand `current_type` through `expand_alias` when the language opts into

@@ -355,6 +355,27 @@ pub trait SymbolLookup {
         None
     }
 
+    /// The qualified name of the nearest type (class/struct/interface/trait/enum)
+    /// that structurally encloses the symbol named `source_qname`, excluding the
+    /// symbol itself — Roslyn's `ContainingType`.
+    ///
+    /// Derived from the symbol's `parent_index` chain at build time, so it is
+    /// immune to qname-construction bugs and selects the enclosing type by
+    /// *kind* rather than by position in a flattened scope chain. Returns `None`
+    /// for top-level symbols, files with no enclosing type, and synthetic test
+    /// lookups that don't opt in.
+    fn enclosing_type_qname(&self, _source_qname: &str) -> Option<&str> {
+        None
+    }
+
+    /// The qualified name of the nearest namespace/module that structurally
+    /// encloses the symbol named `source_qname`, excluding the symbol itself —
+    /// Roslyn's `ContainingNamespace`. Same construction as
+    /// `enclosing_type_qname`; default `None`.
+    fn enclosing_namespace_qname(&self, _source_qname: &str) -> Option<&str> {
+        None
+    }
+
     /// Record a chain walker bail-out for the R3 second-pass reload.
     ///
     /// Called by `crate::type_checker::chain::resolve_via_chain` when it resolved

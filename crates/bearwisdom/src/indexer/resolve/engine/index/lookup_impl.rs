@@ -319,6 +319,16 @@ impl SymbolLookup for SymbolIndex {
         self.inherits_map.get(class_qname).map(|s| s.as_str())
     }
 
+    fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
+        self.enclosing_type_qname.get(source_qname).map(|s| s.as_str())
+    }
+
+    fn enclosing_namespace_qname(&self, source_qname: &str) -> Option<&str> {
+        self.enclosing_namespace_qname
+            .get(source_qname)
+            .map(|s| s.as_str())
+    }
+
     fn angular_selector(&self, raw_selector: &str) -> Option<&str> {
         self.angular_selectors.get(raw_selector).map(|s| s.as_str())
     }

@@ -188,7 +188,7 @@ impl JavaResolver {
         // `myMethod()` means `this.myMethod()` and can target a parent class.
         if edge_kind == EdgeKind::Calls && !effective_target.contains('.') {
             if let Some(calling_class) =
-                inheritance::enclosing_class_from_scope(&ref_ctx.scope_chain)
+                inheritance::enclosing_class_from_scope(&ref_ctx.source_symbol.qualified_name, lookup)
             {
                 if let Some(res) = inheritance::resolve_via_inheritance(
                     calling_class,

@@ -124,6 +124,17 @@ pub struct SymbolIndex {
     /// Keyed by child qname (dotted form), value is the direct parent qname.
     /// Transitive ancestors are reached by chaining lookups.
     inherits_map: FxHashMap<String, String>,
+    /// Structural enclosing-type map: symbol qname → nearest enclosing
+    /// type-frame qname. Built from each symbol's `parent_index` chain via
+    /// `crate::containment::build_containing_scope`, so it carries the kind of
+    /// each frame and selects the enclosing *type* by kind — what positional
+    /// scope-chain indexing (`get(1)`, `len - 2`) cannot express. Keyed by the
+    /// source symbol's qname; the methods/classes that pose these queries have
+    /// correct qnames, so the key is reliable.
+    enclosing_type_qname: FxHashMap<String, String>,
+    /// Structural enclosing-namespace map: symbol qname → nearest enclosing
+    /// namespace/module-frame qname. Same construction as `enclosing_type_qname`.
+    enclosing_namespace_qname: FxHashMap<String, String>,
     /// Structural shape of every TypeAlias symbol in the project.
     /// Indexed by both qualified name AND simple name so chain walkers can
     /// look up an alias whether or not the encountered name carries its

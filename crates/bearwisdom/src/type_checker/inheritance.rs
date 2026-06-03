@@ -2,18 +2,12 @@
 // type_checker/inheritance.rs — Shared inheritance-chain walk helper
 //
 // Used by JVM-family and C# resolvers to resolve bare method calls that come
-// from a parent class not visible to the scope-chain walk (Step 1).
-//
-// PR 4 of decision-2026-04-27-e75: moved here from `indexer/resolve/`. PR 5
-// will lift `resolve_via_inheritance` into a `TypeChecker::walk_inheritance`
-// default method once `kind_compatible` is on the trait too — both are
-// consumed together by the JVM/C# call sites.
+// from a parent class not visible to the local scope walk.
 //
 // Design:
-//   The caller has already failed Steps 1–N (scope chain, package/namespace,
-//   imports, qualified name) and hands us the simple method name plus the
-//   qname of the enclosing class.  We walk `inherits_map` upward — up to
-//   `MAX_DEPTH` hops — trying `{ancestor_qname}.{method_name}` at each level.
+//   The caller hands us the simple method name plus the qname of the enclosing
+//   class.  We walk `inherits_map` upward — up to `MAX_DEPTH` hops — trying
+//   `{ancestor_qname}.{method_name}` at each level.
 //
 //   Depth cap guards against pathological cycles in malformed source.
 //
@@ -74,29 +68,15 @@ where
     None
 }
 
-/// Extract the calling class qname from the scope chain.
+/// The qualified name of the type that encloses the reference's source symbol —
+/// the calling class for an implicit-`this` method call.
 ///
-/// The scope chain is built from `source_symbol.scope_path` which encodes the
-/// enclosing scopes from innermost to outermost:
-///
-///   `"com.example.MyClass.myMethod"` →
-///   scope_chain = ["com.example.MyClass.myMethod", "com.example.MyClass", "com.example"]
-///
-/// For a method call inside `myMethod`, scope_chain[0] is the *method* qname
-/// and scope_chain[1] is the *class* qname.  We want the class, not the
-/// method, so we return the first scope entry that looks like a class
-/// (i.e., it has at least one component and does not look like a method —
-/// we approximate this by taking the second entry when available, falling
-/// back to the first).
-///
-/// Groovy/Java/Kotlin: the extractor always puts the method inside the class
-/// in the scope_path, so scope_chain[0] is method-level, scope_chain[1] is
-/// the class.  C# does the same.
-///
-/// Returns `None` when the scope chain has fewer than two entries (top-level
-/// functions or files with no class).
-pub fn enclosing_class_from_scope<'a>(scope_chain: &'a [String]) -> Option<&'a str> {
-    // scope_chain[0] is the innermost scope (the method itself).
-    // scope_chain[1] is the enclosing class.
-    scope_chain.get(1).map(|s| s.as_str())
+/// Resolved structurally from the source symbol's containment chain, so a
+/// method-source ref yields its *class*, not the surrounding package. Returns
+/// `None` for top-level functions and files with no enclosing type.
+pub fn enclosing_class_from_scope<'a>(
+    source_qname: &str,
+    lookup: &'a dyn SymbolLookup,
+) -> Option<&'a str> {
+    lookup.enclosing_type_qname(source_qname)
 }
