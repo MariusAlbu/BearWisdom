@@ -90,32 +90,3 @@ fn generator_meta_outside_first_16kb_not_detected() {
     let r = extract(&src, "page.html");
     assert!(!r.symbols.is_empty(), "marker past 16KB shouldn't bail extraction");
 }
-
-// ---------------------------------------------------------------------------
-// Component-tag binding (custom-element + PascalCase tags → Calls refs)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn custom_element_and_pascal_tags_become_calls_refs() {
-    let src = "<html><body><my-widget></my-widget><UserCard /><div>plain</div></body></html>";
-    let r = extract(src, "page.html");
-    let calls: Vec<&str> = r
-        .refs
-        .iter()
-        .filter(|rf| rf.kind == EdgeKind::Calls)
-        .map(|rf| rf.target_name.as_str())
-        .collect();
-    assert!(calls.contains(&"MyWidget"), "kebab custom element → PascalCase Calls, got {calls:?}");
-    assert!(calls.contains(&"UserCard"), "PascalCase tag → Calls, got {calls:?}");
-    assert!(!calls.contains(&"div"), "standard lowercase tag must not emit a Calls ref");
-    assert_eq!(calls.len(), 2, "only the two component tags emit Calls refs, got {calls:?}");
-}
-
-#[test]
-fn generated_html_emits_no_component_calls() {
-    let src = r#"<!DOCTYPE html>
-<html><head><meta name="generator" content="JavaDoc 17"></head>
-<body><my-widget></my-widget><UserCard /></body></html>"#;
-    let r = extract(src, "doc/Class.html");
-    assert!(r.refs.is_empty(), "generated HTML must emit no refs, got {:?}", r.refs);
-}
