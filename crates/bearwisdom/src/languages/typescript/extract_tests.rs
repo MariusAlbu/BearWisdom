@@ -1473,3 +1473,33 @@ fn export_default_function_is_public() {
         .expect("defaultHandler extracted");
     assert_eq!(h.visibility, Some(Visibility::Public));
 }
+
+#[test]
+fn ts_dollar_local_param_call_keeps_dollar() {
+    // `$` is a legal JS/TS identifier character. A param literally named `$t`
+    // and its call `$t('k')` are an ordinary local binding + local call, not a
+    // Svelte store auto-subscription (`$store` sugar is only legal inside a
+    // `.svelte` SFC). Plain `.ts` extraction must NOT run the SFC store-desugar
+    // (`desugar_store_ref_in_place`), which would rewrite `$t` → `t` and unbind
+    // the parameter. The Calls ref's target_name and its chain root must both
+    // keep the leading `$`.
+    let src = r#"
+type MessageFormatter = (key: string) => string;
+export const getAlbumsActions = ($t: MessageFormatter) => {
+  return { title: $t('create_album') };
+};
+"#;
+    let call = refs(src)
+        .into_iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "$t")
+        .expect("expected a Calls ref with target_name '$t' (dollar not stripped)");
+    let root = call
+        .chain
+        .as_ref()
+        .and_then(|c| c.segments.first())
+        .expect("call ref carries a chain with a root segment");
+    assert_eq!(
+        root.name, "$t",
+        "chain root must keep the leading '$' — store-desugar must not run on plain .ts"
+    );
+}
