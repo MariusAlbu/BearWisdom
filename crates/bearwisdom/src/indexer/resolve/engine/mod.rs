@@ -42,8 +42,9 @@ pub use util::build_scope_chain;
 // internal carve-up.
 pub(crate) use chain_walker::{
     find_matching_bracket, first_generic_arg, infer_type_from_chain, merge_where_bounds,
-    parse_generic_param_clause, parse_return_type_from_signature, parse_return_type_positional,
-    parse_type_head_and_args, resolve_type_name_in_scope, strip_generic_args,
+    is_plain_type_name, parse_generic_param_clause, parse_return_type_from_signature,
+    parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
+    parse_type_head_and_args_bracket, resolve_type_name_in_scope, strip_generic_args,
 };
 pub(crate) use util::{
     common_prefix_len, file_belongs_to_npm_package, is_ambient_global_lib_path, is_type_like_kind,

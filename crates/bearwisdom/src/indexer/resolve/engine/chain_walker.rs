@@ -680,43 +680,85 @@ pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {
 /// caller is responsible for further descending into nested args if needed.
 /// This is consistent with the existing field_type_args convention.
 pub(crate) fn parse_type_head_and_args(type_str: &str) -> (&str, Vec<&str>) {
-    let Some(open) = type_str.find('<') else {
+    split_application(type_str, '<', '>')
+}
+
+/// `parse_type_head_and_args` for square-bracket generics (`List[User]`,
+/// Go/Scala). Requires a non-empty head before `[`, so a leading-bracket form
+/// (a Go slice `[]User`, a tuple `[A, B]`) is NOT read as an application.
+///
+/// `"List[User]"` → `("List", ["User"])` · `"[]User"` → `("[]User", [])`
+pub(crate) fn parse_type_head_and_args_bracket(type_str: &str) -> (&str, Vec<&str>) {
+    let open = match type_str.find('[') {
+        // No bracket, or a leading bracket (slice/array/tuple) — not an
+        // application.
+        None | Some(0) => return (type_str.trim(), Vec::new()),
+        Some(i) => i,
+    };
+    let tail = &type_str[open..];
+    let Some(close_rel) = find_matching_bracket(tail, '[', ']') else {
         return (type_str.trim(), Vec::new());
     };
-    let head = type_str[..open].trim();
-    // Find the matching `>` for the outermost `<`.
-    let tail = &type_str[open..];
-    let Some(close_rel) = find_matching_bracket(tail, '<', '>') else {
+    // A clean application ends at the closing `]`. Trailing text means a
+    // compound type (`map[K]V`) where the head/args reading would be wrong —
+    // leave those to the caller's fallback.
+    if !tail[close_rel + 1..].trim().is_empty() {
+        return (type_str.trim(), Vec::new());
+    }
+    (type_str[..open].trim(), split_top_level_args(&tail[1..close_rel]))
+}
+
+/// Split `Head<A, B>` / `Head[A, B]` into the head and its DIRECT top-level
+/// args (nested args are not walked — only each arg's own head is returned,
+/// matching the field_type_args convention). Returns `(trimmed input, [])` when
+/// there is no `open` bracket.
+fn split_application(type_str: &str, open: char, close: char) -> (&str, Vec<&str>) {
+    let Some(open_idx) = type_str.find(open) else {
+        return (type_str.trim(), Vec::new());
+    };
+    let head = type_str[..open_idx].trim();
+    let tail = &type_str[open_idx..];
+    let Some(close_rel) = find_matching_bracket(tail, open, close) else {
         return (head, Vec::new());
     };
-    let args_str = &tail[1..close_rel]; // content between < and >
-    // Split on top-level commas (depth-tracked).
+    (head, split_top_level_args(&tail[1..close_rel]))
+}
+
+/// Split bracket-content on top-level commas (depth-tracked across `<>` and
+/// `[]`), returning each arg's bare head (the identifier before any nested
+/// bracket).
+fn split_top_level_args(args_str: &str) -> Vec<&str> {
     let mut args: Vec<&str> = Vec::new();
     let mut depth: i32 = 0;
     let mut start = 0usize;
     for (i, b) in args_str.bytes().enumerate() {
         match b {
-            b'<' => depth += 1,
-            b'>' => depth -= 1,
+            b'<' | b'[' => depth += 1,
+            b'>' | b']' => depth = (depth - 1).max(0),
             b',' if depth == 0 => {
-                let seg = args_str[start..i].trim();
-                // Each arg's head is just the identifier before any `<`.
-                let arg_head = seg.split('<').next().unwrap_or(seg).trim();
-                if !arg_head.is_empty() {
-                    args.push(arg_head);
-                }
+                push_arg_head(&mut args, &args_str[start..i]);
                 start = i + 1;
             }
             _ => {}
         }
     }
-    // Final segment.
-    let seg = args_str[start..].trim();
-    let arg_head = seg.split('<').next().unwrap_or(seg).trim();
+    push_arg_head(&mut args, &args_str[start..]);
+    args
+}
+
+fn push_arg_head<'a>(args: &mut Vec<&'a str>, seg: &'a str) {
+    let arg_head = seg.trim().split(['<', '[']).next().unwrap_or(seg).trim();
     if !arg_head.is_empty() {
         args.push(arg_head);
     }
-    (head, args)
+}
+
+/// True when `t` is a plain (bare or dotted) type name — no generic args,
+/// brackets, unions, spaces, pointers, or parameter lists. Used to decide when
+/// a signature-derived return type is authoritative for the head over a
+/// (possibly parameter) trailing TypeRef.
+pub(crate) fn is_plain_type_name(t: &str) -> bool {
+    !t.is_empty() && t.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.')
 }
 
 /// Extract a leading-form return type — `RetType name(params)` (Java, C#, and
@@ -782,6 +824,39 @@ fn is_decl_keyword_or_modifier(t: &str) -> bool {
             | "explicit" | "implicit" | "export" | "inline"
             | "signed" | "unsigned"
     )
+}
+
+/// Extract a trailing-form return type — `func [recv] name(params) RetType` (Go).
+/// Returns the text after the last top-level `)` (a trailing `{` body stripped),
+/// or `None` when nothing follows (a void func) or it is a multi-return tuple
+/// `(A, B)` (not a single chainable type). Depth-tracks all bracket kinds so the
+/// receiver/param parens and `[T any]` type params are skipped.
+pub(crate) fn parse_return_type_trailing(sig: &str) -> Option<String> {
+    let bytes = sig.as_bytes();
+    let mut depth: i32 = 0;
+    let mut last_close: Option<usize> = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' | b'{' => depth += 1,
+            b']' | b'}' => depth -= 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    last_close = Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    let close = last_close?;
+    let mut after = sig[close + 1..].trim();
+    if let Some(pos) = after.find('{') {
+        after = after[..pos].trim_end();
+    }
+    if after.is_empty() || after.starts_with('(') {
+        return None;
+    }
+    Some(after.to_string())
 }
 
 pub(crate) fn infer_type_from_chain(

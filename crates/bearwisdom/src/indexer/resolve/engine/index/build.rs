@@ -26,8 +26,9 @@ use crate::types::{
 
 use super::super::{
     file_belongs_to_npm_package, infer_type_from_chain, npm_package_from_external_path,
-    npm_package_from_specifier, parse_return_type_from_signature, parse_return_type_positional,
-    parse_type_head_and_args, resolve_type_name_in_scope,
+    is_plain_type_name, npm_package_from_specifier, parse_return_type_from_signature,
+    parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
+    parse_type_head_and_args_bracket, resolve_type_name_in_scope,
 };
 use super::{
     common_prefix_len, find_matching_bracket, is_ambient_global_lib_path, is_type_like_kind,
@@ -355,6 +356,15 @@ impl SymbolIndex {
                                     parse_return_type_positional(s)
                                 }
                             })
+                            .or_else(|| {
+                                // Trailing-form return (`name(params) Ret`, Go):
+                                // the type after the last top-level `)`.
+                                if sym.kind != SymbolKind::Constructor && pf.language == "go" {
+                                    parse_return_type_trailing(s)
+                                } else {
+                                    None
+                                }
+                            })
                         });
                         // A signature that parses to a generic application
                         // (`Repository<User>`) yields an unambiguous head + args.
@@ -366,11 +376,20 @@ impl SymbolIndex {
                         let sig_generic: Option<(String, Vec<String>)> =
                             sig_rt.as_deref().and_then(|rt| {
                                 let (head, args) = parse_type_head_and_args(rt);
-                                let head_is_name = !head.is_empty()
-                                    && head
-                                        .chars()
-                                        .all(|c| c.is_alphanumeric() || c == '_' || c == '.');
-                                if args.is_empty() || !head_is_name {
+                                // Go/Scala express generics with `[]`; try that
+                                // when the `<>` form found no args.
+                                let (head, args) = if args.is_empty()
+                                    && matches!(pf.language.as_str(), "go" | "scala")
+                                {
+                                    parse_type_head_and_args_bracket(rt)
+                                } else {
+                                    (head, args)
+                                };
+                                // A structural type that merely CONTAINS an inner
+                                // generic (tuple `[A, B<C>]`, union `A | B<C>`)
+                                // splits into a non-identifier head — require a
+                                // plain head so those fall to the else branch.
+                                if args.is_empty() || !is_plain_type_name(head) {
                                     None
                                 } else {
                                     Some((
@@ -388,28 +407,35 @@ impl SymbolIndex {
                             return_type.insert(sym.qualified_name.clone(), resolved);
                             return_type_args.insert(sym.qualified_name.clone(), args);
                         } else {
-                            // Non-generic / unparseable signature: the last
-                            // TypeRef is the return-type head.
-                            if let Some(&last) = type_refs.last() {
+                            // A signature naming a plain return type is
+                            // authoritative for the head: a leading-form
+                            // language's last TypeRef can be a parameter (a
+                            // return-first ref list ends on the last param). A
+                            // structural or absent signature falls back to the
+                            // last TypeRef, then the raw signature.
+                            let sig_plain =
+                                sig_rt.as_deref().filter(|rt| is_plain_type_name(rt));
+                            if let Some(rt) = sig_plain {
+                                let resolved = resolve_type_name_in_scope(
+                                    rt,
+                                    sym.scope_path.as_deref(),
+                                    &by_qname,
+                                );
+                                return_type.insert(sym.qualified_name.clone(), resolved);
+                            } else if let Some(&last) = type_refs.last() {
                                 let resolved = resolve_type_name_in_scope(
                                     last,
                                     sym.scope_path.as_deref(),
                                     &by_qname,
                                 );
                                 return_type.insert(sym.qualified_name.clone(), resolved);
-                            }
-                            // Fallback for extractors that emit no TypeRefs but
-                            // populate the return type in the signature string
-                            // (synthetic .NET DLL metadata).
-                            if !return_type.contains_key(&sym.qualified_name) {
-                                if let Some(rt) = &sig_rt {
-                                    let resolved = resolve_type_name_in_scope(
-                                        rt,
-                                        sym.scope_path.as_deref(),
-                                        &by_qname,
-                                    );
-                                    return_type.insert(sym.qualified_name.clone(), resolved);
-                                }
+                            } else if let Some(rt) = &sig_rt {
+                                let resolved = resolve_type_name_in_scope(
+                                    rt,
+                                    sym.scope_path.as_deref(),
+                                    &by_qname,
+                                );
+                                return_type.insert(sym.qualified_name.clone(), resolved);
                             }
                         }
                     }

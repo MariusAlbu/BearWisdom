@@ -1,4 +1,4 @@
-use super::{merge_where_bounds, parse_generic_param_clause, parse_return_type_from_signature, parse_return_type_positional, parse_type_head_and_args};
+use super::{is_plain_type_name, merge_where_bounds, parse_generic_param_clause, parse_return_type_from_signature, parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args, parse_type_head_and_args_bracket};
 
 #[test]
 fn names_only_when_unbounded() {
@@ -314,6 +314,66 @@ fn positional_rejects_no_return_token() {
 fn positional_rejects_void() {
     // `void` is no return value — a void setter must carry no return type.
     assert_eq!(parse_return_type_positional("void setName(String n)"), None);
+}
+
+// --- parse_type_head_and_args_bracket: [] generics (Go/Scala) ---
+
+#[test]
+fn bracket_single_and_multi_arg() {
+    assert_eq!(parse_type_head_and_args_bracket("List[User]"), ("List", vec!["User"]));
+    assert_eq!(
+        parse_type_head_and_args_bracket("Map[String, Int]"),
+        ("Map", vec!["String", "Int"])
+    );
+}
+
+#[test]
+fn bracket_leading_is_not_an_application() {
+    // Go slice `[]User` and a tuple `[A, B]` lead with `[` — not generics.
+    assert_eq!(parse_type_head_and_args_bracket("[]User"), ("[]User", Vec::new()));
+    assert_eq!(parse_type_head_and_args_bracket("[A, B]"), ("[A, B]", Vec::new()));
+}
+
+#[test]
+fn bracket_plain_name() {
+    assert_eq!(parse_type_head_and_args_bracket("Result"), ("Result", Vec::new()));
+}
+
+#[test]
+fn bracket_rejects_trailing_text() {
+    // Compound forms like a Go `map[K]V` are not a clean application — trailing
+    // text after `]` must suppress the split (left to the caller's fallback).
+    assert_eq!(parse_type_head_and_args_bracket("map[K]V"), ("map[K]V", Vec::new()));
+}
+
+// --- parse_return_type_trailing: Go ---
+
+#[test]
+fn trailing_go_func_and_method() {
+    assert_eq!(parse_return_type_trailing("func F(a A) Ret"), Some("Ret".to_string()));
+    assert_eq!(
+        parse_return_type_trailing("func (s *S) F(a A) Result[User]"),
+        Some("Result[User]".to_string())
+    );
+    assert_eq!(parse_return_type_trailing("func (s *S) Get() []User"), Some("[]User".to_string()));
+}
+
+#[test]
+fn trailing_none_for_void_and_tuple() {
+    assert_eq!(parse_return_type_trailing("func F(a A)"), None);
+    assert_eq!(parse_return_type_trailing("func F() (A, error)"), None);
+}
+
+// --- is_plain_type_name ---
+
+#[test]
+fn plain_type_name_accepts_dotted_rejects_compound() {
+    assert!(is_plain_type_name("User"));
+    assert!(is_plain_type_name("ns.Foo"));
+    assert!(!is_plain_type_name("List<User>"));
+    assert!(!is_plain_type_name("*Foo"));
+    assert!(!is_plain_type_name("[]User"));
+    assert!(!is_plain_type_name(""));
 }
 
 #[test]

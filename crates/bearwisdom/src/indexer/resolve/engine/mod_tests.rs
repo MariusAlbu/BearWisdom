@@ -1059,6 +1059,116 @@ fn leading_form_generic_return_records_element_args() {
     );
 }
 
+/// A ParsedFile with one Method symbol and the given return-type TypeRef target
+/// names — for exercising the method-return capture branch.
+fn method_return_pf(
+    path: &str,
+    language: &str,
+    qname: &str,
+    scope: &str,
+    signature: &str,
+    ret_refs: &[&str],
+) -> ParsedFile {
+    let refs = ret_refs
+        .iter()
+        .map(|t| crate::types::ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            kind: crate::types::EdgeKind::TypeRef,
+            source_symbol_index: 0,
+            target_name: t.to_string(),
+            line: 1,
+            col: 0,
+            byte_offset: 0,
+            module: None,
+            namespace_segments: Vec::new(),
+            chain: None,
+            call_args: Vec::new(),
+        })
+        .collect();
+    ParsedFile {
+        path: path.to_string(),
+        language: language.to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: qname.rsplit('.').next().unwrap().to_string(),
+            qualified_name: qname.to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: Some(signature.to_string()),
+            doc_comment: None,
+            scope_path: Some(scope.to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs,
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+#[test]
+fn go_bracket_generic_return_records_element_args() {
+    // Go expresses generics with `[]` and trails the return type after the
+    // params — `parse_return_type_trailing` + the `[]` split bind the element.
+    let pf = method_return_pf(
+        "src/repo.go",
+        "go",
+        "Repo.Items",
+        "Repo",
+        "func (r *Repo) Items() Result[User]",
+        &[],
+    );
+    let mut id_map = HashMap::new();
+    id_map.insert(("src/repo.go".to_string(), "Repo.Items".to_string()), 1);
+    let index = SymbolIndex::build(&[pf], &id_map);
+    assert_eq!(index.return_type_name("Repo.Items"), Some("Result"));
+    assert_eq!(
+        index.return_type_args("Repo.Items").map(|a| a.to_vec()),
+        Some(vec!["User".to_string()])
+    );
+}
+
+#[test]
+fn leading_form_head_preferred_over_trailing_param_ref() {
+    // A return-first ref list (C# shape) ends on the last PARAM, so `last()` is
+    // the wrong head. The plain signature return type must win.
+    let pf = method_return_pf(
+        "src/Svc.cs",
+        "csharp",
+        "Svc.GetName",
+        "Svc",
+        "Foo GetName(Bar b)",
+        &["Foo", "Bar"],
+    );
+    let mut id_map = HashMap::new();
+    id_map.insert(("src/Svc.cs".to_string(), "Svc.GetName".to_string()), 1);
+    let index = SymbolIndex::build(&[pf], &id_map);
+    assert_eq!(index.return_type_name("Svc.GetName"), Some("Foo"));
+}
+
 #[test]
 fn default_symbol_lookup_returns_no_typeid_surface() {
     // Synthetic SymbolLookup impls that don't override the TypeId methods
@@ -1397,4 +1507,68 @@ fn local_cache_type_cache_generics_roundtrip() {
     );
     assert!(pushed);
     assert_eq!(env.resolve("T"), "User");
+}
+
+#[test]
+fn augment_from_parsed_generic_return_records_element_args() {
+    // An external Method added via augment_from_parsed with a generic return
+    // signature (`Repository<User> getRepo()`, no TypeRef refs) must end up
+    // with return_type = "Repository" and return_type_args = ["User"].
+    let ext_pf = ParsedFile {
+        path: "ext:lib/repo.dll".to_string(),
+        language: "csharp".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "getRepo".to_string(),
+            qualified_name: "Svc.getRepo".to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("Repository<User> getRepo()".to_string()),
+            doc_comment: None,
+            scope_path: Some("Svc".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    // Build an empty seed index, then fold the external file in via augment.
+    let seed_index = SymbolIndex::build(&[], &HashMap::new());
+    let mut index = seed_index;
+    let mut aug_id_map = HashMap::new();
+    aug_id_map.insert(
+        ("ext:lib/repo.dll".to_string(), "Svc.getRepo".to_string()),
+        42i64,
+    );
+    index.augment_from_parsed(&[ext_pf], &aug_id_map);
+
+    assert_eq!(index.return_type_name("Svc.getRepo"), Some("Repository"));
+    assert_eq!(
+        index.return_type_args("Svc.getRepo").map(|a| a.to_vec()),
+        Some(vec!["User".to_string()])
+    );
 }

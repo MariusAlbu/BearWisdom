@@ -24,7 +24,8 @@ use crate::types::{EdgeKind, ParsedFile, SymbolKind, Visibility};
 
 use super::super::{
     find_matching_bracket, merge_where_bounds, parse_generic_param_clause,
-    parse_return_type_from_signature, resolve_type_name_in_scope,
+    parse_return_type_from_signature, parse_return_type_positional, parse_type_head_and_args,
+    resolve_type_name_in_scope,
 };
 use super::{common_prefix_len, is_type_like_kind};
 use super::SymbolIndex;
@@ -168,29 +169,67 @@ impl SymbolIndex {
                         }
                     }
                     SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
-                        if let Some(&last) = type_refs.last() {
+                        let sig_rt: Option<String> = sym.signature.as_deref().and_then(|s| {
+                            parse_return_type_from_signature(s).or_else(|| {
+                                if sym.kind == SymbolKind::Constructor {
+                                    None
+                                } else {
+                                    parse_return_type_positional(s)
+                                }
+                            })
+                        });
+                        // A signature that parses to a generic application
+                        // (`Repository<User>`) yields an unambiguous head + args.
+                        // Structural types containing an inner generic (tuples,
+                        // unions, function types) produce a non-identifier head
+                        // after splitting — those fall to the else branch, so
+                        // the head must be a bare/dotted name.
+                        let sig_generic: Option<(String, Vec<String>)> =
+                            sig_rt.as_deref().and_then(|rt| {
+                                let (head, args) = parse_type_head_and_args(rt);
+                                let head_is_name = !head.is_empty()
+                                    && head
+                                        .chars()
+                                        .all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+                                if args.is_empty() || !head_is_name {
+                                    None
+                                } else {
+                                    Some((
+                                        head.to_string(),
+                                        args.iter().map(|s| s.to_string()).collect(),
+                                    ))
+                                }
+                            });
+                        if let Some((head, args)) = sig_generic {
                             let resolved = resolve_type_name_in_scope(
-                                last,
+                                &head,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
-                            self.type_info
-                                .entry(sym.qualified_name.clone())
-                                .or_default()
-                                .return_type = Some(resolved);
-                        }
-                        // Signature-derived return type fallback for .NET
-                        // DLL metadata (no TypeRef refs but signature has type).
-                        let already = self.type_info
-                            .get(&sym.qualified_name)
-                            .and_then(|ti| ti.return_type.as_ref())
-                            .is_some();
-                        if !already {
-                            if let Some(sig) = &sym.signature {
-                                let rt = parse_return_type_from_signature(sig);
-                                if let Some(rt) = rt {
+                            let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
+                            ti.return_type = Some(resolved);
+                            ti.return_type_args = args;
+                        } else {
+                            if let Some(&last) = type_refs.last() {
+                                let resolved = resolve_type_name_in_scope(
+                                    last,
+                                    sym.scope_path.as_deref(),
+                                    &self.by_qname,
+                                );
+                                self.type_info
+                                    .entry(sym.qualified_name.clone())
+                                    .or_default()
+                                    .return_type = Some(resolved);
+                            }
+                            let already = self
+                                .type_info
+                                .get(&sym.qualified_name)
+                                .and_then(|ti| ti.return_type.as_ref())
+                                .is_some();
+                            if !already {
+                                if let Some(rt) = &sig_rt {
                                     let resolved = resolve_type_name_in_scope(
-                                        &rt,
+                                        rt,
                                         sym.scope_path.as_deref(),
                                         &self.by_qname,
                                     );
@@ -328,6 +367,14 @@ impl SymbolIndex {
                     .map(|s| arena.intern_type_str(s))
                     .collect();
             }
+            if ti.return_type_arg_ids.is_empty() && !ti.return_type_args.is_empty() {
+                ti.return_type_arg_ids = ti
+                    .return_type_args
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| arena.intern_type_str(s))
+                    .collect();
+            }
         }
 
         // Final sweep: derive strings from canonical TypeIds so the legacy
@@ -344,6 +391,13 @@ impl SymbolIndex {
             if !ti.type_arg_ids.is_empty() {
                 ti.type_args = ti
                     .type_arg_ids
+                    .iter()
+                    .map(|id| arena.format_type(*id))
+                    .collect();
+            }
+            if !ti.return_type_arg_ids.is_empty() {
+                ti.return_type_args = ti
+                    .return_type_arg_ids
                     .iter()
                     .map(|id| arena.format_type(*id))
                     .collect();
