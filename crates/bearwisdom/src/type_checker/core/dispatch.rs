@@ -33,7 +33,6 @@ use crate::type_checker::core::inference::unwrap_await;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
-use crate::type_checker::core::symbol_view::SymbolView;
 use crate::type_checker::profile::language_profile::{DispatchAxis, LanguageProfile};
 use crate::type_checker::subtype::{args_assignable, is_assignable_to_typed_with, SubtypeResult};
 use crate::types::{CallArg, EdgeKind};
@@ -102,16 +101,31 @@ fn select_multi_arg(
     lookup: &dyn SymbolLookup,
 ) -> Option<SymbolInfo> {
     let prims = profile.primitive_mapping;
-    let candidates: Vec<SymbolInfo> = candidates(query, members, supertypes).collect();
-    let mut matches = arg_assignable_candidates(
-        candidates,
-        query.arg_types,
-        members,
-        symbol_types,
-        arena,
-        lookup,
-        profile,
-    );
+    let mut matches: Vec<SymbolInfo> = Vec::new();
+    for candidate in candidates(query, members, supertypes) {
+        match symbol_types.get(candidate.id) {
+            Some(data) => {
+                if args_assignable(
+                    &data.param_types,
+                    query.arg_types,
+                    arena,
+                    lookup,
+                    members,
+                    symbol_types,
+                    prims,
+                ) {
+                    matches.push(candidate);
+                }
+            }
+            // No type info → can't compare. Accept only when the call has no
+            // arguments to discriminate on.
+            None => {
+                if query.arg_types.is_empty() {
+                    matches.push(candidate);
+                }
+            }
+        }
+    }
     if matches.is_empty() {
         // No argument-type match — fall back to receiver dispatch so the call
         // still resolves to a single-dispatch target rather than missing.
@@ -122,50 +136,6 @@ fn select_multi_arg(
     // single candidate dominates the set, the first match wins.
     let best = most_specific_index(&matches, symbol_types, members, arena, lookup, prims);
     Some(matches.swap_remove(best))
-}
-
-/// Filter `candidates` to those whose declared parameter types are assignable
-/// from `arg_types`, preserving input order. Backed by `SymbolView`:
-///
-///   - a candidate WITH a `SymbolTypeData` record is kept when
-///     `args_assignable` accepts its `param_types` against `arg_types`
-///     (which already rejects on arity mismatch);
-///   - a candidate WITHOUT a record (`param_types() == None`) is kept only
-///     when the call carries no arguments to discriminate on.
-///
-/// Shared by the multi-arg dispatch path and the bare-name overload override
-/// so both decide candidate survival the same way.
-pub(crate) fn arg_assignable_candidates(
-    candidates: Vec<SymbolInfo>,
-    arg_types: &[TypeId],
-    members: &MembersIndex,
-    symbol_types: &SymbolTypeMap,
-    arena: &TypeArena,
-    lookup: &dyn SymbolLookup,
-    profile: &LanguageProfile,
-) -> Vec<SymbolInfo> {
-    let prims = profile.primitive_mapping;
-    let mut matches: Vec<SymbolInfo> = Vec::new();
-    for candidate in candidates {
-        let view = SymbolView::new(&candidate, symbol_types);
-        match view.param_types() {
-            Some(params) => {
-                if args_assignable(
-                    params, arg_types, arena, lookup, members, symbol_types, prims,
-                ) {
-                    matches.push(candidate);
-                }
-            }
-            // No type info → can't compare. Accept only when the call has no
-            // arguments to discriminate on.
-            None => {
-                if arg_types.is_empty() {
-                    matches.push(candidate);
-                }
-            }
-        }
-    }
-    matches
 }
 
 /// Index of the most specific candidate — one whose parameter types are

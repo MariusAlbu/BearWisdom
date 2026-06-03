@@ -15,7 +15,6 @@ pub mod pattern;
 pub mod reexport;
 pub mod supertype;
 pub mod symbol_types;
-pub(crate) mod symbol_view;
 pub mod types;
 
 pub use chain::{ChainResolution, ChainWalker, DefaultRootResolver, RootResolver};
