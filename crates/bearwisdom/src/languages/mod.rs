@@ -30,6 +30,16 @@ use crate::parser::scope_tree::ScopeKind;
 pub use common::emit_chain_type_ref;
 pub use registry::LanguageRegistry;
 
+/// Output of [`LanguagePlugin::synthesize_symbols`]: generated symbols and
+/// their own refs. `refs[*].source_symbol_index` is RELATIVE to `symbols`
+/// (`0` = the first synthesized symbol); the caller rebases it onto the file's
+/// symbol table when splicing, the same way embedded regions are spliced.
+#[derive(Default)]
+pub struct Synthesized {
+    pub symbols: Vec<ExtractedSymbol>,
+    pub refs: Vec<ExtractedRef>,
+}
+
 /// A language plugin provides grammar, scope config, and extraction for one or
 /// more language IDs (e.g., TypeScript handles both "typescript" and "tsx").
 pub trait LanguagePlugin: Send + Sync + 'static {
@@ -170,14 +180,21 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// recognizer MUST NOT emit a member whose `qualified_name` already exists
     /// in `symbols` — a hand-written declaration always wins.
     ///
+    /// `Synthesized::refs` are the synthesized symbols' OWN references — most
+    /// importantly a return-type `TypeRef` per synthesized method, so a
+    /// synthesized getter / builder method types identically to a real one and
+    /// chains resolve through it. Their `source_symbol_index` is RELATIVE to
+    /// `Synthesized::symbols` (0 = first synthesized symbol); `parse_file`
+    /// rebases them onto the file's symbol table on splice.
+    ///
     /// Leaf languages without a generator leave the default (no synthesis).
     fn synthesize_symbols(
         &self,
         _source: &str,
         _symbols: &[ExtractedSymbol],
         _refs: &[ExtractedRef],
-    ) -> Vec<ExtractedSymbol> {
-        Vec::new()
+    ) -> Synthesized {
+        Synthesized::default()
     }
 
     /// Node kinds that SHOULD produce symbols, per the extraction rules.

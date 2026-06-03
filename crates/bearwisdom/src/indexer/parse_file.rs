@@ -220,9 +220,18 @@ fn parse_file_internal(
     // that never appear in parsed text (Lombok getters/setters, derive impls).
     // Runs before embedded-region splicing so the origin-language parallel
     // vectors (still empty here) backfill the synthesized symbols as
-    // host-language entries via the existing resize below.
+    // host-language entries via the existing resize below. The synthesized refs
+    // carry source_symbol_index RELATIVE to the synthesized symbols, so rebase
+    // them onto the file's table by the pre-append symbol count.
     let synthesized = plugin.synthesize_symbols(&content, &r.symbols, &r.refs);
-    r.symbols.extend(synthesized);
+    if !synthesized.symbols.is_empty() {
+        let base = r.symbols.len();
+        r.symbols.extend(synthesized.symbols);
+        for mut sref in synthesized.refs {
+            sref.source_symbol_index += base;
+            r.refs.push(sref);
+        }
+    }
 
     // Symbols produced by the host extractor all share the file's language,
     // so the origin vector starts empty and grows only when we splice in

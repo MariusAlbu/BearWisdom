@@ -18,12 +18,20 @@
 // at the field, indistinguishable from a field type). @Builder synthesizes the
 // `builder()` entry, the nested `{Class}Builder` class, a fluent setter per
 // field, and `build()`. Out of scope: the @*Constructor family and the
-// AccessLevel / static / final nuances that suppress accessors. Synthesized
-// methods carry their return type in the signature only (no arena at synthesis
-// time), so a fluent builder chain resolves member-by-member, not yet typed
-// end to end — that awaits arena-typed synthesis, shared with the getters.
+// AccessLevel / static / final nuances that suppress accessors.
+//
+// Each synthesized method carries a return-type `TypeRef` (the field type for a
+// getter, the builder qname for `builder()`/fluent setters, the class qname for
+// `build()`) so it types through a chain the same way a real method does — a
+// getter chain and the fluent builder chain both resolve end to end. Two known
+// boundaries: void setters and primitive returns emit no ref (nothing to chain
+// into), and a generic return like `List<User>` types to its head `List`, not
+// the element `User` — typing through a generic method return needs
+// `return_type_args` on the chain walker's method branch (generic-engine work,
+// not Lombok-specific).
 // =============================================================================
 
+use crate::languages::Synthesized;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use std::collections::{HashMap, HashSet};
 
@@ -63,7 +71,7 @@ pub(super) fn synthesize_lombok_accessors(
     source: &str,
     symbols: &[ExtractedSymbol],
     refs: &[ExtractedRef],
-) -> Vec<ExtractedSymbol> {
+) -> Synthesized {
     // 1. Collect accessor intent from type-level annotation refs. The annotation
     //    applies to every field of that class.
     let src = source.as_bytes();
@@ -91,14 +99,13 @@ pub(super) fn synthesize_lombok_accessors(
     }
 
     if class_intent.is_empty() {
-        return Vec::new();
+        return Synthesized::default();
     }
 
     // 2. For each field of an annotated class, emit its accessors. A hand-written
-    //    method of the same qualified name always wins.
-    let existing: HashSet<&str> = symbols.iter().map(|s| s.qualified_name.as_str()).collect();
-    let mut emitted: HashSet<String> = HashSet::new();
-    let mut out: Vec<ExtractedSymbol> = Vec::new();
+    //    method of the same qualified name always wins. A getter carries a
+    //    return-type ref (its field type) so a chain types through it.
+    let mut emit = Emit::new(symbols);
 
     for sym in symbols {
         if sym.kind != SymbolKind::Field {
@@ -126,22 +133,14 @@ pub(super) fn synthesize_lombok_accessors(
             } else {
                 format!("get{cap}")
             };
-            push_unique(
-                &mut out,
-                &mut emitted,
-                &existing,
-                make_synth(&name, SymbolKind::Method, format!("{ty} {name}()"), class_qname, sym.start_line),
-            );
+            let sym = make_synth(&name, SymbolKind::Method, format!("{ty} {name}()"), class_qname, sym.start_line);
+            emit.push(sym, Some(&field_type));
         }
         if acc.setter {
+            // Lombok setters return void — no return-type ref.
             let name = format!("set{cap}");
             let sig = format!("void {}({} {})", name, ty, sym.name);
-            push_unique(
-                &mut out,
-                &mut emitted,
-                &existing,
-                make_synth(&name, SymbolKind::Method, sig, class_qname, sym.start_line),
-            );
+            emit.push(make_synth(&name, SymbolKind::Method, sig, class_qname, sym.start_line), None);
         }
     }
 
@@ -154,23 +153,18 @@ pub(super) fn synthesize_lombok_accessors(
         .map(|(q, _)| q.to_string())
         .collect();
     for class_qname in &builder_classes {
-        emit_builder(class_qname, symbols, &existing, &mut emitted, &mut out);
+        emit_builder(class_qname, symbols, &mut emit);
     }
 
-    out
+    Synthesized { symbols: emit.out, refs: emit.refs }
 }
 
 /// Emit the `@Builder` machinery for one class: a static `builder()` returning
 /// the nested `{Simple}Builder` class, that class, a fluent setter per field
 /// (named after the field, returning the builder), and `build()` returning the
-/// owning class.
-fn emit_builder(
-    class_qname: &str,
-    symbols: &[ExtractedSymbol],
-    existing: &HashSet<&str>,
-    emitted: &mut HashSet<String>,
-    out: &mut Vec<ExtractedSymbol>,
-) {
+/// owning class. The methods carry return-type refs (the builder qname, or the
+/// class qname for `build()`) so the fluent chain types end to end.
+fn emit_builder(class_qname: &str, symbols: &[ExtractedSymbol], emit: &mut Emit) {
     let simple = class_qname.rsplit('.').next().unwrap_or(class_qname);
     let builder_name = format!("{simple}Builder");
     let builder_qname = format!("{class_qname}.{builder_name}");
@@ -179,19 +173,13 @@ fn emit_builder(
         .find(|s| s.qualified_name == class_qname)
         .map_or(0, |s| s.start_line);
 
-    // `static {Simple}Builder builder()` on the owning class.
-    push_unique(
-        out,
-        emitted,
-        existing,
-        make_synth("builder", SymbolKind::Method, format!("{builder_name} builder()"), class_qname, line),
-    );
-    // The nested builder class.
-    push_unique(
-        out,
-        emitted,
-        existing,
+    // `static {Simple}Builder builder()` on the owning class → returns the builder.
+    let builder_method = make_synth("builder", SymbolKind::Method, format!("{builder_name} builder()"), class_qname, line);
+    emit.push(builder_method, Some(&builder_qname));
+    // The nested builder class (no return type).
+    emit.push(
         make_synth(&builder_name, SymbolKind::Class, format!("class {builder_name}"), class_qname, line),
+        None,
     );
     // A fluent setter per field, returning the builder for chaining.
     for sym in symbols {
@@ -200,19 +188,15 @@ fn emit_builder(
         }
         let ty = field_type_of(sym);
         let sig = format!("{} {}({} {})", builder_name, sym.name, ret_type(&ty), sym.name);
-        push_unique(
-            out,
-            emitted,
-            existing,
+        emit.push(
             make_synth(&sym.name, SymbolKind::Method, sig, &builder_qname, sym.start_line),
+            Some(&builder_qname),
         );
     }
-    // `{Simple} build()` on the builder class.
-    push_unique(
-        out,
-        emitted,
-        existing,
+    // `{Simple} build()` on the builder class → returns the owning class.
+    emit.push(
         make_synth("build", SymbolKind::Method, format!("{simple} build()"), &builder_qname, line),
+        Some(class_qname),
     );
 }
 
@@ -247,19 +231,76 @@ fn capitalize_first(s: &str) -> String {
     }
 }
 
-/// Append `method` unless its qualified name already exists (hand-written wins)
-/// or was already synthesized for this file.
-fn push_unique(
-    out: &mut Vec<ExtractedSymbol>,
-    emitted: &mut HashSet<String>,
-    existing: &HashSet<&str>,
-    method: ExtractedSymbol,
-) {
-    if existing.contains(method.qualified_name.as_str()) {
-        return;
+/// Accumulates synthesized symbols + their return-type refs, skipping any whose
+/// qualified name already exists (hand-written wins) or was already synthesized.
+struct Emit<'a> {
+    out: Vec<ExtractedSymbol>,
+    refs: Vec<ExtractedRef>,
+    emitted: HashSet<String>,
+    existing: HashSet<&'a str>,
+}
+
+impl<'a> Emit<'a> {
+    fn new(symbols: &'a [ExtractedSymbol]) -> Self {
+        Self {
+            out: Vec::new(),
+            refs: Vec::new(),
+            emitted: HashSet::new(),
+            existing: symbols.iter().map(|s| s.qualified_name.as_str()).collect(),
+        }
     }
-    if emitted.insert(method.qualified_name.clone()) {
-        out.push(method);
+
+    /// Push `sym`; when `return_type` is a non-primitive, non-empty type, also
+    /// emit its return-type `TypeRef` sourced at the new symbol's index (so the
+    /// chain walker types a call to it). `source_symbol_index` is RELATIVE to
+    /// `out` — `parse_file` rebases it onto the file table.
+    fn push(&mut self, sym: ExtractedSymbol, return_type: Option<&str>) {
+        if self.existing.contains(sym.qualified_name.as_str()) {
+            return;
+        }
+        if !self.emitted.insert(sym.qualified_name.clone()) {
+            return;
+        }
+        let line = sym.start_line;
+        self.out.push(sym);
+        let idx = self.out.len() - 1;
+        if let Some(head) = return_type.map(type_head) {
+            if !head.is_empty() && !is_primitive(head) {
+                self.refs.push(return_type_ref(idx, head, line));
+            }
+        }
+    }
+}
+
+/// The bare head type usable as a `TypeRef` target: strips generic args and
+/// array brackets. `List<User>` → `List`, `String[]` → `String`.
+fn type_head(t: &str) -> &str {
+    let t = t.split('<').next().unwrap_or(t);
+    let t = t.split('[').next().unwrap_or(t);
+    t.trim()
+}
+
+fn is_primitive(t: &str) -> bool {
+    matches!(
+        t,
+        "boolean" | "byte" | "short" | "int" | "long" | "char" | "float" | "double" | "void"
+    )
+}
+
+fn return_type_ref(source_symbol_index: usize, type_name: &str, line: u32) -> ExtractedRef {
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index,
+        target_name: type_name.to_string(),
+        kind: EdgeKind::TypeRef,
+        line,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 

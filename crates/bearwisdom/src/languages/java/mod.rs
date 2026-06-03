@@ -43,7 +43,7 @@ mod predicates_tests;
 #[path = "lombok_tests.rs"]
 mod lombok_tests;
 
-use crate::languages::LanguagePlugin;
+use crate::languages::{LanguagePlugin, Synthesized};
 use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
@@ -82,7 +82,7 @@ impl LanguagePlugin for JavaPlugin {
         source: &str,
         symbols: &[ExtractedSymbol],
         refs: &[ExtractedRef],
-    ) -> Vec<ExtractedSymbol> {
+    ) -> Synthesized {
         lombok::synthesize_lombok_accessors(source, symbols, refs)
     }
 

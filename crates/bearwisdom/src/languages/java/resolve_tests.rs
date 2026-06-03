@@ -179,9 +179,15 @@ fn lombok_synthesized_getter_resolves_via_scope_chain() {
         "@Data\npublic class User {\n    private String name;\n    public void describe() { getName(); }\n}";
     let r = extract(source);
     let synthesized = synthesize_lombok_accessors(source, &r.symbols, &r.refs);
+    let base = r.symbols.len();
     let mut symbols = r.symbols.clone();
-    symbols.extend(synthesized);
-    let file = make_file("src/User.java", "java", symbols, r.refs.clone());
+    symbols.extend(synthesized.symbols);
+    let mut refs = r.refs.clone();
+    for mut sref in synthesized.refs {
+        sref.source_symbol_index += base;
+        refs.push(sref);
+    }
+    let file = make_file("src/User.java", "java", symbols, refs);
 
     let (ref_idx, src_idx) = file
         .refs
@@ -223,9 +229,15 @@ fn lombok_builder_method_resolves_via_scope_chain() {
         "@Builder\npublic class User {\n    private String name;\n    public void touch() { builder(); }\n}";
     let r = extract(source);
     let synthesized = synthesize_lombok_accessors(source, &r.symbols, &r.refs);
+    let base = r.symbols.len();
     let mut symbols = r.symbols.clone();
-    symbols.extend(synthesized);
-    let file = make_file("src/User.java", "java", symbols, r.refs.clone());
+    symbols.extend(synthesized.symbols);
+    let mut refs = r.refs.clone();
+    for mut sref in synthesized.refs {
+        sref.source_symbol_index += base;
+        refs.push(sref);
+    }
+    let file = make_file("src/User.java", "java", symbols, refs);
 
     let (ref_idx, src_idx) = file
         .refs
@@ -254,6 +266,43 @@ fn lombok_builder_method_resolves_via_scope_chain() {
         .get(&("src/User.java".to_string(), "User.builder".to_string()))
         .expect("synthesized builder() is indexed");
     assert_eq!(res.target_symbol_id, expected, "binds to synthesized User.builder");
+}
+
+/// Extract + Lombok-synthesize + splice (rebasing synthesized refs) the way
+/// `parse_file` does, into a single ParsedFile.
+fn synth_splice(path: &str, source: &str) -> ParsedFile {
+    let r = super::extract::extract(source);
+    let s = super::lombok::synthesize_lombok_accessors(source, &r.symbols, &r.refs);
+    let base = r.symbols.len();
+    let mut symbols = r.symbols.clone();
+    symbols.extend(s.symbols);
+    let mut refs = r.refs.clone();
+    for mut sref in s.refs {
+        sref.source_symbol_index += base;
+        refs.push(sref);
+    }
+    make_file(path, "java", symbols, refs)
+}
+
+#[test]
+fn lombok_synthesized_methods_carry_return_types_in_index() {
+    use crate::indexer::resolve::engine::SymbolLookup;
+
+    // The synthesized return-type refs flow through the index builder into the
+    // return-type map, so a chain types through builder()/getName()/build() the
+    // same way it does through a hand-written method.
+    let user = synth_splice(
+        "src/User.java",
+        "@Data\n@Builder\npublic class User { private String name; }",
+    );
+    let (index, _id_map) = build_test_env(&[&user]);
+
+    assert_eq!(index.return_type_name("User.getName"), Some("String"));
+    assert_eq!(index.return_type_name("User.builder"), Some("User.UserBuilder"));
+    assert_eq!(index.return_type_name("User.UserBuilder.name"), Some("User.UserBuilder"));
+    assert_eq!(index.return_type_name("User.UserBuilder.build"), Some("User"));
+    // Void setter: no return type.
+    assert_eq!(index.return_type_name("User.setName"), None);
 }
 
 #[test]

@@ -8,12 +8,25 @@
 
 use super::extract::extract;
 use super::lombok::synthesize_lombok_accessors;
-use crate::types::{ExtractedSymbol, SymbolKind};
+use crate::types::{EdgeKind, ExtractedSymbol, SymbolKind};
 
 /// Synthesize for `source`, returning the raw symbols.
 fn synth_syms(source: &str) -> Vec<ExtractedSymbol> {
     let r = extract(source);
-    synthesize_lombok_accessors(source, &r.symbols, &r.refs)
+    synthesize_lombok_accessors(source, &r.symbols, &r.refs).symbols
+}
+
+/// Return-type ref target for the synthesized method `qn`, or None if it emits
+/// no return-type ref (the ref's source_symbol_index is relative to the
+/// synthesized symbol list).
+fn return_ref_for(source: &str, qn: &str) -> Option<String> {
+    let r = extract(source);
+    let s = synthesize_lombok_accessors(source, &r.symbols, &r.refs);
+    let idx = s.symbols.iter().position(|sy| sy.qualified_name == qn)?;
+    s.refs
+        .iter()
+        .find(|rf| rf.source_symbol_index == idx && rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.clone())
 }
 
 /// Synthesize accessors for `source`, returning sorted (qualified_name, signature) pairs.
@@ -197,4 +210,29 @@ fn data_and_builder_compose() {
     assert!(q.contains(&"User.setName".to_string()), "{q:?}");
     assert!(q.contains(&"User.builder".to_string()), "{q:?}");
     assert!(q.contains(&"User.UserBuilder.build".to_string()), "{q:?}");
+}
+
+#[test]
+fn getter_emits_field_type_return_ref_setter_emits_none() {
+    let src = "@Data public class User { private String name; }";
+    assert_eq!(return_ref_for(src, "User.getName"), Some("String".to_string()));
+    // Lombok setters return void → no return-type ref.
+    assert_eq!(return_ref_for(src, "User.setName"), None);
+}
+
+#[test]
+fn primitive_getter_emits_no_return_ref() {
+    // A primitive return type has no project members; emitting a ref would only
+    // pollute unresolved-refs.
+    let src = "@Data public class Flag { private int count; }";
+    assert_eq!(return_ref_for(src, "Flag.getCount"), None);
+}
+
+#[test]
+fn builder_methods_emit_return_type_refs() {
+    let src = "@Builder public class User { private String name; }";
+    // builder() and the fluent setter return the builder; build() returns the class.
+    assert_eq!(return_ref_for(src, "User.builder"), Some("User.UserBuilder".to_string()));
+    assert_eq!(return_ref_for(src, "User.UserBuilder.name"), Some("User.UserBuilder".to_string()));
+    assert_eq!(return_ref_for(src, "User.UserBuilder.build"), Some("User".to_string()));
 }
