@@ -886,6 +886,20 @@ impl SymbolIndex {
                     resolver.resolve_to_file_indexed(module, &pf.path, &file_path_index)
                 {
                     module_to_file.insert(module.clone(), resolved);
+                    continue;
+                }
+                // The resolver returns None for a bare specifier. If it names a
+                // workspace package, recover its entry file so the re-export
+                // walker can follow the `project → workspace pkg → npm` hop.
+                if let Some(ctx) = project_ctx {
+                    if let Some(resolved) = resolve_workspace_pkg_entry(
+                        module,
+                        &ctx.workspace_pkg_by_declared_name,
+                        &ctx.workspace_pkg_paths,
+                        &file_path_index,
+                    ) {
+                        module_to_file.insert(module.clone(), resolved);
+                    }
                 }
             }
         }
@@ -1172,3 +1186,70 @@ fn enclosing_namespace_from_scope(
     }
     Some(tail.iter().rev().cloned().collect::<Vec<_>>().join("."))
 }
+
+/// Entry-file extensions probed when mapping a workspace package's declared
+/// name to its index file. Mirrors the Node resolver's TS/JS entry set.
+const WORKSPACE_ENTRY_EXTENSIONS: &[&str] = &[
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".mts", ".svelte", ".astro", ".vue",
+];
+
+/// Resolve a bare specifier that names a workspace package to that package's
+/// entry file.
+///
+/// `node_modules`-style resolvers return `None` for a bare specifier, so a
+/// monorepo import like `@myorg/ui` never lands in `module_to_file` and the
+/// re-export walker drops the `project → workspace pkg → npm` hop. This
+/// recovers the entry file: match `spec` (or a parent of a deep import such
+/// as `@myorg/ui/button`) against a workspace package's declared name, then
+/// probe the package root for `index.*` and `src/index.*`.
+///
+/// Returns `None` when `spec` names no workspace package or the package has no
+/// indexed entry file.
+fn resolve_workspace_pkg_entry(
+    spec: &str,
+    workspace_pkg_by_declared_name: &HashMap<String, i64>,
+    workspace_pkg_paths: &HashMap<i64, String>,
+    index: &crate::indexer::module_resolution::FilePathIndex,
+) -> Option<String> {
+    // Match the full specifier first, then strip trailing subpath segments
+    // (`@myorg/ui/button` → `@myorg/ui`) — mirrors `workspace_package_id`.
+    let pkg_id = {
+        let mut path = spec;
+        let mut found = workspace_pkg_by_declared_name.get(path).copied();
+        while found.is_none() {
+            let Some(slash) = path.rfind('/') else { break };
+            path = &path[..slash];
+            found = workspace_pkg_by_declared_name.get(path).copied();
+        }
+        found?
+    };
+    let root = workspace_pkg_paths.get(&pkg_id)?;
+    let root = root.trim_end_matches('/');
+    for stem in ["index", "src/index"] {
+        for ext in WORKSPACE_ENTRY_EXTENSIONS {
+            let candidate = if root.is_empty() {
+                format!("{stem}{ext}")
+            } else {
+                format!("{root}/{stem}{ext}")
+            };
+            if let Some(p) = index.find_suffix(&candidate) {
+                return Some(p.to_string());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+pub(super) fn _test_resolve_workspace_pkg_entry(
+    spec: &str,
+    workspace_pkg_by_declared_name: &HashMap<String, i64>,
+    workspace_pkg_paths: &HashMap<i64, String>,
+    index: &crate::indexer::module_resolution::FilePathIndex,
+) -> Option<String> {
+    resolve_workspace_pkg_entry(spec, workspace_pkg_by_declared_name, workspace_pkg_paths, index)
+}
+
+#[cfg(test)]
+#[path = "build_tests.rs"]
+mod tests;
