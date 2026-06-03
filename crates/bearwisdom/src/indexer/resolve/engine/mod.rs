@@ -42,7 +42,7 @@ pub use util::build_scope_chain;
 // internal carve-up.
 pub(crate) use chain_walker::{
     find_matching_bracket, first_generic_arg, infer_type_from_chain, merge_where_bounds,
-    parse_generic_param_clause, parse_return_type_from_signature,
+    parse_generic_param_clause, parse_return_type_from_signature, parse_type_head_and_args,
     resolve_type_name_in_scope, strip_generic_args,
 };
 pub(crate) use util::{

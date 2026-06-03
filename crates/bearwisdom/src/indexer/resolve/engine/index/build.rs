@@ -26,7 +26,7 @@ use crate::types::{
 
 use super::super::{
     file_belongs_to_npm_package, infer_type_from_chain, npm_package_from_external_path,
-    npm_package_from_specifier, parse_return_type_from_signature,
+    npm_package_from_specifier, parse_return_type_from_signature, parse_type_head_and_args,
     resolve_type_name_in_scope,
 };
 use super::{
@@ -325,50 +325,74 @@ impl SymbolIndex {
                                 .or_insert_with(|| first.to_string());
                         }
                     }
-                    // Methods/functions: last TypeRef is likely the return type.
+                    // Methods/functions: capture the return type and, when it
+                    // is generic, its element args (`List<User>` → head `List`,
+                    // args `["User"]`) so a chain types through the element.
+                    //
+                    // A parseable signature is authoritative ONLY when it yields
+                    // a generic application: the head and args are then
+                    // unambiguous. A flat TypeRef list is not — extractors order
+                    // param vs return refs differently per language, so
+                    // `type_refs.last()` can't be split into head+args reliably.
+                    // For a non-generic return, or a signature form this parser
+                    // doesn't read (leading `RetType name()`, Go's trailing
+                    // form), the last TypeRef (then the signature) gives the head.
                     SymbolKind::Method
                     | SymbolKind::Function
                     | SymbolKind::Constructor => {
-                        if let Some(&last) = type_refs.last() {
-                            // Scope-resolve the raw type name so chain walking
-                            // works across namespace/class boundaries.
-                            // `class Dayjs { clone(): Dayjs }` inside
-                            // `namespace dayjs` emits a TypeRef with
-                            // target_name="Dayjs" — the raw text in the
-                            // source. The chain walker needs the fully
-                            // qualified "dayjs.Dayjs" to traverse the
-                            // symbol graph. We probe candidate FQNs built
-                            // from the method's scope_path (innermost
-                            // scope first, walking outward) and store the
-                            // first one that matches a known qualified
-                            // name. Without this, every `.d.ts` file's
-                            // namespaced interface chain is invisible and
-                            // we end up needing per-library synthetics to
-                            // hand-qualify the return types — exactly
-                            // what `dayjs_synthetics`, `js_test_chains`,
-                            // and friends do.
+                        let sig_rt: Option<String> = sym
+                            .signature
+                            .as_deref()
+                            .and_then(parse_return_type_from_signature);
+                        // A signature that parses to a generic application
+                        // (`Repository<User>`) yields an unambiguous head + args.
+                        // A structural type that merely CONTAINS an inner generic
+                        // (tuple `[A, B<C>]`, union `A | B<C>`, function
+                        // `() => B<C>`) splits at the first `<` into a
+                        // non-identifier head — those must fall to the else
+                        // branch, so require the head to be a bare/dotted name.
+                        let sig_generic: Option<(String, Vec<String>)> =
+                            sig_rt.as_deref().and_then(|rt| {
+                                let (head, args) = parse_type_head_and_args(rt);
+                                let head_is_name = !head.is_empty()
+                                    && head
+                                        .chars()
+                                        .all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+                                if args.is_empty() || !head_is_name {
+                                    None
+                                } else {
+                                    Some((
+                                        head.to_string(),
+                                        args.iter().map(|s| s.to_string()).collect(),
+                                    ))
+                                }
+                            });
+                        if let Some((head, args)) = sig_generic {
                             let resolved = resolve_type_name_in_scope(
-                                last,
+                                &head,
                                 sym.scope_path.as_deref(),
                                 &by_qname,
                             );
-                            return_type
-                                .insert(sym.qualified_name.clone(), resolved);
-                        }
-                        // Extra pass: some extractors emit no TypeRef refs
-                        // but DO populate a signature string with the return
-                        // type at the end (`method(...): ReturnType`). This
-                        // fires for synthetic .NET DLL metadata symbols
-                        // where there are no tree-sitter refs to mine. Only
-                        // fills the slot when a direct TypeRef path above
-                        // didn't find one, so languages that already set a
-                        // real return_type aren't overwritten.
-                        if !return_type.contains_key(&sym.qualified_name) {
-                            if let Some(sig) = &sym.signature {
-                                let rt = parse_return_type_from_signature(sig);
-                                if let Some(rt) = rt {
+                            return_type.insert(sym.qualified_name.clone(), resolved);
+                            field_type_args.insert(sym.qualified_name.clone(), args);
+                        } else {
+                            // Non-generic / unparseable signature: the last
+                            // TypeRef is the return-type head.
+                            if let Some(&last) = type_refs.last() {
+                                let resolved = resolve_type_name_in_scope(
+                                    last,
+                                    sym.scope_path.as_deref(),
+                                    &by_qname,
+                                );
+                                return_type.insert(sym.qualified_name.clone(), resolved);
+                            }
+                            // Fallback for extractors that emit no TypeRefs but
+                            // populate the return type in the signature string
+                            // (synthetic .NET DLL metadata).
+                            if !return_type.contains_key(&sym.qualified_name) {
+                                if let Some(rt) = &sig_rt {
                                     let resolved = resolve_type_name_in_scope(
-                                        &rt,
+                                        rt,
                                         sym.scope_path.as_deref(),
                                         &by_qname,
                                     );

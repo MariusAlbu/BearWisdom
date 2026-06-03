@@ -40,6 +40,8 @@ struct FakeLookup {
     by_qname: Vec<SymbolInfo>,
     field_types: Vec<(String, String)>,
     return_types: Vec<(String, String)>,
+    type_args_store: Vec<(String, Vec<String>)>,
+    generic_params_store: Vec<(String, Vec<String>)>,
     parents: Vec<(String, String)>,
     aliases: Vec<(String, AliasTarget)>,
     path_aliases: Vec<(String, String)>,
@@ -88,6 +90,16 @@ impl FakeLookup {
     }
     fn local(mut self, name: &str, ty: &str) -> Self {
         self.locals.push((name.to_string(), ty.to_string()));
+        self
+    }
+    fn type_args(mut self, qname: &str, args: &[&str]) -> Self {
+        self.type_args_store
+            .push((qname.to_string(), args.iter().map(|s| s.to_string()).collect()));
+        self
+    }
+    fn generic_params(mut self, qname: &str, params: &[&str]) -> Self {
+        self.generic_params_store
+            .push((qname.to_string(), params.iter().map(|s| s.to_string()).collect()));
         self
     }
     /// Register a method symbol whose simple name `by_name` returns and whose
@@ -187,11 +199,17 @@ impl SymbolLookup for FakeLookup {
             .find(|(q, _)| q == qname)
             .map(|(_, t)| t.as_str())
     }
-    fn field_type_args(&self, _: &str) -> Option<&[String]> {
-        None
+    fn field_type_args(&self, qname: &str) -> Option<&[String]> {
+        self.type_args_store
+            .iter()
+            .find(|(q, _)| q == qname)
+            .map(|(_, v)| v.as_slice())
     }
-    fn generic_params(&self, _: &str) -> Option<&[String]> {
-        None
+    fn generic_params(&self, name: &str) -> Option<&[String]> {
+        self.generic_params_store
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_slice())
     }
     fn reexports_from(&self, _: &str) -> &[(String, String)] {
         &self.empty_reexports
@@ -2002,4 +2020,79 @@ fn alias_expansion_noop_on_non_alias_type() {
     // still binds `User.save` (id 2) — the bare member walk, unchanged. No alias
     // entry for "User" means expand_alias returns None and current_type stays.
     assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+}
+
+// ---------------------------------------------------------------------------
+// Generic method-return arg binding: CODEGEN-1
+// ---------------------------------------------------------------------------
+
+/// `obj.getItems().get(0)` where `getItems()` returns `List<User>`.
+///
+/// Symbols:
+///   * `Repo.getItems` — return_type="List", type_args=["User"]
+///   * `List` — class with generic_params=["E"]
+///   * `List.get` — return_type="E"
+///   * `User.someMethod` — the final target (id=4)
+///
+/// Without arg binding `E` stays unbound, and the chain can't find
+/// `User.someMethod`.  With binding `E→User`, `List.get()` yields `User`
+/// and the next hop resolves.
+#[test]
+fn method_return_generic_arg_binds_element_type() {
+    let lookup = FakeLookup::default()
+        .local("obj", "Repo")
+        .sym(1, "Repo", "class")
+        .sym(2, "Repo.getItems", "method")
+        .ret("Repo.getItems", "List")
+        .type_args("Repo.getItems", &["User"])
+        .sym(3, "List", "class")
+        .generic_params("List", &["E"])
+        .sym(4, "List.get", "method")
+        .ret("List.get", "E")
+        .sym(5, "User", "class")
+        .sym(6, "User.someMethod", "method");
+
+    let r = ref_with_chain(
+        vec![
+            seg("obj", SegmentKind::Identifier, false),
+            seg("getItems", SegmentKind::Property, true),
+            seg("get", SegmentKind::Property, true),
+            seg("someMethod", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    assert_eq!(run(&JAVA_CHAIN_CONFIG, &r, &fc, &lookup), Some(6));
+}
+
+/// Control: without type_args registered for the method, the element type
+/// parameter stays unbound and the chain yields the unresolved type variable.
+/// The call to `User.someMethod` is NOT resolved.
+#[test]
+fn method_return_without_args_does_not_bind_element_type() {
+    let lookup = FakeLookup::default()
+        .local("obj", "Repo")
+        .sym(1, "Repo", "class")
+        .sym(2, "Repo.getItems", "method")
+        .ret("Repo.getItems", "List")
+        // No type_args for Repo.getItems → E stays unbound.
+        .sym(3, "List", "class")
+        .generic_params("List", &["E"])
+        .sym(4, "List.get", "method")
+        .ret("List.get", "E")
+        .sym(5, "User", "class")
+        .sym(6, "User.someMethod", "method");
+
+    let r = ref_with_chain(
+        vec![
+            seg("obj", SegmentKind::Identifier, false),
+            seg("getItems", SegmentKind::Property, true),
+            seg("get", SegmentKind::Property, true),
+            seg("someMethod", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    // Without the arg, E stays as "E" which has no members, so resolution fails.
+    assert_eq!(run(&JAVA_CHAIN_CONFIG, &r, &fc, &lookup), None);
 }

@@ -1,4 +1,4 @@
-use super::{merge_where_bounds, parse_generic_param_clause, parse_return_type_from_signature};
+use super::{merge_where_bounds, parse_generic_param_clause, parse_return_type_from_signature, parse_type_head_and_args};
 
 #[test]
 fn names_only_when_unbounded() {
@@ -244,4 +244,42 @@ fn return_type_rust_arrow_strips_block() {
 fn return_type_none_when_no_return() {
     assert_eq!(parse_return_type_from_signature("void Foo()"), None);
     assert_eq!(parse_return_type_from_signature(""), None);
+}
+
+#[test]
+fn parse_type_head_plain() {
+    let (head, args) = parse_type_head_and_args("User");
+    assert_eq!(head, "User");
+    assert!(args.is_empty());
+}
+
+#[test]
+fn parse_type_head_single_arg() {
+    let (head, args) = parse_type_head_and_args("List<User>");
+    assert_eq!(head, "List");
+    assert_eq!(args, vec!["User"]);
+}
+
+#[test]
+fn parse_type_head_two_args() {
+    let (head, args) = parse_type_head_and_args("Map<String, User>");
+    assert_eq!(head, "Map");
+    assert_eq!(args, vec!["String", "User"]);
+}
+
+#[test]
+fn parse_type_head_nested_arg_flattened() {
+    // Nested generics: inner args are not recursed into.
+    let (head, args) = parse_type_head_and_args("Map<String, List<User>>");
+    assert_eq!(head, "Map");
+    // The second arg is the head of `List<User>` — just `List`.
+    assert_eq!(args, vec!["String", "List"]);
+}
+
+#[test]
+fn parse_type_head_unclosed_angle() {
+    // Malformed input — no crash, head extracted, args empty.
+    let (head, args) = parse_type_head_and_args("List<User");
+    assert_eq!(head, "List");
+    assert!(args.is_empty());
 }

@@ -8,6 +8,7 @@ mod helpers;
 pub(crate) mod keywords;
 mod symbols;
 pub mod extract;
+mod data_class;
 
 mod predicates;
 pub(crate) mod hooks;
@@ -29,11 +30,15 @@ mod coverage_tests;
 #[path = "resolve_tests.rs"]
 mod resolve_tests;
 
+#[cfg(test)]
+#[path = "data_class_tests.rs"]
+mod data_class_tests;
+
 use crate::ecosystem::manifest::gradle::discover_gradle_catalog_names;
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
-use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult, ParsedFile};
+use crate::languages::{LanguagePlugin, Synthesized};
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult, ParsedFile};
 use crate::parser::scope_tree::ScopeKind;
 
 pub struct KotlinPlugin;
@@ -64,6 +69,15 @@ impl LanguagePlugin for KotlinPlugin {
         _lang_id: &str,
     ) -> Vec<EmbeddedRegion> {
         embedded::detect_regions(source)
+    }
+
+    fn synthesize_symbols(
+        &self,
+        source: &str,
+        symbols: &[ExtractedSymbol],
+        refs: &[ExtractedRef],
+    ) -> Synthesized {
+        data_class::synthesize_data_class_members(source, symbols, refs)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

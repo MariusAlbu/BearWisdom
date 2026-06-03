@@ -668,6 +668,57 @@ pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {
     None
 }
 
+/// Split a type string into (head, args) where args are the top-level generic
+/// parameters.  Handles nested generics and multiple args.
+///
+/// `"List<User>"` → `("List", ["User"])`
+/// `"Map<String, User>"` → `("Map", ["String", "User"])`
+/// `"List"` → `("List", [])`
+/// `"List<Map<String, User>>"` → `("List", ["Map"])` (flat, nested not walked)
+///
+/// Only the DIRECT type args of the outermost application are returned; the
+/// caller is responsible for further descending into nested args if needed.
+/// This is consistent with the existing field_type_args convention.
+pub(crate) fn parse_type_head_and_args(type_str: &str) -> (&str, Vec<&str>) {
+    let Some(open) = type_str.find('<') else {
+        return (type_str.trim(), Vec::new());
+    };
+    let head = type_str[..open].trim();
+    // Find the matching `>` for the outermost `<`.
+    let tail = &type_str[open..];
+    let Some(close_rel) = find_matching_bracket(tail, '<', '>') else {
+        return (head, Vec::new());
+    };
+    let args_str = &tail[1..close_rel]; // content between < and >
+    // Split on top-level commas (depth-tracked).
+    let mut args: Vec<&str> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0usize;
+    for (i, b) in args_str.bytes().enumerate() {
+        match b {
+            b'<' => depth += 1,
+            b'>' => depth -= 1,
+            b',' if depth == 0 => {
+                let seg = args_str[start..i].trim();
+                // Each arg's head is just the identifier before any `<`.
+                let arg_head = seg.split('<').next().unwrap_or(seg).trim();
+                if !arg_head.is_empty() {
+                    args.push(arg_head);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    // Final segment.
+    let seg = args_str[start..].trim();
+    let arg_head = seg.split('<').next().unwrap_or(seg).trim();
+    if !arg_head.is_empty() {
+        args.push(arg_head);
+    }
+    (head, args)
+}
+
 pub(crate) fn infer_type_from_chain(
     chain: &crate::types::MemberChain,
     scope_path: &Option<String>,

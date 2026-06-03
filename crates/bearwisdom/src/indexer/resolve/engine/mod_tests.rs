@@ -940,6 +940,66 @@ fn generic_return_type_decomposes_into_apply() {
 }
 
 #[test]
+fn structural_return_type_records_no_generic_args() {
+    // A colon-form return that is a STRUCTURAL type wrapping an inner generic
+    // (tuple `[A, B<C>]`, union, function type) splits at the first `<` into a
+    // non-identifier head. Capture must treat it as non-generic — no element
+    // args recorded — so the chain walker never binds a bogus element type.
+    let pf = ParsedFile {
+        path: "src/svc.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "getTuple".to_string(),
+            qualified_name: "Svc.getTuple".to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("getTuple(): [string, Promise<number>]".to_string()),
+            doc_comment: None,
+            scope_path: Some("Svc".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("src/svc.ts".to_string(), "Svc.getTuple".to_string()), 1);
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    assert!(
+        index.field_type_args("Svc.getTuple").is_none(),
+        "structural return must not record generic element args, got {:?}",
+        index.field_type_args("Svc.getTuple")
+    );
+}
+
+#[test]
 fn default_symbol_lookup_returns_no_typeid_surface() {
     // Synthetic SymbolLookup impls that don't override the TypeId methods
     // must return None across the surface — confirms the default impls

@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>INFER-1 — Control-flow-graph narrowing · CURRENT → TARGET</title>
+<style>
+  :root{
+    --bg:#f4f5f9; --dot:#d9dbe6; --ink:#1f2430; --sub:#7c8395;
+    --card:#ffffff; --border:#e3e5ef; --wire:#aab0c2; --wire-dash:#c4c9d8;
+    --trigger:#10b981; --step:#3b82f6; --decision:#f59e0b;
+    --store:#8b5cf6; --data:#64748b; --good:#16a34a; --ext:#f97316; --bad:#ef4444;
+    --note:#94a3b8; --hook:#6366f1; --flow:#0d9488; --gap:#e11d48;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  header{position:sticky;top:0;z-index:50;background:rgba(244,245,249,.92);
+    backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 22px}
+  header h1{margin:0;font-size:16px;font-weight:700;letter-spacing:.2px}
+  header h1 .step{color:var(--step)}
+  header p{margin:3px 0 0;font-size:12px;color:var(--sub)}
+  header code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
+  .phase{padding:16px 22px 4px}
+  .phase h2{margin:0;font-size:13px;font-weight:800;letter-spacing:.6px;text-transform:uppercase}
+  .phase h2 .cur{color:var(--gap)} .phase h2 .tgt{color:var(--trigger)}
+  .phase p{margin:4px 0 0;font-size:11.5px;color:var(--sub);max-width:1120px}
+  .canvas{position:relative;margin:6px 0 14px;
+    background-image:radial-gradient(var(--dot) 1.3px,transparent 1.3px);
+    background-size:26px 26px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+  svg.wires{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:visible}
+  .node{position:absolute;z-index:2;background:var(--card);border:1px solid var(--border);
+    border-radius:11px;box-shadow:0 2px 10px rgba(28,33,60,.07);
+    display:flex;gap:10px;padding:10px 12px;align-items:center}
+  .node .badge{flex:0 0 auto;width:34px;height:34px;border-radius:9px;display:flex;
+    align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700}
+  .node .body{min-width:0}
+  .node .title{font-weight:650;font-size:12.5px;white-space:pre-line}
+  .node .sub{margin-top:3px;font-size:10.5px;color:var(--sub);white-space:pre-line;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .node.store{background:#faf8ff;border-color:#e6dcff;border-style:dashed}
+  .node.data{background:#f7f8fb;border-style:dashed}
+  .node.note{background:#f4f6f9;border-style:dashed;opacity:.92}
+  .node.hook{border-color:#d8d9fb;background:#f7f7ff}
+  .node.flow{border-color:#bdeee7;background:#f0fbf9}
+  .node.good{border-color:#bbf0cf;background:#f3fdf6}
+  .node.ext{border-color:#ffd9b8;background:#fff8f1}
+  .node.bad{border-color:#ffc9c9;background:#fff5f5}
+  .node.gap{border-color:#ffc4d2;background:#fff5f8;border-style:dashed}
+  .elabel{position:absolute;z-index:3;transform:translate(-50%,-50%);
+    background:#fff;border:1px solid var(--border);border-radius:7px;
+    padding:1px 7px;font-size:10px;color:#5b6270;white-space:nowrap;
+    box-shadow:0 1px 4px rgba(28,33,60,.06)}
+  .band{position:absolute;z-index:0;font-size:10px;font-weight:700;letter-spacing:1.2px;
+    text-transform:uppercase;color:#aeb4c4}
+  .legend{position:fixed;right:16px;bottom:16px;z-index:60;background:rgba(255,255,255,.96);
+    border:1px solid var(--border);border-radius:12px;box-shadow:0 6px 22px rgba(28,33,60,.12);
+    padding:11px 13px;font-size:11px;max-width:400px}
+  .legend b{display:block;font-size:10px;letter-spacing:.5px;text-transform:uppercase;
+    color:var(--sub);margin-bottom:6px}
+  .legend .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+  .legend .it{display:flex;align-items:center;gap:5px}
+  .legend .sw{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .legend .sw.gap{border:1.5px dashed var(--gap);background:#fff5f8}
+  .legend .sw.store{border:1.5px dashed var(--store);background:#faf8ff}
+  .legend .ln{width:22px;height:0;border-top:2px solid var(--wire);display:inline-block}
+  .legend .ln.dash{border-top:2px dashed var(--wire-dash)}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="step">INFER-1</span> — Control-flow-graph narrowing · §B item 1 · foundational · <span style="color:var(--decision)">▷ STARTING</span></h1>
+  <p>Narrowing today is <b>lexical-block + early-return only</b> — there is no control-flow graph. INFER-1 adds a <b>per-function CFG</b> the narrowing pass walks: facts ride the edges, <b>merge</b> at join points, <b>reset</b> on reassignment, reach a <b>fixed point</b> over loop back-edges, <b>split</b> across <code>&&</code>/<code>||</code>, and bottom out at <code>never</code> for exhaustive switches. The foundational checker feature — it caps how far INFER-2..4 reach. Rose-dashed = today's gap.</p>
+</header>
+
+<div class="phase">
+  <h2><span class="cur">CURRENT</span> · block-scoped + early-return narrowing; no graph to see merges, loops, or kills</h2>
+  <p>The flow pass (<code>type_checker/</code>, <code>indexer/flow</code>) narrows within a lexical block and after an early return — enough for the two simple shapes. With no CFG it cannot model: a reassignment that should <i>kill</i> a narrowed fact, an if/else <i>join</i> that unions the branches, a loop <i>back-edge</i>, a short-circuit <code>&amp;&amp;</code>/<code>||</code> guard, or switch <i>exhaustiveness</i>. Those five are silently wrong or absent.</p>
+</div>
+<div id="cur" class="canvas"><svg class="wires"></svg></div>
+
+<div class="phase">
+  <h2><span class="tgt">TARGET</span> · a per-function CFG; narrowing facts flow on edges and merge at joins</h2>
+  <p><code>build_cfg(fn)</code> produces basic blocks and edges. The narrowing pass walks it: each edge carries the fact implied by the branch condition; <b>join</b> blocks merge predecessor facts (then <code>∪</code> else); a def block <b>resets</b> the fact; loop back-edges iterate to a <b>fixed point</b>; <code>&amp;&amp;</code>/<code>||</code> lower to extra edges so the guard fact sits on the true edge; an exhaustive switch leaves the default block <b>unreachable</b> (<code>never</code>). The same five cases now fall out of graph structure.</p>
+</div>
+<div id="tgt" class="canvas"><svg class="wires"></svg></div>
+
+<div class="legend">
+  <b>Legend</b>
+  <div class="row">
+    <span class="it"><span class="sw" style="background:var(--trigger)"></span>entry</span>
+    <span class="it"><span class="sw" style="background:var(--step)"></span>step / block</span>
+    <span class="it"><span class="sw" style="background:var(--decision)"></span>branch</span>
+    <span class="it"><span class="sw store"></span>join&nbsp;/&nbsp;merge</span>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <span class="it"><span class="sw" style="background:var(--good)"></span>narrows&nbsp;correctly</span>
+    <span class="it"><span class="sw gap"></span>gap&nbsp;(no&nbsp;CFG)</span>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <span class="it"><span class="ln"></span>control&nbsp;edge&nbsp;(fact)</span>
+    <span class="it"><span class="ln dash"></span>back-edge&nbsp;/&nbsp;enables</span>
+  </div>
+</div>
+
+<script>
+const GLYPH={trigger:'◉',step:'▸',decision:'◆',store:'▤',data:'▥',good:'✓',ext:'◐',bad:'✕',note:'–',hook:'⚙',flow:'⇶',gap:'!'};
+const COLOR=c=>getComputedStyle(document.documentElement).getPropertyValue('--'+c).trim();
+
+// ---------------------------------------------------------------------------
+// CURRENT — block + early-return narrowing; the five graph cases are invisible
+// ---------------------------------------------------------------------------
+const curBands=[
+  {x:30,y:14,t:'narrowing today — lexical block + early-return only'},
+  {x:30,y:296,t:'no control-flow graph → these five are wrong or absent'},
+];
+const curNodes=[
+  {id:'src',x:40,y:80,w:252,h:88,cat:'trigger',title:'f(x: string | null, …)',
+   sub:'branches · loops · reassigns'},
+  {id:'flowrun',x:332,y:76,w:256,h:96,cat:'step',title:'flow narrowing pass',
+   sub:'type_checker/ · indexer/flow\nwalks lexical blocks, not a graph'},
+  {id:'blockok',x:632,y:38,w:280,h:70,cat:'good',title:'if (typeof x===\'string\') x.toUpperCase()',
+   sub:'block-scoped narrow ✓'},
+  {id:'earlyok',x:632,y:140,w:280,h:70,cat:'good',title:'if (!x) return; x.foo()',
+   sub:'early-return narrow ✓'},
+
+  {id:'reassign',x:40,y:330,w:236,h:96,cat:'gap',title:'reassignment ✕',
+   sub:'x = maybe();  x.foo()\nold narrow not killed'},
+  {id:'merge',x:296,y:330,w:236,h:96,cat:'gap',title:'branch merge ✕',
+   sub:'if/else join — union\nnot computed after the if'},
+  {id:'loop',x:552,y:330,w:236,h:96,cat:'gap',title:'loop back-edge ✕',
+   sub:'fact leaks across\niterations'},
+  {id:'sc',x:808,y:330,w:248,h:96,cat:'gap',title:'&& / || split ✕',
+   sub:'a && a.b — guard fact\nnot carried to the use'},
+  {id:'exhaust',x:1076,y:330,w:248,h:96,cat:'gap',title:'exhaustiveness ✕',
+   sub:'covered switch — default\nnot narrowed to `never`'},
+];
+const curEdges=[
+  {f:'src',t:'flowrun'},
+  {f:'flowrun',t:'blockok',l:'in block'},
+  {f:'flowrun',t:'earlyok',l:'after return'},
+  {f:'flowrun',t:'reassign',k:'dash'},
+  {f:'flowrun',t:'merge',k:'dash'},
+  {f:'flowrun',t:'loop',k:'dash'},
+  {f:'flowrun',t:'sc',k:'dash'},
+  {f:'flowrun',t:'exhaust',k:'dash'},
+];
+
+// ---------------------------------------------------------------------------
+// TARGET — per-function CFG; facts on edges, merged at joins, the five fall out
+// ---------------------------------------------------------------------------
+const tgtBands=[
+  {x:30,y:14,t:'INFER-1 — per-function CFG · facts ride edges, merge at joins'},
+  {x:30,y:316,t:'the same five, now decided by graph structure'},
+];
+const tgtNodes=[
+  {id:'entry',x:40,y:84,w:240,h:80,cat:'trigger',title:'f(x: string | null)',
+   sub:'x : string | null'},
+  {id:'build',x:320,y:80,w:242,h:92,cat:'step',title:'build_cfg(fn)',
+   sub:'basic blocks + edges\n(new pass · indexer/flow)'},
+  {id:'branch',x:604,y:88,w:174,h:78,cat:'decision',title:'if typeof x\n=== \'string\'',outs:2},
+  {id:'thenblk',x:816,y:40,w:222,h:72,cat:'step',title:'THEN block',
+   sub:'true-edge fact:  x : string'},
+  {id:'elseblk',x:816,y:150,w:222,h:72,cat:'step',title:'ELSE block',
+   sub:'false-edge fact:  x : null'},
+  {id:'join',x:1086,y:90,w:250,h:90,cat:'store',title:'JOIN block',
+   sub:'merge preds:  x : string ∪ null\n(narrowed-out branch ⇒ never)'},
+
+  {id:'reassign',x:40,y:354,w:236,h:96,cat:'good',title:'reassignment kills ✓',
+   sub:'def block resets the\nnarrowed fact'},
+  {id:'merge',x:296,y:354,w:236,h:96,cat:'good',title:'branch merge ✓',
+   sub:'join unions then/else\nat the merge block'},
+  {id:'loop',x:552,y:354,w:236,h:96,cat:'good',title:'loop back-edge ✓',
+   sub:'iterate to a fixed point\nover the back-edge'},
+  {id:'sc',x:808,y:354,w:248,h:96,cat:'good',title:'&& / || ✓',
+   sub:'lowered to edges — guard\nfact on the true edge'},
+  {id:'exhaust',x:1076,y:354,w:248,h:96,cat:'good',title:'exhaustiveness ✓',
+   sub:'covered switch — default\nblock unreachable (`never`)'},
+];
+const tgtEdges=[
+  {f:'entry',t:'build'},
+  {f:'build',t:'branch'},
+  {f:'branch',t:'thenblk',o:0,l:'true'},
+  {f:'branch',t:'elseblk',o:1,l:'false'},
+  {f:'thenblk',t:'join'},
+  {f:'elseblk',t:'join'},
+  {f:'build',t:'reassign',k:'dash'},
+  {f:'build',t:'merge',k:'dash'},
+  {f:'build',t:'loop',k:'dash'},
+  {f:'build',t:'sc',k:'dash'},
+  {f:'build',t:'exhaust',k:'dash'},
+];
+
+renderGraph('cur',curNodes,curEdges,curBands);
+renderGraph('tgt',tgtNodes,tgtEdges,tgtBands);
+
+function renderGraph(containerId,nodes,edges,bands){
+  const N={}; nodes.forEach(n=>{n.outs=n.outs||1; N[n.id]=n;});
+  const canvas=document.getElementById(containerId);
+  const svg=canvas.querySelector('svg');
+  const PAD=70;
+  const W=Math.max(...nodes.map(n=>n.x+n.w))+PAD+40;
+  const H=Math.max(...nodes.map(n=>n.y+n.h))+PAD;
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('width',W); svg.setAttribute('height',H);
+
+  svg.innerHTML=`<defs>
+    <marker id="arr-${containerId}" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--wire)"/></marker>
+    <marker id="arrd-${containerId}" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--wire-dash)"/></marker></defs>`;
+
+  (bands||[]).forEach(b=>{
+    const el=document.createElement('div');
+    el.className='band'; el.style.left=b.x+'px'; el.style.top=b.y+'px'; el.textContent=b.t;
+    canvas.appendChild(el);
+  });
+
+  nodes.forEach(n=>{
+    const el=document.createElement('div');
+    el.className='node '+n.cat;
+    el.style.left=n.x+'px'; el.style.top=n.y+'px'; el.style.width=n.w+'px'; el.style.minHeight=n.h+'px';
+    const badge=(n.cat==='store'||n.cat==='data'||n.cat==='note')?'':
+      `<div class="badge" style="background:${COLOR(n.cat)}">${GLYPH[n.cat]}</div>`;
+    el.innerHTML=badge+`<div class="body"><div class="title">${n.title}</div>`+
+      (n.sub?`<div class="sub">${n.sub}</div>`:'')+`</div>`;
+    canvas.appendChild(el);
+  });
+
+  const inP =n=>({x:n.x, y:n.y+n.h/2});
+  const outP=(n,i)=>({x:n.x+n.w, y:n.y+n.h*((i||0)+1)/(n.outs+1)});
+  const ns='http://www.w3.org/2000/svg';
+  const seen=new Set();
+
+  edges.forEach(e=>{
+    const a=N[e.f], b=N[e.t];
+    const p0=outP(a,e.o), p1=inP(b);
+    const dash=e.k==='dash';
+    const back=e.k==='back'||(p1.x<p0.x && !dash);
+    let d, my=(p0.y+p1.y)/2;
+    if(dash){
+      d=`M${p0.x},${p0.y} C${p0.x},${my} ${p1.x},${my} ${p1.x},${p1.y}`;
+    }else if(back){
+      const dy=Math.max(70, Math.abs(p1.x-p0.x)*0.18); my+=dy*0.75;
+      d=`M${p0.x},${p0.y} C${p0.x+90},${p0.y+dy} ${p1.x-90},${p1.y+dy} ${p1.x},${p1.y}`;
+    }else{
+      const dx=Math.min(170,Math.max(45,Math.abs(p1.x-p0.x)*0.5));
+      d=`M${p0.x},${p0.y} C${p0.x+dx},${p0.y} ${p1.x-dx},${p1.y} ${p1.x},${p1.y}`;
+    }
+    const path=document.createElementNS(ns,'path');
+    path.setAttribute('d',d); path.setAttribute('fill','none');
+    path.setAttribute('stroke',dash?'var(--wire-dash)':'var(--wire)');
+    path.setAttribute('stroke-width',dash?1.6:2);
+    if(dash) path.setAttribute('stroke-dasharray','5 5');
+    path.setAttribute('marker-end',dash?`url(#arrd-${containerId})`:`url(#arr-${containerId})`);
+    svg.appendChild(path);
+
+    [[p0.x,p0.y],[p1.x,p1.y]].forEach(([px,py])=>{
+      const key=px+','+py; if(seen.has(key))return; seen.add(key);
+      const c=document.createElementNS(ns,'circle');
+      c.setAttribute('cx',px); c.setAttribute('cy',py); c.setAttribute('r',4);
+      c.setAttribute('fill','#fff');
+      c.setAttribute('stroke','var(--wire)'); c.setAttribute('stroke-width',1.6);
+      svg.appendChild(c);
+    });
+
+    if(e.l){
+      const mx=(p0.x+p1.x)/2;
+      const lab=document.createElement('div');
+      lab.className='elabel'; lab.style.left=mx+'px'; lab.style.top=my+'px'; lab.textContent=e.l;
+      canvas.appendChild(lab);
+    }
+  });
+}
+</script>
+</body>
+</html>

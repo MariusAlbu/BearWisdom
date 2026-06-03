@@ -310,7 +310,6 @@ pub fn resolve_via_chain(
                 config,
                 lookup,
                 env.as_mut(),
-                true,
             );
             current_type = resolved;
             continue;
@@ -337,7 +336,6 @@ pub fn resolve_via_chain(
                 config,
                 lookup,
                 env.as_mut(),
-                false,
             );
             current_type = resolved;
             continue;
@@ -370,7 +368,6 @@ pub fn resolve_via_chain(
                     config,
                     lookup,
                     env.as_mut(),
-                    true,
                 );
                 current_type = resolved;
                 found = true;
@@ -383,7 +380,6 @@ pub fn resolve_via_chain(
                     config,
                     lookup,
                     env.as_mut(),
-                    false,
                 );
                 current_type = resolved;
                 found = true;
@@ -402,13 +398,13 @@ pub fn resolve_via_chain(
                 let ext_member = format!("{ext_qname}.{}", seg.name);
                 if let Some(ft) = lookup.field_type_str(&ext_member) {
                     current_type = resolve_and_enter_generics(
-                        &ft, &ext_member, config, lookup, env.as_mut(), true,
+                        &ft, &ext_member, config, lookup, env.as_mut(),
                     );
                     continue;
                 }
                 if let Some(rt) = lookup.return_type_str(&ext_member) {
                     current_type = resolve_and_enter_generics(
-                        &rt, &ext_member, config, lookup, env.as_mut(), false,
+                        &rt, &ext_member, config, lookup, env.as_mut(),
                     );
                     continue;
                 }
@@ -901,7 +897,7 @@ fn walk_inheritance_for_member(
         }
         if let Some(next) = lookup.return_type_str(&parent_member) {
             let resolved = resolve_and_enter_generics(
-                &next, &parent_member, config, lookup, env.as_deref_mut(), false,
+                &next, &parent_member, config, lookup, env.as_deref_mut(),
             );
             return Some(resolved);
         }
@@ -911,12 +907,12 @@ fn walk_inheritance_for_member(
             }
             if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
                 return Some(resolve_and_enter_generics(
-                    &ft, &sym.qualified_name, config, lookup, env.as_deref_mut(), true,
+                    &ft, &sym.qualified_name, config, lookup, env.as_deref_mut(),
                 ));
             }
             if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
                 return Some(resolve_and_enter_generics(
-                    &rt, &sym.qualified_name, config, lookup, env.as_deref_mut(), false,
+                    &rt, &sym.qualified_name, config, lookup, env.as_deref_mut(),
                 ));
             }
         }
@@ -929,9 +925,9 @@ fn walk_inheritance_for_member(
 }
 
 /// Resolve a type through the TypeEnvironment (if active) and enter a new
-/// generic context bound to explicit `new_args` (used by the inheritance walk,
-/// where the args come from a `field_type_args` lookup rather than the member
-/// qname). Mirrors `resolve_and_enter_generics`'s field branch.
+/// generic context bound to explicit `new_args`.  Used by the inheritance
+/// walk where args are resolved ahead of time from a `field_type_args` lookup
+/// and must be threaded in directly rather than re-looked-up by qname.
 fn resolve_and_enter_generics_args(
     raw_type: &str,
     new_args: &[String],
@@ -954,30 +950,30 @@ fn resolve_and_enter_generics_args(
     }
 }
 
-/// Resolve a type through the TypeEnvironment (if active) and optionally
-/// enter a new generic context for the resolved type.
+/// Resolve a type through the TypeEnvironment (if active) and enter a new
+/// generic context binding the member's element-type args to the resolved
+/// type's parameters.  Called for both field accesses and method-return
+/// yields — `field_type_args(member_qname)` carries element args for both
+/// because the capture side stores them under the same `type_args` slot.
 fn resolve_and_enter_generics(
     raw_type: &str,
     member_qname: &str,
     config: &ChainConfig,
     lookup: &dyn SymbolLookup,
     env: Option<&mut TypeEnvironment>,
-    is_field: bool,
 ) -> String {
     let normalized = (config.normalize_type)(raw_type);
     if let Some(env) = env {
         let resolved = env.resolve(&normalized);
         env.push_scope();
-        if is_field {
-            let new_args = lookup
-                .field_type_args(member_qname)
-                .unwrap_or(&[])
-                .to_vec();
-            if !new_args.is_empty() {
-                env.enter_generic_context(&resolved, &new_args, |name| {
-                    lookup.generic_params(name).map(|p| p.to_vec())
-                });
-            }
+        let new_args = lookup
+            .field_type_args(member_qname)
+            .unwrap_or(&[])
+            .to_vec();
+        if !new_args.is_empty() {
+            env.enter_generic_context(&resolved, &new_args, |name| {
+                lookup.generic_params(name).map(|p| p.to_vec())
+            });
         }
         resolved
     } else {

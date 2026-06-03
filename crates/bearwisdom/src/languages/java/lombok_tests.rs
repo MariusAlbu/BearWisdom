@@ -29,6 +29,21 @@ fn return_ref_for(source: &str, qn: &str) -> Option<String> {
         .map(|rf| rf.target_name.clone())
 }
 
+/// Collect all TypeRef target names for the synthesized method `qn`, in
+/// emission order (head first, then args).
+fn all_type_refs_for(source: &str, qn: &str) -> Vec<String> {
+    let r = extract(source);
+    let s = synthesize_lombok_accessors(source, &r.symbols, &r.refs);
+    let Some(idx) = s.symbols.iter().position(|sy| sy.qualified_name == qn) else {
+        return Vec::new();
+    };
+    s.refs
+        .iter()
+        .filter(|rf| rf.source_symbol_index == idx && rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.clone())
+        .collect()
+}
+
 /// Synthesize accessors for `source`, returning sorted (qualified_name, signature) pairs.
 fn synth(source: &str) -> Vec<(String, String)> {
     let mut v: Vec<(String, String)> = synth_syms(source)
@@ -235,4 +250,22 @@ fn builder_methods_emit_return_type_refs() {
     assert_eq!(return_ref_for(src, "User.builder"), Some("User.UserBuilder".to_string()));
     assert_eq!(return_ref_for(src, "User.UserBuilder.name"), Some("User.UserBuilder".to_string()));
     assert_eq!(return_ref_for(src, "User.UserBuilder.build"), Some("User".to_string()));
+}
+
+#[test]
+fn generic_getter_emits_only_head_type_ref() {
+    // `List<User> items` → synthesized `getItems()` emits TypeRef("List") only.
+    // The element `User` is not emitted as a ref; element binding is driven by
+    // the method signature, not extra refs.
+    let src = "@Data public class Order { private List<User> items; }";
+    let refs = all_type_refs_for(src, "Order.getItems");
+    assert_eq!(refs, vec!["List".to_string()]);
+}
+
+#[test]
+fn non_generic_getter_emits_only_head_ref() {
+    // `String name` → synthesized `getName()` emits only TypeRef("String"), no args.
+    let src = "@Data public class User { private String name; }";
+    let refs = all_type_refs_for(src, "User.getName");
+    assert_eq!(refs, vec!["String".to_string()]);
 }

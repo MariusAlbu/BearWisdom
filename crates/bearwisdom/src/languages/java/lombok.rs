@@ -22,13 +22,12 @@
 //
 // Each synthesized method carries a return-type `TypeRef` (the field type for a
 // getter, the builder qname for `builder()`/fluent setters, the class qname for
-// `build()`) so it types through a chain the same way a real method does — a
-// getter chain and the fluent builder chain both resolve end to end. Two known
-// boundaries: void setters and primitive returns emit no ref (nothing to chain
-// into), and a generic return like `List<User>` types to its head `List`, not
-// the element `User` — typing through a generic method return needs
-// `return_type_args` on the chain walker's method branch (generic-engine work,
-// not Lombok-specific).
+// `build()`) so it types through a chain the same way a real method does. The
+// ref is the type head only: a getter for `List<User>` types to `List`, not the
+// element `User`. Element binding comes from the return type's generic args,
+// which the index reads from a parseable method signature; the Java synth
+// signature is leading-form (`List<User> getItems()`), which that parser does
+// not read. Void setters and primitive returns emit no ref.
 // =============================================================================
 
 use crate::languages::Synthesized;
@@ -250,10 +249,11 @@ impl<'a> Emit<'a> {
         }
     }
 
-    /// Push `sym`; when `return_type` is a non-primitive, non-empty type, also
-    /// emit its return-type `TypeRef` sourced at the new symbol's index (so the
-    /// chain walker types a call to it). `source_symbol_index` is RELATIVE to
-    /// `out` — `parse_file` rebases it onto the file table.
+    /// Push `sym`; when `return_type` is a non-primitive, non-empty type, emit
+    /// its return-type `TypeRef` (the head, stripped of generic args) sourced at
+    /// the new symbol's index so the chain walker types a call to it.
+    /// `source_symbol_index` is RELATIVE to `out` — `parse_file` rebases it
+    /// onto the file table.
     fn push(&mut self, sym: ExtractedSymbol, return_type: Option<&str>) {
         if self.existing.contains(sym.qualified_name.as_str()) {
             return;
@@ -264,7 +264,8 @@ impl<'a> Emit<'a> {
         let line = sym.start_line;
         self.out.push(sym);
         let idx = self.out.len() - 1;
-        if let Some(head) = return_type.map(type_head) {
+        if let Some(rt) = return_type {
+            let head = type_head(rt);
             if !head.is_empty() && !is_primitive(head) {
                 self.refs.push(return_type_ref(idx, head, line));
             }
