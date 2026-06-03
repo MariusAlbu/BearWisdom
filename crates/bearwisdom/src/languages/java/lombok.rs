@@ -15,19 +15,24 @@
 // annotation ref's `byte_offset` points at the `@` (the extractor stamps the
 // `marker_annotation`/`annotation` node start), a type ref points at the type
 // identifier. Field-level @Getter/@Setter is a follow-on (those refs are sourced
-// at the field). Also out of scope for this slice: @Builder's nested builder
-// class, the @*Constructor family, and the AccessLevel / static / final nuances
-// that suppress accessors.
+// at the field, indistinguishable from a field type). @Builder synthesizes the
+// `builder()` entry, the nested `{Class}Builder` class, a fluent setter per
+// field, and `build()`. Out of scope: the @*Constructor family and the
+// AccessLevel / static / final nuances that suppress accessors. Synthesized
+// methods carry their return type in the signature only (no arena at synthesis
+// time), so a fluent builder chain resolves member-by-member, not yet typed
+// end to end — that awaits arena-typed synthesis, shared with the getters.
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use std::collections::{HashMap, HashSet};
 
-/// Which accessors a Lombok annotation generates for a field.
+/// What a Lombok annotation generates for a class.
 #[derive(Clone, Copy, Default)]
 struct Accessors {
     getter: bool,
     setter: bool,
+    builder: bool,
 }
 
 impl Accessors {
@@ -35,19 +40,21 @@ impl Accessors {
         Accessors {
             getter: self.getter || other.getter,
             setter: self.setter || other.setter,
+            builder: self.builder || other.builder,
         }
     }
 }
 
-/// Map a Lombok annotation name (bare or `lombok.`-qualified) to the accessors
-/// it generates. `None` for any non-accessor annotation.
+/// Map a Lombok annotation name (bare or `lombok.`-qualified) to what it
+/// generates. `None` for any annotation that synthesizes nothing here.
 fn accessors_for(annotation: &str) -> Option<Accessors> {
     let bare = annotation.rsplit('.').next().unwrap_or(annotation);
     match bare {
-        "Data" => Some(Accessors { getter: true, setter: true }),
-        "Value" => Some(Accessors { getter: true, setter: false }), // immutable
-        "Getter" => Some(Accessors { getter: true, setter: false }),
-        "Setter" => Some(Accessors { getter: false, setter: true }),
+        "Data" => Some(Accessors { getter: true, setter: true, ..Default::default() }),
+        "Value" => Some(Accessors { getter: true, ..Default::default() }), // immutable
+        "Getter" => Some(Accessors { getter: true, ..Default::default() }),
+        "Setter" => Some(Accessors { setter: true, ..Default::default() }),
+        "Builder" => Some(Accessors { builder: true, ..Default::default() }),
         _ => None,
     }
 }
@@ -123,7 +130,7 @@ pub(super) fn synthesize_lombok_accessors(
                 &mut out,
                 &mut emitted,
                 &existing,
-                make_method(&name, format!("{ty} {name}()"), class_qname, sym.start_line),
+                make_synth(&name, SymbolKind::Method, format!("{ty} {name}()"), class_qname, sym.start_line),
             );
         }
         if acc.setter {
@@ -133,12 +140,80 @@ pub(super) fn synthesize_lombok_accessors(
                 &mut out,
                 &mut emitted,
                 &existing,
-                make_method(&name, sig, class_qname, sym.start_line),
+                make_synth(&name, SymbolKind::Method, sig, class_qname, sym.start_line),
             );
         }
     }
 
+    // 3. For each @Builder class, synthesize `builder()` + the nested builder
+    //    class with a fluent setter per field and `build()`. Lombok names the
+    //    builder `{ClassName}Builder`, nested under the class.
+    let builder_classes: Vec<String> = class_intent
+        .iter()
+        .filter(|(_, a)| a.builder)
+        .map(|(q, _)| q.to_string())
+        .collect();
+    for class_qname in &builder_classes {
+        emit_builder(class_qname, symbols, &existing, &mut emitted, &mut out);
+    }
+
     out
+}
+
+/// Emit the `@Builder` machinery for one class: a static `builder()` returning
+/// the nested `{Simple}Builder` class, that class, a fluent setter per field
+/// (named after the field, returning the builder), and `build()` returning the
+/// owning class.
+fn emit_builder(
+    class_qname: &str,
+    symbols: &[ExtractedSymbol],
+    existing: &HashSet<&str>,
+    emitted: &mut HashSet<String>,
+    out: &mut Vec<ExtractedSymbol>,
+) {
+    let simple = class_qname.rsplit('.').next().unwrap_or(class_qname);
+    let builder_name = format!("{simple}Builder");
+    let builder_qname = format!("{class_qname}.{builder_name}");
+    let line = symbols
+        .iter()
+        .find(|s| s.qualified_name == class_qname)
+        .map_or(0, |s| s.start_line);
+
+    // `static {Simple}Builder builder()` on the owning class.
+    push_unique(
+        out,
+        emitted,
+        existing,
+        make_synth("builder", SymbolKind::Method, format!("{builder_name} builder()"), class_qname, line),
+    );
+    // The nested builder class.
+    push_unique(
+        out,
+        emitted,
+        existing,
+        make_synth(&builder_name, SymbolKind::Class, format!("class {builder_name}"), class_qname, line),
+    );
+    // A fluent setter per field, returning the builder for chaining.
+    for sym in symbols {
+        if sym.kind != SymbolKind::Field || sym.scope_path.as_deref() != Some(class_qname) {
+            continue;
+        }
+        let ty = field_type_of(sym);
+        let sig = format!("{} {}({} {})", builder_name, sym.name, ret_type(&ty), sym.name);
+        push_unique(
+            out,
+            emitted,
+            existing,
+            make_synth(&sym.name, SymbolKind::Method, sig, &builder_qname, sym.start_line),
+        );
+    }
+    // `{Simple} build()` on the builder class.
+    push_unique(
+        out,
+        emitted,
+        existing,
+        make_synth("build", SymbolKind::Method, format!("{simple} build()"), &builder_qname, line),
+    );
 }
 
 fn is_type_decl(kind: SymbolKind) -> bool {
@@ -188,11 +263,19 @@ fn push_unique(
     }
 }
 
-fn make_method(name: &str, signature: String, class_qname: &str, line: u32) -> ExtractedSymbol {
+/// Build a synthesized symbol named `name` under `scope_qname` (its
+/// `qualified_name` is `scope_qname.name`, its `scope_path` is `scope_qname`).
+fn make_synth(
+    name: &str,
+    kind: SymbolKind,
+    signature: String,
+    scope_qname: &str,
+    line: u32,
+) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.to_string(),
-        qualified_name: format!("{class_qname}.{name}"),
-        kind: SymbolKind::Method,
+        qualified_name: format!("{scope_qname}.{name}"),
+        kind,
         visibility: Some(Visibility::Public),
         start_line: line,
         end_line: line,
@@ -200,7 +283,7 @@ fn make_method(name: &str, signature: String, class_qname: &str, line: u32) -> E
         end_col: 0,
         signature: Some(signature),
         doc_comment: None,
-        scope_path: Some(class_qname.to_string()),
+        scope_path: Some(scope_qname.to_string()),
         parent_index: None,
         byte_offset: 0,
         declared_type: None,

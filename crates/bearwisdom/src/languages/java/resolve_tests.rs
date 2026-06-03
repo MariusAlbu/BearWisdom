@@ -213,6 +213,50 @@ fn lombok_synthesized_getter_resolves_via_scope_chain() {
 }
 
 #[test]
+fn lombok_builder_method_resolves_via_scope_chain() {
+    use super::extract::extract;
+    use super::lombok::synthesize_lombok_accessors;
+
+    // @Builder synthesizes User.builder; a bare builder() call inside the class
+    // binds to it — the builder entry point is a real resolution target.
+    let source =
+        "@Builder\npublic class User {\n    private String name;\n    public void touch() { builder(); }\n}";
+    let r = extract(source);
+    let synthesized = synthesize_lombok_accessors(source, &r.symbols, &r.refs);
+    let mut symbols = r.symbols.clone();
+    symbols.extend(synthesized);
+    let file = make_file("src/User.java", "java", symbols, r.refs.clone());
+
+    let (ref_idx, src_idx) = file
+        .refs
+        .iter()
+        .enumerate()
+        .find_map(|(i, rf)| {
+            (rf.kind == EdgeKind::Calls && rf.target_name == "builder")
+                .then_some((i, rf.source_symbol_index))
+        })
+        .expect("a builder() call ref is present");
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let resolver = JavaResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[ref_idx],
+        source_symbol: &file.symbols[src_idx],
+        scope_chain: build_scope_chain(file.symbols[src_idx].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("builder() resolves to the synthesized builder method");
+    let expected = *id_map
+        .get(&("src/User.java".to_string(), "User.builder".to_string()))
+        .expect("synthesized builder() is indexed");
+    assert_eq!(res.target_symbol_id, expected, "binds to synthesized User.builder");
+}
+
+#[test]
 fn test_same_package_resolution() {
     let file1 = make_file(
         "src/Order.java",

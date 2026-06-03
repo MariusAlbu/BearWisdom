@@ -8,11 +8,17 @@
 
 use super::extract::extract;
 use super::lombok::synthesize_lombok_accessors;
+use crate::types::{ExtractedSymbol, SymbolKind};
+
+/// Synthesize for `source`, returning the raw symbols.
+fn synth_syms(source: &str) -> Vec<ExtractedSymbol> {
+    let r = extract(source);
+    synthesize_lombok_accessors(source, &r.symbols, &r.refs)
+}
 
 /// Synthesize accessors for `source`, returning sorted (qualified_name, signature) pairs.
 fn synth(source: &str) -> Vec<(String, String)> {
-    let r = extract(source);
-    let mut v: Vec<(String, String)> = synthesize_lombok_accessors(source, &r.symbols, &r.refs)
+    let mut v: Vec<(String, String)> = synth_syms(source)
         .into_iter()
         .map(|s| (s.qualified_name, s.signature.unwrap_or_default()))
         .collect();
@@ -140,4 +146,55 @@ fn data_class_with_lombok_named_field_type_synthesizes_only_its_accessors() {
         q,
         vec!["Order.getTotal".to_string(), "Order.setTotal".to_string()]
     );
+}
+
+#[test]
+fn builder_synthesizes_machinery() {
+    let q = qnames("@Builder\npublic class User { private String name; private int age; }");
+    assert!(q.contains(&"User.builder".to_string()), "{q:?}");
+    assert!(q.contains(&"User.UserBuilder".to_string()), "{q:?}");
+    assert!(q.contains(&"User.UserBuilder.name".to_string()), "{q:?}");
+    assert!(q.contains(&"User.UserBuilder.age".to_string()), "{q:?}");
+    assert!(q.contains(&"User.UserBuilder.build".to_string()), "{q:?}");
+}
+
+#[test]
+fn builder_class_kind_and_fluent_signatures() {
+    let syms = synth_syms("@Builder public class User { private String name; }");
+    let find = |qn: &str| {
+        syms.iter()
+            .find(|s| s.qualified_name == qn)
+            .unwrap_or_else(|| panic!("missing {qn}"))
+    };
+    assert_eq!(find("User.UserBuilder").kind, SymbolKind::Class);
+    assert_eq!(
+        find("User.builder").signature.as_deref(),
+        Some("UserBuilder builder()")
+    );
+    assert_eq!(
+        find("User.UserBuilder.name").signature.as_deref(),
+        Some("UserBuilder name(String name)")
+    );
+    assert_eq!(
+        find("User.UserBuilder.build").signature.as_deref(),
+        Some("User build()")
+    );
+}
+
+#[test]
+fn builder_alone_yields_no_getters() {
+    let q = qnames("@Builder public class User { private String name; }");
+    assert!(
+        !q.iter().any(|n| n.starts_with("User.get") || n.starts_with("User.set")),
+        "@Builder alone must not synthesize getters/setters: {q:?}"
+    );
+}
+
+#[test]
+fn data_and_builder_compose() {
+    let q = qnames("@Data\n@Builder\npublic class User { private String name; }");
+    assert!(q.contains(&"User.getName".to_string()), "{q:?}");
+    assert!(q.contains(&"User.setName".to_string()), "{q:?}");
+    assert!(q.contains(&"User.builder".to_string()), "{q:?}");
+    assert!(q.contains(&"User.UserBuilder.build".to_string()), "{q:?}");
 }
