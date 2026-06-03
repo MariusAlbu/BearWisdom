@@ -15,11 +15,17 @@
 
 use std::fs;
 use std::io::Write;
+use std::sync::Mutex;
 
 use bearwisdom::full_index;
 use bearwisdom_tests::TestProject;
 use tempfile::TempDir;
 use zip::write::SimpleFileOptions;
+
+/// `BEARWISDOM_JAVA_MAVEN_REPO` is process-global; tests that set it must not
+/// run concurrently. Held across each test's full set→index→restore window.
+/// Poison is recovered so a panicking test still leaves a usable lock.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// Build an in-memory `-sources.jar` with one Java file at
 /// `com/fakeext/greeter/Greeter.java`, write it into the synthetic Maven
@@ -123,8 +129,209 @@ public class App {
     project
 }
 
+/// Build an ISOLATED fake Maven repo: the `.m2` is nested under a fresh
+/// TempDir so the derived `<parent>/bearwisdom-sources-cache` is per-test, not
+/// the shared system-temp cache that pollutes results across runs. Returns the
+/// anchor TempDir; the repo is at `<anchor>/m2`. The data jar holds
+/// `Repository.findOne(): Entity` and `Entity.getEmail(): String`.
+fn seed_isolated_chain_repo() -> TempDir {
+    let anchor = TempDir::new().unwrap();
+    let artifact_dir = anchor
+        .path()
+        .join("m2")
+        .join("com")
+        .join("fakeext")
+        .join("data")
+        .join("2.0.0");
+    fs::create_dir_all(&artifact_dir).unwrap();
+
+    let jar_path = artifact_dir.join("data-2.0.0-sources.jar");
+    let jar_file = fs::File::create(&jar_path).unwrap();
+    let mut zip = zip::ZipWriter::new(jar_file);
+    let options =
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    zip.start_file("com/fakeext/data/Repository.java", options).unwrap();
+    zip.write_all(
+        br#"package com.fakeext.data;
+
+public class Repository {
+    public Entity findOne() { return null; }
+}
+"#,
+    )
+    .unwrap();
+
+    zip.start_file("com/fakeext/data/Entity.java", options).unwrap();
+    zip.write_all(
+        br#"package com.fakeext.data;
+
+public class Entity {
+    public String getEmail() { return ""; }
+}
+"#,
+    )
+    .unwrap();
+
+    zip.finish().unwrap();
+    anchor
+}
+
+/// Consumer that chains through `Repository.findOne()` WITHOUT naming/importing
+/// the return type `Entity` — the fluent-API / junit-assertion shape. The only
+/// `getEmail` reference is the second hop, so the assertion can't false-pass on
+/// a direct `Entity` chain.
+fn seed_no_import_chain_consumer() -> TestProject {
+    let project = TestProject { dir: TempDir::new().unwrap() };
+    project.add_file(
+        "pom.xml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>example.consumer</groupId>
+    <artifactId>consumer</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <dependencies>
+        <dependency>
+            <groupId>com.fakeext</groupId>
+            <artifactId>data</artifactId>
+            <version>2.0.0</version>
+        </dependency>
+    </dependencies>
+</project>
+"#,
+    );
+    project.add_file(
+        "src/main/java/example/consumer/App.java",
+        r#"package example.consumer;
+
+import com.fakeext.data.Repository;
+
+public class App {
+    public void run(Repository repo) {
+        repo.findOne().getEmail();
+    }
+}
+"#,
+    );
+    project
+}
+
+/// Control (no externals): the SAME chain shape with all classes INTERNAL.
+/// Isolates "chain rooted on a method parameter" from external hydration.
+///
+/// Known gap (general, NOT EXT-2): a chain rooted directly on a method
+/// PARAMETER (`repo.findOne().getEmail()`) does not type-walk — the param's
+/// declared type isn't seeded into `local_type`, and the chain-root field-path
+/// fallback doesn't find it, so `resolve_via_chain` bails (root_type=None) and
+/// the segments fall through to bare-name chain misses. The chain IS extracted
+/// correctly (segments [repo, findOne, getEmail]); the gap is chain-root
+/// resolution for parameter roots. Fixes EXT-2's Maven second hop as a side
+/// effect.
+#[test]
+#[ignore = "general gap: chain rooted on a method parameter not typed (chain-root resolution follow-on)"]
+fn internal_java_param_rooted_chain_resolves() {
+    let project = TestProject { dir: TempDir::new().unwrap() };
+    project.add_file(
+        "src/main/java/app/Repository.java",
+        "package app;\npublic class Repository {\n    public Entity findOne() { return null; }\n}\n",
+    );
+    project.add_file(
+        "src/main/java/app/Entity.java",
+        "package app;\npublic class Entity {\n    public String getEmail() { return \"\"; }\n}\n",
+    );
+    project.add_file(
+        "src/main/java/app/App.java",
+        "package app;\npublic class App {\n    public void run(Repository repo) {\n        repo.findOne().getEmail();\n    }\n}\n",
+    );
+
+    let mut db = TestProject::in_memory_db();
+    let _ = full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    let getemail_edge: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM edges e
+             JOIN symbols s ON s.id = e.target_id
+             WHERE s.name = 'getEmail'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        getemail_edge >= 1,
+        "internal param-rooted chain repo.findOne().getEmail() did not resolve"
+    );
+}
+
+/// EXT-2 end-to-end: a chain types past an external Java method because its
+/// return type is hydrated from the Maven sources jar, and the never-imported
+/// return-type class is pulled on demand so the second hop binds.
+///
+/// Currently blocked by the SAME root cause as the internal control above
+/// (chain rooted on a parameter not typed), so the second hop never fires and
+/// the transitive return type is never demanded. Uses an isolated extraction
+/// cache (the `.m2` nested under a fresh TempDir) so results aren't polluted by
+/// the shared system-temp `bearwisdom-sources-cache` across runs.
+#[test]
+#[ignore = "blocked by chain-root-on-parameter gap (see internal_java_param_rooted_chain_resolves)"]
+fn external_java_chain_types_past_external_method_return() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let anchor = seed_isolated_chain_repo();
+    let m2 = anchor.path().join("m2");
+    let project = seed_no_import_chain_consumer();
+
+    let prior = std::env::var_os("BEARWISDOM_JAVA_MAVEN_REPO");
+    unsafe {
+        std::env::set_var("BEARWISDOM_JAVA_MAVEN_REPO", &m2);
+    }
+    let mut db = TestProject::in_memory_db();
+    let _ = full_index(&mut db, project.path(), None, None, None).unwrap();
+    unsafe {
+        match prior {
+            Some(v) => std::env::set_var("BEARWISDOM_JAVA_MAVEN_REPO", v),
+            None => std::env::remove_var("BEARWISDOM_JAVA_MAVEN_REPO"),
+        }
+    }
+
+    let repo_indexed: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE name = 'Repository' AND origin = 'external'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(repo_indexed >= 1, "Repository (imported) not pulled ({repo_indexed})");
+
+    let entity_indexed: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE name = 'Entity' AND origin = 'external'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        entity_indexed >= 1,
+        "transitive return type Entity not pulled on demand ({entity_indexed})"
+    );
+
+    let getemail_edge: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM edges e
+             JOIN symbols s ON s.id = e.target_id
+             WHERE s.origin = 'external' AND s.name = 'getEmail'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        getemail_edge >= 1,
+        "chain did not type past the external method's return type"
+    );
+}
+
 #[test]
 fn external_java_package_is_indexed_and_resolved() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let repo = seed_fake_maven_repo();
     let project = seed_consumer_project();
 
