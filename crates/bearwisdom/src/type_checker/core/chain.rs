@@ -35,7 +35,9 @@ use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, Symbo
 use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
 use crate::type_checker::core::generics::{substitute, unify_into, GenericEnv};
 use rustc_hash::{FxHashMap, FxHashSet};
-use crate::type_checker::core::dispatch::{resolve_arg_types, select_method, DispatchQuery};
+use crate::type_checker::core::dispatch::{
+    arg_assignable_candidates, resolve_arg_types, select_method, DispatchQuery,
+};
 use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
@@ -1002,6 +1004,59 @@ impl<'a> ChainWalker<'a> {
         match self.arena.get(yielded) {
             Type::Unknown | Type::Generic { .. } => None,
             _ => Some(yielded),
+        }
+    }
+
+    /// Disambiguate a chain-less (bare-name) call across same-name overloads by
+    /// argument arity and type (BIND-4). When two or more callables named
+    /// `target_name` are in scope and the call's argument types uniquely select
+    /// exactly one, return that one's symbol id.
+    ///
+    /// This OVERRIDES an already-resolved confidence-1.0 edge, so the gate is
+    /// strict: it returns `Some(id)` only when EXACTLY ONE candidate survives the
+    /// assignability filter. Zero survivors (no overload accepts these args) or
+    /// two-or-more survivors (still ambiguous) return `None`, leaving the
+    /// first-match resolution intact. Most-specific-among-survivors selection is
+    /// not used here — uniqueness only.
+    ///
+    /// Returns `None` early on no arguments (nothing to discriminate on), fewer
+    /// than two same-name callables (no ambiguity to resolve), or arguments that
+    /// resolve to no concrete types.
+    pub fn select_bare_overload(
+        &self,
+        target_name: &str,
+        call_args: &[CallArg],
+    ) -> Option<i64> {
+        if call_args.is_empty() {
+            return None;
+        }
+        let candidates: Vec<SymbolInfo> = self
+            .lookup
+            .by_name(target_name)
+            .iter()
+            .filter(|s| matches!(s.kind.as_str(), "function" | "method" | "constructor"))
+            .cloned()
+            .collect();
+        if candidates.len() < 2 {
+            return None;
+        }
+        let arg_type_ids = resolve_arg_types(call_args, self.arena, self.lookup, self.profile);
+        if arg_type_ids.is_empty() {
+            return None;
+        }
+        let matches = arg_assignable_candidates(
+            candidates,
+            &arg_type_ids,
+            self.members,
+            self.symbol_types,
+            self.arena,
+            self.lookup,
+            self.profile,
+        );
+        if matches.len() == 1 {
+            Some(matches[0].id)
+        } else {
+            None
         }
     }
 }

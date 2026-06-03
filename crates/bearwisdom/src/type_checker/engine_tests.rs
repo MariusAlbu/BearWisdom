@@ -441,6 +441,243 @@ fn engine_build_aggregates_aliases_into_index() {
     );
 }
 
+// =============================================================================
+// BIND-4 — bare-name overload disambiguation by argument arity / type.
+// =============================================================================
+
+/// Lookup double for the bare-overload tests. Holds two same-name callables
+/// reachable via both `by_name` (the overload-set source) and `in_file` (the
+/// bare resolver's first-match same-file path), so the engine resolves the ref
+/// to the first-indexed `foo` and BIND-4 must re-select by arity/type.
+struct OverloadLookup {
+    foos: Vec<SymbolInfo>,
+    empty: Vec<SymbolInfo>,
+    empty_reexports: Vec<(String, String)>,
+}
+
+impl OverloadLookup {
+    fn new(foos: Vec<SymbolInfo>) -> Self {
+        Self {
+            foos,
+            empty: Vec::new(),
+            empty_reexports: Vec::new(),
+        }
+    }
+}
+
+impl SymbolLookup for OverloadLookup {
+    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+        if name == "foo" {
+            &self.foos
+        } else {
+            &self.empty
+        }
+    }
+    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+        None
+    }
+    fn members_of(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+        Vec::new()
+    }
+    fn has_in_namespace(&self, _: &str) -> bool {
+        false
+    }
+    fn in_file(&self, _: &str) -> &[SymbolInfo] {
+        &self.foos
+    }
+    fn field_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn alias_target(&self, _: &str) -> Option<&AliasTarget> {
+        None
+    }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] {
+        &self.empty_reexports
+    }
+    fn is_external_name(&self, _: &str, _: &str) -> bool {
+        false
+    }
+}
+
+/// Build the two `foo` callables, each interned into `arena` with the given
+/// per-symbol parameter types, plus the matching ParsedFile + SymbolTypeMap
+/// keys. Ids are 1 and 2 in declaration order so the bare resolver's
+/// first-match lands on id 1.
+fn foo_overloads(
+    arena: &TypeArena,
+    params_a: Vec<crate::type_checker::core::types::TypeId>,
+    params_b: Vec<crate::type_checker::core::types::TypeId>,
+) -> (ParsedFile, SymbolIdMap, Vec<SymbolInfo>) {
+    let _ = arena;
+    let mk_sym = |params: Vec<crate::type_checker::core::types::TypeId>| ExtractedSymbol {
+        name: "foo".to_string(),
+        qualified_name: "foo".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: params,
+        generic_params: Vec::new(),
+    };
+    let symbols = vec![mk_sym(params_a), mk_sym(params_b)];
+    let pf = ParsedFile {
+        path: "src/f.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: symbols.clone(),
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("src/f.ts".to_string(), 0), 1);
+    sym_ids.insert(("src/f.ts".to_string(), 1), 2);
+
+    let file_path: Arc<str> = Arc::from(pf.path.as_str());
+    let infos: Vec<SymbolInfo> = symbols
+        .iter()
+        .enumerate()
+        .map(|(idx, s)| SymbolInfo {
+            id: idx as i64 + 1,
+            name: s.name.clone(),
+            qualified_name: s.qualified_name.clone(),
+            kind: s.kind.as_str().to_string(),
+            visibility: s.visibility.map(|v| v.as_str().to_string()),
+            file_path: file_path.clone(),
+            scope_path: s.scope_path.clone(),
+            package_id: None,
+            signature: None,
+        })
+        .collect();
+    (pf, sym_ids, infos)
+}
+
+fn bare_call_ref(arg_count: usize) -> ExtractedRef {
+    let call_args = (0..arg_count)
+        .map(|i| crate::types::CallArg::Literal((i + 1).to_string()))
+        .collect();
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "foo".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args,
+    }
+}
+
+#[test]
+fn bare_name_call_overload_selected_by_arity() {
+    // Two `foo`: foo(a) and foo(a, b). A 2-arg call must retarget from the
+    // first-indexed foo (id 1, arity 1) to the 2-arg foo (id 2) under the
+    // `bare_overload_arg_typed` strategy — arity uniquely selects it.
+    let arena = Arc::new(TypeArena::new());
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+    let (pf, sym_ids, infos) = foo_overloads(&arena, vec![int_ty], vec![int_ty, int_ty]);
+    let lookup = OverloadLookup::new(infos);
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("typescript", &TYPESCRIPT_PROFILE);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let r = bare_call_ref(2);
+    let rc = ref_ctx_for(&r, &source);
+    let fc = file_ctx_ts("src/f.ts");
+
+    let resolution = engine.resolve(&rc, &fc, &lookup).expect("bare foo resolves");
+    assert_eq!(
+        resolution.target_symbol_id, 2,
+        "2-arg call must select the 2-arg foo, not the first-indexed foo"
+    );
+    assert_eq!(resolution.strategy, "bare_overload_arg_typed");
+}
+
+#[test]
+fn bare_name_call_same_arity_both_assignable_keeps_first_match() {
+    // Two `foo(a)`, both with an Int param. A single Int arg is assignable to
+    // both → ambiguous → no override, keep the first-match (id 1, the bare
+    // resolver's same-file strategy).
+    let arena = Arc::new(TypeArena::new());
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+    let (pf, sym_ids, infos) = foo_overloads(&arena, vec![int_ty], vec![int_ty]);
+    let lookup = OverloadLookup::new(infos);
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("typescript", &TYPESCRIPT_PROFILE);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let r = bare_call_ref(1);
+    let rc = ref_ctx_for(&r, &source);
+    let fc = file_ctx_ts("src/f.ts");
+
+    let resolution = engine.resolve(&rc, &fc, &lookup).expect("bare foo resolves");
+    assert_eq!(
+        resolution.target_symbol_id, 1,
+        "two same-arity assignable overloads stay ambiguous → first-match kept"
+    );
+    assert_ne!(resolution.strategy, "bare_overload_arg_typed");
+}
+
 #[test]
 fn engine_infer_yield_returns_class_typeid_for_instantiates() {
     let pf = ts_parsed_file("src/u.ts", "export class Foo {}");
