@@ -673,6 +673,65 @@ fn signature_derived_return_type_arrow_form() {
 }
 
 #[test]
+fn signature_derived_return_type_jvm_descriptor() {
+    // An external JVM Method whose signature is a raw bytecode descriptor
+    // (`(params)Ret`) and has no TypeRef refs gets its return type via the
+    // JVM-descriptor decoder rung, gated on the JVM language set. The array
+    // element form `[L...;` resolves through to the element type.
+    let pf = ParsedFile {
+        path: "ext:maven/repo.class".to_string(),
+        language: "java".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "findOne".to_string(),
+            qualified_name: "com.foo.Repo.findOne".to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("(Ljava/lang/String;)Lcom/foo/Bar;".to_string()),
+            doc_comment: None,
+            scope_path: Some("com.foo.Repo".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(
+        ("ext:maven/repo.class".to_string(), "com.foo.Repo.findOne".to_string()),
+        1,
+    );
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    assert_eq!(index.return_type_name("com.foo.Repo.findOne"), Some("com.foo.Bar"));
+}
+
+#[test]
 fn set_inferred_return_gap_fills_only_when_return_absent() {
     // INFER-3: `makeUser` has no declared/signature return; `Svc.GetUser` has a
     // signature-derived one. set_inferred_return must fill the gap on the first

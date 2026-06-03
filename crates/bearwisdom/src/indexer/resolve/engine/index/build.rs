@@ -25,8 +25,10 @@ use crate::types::{
 };
 
 use super::super::{
-    file_belongs_to_npm_package, infer_type_from_chain, npm_package_from_external_path,
-    is_plain_type_name, npm_package_from_specifier, parse_return_type_from_signature,
+    file_belongs_to_npm_package, infer_type_from_chain, is_jvm_language,
+    npm_package_from_external_path,
+    is_plain_type_name, npm_package_from_specifier, parse_return_type_from_jvm_descriptor,
+    parse_return_type_from_signature,
     parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
     parse_type_head_and_args_bracket, resolve_type_name_in_scope,
 };
@@ -266,11 +268,18 @@ impl SymbolIndex {
                     // Properties/fields: first TypeRef is the field type.
                     // Subsequent TypeRefs from the same symbol may be generic type args.
                     SymbolKind::Property | SymbolKind::Field => {
-                        let Some(&first) = type_refs.first() else {
+                        // A JVM field has no TypeRef (externals emit no refs); its
+                        // type lives in the raw bytecode descriptor signature
+                        // (`Lcom/foo/Bar;`). Decode that when no TypeRef is present.
+                        let jvm_field_type = type_refs.first().is_none().then(|| {
+                            sym.signature.as_deref().filter(|_| is_jvm_language(&pf.language))
+                                .and_then(parse_return_type_from_jvm_descriptor)
+                        }).flatten();
+                        let Some(first) = type_refs.first().map(|s| s.to_string()).or(jvm_field_type) else {
                             continue;
                         };
                         let resolved = resolve_type_name_in_scope(
-                            first,
+                            &first,
                             sym.scope_path.as_deref(),
                             &by_qname,
                         );
@@ -376,6 +385,17 @@ impl SymbolIndex {
                                 // the type after the last top-level `)`.
                                 if sym.kind != SymbolKind::Constructor && pf.language == "go" {
                                     parse_return_type_trailing(s)
+                                } else {
+                                    None
+                                }
+                            })
+                            .or_else(|| {
+                                // JVM bytecode descriptor (`(params)Ret`, Maven /
+                                // `.class` metadata): decode the return element
+                                // type. Gated on the JVM language set so it never
+                                // perturbs the colon/arrow path.
+                                if is_jvm_language(&pf.language) {
+                                    parse_return_type_from_jvm_descriptor(s)
                                 } else {
                                     None
                                 }

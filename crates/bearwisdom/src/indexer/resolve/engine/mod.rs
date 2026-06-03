@@ -41,8 +41,10 @@ pub use util::build_scope_chain;
 // `crate::indexer::resolve::engine::<name>` call site stable across the
 // internal carve-up.
 pub(crate) use chain_walker::{
-    find_matching_bracket, first_generic_arg, infer_type_from_chain, merge_where_bounds,
-    is_plain_type_name, parse_generic_param_clause, parse_return_type_from_signature,
+    find_matching_bracket, first_generic_arg, infer_type_from_chain, is_jvm_language,
+    merge_where_bounds,
+    is_plain_type_name, parse_generic_param_clause, parse_return_type_from_jvm_descriptor,
+    parse_return_type_from_signature,
     parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
     parse_type_head_and_args_bracket, resolve_type_name_in_scope, strip_generic_args,
 };

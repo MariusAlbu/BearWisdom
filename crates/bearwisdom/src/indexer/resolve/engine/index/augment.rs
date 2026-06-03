@@ -23,7 +23,8 @@ use rustc_hash::FxHashMap;
 use crate::types::{EdgeKind, ParsedFile, SymbolKind, Visibility};
 
 use super::super::{
-    find_matching_bracket, merge_where_bounds, parse_generic_param_clause,
+    find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
+    parse_return_type_from_jvm_descriptor,
     parse_return_type_from_signature, parse_return_type_positional, parse_type_head_and_args,
     resolve_type_name_in_scope,
 };
@@ -158,6 +159,25 @@ impl SymbolIndex {
                                     .or_default()
                                     .type_args = type_refs[1..].iter().map(|s| s.to_string()).collect();
                             }
+                        } else if is_jvm_language(&pf.language) {
+                            // A JVM field has no TypeRef (externals emit no refs);
+                            // its type lives in the raw bytecode descriptor
+                            // signature (`Lcom/foo/Bar;`). Decode that here.
+                            if let Some(decoded) = sym
+                                .signature
+                                .as_deref()
+                                .and_then(parse_return_type_from_jvm_descriptor)
+                            {
+                                let resolved = resolve_type_name_in_scope(
+                                    &decoded,
+                                    sym.scope_path.as_deref(),
+                                    &self.by_qname,
+                                );
+                                self.type_info
+                                    .entry(sym.qualified_name.clone())
+                                    .or_default()
+                                    .field_type = Some(resolved);
+                            }
                         }
                     }
                     SymbolKind::TypeAlias => {
@@ -175,6 +195,17 @@ impl SymbolIndex {
                                     None
                                 } else {
                                     parse_return_type_positional(s)
+                                }
+                            })
+                            .or_else(|| {
+                                // JVM bytecode descriptor (`(params)Ret`, Maven /
+                                // `.class` metadata): decode the return element
+                                // type. Gated on the JVM language set so it never
+                                // perturbs the colon/arrow path.
+                                if is_jvm_language(&pf.language) {
+                                    parse_return_type_from_jvm_descriptor(s)
+                                } else {
+                                    None
                                 }
                             })
                         });

@@ -1,4 +1,4 @@
-use super::{is_plain_type_name, merge_where_bounds, parse_generic_param_clause, parse_return_type_from_signature, parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args, parse_type_head_and_args_bracket};
+use super::{is_plain_type_name, merge_where_bounds, parse_generic_param_clause, parse_return_type_from_jvm_descriptor, parse_return_type_from_signature, parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args, parse_type_head_and_args_bracket};
 
 #[test]
 fn names_only_when_unbounded() {
@@ -314,6 +314,30 @@ fn positional_rejects_no_return_token() {
 fn positional_rejects_void() {
     // `void` is no return value — a void setter must carry no return type.
     assert_eq!(parse_return_type_positional("void setName(String n)"), None);
+}
+
+// --- parse_return_type_from_jvm_descriptor: JVM bytecode descriptors ---
+
+#[test]
+fn parse_return_type_jvm_descriptor_method_and_field() {
+    // Method descriptor `(params)Ret` decodes the return after the `)`.
+    assert_eq!(
+        parse_return_type_from_jvm_descriptor("(Ljava/lang/String;)Lcom/foo/Bar;"),
+        Some("com.foo.Bar".to_string())
+    );
+    // Field descriptor is the bare type descriptor (no param list).
+    assert_eq!(
+        parse_return_type_from_jvm_descriptor("Lcom/foo/Bar;"),
+        Some("com.foo.Bar".to_string())
+    );
+    // Array descriptor decodes to the ELEMENT type, not `Bar[]`, so the chain
+    // types through the element (like `List<T>`).
+    assert_eq!(
+        parse_return_type_from_jvm_descriptor("[Lcom/foo/Bar;"),
+        Some("com.foo.Bar".to_string())
+    );
+    // Primitive and void returns are not chainable types.
+    assert_eq!(parse_return_type_from_jvm_descriptor("(I)V"), None);
 }
 
 // --- parse_type_head_and_args_bracket: [] generics (Go/Scala) ---

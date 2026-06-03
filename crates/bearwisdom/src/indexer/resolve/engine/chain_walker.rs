@@ -859,6 +859,44 @@ pub(crate) fn parse_return_type_trailing(sig: &str) -> Option<String> {
     Some(after.to_string())
 }
 
+/// True for languages whose externals carry JVM bytecode descriptors as
+/// method/field signatures (Maven sources, `.class` metadata). Gates the
+/// JVM-descriptor decoder rung so it never reaches non-JVM signatures.
+pub(crate) fn is_jvm_language(lang: &str) -> bool {
+    matches!(lang, "java" | "kotlin" | "scala" | "groovy" | "clojure")
+}
+
+/// Decode a JVM bytecode descriptor to a chainable element type. JVM externals
+/// (Maven sources, `.class` metadata) carry method/field types as raw
+/// descriptors — `(Ljava/lang/String;)Lcom/foo/Bar;` for a method, `Lcom/foo/Bar;`
+/// for a field — which the colon/arrow/leading/trailing scans cannot read.
+///
+/// - A method `(params)Ret` decodes its return descriptor (text after the
+///   top-level `)`).
+/// - An array `[...` decodes to the ELEMENT type (the leading `[`s are peeled),
+///   so the chain types through the element like `List<T>` does.
+/// - An object `L<slashed/name>;` becomes the dotted `pkg.Cls`.
+/// - Primitives (`B I S J F D C Z`) and `V` (void) carry no chainable type →
+///   `None`.
+pub(crate) fn parse_return_type_from_jvm_descriptor(sig: &str) -> Option<String> {
+    let sig = sig.trim();
+    // Method descriptor: decode the return after the matching close paren.
+    let desc = if let Some(rest) = sig.strip_prefix('(') {
+        let close = rest.find(')')?;
+        &rest[close + 1..]
+    } else {
+        sig
+    };
+    // Peel array dimensions — the element type is what chains.
+    let desc = desc.trim_start_matches('[');
+    let object = desc.strip_prefix('L')?;
+    let slashed = object.strip_suffix(';').unwrap_or(object);
+    if slashed.is_empty() {
+        return None;
+    }
+    Some(slashed.replace('/', "."))
+}
+
 pub(crate) fn infer_type_from_chain(
     chain: &crate::types::MemberChain,
     scope_path: &Option<String>,
