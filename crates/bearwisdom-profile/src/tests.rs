@@ -203,6 +203,13 @@ mod exclusions_tests {
     }
 
     #[test]
+    fn claude_excluded() {
+        // `.claude/` holds agent state and nested git worktrees (full repo
+        // copies); indexing it duplicates every symbol under a worktree path.
+        assert!(should_exclude(".claude"));
+    }
+
+    #[test]
     fn bin_obj_excluded() {
         assert!(should_exclude("bin"));
         assert!(should_exclude("obj"));
