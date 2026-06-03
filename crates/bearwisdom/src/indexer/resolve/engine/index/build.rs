@@ -139,11 +139,19 @@ impl SymbolIndex {
                     .or_default()
                     .push(info.clone());
 
-                // Direct-children index: everything before the last '.' is the
-                // parent qname; top-level symbols go under "".
-                let parent_key: &str = match sym.qualified_name.rfind('.') {
-                    Some(idx) => &sym.qualified_name[..idx],
-                    None => "",
+                // Direct-children index keyed on the PARENT symbol's qualified
+                // name, resolved structurally via `parent_index`. Using the
+                // parent pointer rather than truncating the child's qname at the
+                // last '.' files a child under its real parent even when the
+                // child's own qname was mis-qualified (a parameter whose qname
+                // dropped its package). Falls back to qname truncation for
+                // symbols with no parent pointer; top-level symbols go under "".
+                let parent_key: String = match sym.parent_index.and_then(|p| pf.symbols.get(p)) {
+                    Some(parent) => parent.qualified_name.clone(),
+                    None => match sym.qualified_name.rfind('.') {
+                        Some(idx) => sym.qualified_name[..idx].to_string(),
+                        None => String::new(),
+                    },
                 };
                 if is_type_like_kind(&info.kind) {
                     types_by_name
@@ -152,7 +160,7 @@ impl SymbolIndex {
                         .push(info.clone());
                 }
                 members_by_parent
-                    .entry(parent_key.to_string())
+                    .entry(parent_key)
                     .or_default()
                     .push(info);
             }
@@ -295,11 +303,18 @@ impl SymbolIndex {
                         let Some(&first) = type_refs.first() else {
                             continue;
                         };
-                        let resolved = resolve_type_name_in_scope(
-                            first,
-                            sym.scope_path.as_deref(),
-                            &by_qname,
-                        );
+                        // Resolve the type in the symbol's structural container
+                        // (its parent's qname) rather than its own scope_path —
+                        // a mis-qualified parameter can carry a scope_path with
+                        // the package dropped, which prevents the type from
+                        // resolving to its package-qualified form. Falls back to
+                        // scope_path for top-level symbols with no parent.
+                        let scope = sym
+                            .parent_index
+                            .and_then(|p| pf.symbols.get(p))
+                            .map(|parent| parent.qualified_name.as_str())
+                            .or(sym.scope_path.as_deref());
+                        let resolved = resolve_type_name_in_scope(first, scope, &by_qname);
                         field_type.insert(sym.qualified_name.clone(), resolved);
                         if type_refs.len() > 1 {
                             field_type_args.insert(

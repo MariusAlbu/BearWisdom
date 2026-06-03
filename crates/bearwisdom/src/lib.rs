@@ -19,6 +19,7 @@
 
 pub mod alloc_probe;
 pub mod connectors;
+pub mod containment;
 pub mod db;
 pub mod ecosystem;
 pub mod indexer;

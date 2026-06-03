@@ -220,16 +220,12 @@ public class App {
 /// Control (no externals): the SAME chain shape with all classes INTERNAL.
 /// Isolates "chain rooted on a method parameter" from external hydration.
 ///
-/// Known gap (general, NOT EXT-2): a chain rooted directly on a method
-/// PARAMETER (`repo.findOne().getEmail()`) does not type-walk — the param's
-/// declared type isn't seeded into `local_type`, and the chain-root field-path
-/// fallback doesn't find it, so `resolve_via_chain` bails (root_type=None) and
-/// the segments fall through to bare-name chain misses. The chain IS extracted
-/// correctly (segments [repo, findOne, getEmail]); the gap is chain-root
-/// resolution for parameter roots. Fixes EXT-2's Maven second hop as a side
-/// effect.
+/// A chain rooted directly on a method PARAMETER (`repo.findOne().getEmail()`)
+/// type-walks. The parameter roots the chain through its enclosing method's
+/// structural children (`members_by_parent` keyed by `parent_index`), and its
+/// declared type resolves in the method's scope — so resolution holds even
+/// though the parameter's own qname is package-less.
 #[test]
-#[ignore = "general gap: chain rooted on a method parameter not typed (chain-root resolution follow-on)"]
 fn internal_java_param_rooted_chain_resolves() {
     let project = TestProject { dir: TempDir::new().unwrap() };
     project.add_file(
@@ -267,13 +263,15 @@ fn internal_java_param_rooted_chain_resolves() {
 /// return type is hydrated from the Maven sources jar, and the never-imported
 /// return-type class is pulled on demand so the second hop binds.
 ///
-/// Currently blocked by the SAME root cause as the internal control above
-/// (chain rooted on a parameter not typed), so the second hop never fires and
-/// the transitive return type is never demanded. Uses an isolated extraction
-/// cache (the `.m2` nested under a fresh TempDir) so results aren't polluted by
-/// the shared system-temp `bearwisdom-sources-cache` across runs.
+/// The parameter root now types (see internal_java_param_rooted_chain_resolves).
+/// The remaining blocker is demand-hydration of the transitive return type:
+/// `Repository.findOne(): Entity` resolves, but `Entity` — never imported, only
+/// a return type — is not pulled from the Maven sources jar, so the `getEmail`
+/// second hop has no target. Uses an isolated extraction cache (the `.m2`
+/// nested under a fresh TempDir) so results aren't polluted by the shared
+/// system-temp `bearwisdom-sources-cache` across runs.
 #[test]
-#[ignore = "blocked by chain-root-on-parameter gap (see internal_java_param_rooted_chain_resolves)"]
+#[ignore = "EXT-2: transitive return type (Entity) not demand-pulled from the Maven jar"]
 fn external_java_chain_types_past_external_method_return() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let anchor = seed_isolated_chain_repo();

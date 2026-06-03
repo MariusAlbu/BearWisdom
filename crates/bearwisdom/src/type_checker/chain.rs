@@ -222,6 +222,16 @@ pub fn resolve_via_chain(
             // before the resolver checks globals or fields.
             if let Some(local_type) = lookup.local_type(name) {
                 Some((config.normalize_type)(&local_type))
+            } else if let Some(member_type) = lookup
+                .members_of(&ref_ctx.source_symbol.qualified_name)
+                .iter()
+                .find_map(|m| (m.name == *name).then(|| lookup.field_type_str(&m.qualified_name)).flatten())
+            {
+                // A parameter or local of the enclosing symbol roots the chain.
+                // Resolved structurally — members_by_parent is keyed by
+                // parent_index — so it binds even when the member's own qname
+                // dropped its package, and it shadows enclosing-class fields.
+                Some((config.normalize_type)(&member_type))
             } else {
                 // Static type access: `ClassName.method()` or `EnumType.Variant`.
                 // Use types_by_name (pre-filtered to type-kind symbols) instead of
