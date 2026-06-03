@@ -70,18 +70,23 @@ pub fn complete_at(
         return Ok(vec![]);
     };
 
-    // Find the narrowest symbol containing the cursor line.
-    let containing_scope: Option<String> = conn
+    // Find the narrowest symbol containing the cursor line, returning both its
+    // own qualified_name (the same-scope key) and its scope_path (the parent
+    // chain the indexer built structurally from `parent_index`). The latter is
+    // the enclosing namespace used for Tier 2 — read directly rather than
+    // re-derived by truncating the qualified_name at the last separator.
+    let containing: Option<(String, Option<String>)> = conn
         .query_row(
-            "SELECT qualified_name FROM symbols
+            "SELECT qualified_name, scope_path FROM symbols
              WHERE file_id = ?1 AND line <= ?2 AND COALESCE(end_line, line) >= ?2
              ORDER BY (COALESCE(end_line, line) - line) ASC
              LIMIT 1",
             rusqlite::params![file_id, line],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()
         .context("completion: scope lookup")?;
+    let containing_scope: Option<String> = containing.as_ref().map(|(qn, _)| qn.clone());
 
     let sig_col = if include_signature { "s.signature" } else { "NULL" };
 
@@ -146,37 +151,40 @@ pub fn complete_at(
         }
     }
 
-    // Tier 2: namespace peers (same top-level namespace as containing scope)
-    if let Some(ref scope) = containing_scope {
-        // Extract namespace: take everything up to the last dot.
-        if let Some(dot_pos) = scope.rfind('.') {
-            let namespace = &scope[..dot_pos];
-            let like_pattern = format!("{namespace}.%");
-            let sql = format!(
-                "SELECT s.name, s.qualified_name, s.kind, f.path, {sig_col},
-                        SUBSTR(s.doc_comment, 1, 80)
-                 FROM symbols s
-                 JOIN files f ON f.id = s.file_id
-                 WHERE s.scope_path LIKE ?1
-                   AND s.scope_path != ?2
-                 LIMIT 200"
-            );
-            let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(rusqlite::params![like_pattern, scope], |row| {
-                Ok(CompletionItem {
-                    name: row.get(0)?,
-                    qualified_name: row.get(1)?,
-                    kind: row.get(2)?,
-                    file_path: row.get(3)?,
-                    signature: row.get(4)?,
-                    doc_summary: row.get(5)?,
-                    scope_distance: 2,
-                    score: 0,
-                })
-            })?;
-            for row in rows.flatten() {
-                candidates.push((row, 0));
-            }
+    // Tier 2: namespace peers (symbols whose scope_path sits under the same
+    // enclosing namespace as the containing symbol). The enclosing namespace is
+    // the containing symbol's own scope_path — the parent chain the indexer
+    // built from `parent_index` — so peers are matched against a structurally
+    // derived prefix, not one recovered by string-splitting the qualified_name.
+    if let (Some(scope), Some(namespace)) = (
+        containing_scope.as_ref(),
+        containing.as_ref().and_then(|(_, sp)| sp.as_deref()).filter(|s| !s.is_empty()),
+    ) {
+        let like_pattern = format!("{namespace}.%");
+        let sql = format!(
+            "SELECT s.name, s.qualified_name, s.kind, f.path, {sig_col},
+                    SUBSTR(s.doc_comment, 1, 80)
+             FROM symbols s
+             JOIN files f ON f.id = s.file_id
+             WHERE s.scope_path LIKE ?1
+               AND s.scope_path != ?2
+             LIMIT 200"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params![like_pattern, scope], |row| {
+            Ok(CompletionItem {
+                name: row.get(0)?,
+                qualified_name: row.get(1)?,
+                kind: row.get(2)?,
+                file_path: row.get(3)?,
+                signature: row.get(4)?,
+                doc_summary: row.get(5)?,
+                scope_distance: 2,
+                score: 0,
+            })
+        })?;
+        for row in rows.flatten() {
+            candidates.push((row, 0));
         }
     }
 

@@ -499,3 +499,69 @@ fn incremental_rewrites_packages_when_manifest_added() {
         .unwrap();
     assert_eq!(api_present, 1, "newly added package should be in the table");
 }
+
+// ------------------------------------------------------------------
+// Derived-qname / structural-scope parity across full vs. incremental
+//
+// `parent_index` is intra-file and never persisted; both index paths
+// rebuild it on every parse and run the same qname normalization. A
+// namespace-nested method is the canary: its qualified_name and scope_path
+// are derived from the namespace+class parent chain, so they must come out
+// byte-identical whether the file was full- or incrementally indexed, and
+// must still carry the namespace head rather than collapsing to the
+// class-local name.
+// ------------------------------------------------------------------
+
+/// Read a method's (qualified_name, scope_path) for the given simple name.
+fn read_method_qname(db: &Database, name: &str) -> (String, Option<String>) {
+    db.conn()
+        .query_row(
+            "SELECT qualified_name, scope_path FROM symbols
+             WHERE name = ?1 AND kind = 'method' AND origin = 'internal'
+             LIMIT 1",
+            [name],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+}
+
+#[test]
+fn incremental_reproduces_full_index_method_qname_and_scope() {
+    let src_v1 = "namespace App { class Svc { void Run() {} } }";
+    // Same method, body changed — keeps `Run` present so its derived qname
+    // must be reproduced, not freshly invented.
+    let src_v2 = "namespace App { class Svc { void Run() { var x = 1; } } }";
+
+    // Reference: what a full index persists for the method.
+    let full_dir = TempDir::new().unwrap();
+    fs::write(full_dir.path().join("a.cs"), src_v1).unwrap();
+    let mut full_db = Database::open_in_memory().unwrap();
+    crate::indexer::full::full_index(&mut full_db, full_dir.path(), None, None, None).unwrap();
+    let (full_qn, full_sp) = read_method_qname(&full_db, "Run");
+
+    // The namespace head must survive the structural rebuild.
+    assert!(
+        full_qn.starts_with("App."),
+        "full-index method qname should carry the namespace head: {full_qn}"
+    );
+
+    // Same file, then an in-place modification re-indexed incrementally.
+    let inc_dir = TempDir::new().unwrap();
+    fs::write(inc_dir.path().join("a.cs"), src_v1).unwrap();
+    let mut inc_db = Database::open_in_memory().unwrap();
+    crate::indexer::full::full_index(&mut inc_db, inc_dir.path(), None, None, None).unwrap();
+
+    fs::write(inc_dir.path().join("a.cs"), src_v2).unwrap();
+    let stats = incremental_index(&mut inc_db, inc_dir.path(), None).unwrap();
+    assert_eq!(stats.files_modified, 1, "the .cs file should re-index");
+
+    let (inc_qn, inc_sp) = read_method_qname(&inc_db, "Run");
+    assert_eq!(
+        inc_qn, full_qn,
+        "incremental re-index must reproduce the full-index method qualified_name"
+    );
+    assert_eq!(
+        inc_sp, full_sp,
+        "incremental re-index must reproduce the full-index method scope_path"
+    );
+}
