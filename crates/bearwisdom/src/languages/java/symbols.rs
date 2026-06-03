@@ -809,8 +809,22 @@ pub(super) fn extract_java_typed_params_as_symbols(
             continue;
         }
 
-        let qualified_name = scope_tree::qualify(&name, method_scope);
-        let scope_path = scope_tree::scope_path(method_scope);
+        // Qualify against the enclosing method/constructor symbol, whose qname
+        // already carries the package (built via `qualify_with_package`).
+        // `scope_tree::qualify` walks the scope tree, which never sees the
+        // file-scope package declaration as an ancestor, so it would drop the
+        // package prefix. Fall back to the scope tree only when there is no
+        // structural parent.
+        let (qualified_name, scope_path) = match parent_index.and_then(|p| symbols.get(p)) {
+            Some(parent) => (
+                format!("{}.{name}", parent.qualified_name),
+                Some(parent.qualified_name.clone()),
+            ),
+            None => (
+                scope_tree::qualify(&name, method_scope),
+                scope_tree::scope_path(method_scope),
+            ),
+        };
 
         let param_idx = symbols.len();
         symbols.push(ExtractedSymbol {

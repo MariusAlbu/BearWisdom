@@ -210,6 +210,12 @@ fn parse_file_internal(
         ),
     };
 
+    // Derive scope_path / qualified_name from the structural parent_index chain,
+    // correcting any symbol whose stored qname dropped its package prefix. Only
+    // symbols whose qname is structurally inconsistent with their parent are
+    // rewritten, so well-qualified symbols (any separator) stay byte-identical.
+    crate::containment::normalize_qnames_from_parents(&mut r.symbols);
+
     // Run locals.scm query to filter out locally-resolved references.
     // This removes local variables, parameters, and other intra-scope names
     // that don't need cross-file resolution.
