@@ -619,6 +619,21 @@ impl<'a> DefaultResolver<'a> {
     /// type (free function, file scope).
     fn enclosing_type(&self) -> Option<&'a SymbolInfo> {
         let lk = self.lookup;
+        // Structured first: the source symbol's containment chain names its
+        // enclosing type by kind, derived from the `parent_index` chain rather
+        // than assembled from `scope_path` strings.
+        if let Some(type_qname) = lk
+            .containing_scope(&self.ref_ctx.source_symbol.qualified_name)
+            .and_then(|s| s.containing_type_qname())
+        {
+            if let Some(sym) = lk.by_qualified_name(type_qname) {
+                if is_type_kind(&sym.kind) {
+                    return Some(sym);
+                }
+            }
+        }
+        // Fallback for lookups with no containment chain (synthetic test
+        // doubles): scope_chain innermost-first, then the source's scope_path.
         for scope in &self.ref_ctx.scope_chain {
             if let Some(sym) = lk.by_qualified_name(scope) {
                 if is_type_kind(&sym.kind) {

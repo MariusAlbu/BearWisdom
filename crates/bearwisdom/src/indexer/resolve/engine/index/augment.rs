@@ -99,9 +99,17 @@ impl SymbolIndex {
                     .or_default()
                     .push(info.clone());
 
-                let parent_key: &str = match sym.qualified_name.rfind('.') {
-                    Some(idx) => &sym.qualified_name[..idx],
-                    None => "",
+                // Direct-children index keyed on the PARENT symbol's qualified
+                // name, resolved structurally via `parent_index` so a child whose
+                // own qname dropped a prefix still files under its real parent.
+                // Falls back to qname truncation for symbols with no parent
+                // pointer; top-level symbols go under "".
+                let parent_key: String = match sym.parent_index.and_then(|p| pf.symbols.get(p)) {
+                    Some(parent) => parent.qualified_name.clone(),
+                    None => match sym.qualified_name.rfind('.') {
+                        Some(idx) => sym.qualified_name[..idx].to_string(),
+                        None => String::new(),
+                    },
                 };
                 if is_type_like_kind(&info.kind) {
                     self.types_by_name
@@ -110,7 +118,7 @@ impl SymbolIndex {
                         .push(info.clone());
                 }
                 self.members_by_parent
-                    .entry(parent_key.to_string())
+                    .entry(parent_key)
                     .or_default()
                     .push(info.clone());
 
