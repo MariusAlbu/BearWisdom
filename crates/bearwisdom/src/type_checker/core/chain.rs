@@ -35,7 +35,9 @@ use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, Symbo
 use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
 use crate::type_checker::core::generics::{substitute, unify_into, GenericEnv};
 use rustc_hash::{FxHashMap, FxHashSet};
-use crate::type_checker::core::dispatch::{resolve_arg_types, select_method, DispatchQuery};
+use crate::type_checker::core::dispatch::{
+    arg_assignable_candidates, resolve_arg_types, select_method, DispatchQuery,
+};
 use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
@@ -1002,6 +1004,68 @@ impl<'a> ChainWalker<'a> {
         match self.arena.get(yielded) {
             Type::Unknown | Type::Generic { .. } => None,
             _ => Some(yielded),
+        }
+    }
+
+    /// Disambiguate a chain-less (bare-name) call across the same-name overloads
+    /// in the resolved target's own enclosing scope. The overload set is the
+    /// callables named `target_name` that share `current`'s file and scope_path;
+    /// when the call's arguments uniquely select exactly one of them, return that
+    /// one's symbol id.
+    ///
+    /// Selection is arity-primary: the assignability filter rejects any candidate
+    /// whose parameter count differs from the call's, and further rejects on
+    /// parameter type when the argument types are concrete (an `Unknown` argument
+    /// is assignable to any parameter of the matching arity).
+    ///
+    /// This OVERRIDES an already-resolved confidence-1.0 edge, so the gate is
+    /// strict on two axes:
+    /// - SCOPE: candidates are restricted to `current`'s file AND scope_path, so a
+    ///   coincidental same-name callable in an unrelated module can never hijack
+    ///   the binding. `by_name` is a whole-program map; without this filter a
+    ///   homonym in another scope whose arity happens to match could retarget a
+    ///   correctly scoped first-match.
+    /// - UNIQUENESS: returns `Some(id)` only when EXACTLY ONE candidate survives.
+    ///   Zero survivors (no overload accepts these args) or two-or-more (still
+    ///   ambiguous) return `None`, leaving the first-match intact.
+    /// Most-specific-among-survivors selection is not used here — uniqueness only.
+    pub fn select_bare_overload(
+        &self,
+        target_name: &str,
+        call_args: &[CallArg],
+        current: &SymbolInfo,
+    ) -> Option<i64> {
+        if call_args.is_empty() {
+            return None;
+        }
+        // The overload set is the same-name callables sharing `current`'s
+        // enclosing scope (same file AND scope_path) — its true overloads, not
+        // every whole-program homonym `by_name` returns.
+        let candidates: Vec<SymbolInfo> = self
+            .lookup
+            .by_name(target_name)
+            .iter()
+            .filter(|s| matches!(s.kind.as_str(), "function" | "method" | "constructor"))
+            .filter(|s| s.file_path == current.file_path && s.scope_path == current.scope_path)
+            .cloned()
+            .collect();
+        if candidates.len() < 2 {
+            return None;
+        }
+        let arg_type_ids = resolve_arg_types(call_args, self.arena, self.lookup, self.profile);
+        let matches = arg_assignable_candidates(
+            candidates,
+            &arg_type_ids,
+            self.members,
+            self.symbol_types,
+            self.arena,
+            self.lookup,
+            self.profile,
+        );
+        if matches.len() == 1 {
+            Some(matches[0].id)
+        } else {
+            None
         }
     }
 }

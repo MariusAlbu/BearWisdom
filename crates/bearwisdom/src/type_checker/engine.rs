@@ -242,6 +242,7 @@ impl<'a> Engine<'a> {
                         hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup))
                     });
                 if let Some(mut r) = bare {
+                    self.select_bare_overload_override(&mut r, ref_ctx, lookup, profile);
                     self.fill_bare_call_yield(&mut r, ref_ctx, lookup, profile);
                     return Some(r);
                 }
@@ -257,10 +258,62 @@ impl<'a> Engine<'a> {
         // argument-driven yield; chain refs already yield via the walker.
         if ref_ctx.extracted_ref.chain.is_none() {
             if let Some(profile) = profile {
+                self.select_bare_overload_override(&mut resolved, ref_ctx, lookup, profile);
                 self.fill_bare_call_yield(&mut resolved, ref_ctx, lookup, profile);
             }
         }
         Some(resolved)
+    }
+
+    /// Bare-name overload disambiguation. When a chain-less call resolved to one
+    /// of several same-name callables in the same scope, re-select the target by
+    /// argument arity (and type, when the arguments are concrete): if the call's
+    /// arguments uniquely pick a single same-scope overload, retarget the
+    /// resolution to it. A no-op unless the ref is a call carrying arguments; the
+    /// scope + uniqueness gate lives on `ChainWalker` so the chain and bare paths
+    /// share one filter. Runs BEFORE `fill_bare_call_yield` so the yield is
+    /// computed against the corrected target.
+    fn select_bare_overload_override(
+        &self,
+        r: &mut Resolution,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+        profile: &LanguageProfile,
+    ) {
+        if ref_ctx.extracted_ref.call_args.is_empty()
+            || !matches!(
+                ref_ctx.extracted_ref.kind,
+                EdgeKind::Calls | EdgeKind::Instantiates
+            )
+        {
+            return;
+        }
+        // Recover the first-match symbol so the overload search is scoped to its
+        // own enclosing scope, never a whole-program homonym.
+        let target_id = r.target_symbol_id;
+        let by_name = lookup.by_name(&ref_ctx.extracted_ref.target_name);
+        let Some(current) = by_name.iter().find(|s| s.id == target_id) else {
+            return;
+        };
+        let walker = ChainWalker::new(
+            &self.arena,
+            &self.members,
+            &self.supertypes,
+            &self.symbol_types,
+            &self.aliases,
+            profile,
+            lookup,
+        );
+        if let Some(id) = walker.select_bare_overload(
+            &ref_ctx.extracted_ref.target_name,
+            &ref_ctx.extracted_ref.call_args,
+            current,
+        ) {
+            if id != r.target_symbol_id {
+                r.target_symbol_id = id;
+                r.strategy = "bare_overload_arg_typed";
+            }
+        }
     }
 
     /// INFER-8 at the bare-name site. When a chain-less call resolved to a
