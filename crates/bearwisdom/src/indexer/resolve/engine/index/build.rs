@@ -858,8 +858,16 @@ impl SymbolIndex {
         let go_module_path = project_ctx
             .and_then(|ctx| ctx.manifest(crate::ecosystem::manifest::ManifestKind::GoMod))
             .and_then(|m| m.module_path.as_deref());
-        let resolvers =
-            crate::indexer::module_resolution::all_resolvers_with_go_module(go_module_path);
+        // The Dart resolver needs the project's own pubspec `name:` to tell a
+        // `package:<self>/...` URI (project-local) from a foreign package.
+        let dart_self_package = project_ctx
+            .and_then(|ctx| ctx.manifest(crate::ecosystem::manifest::ManifestKind::Pubspec))
+            .and_then(|m| m.package_names.first())
+            .map(String::as_str);
+        let resolvers = crate::indexer::module_resolution::all_resolvers_with_manifest_data(
+            go_module_path,
+            dart_self_package,
+        );
         let file_paths: Vec<&str> = parsed.iter().map(|pf| pf.path.as_str()).collect();
         // Pre-build the O(1) path index. Construction is O(N × depth) where
         // depth is the average segment count per path (4-8). Amortised over

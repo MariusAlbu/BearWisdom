@@ -8,6 +8,7 @@
 // is a convenience wrapper for one-off lookups.
 // =============================================================================
 
+pub mod dart_mod;
 pub mod dotnet;
 pub mod go_mod;
 pub mod jvm;
@@ -172,16 +173,7 @@ pub trait ModuleResolver: Send + Sync {
 
 /// All registered `ModuleResolver` implementations in stable order.
 pub fn all_resolvers() -> Vec<Box<dyn ModuleResolver>> {
-    vec![
-        Box::new(node::NodeModuleResolver),
-        Box::new(rust_mod::RustModuleResolver),
-        Box::new(python_mod::PythonModuleResolver),
-        Box::new(go_mod::GoModuleResolver::new(None)),
-        Box::new(jvm::JvmModuleResolver),
-        Box::new(dotnet::DotNetModuleResolver),
-        Box::new(php_mod::PhpModuleResolver),
-        Box::new(ruby_mod::RubyModuleResolver),
-    ]
+    all_resolvers_with_manifest_data(None, None)
 }
 
 /// All resolvers with an optional Go module path override.
@@ -189,6 +181,21 @@ pub fn all_resolvers() -> Vec<Box<dyn ModuleResolver>> {
 /// The Go resolver needs the go.mod `module` directive to distinguish internal
 /// imports from external ones. Pass `None` when not available.
 pub fn all_resolvers_with_go_module(go_module_path: Option<&str>) -> Vec<Box<dyn ModuleResolver>> {
+    all_resolvers_with_manifest_data(go_module_path, None)
+}
+
+/// All resolvers with the manifest-derived signals each ecosystem resolver
+/// needs to tell project-local imports from external ones.
+///
+/// - `go_module_path` — the go.mod `module` directive.
+/// - `dart_self_package` — the project's own pubspec `name:`, so the Dart
+///   resolver can resolve `package:<self>/...` URIs to local files.
+///
+/// Pass `None` for any signal that isn't available.
+pub fn all_resolvers_with_manifest_data(
+    go_module_path: Option<&str>,
+    dart_self_package: Option<&str>,
+) -> Vec<Box<dyn ModuleResolver>> {
     vec![
         Box::new(node::NodeModuleResolver),
         Box::new(rust_mod::RustModuleResolver),
@@ -198,6 +205,9 @@ pub fn all_resolvers_with_go_module(go_module_path: Option<&str>) -> Vec<Box<dyn
         Box::new(dotnet::DotNetModuleResolver),
         Box::new(php_mod::PhpModuleResolver),
         Box::new(ruby_mod::RubyModuleResolver),
+        Box::new(dart_mod::DartModuleResolver::new(
+            dart_self_package.map(str::to_string),
+        )),
     ]
 }
 

@@ -302,6 +302,11 @@ pub fn read_all_manifests(project_root: &Path) -> HashMap<ManifestKind, Manifest
         if pm.data.sdk_type.is_some() {
             entry.sdk_type = pm.data.sdk_type;
         }
+        // The package's own declared name — so a `package:<self>/...` URI is
+        // recognized as project-local rather than external.
+        if !pm.name.is_empty() && !entry.package_names.contains(&pm.name) {
+            entry.package_names.push(pm.name);
+        }
         // tsconfig-style aliases (from tsconfig.json + vite/vue/webpack
         // configs) must propagate into the union or single-package projects
         // — those that don't trigger the per-package builder — will never
