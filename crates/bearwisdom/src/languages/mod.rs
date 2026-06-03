@@ -22,7 +22,7 @@ pub mod common;
 pub mod registry;
 pub mod string_dsl;
 
-use crate::types::{EmbeddedRegion, ExtractionResult};
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 // Re-export the shared utility from common so existing callers using
@@ -147,6 +147,36 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _file_path: &str,
         _lang_id: &str,
     ) -> Vec<EmbeddedRegion> {
+        Vec::new()
+    }
+
+    /// Synthesize symbols that a code generator / annotation processor / macro
+    /// would emit but which never appear in the parsed source text — Lombok
+    /// `@Data` getters/setters, Rust `#[derive]` impls, C# source-generated
+    /// members. The resolver then binds refs to those generated members like
+    /// any normal symbol.
+    ///
+    /// Invoked by `parse_file` AFTER `extract()` (and local-ref filtering) but
+    /// BEFORE the file's symbol table is finalized, so the returned symbols
+    /// flow through the normal write path and receive real DB ids. The
+    /// recognizer reads the already-extracted `symbols` (classes, fields with
+    /// their types in `signature`) and `refs` (annotations are emitted as
+    /// `TypeRef`s whose `source_symbol_index` points at the annotated symbol),
+    /// or re-scans `source` for text-substitution generators.
+    ///
+    /// Returned symbols MUST carry a correct `qualified_name` (= parent qname +
+    /// separator + member name) and `scope_path`; `parent_index` may be left
+    /// `None` (member parenting is reconstructed from `qualified_name`). A
+    /// recognizer MUST NOT emit a member whose `qualified_name` already exists
+    /// in `symbols` — a hand-written declaration always wins.
+    ///
+    /// Leaf languages without a generator leave the default (no synthesis).
+    fn synthesize_symbols(
+        &self,
+        _source: &str,
+        _symbols: &[ExtractedSymbol],
+        _refs: &[ExtractedRef],
+    ) -> Vec<ExtractedSymbol> {
         Vec::new()
     }
 

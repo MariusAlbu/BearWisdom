@@ -168,6 +168,51 @@ fn test_scope_chain_resolution() {
 }
 
 #[test]
+fn lombok_synthesized_getter_resolves_via_scope_chain() {
+    use super::extract::extract;
+    use super::lombok::synthesize_lombok_accessors;
+
+    // @Data synthesizes User.getName; a bare getName() call inside the class
+    // must bind to it — the end-to-end proof that a synthesized symbol is a
+    // first-class resolution target, not just an emitted row.
+    let source =
+        "@Data\npublic class User {\n    private String name;\n    public void describe() { getName(); }\n}";
+    let r = extract(source);
+    let synthesized = synthesize_lombok_accessors(source, &r.symbols, &r.refs);
+    let mut symbols = r.symbols.clone();
+    symbols.extend(synthesized);
+    let file = make_file("src/User.java", "java", symbols, r.refs.clone());
+
+    let (ref_idx, src_idx) = file
+        .refs
+        .iter()
+        .enumerate()
+        .find_map(|(i, rf)| {
+            (rf.kind == EdgeKind::Calls && rf.target_name == "getName")
+                .then_some((i, rf.source_symbol_index))
+        })
+        .expect("a getName() call ref is present");
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let resolver = JavaResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[ref_idx],
+        source_symbol: &file.symbols[src_idx],
+        scope_chain: build_scope_chain(file.symbols[src_idx].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("getName() resolves to the synthesized getter");
+    let expected = *id_map
+        .get(&("src/User.java".to_string(), "User.getName".to_string()))
+        .expect("synthesized getter is indexed");
+    assert_eq!(res.target_symbol_id, expected, "binds to synthesized User.getName");
+}
+
+#[test]
 fn test_same_package_resolution() {
     let file1 = make_file(
         "src/Order.java",

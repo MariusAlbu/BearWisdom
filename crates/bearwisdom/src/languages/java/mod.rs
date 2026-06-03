@@ -8,6 +8,7 @@ mod flow;
 mod flow_detectors;
 mod helpers;
 pub(crate) mod keywords;
+mod lombok;
 mod symbols;
 pub mod extract;
 
@@ -38,8 +39,12 @@ mod coverage_tests;
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
 
+#[cfg(test)]
+#[path = "lombok_tests.rs"]
+mod lombok_tests;
+
 use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 pub struct JavaPlugin;
@@ -70,6 +75,15 @@ impl LanguagePlugin for JavaPlugin {
         _lang_id: &str,
     ) -> Vec<EmbeddedRegion> {
         embedded::detect_regions(source)
+    }
+
+    fn synthesize_symbols(
+        &self,
+        source: &str,
+        symbols: &[ExtractedSymbol],
+        refs: &[ExtractedRef],
+    ) -> Vec<ExtractedSymbol> {
+        lombok::synthesize_lombok_accessors(source, symbols, refs)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

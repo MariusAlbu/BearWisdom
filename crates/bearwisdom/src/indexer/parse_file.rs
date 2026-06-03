@@ -216,6 +216,14 @@ fn parse_file_internal(
     super::local_refs::filter_local_refs(&content, walked.language, plugin, &r.symbols, &mut r.refs);
     super::local_refs::filter_operator_refs(&mut r.refs);
 
+    // Synthesize symbols a code generator / annotation processor would emit but
+    // that never appear in parsed text (Lombok getters/setters, derive impls).
+    // Runs before embedded-region splicing so the origin-language parallel
+    // vectors (still empty here) backfill the synthesized symbols as
+    // host-language entries via the existing resize below.
+    let synthesized = plugin.synthesize_symbols(&content, &r.symbols, &r.refs);
+    r.symbols.extend(synthesized);
+
     // Symbols produced by the host extractor all share the file's language,
     // so the origin vector starts empty and grows only when we splice in
     // sub-extracted regions below.
