@@ -719,6 +719,71 @@ pub(crate) fn parse_type_head_and_args(type_str: &str) -> (&str, Vec<&str>) {
     (head, args)
 }
 
+/// Extract a leading-form return type — `RetType name(params)` (Java, C#, and
+/// other return-first declaration syntaxes). The return type is the first
+/// depth-0 whitespace-delimited token of the signature; the signature builders
+/// that produce these strings omit modifiers, so the first token is the return
+/// type (`List<User> getItems()` → `List<User>`; a generic method
+/// `T <T>get(int i)` → `T`).
+///
+/// Returns `None` when the first token is empty, opens a parameter list
+/// (`getItems()` — the signature carries no return token), or is a declaration
+/// keyword / modifier (Go's `func`, or a modifier-prefixed form) — failing safe
+/// so the caller keeps its prior head detection. Intended ONLY as a fallback
+/// after `parse_return_type_from_signature`, so colon/arrow (params-first)
+/// languages never reach it.
+pub(crate) fn parse_return_type_positional(sig: &str) -> Option<String> {
+    let trimmed = sig.trim_start();
+    let bytes = trimmed.as_bytes();
+    // First depth-0 whitespace ends the return-type token; brackets keep a
+    // generic application (`Map<String, Integer>`) together as one token.
+    let mut depth: i32 = 0;
+    let mut end = trimmed.len();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'<' | b'[' | b'(' | b'{' => depth += 1,
+            b'>' | b']' | b')' | b'}' => depth -= 1,
+            b' ' | b'\t' if depth == 0 => {
+                end = i;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let head = trimmed[..end].trim();
+    if head.is_empty() || head.contains('(') || head.contains(')') {
+        return None;
+    }
+    // `void` is the absence of a return value, not a chainable type — leave the
+    // return type unset (a void method's `setName()` carries no return).
+    if head == "void" {
+        return None;
+    }
+    if is_decl_keyword_or_modifier(head) {
+        return None;
+    }
+    Some(head.to_string())
+}
+
+/// A first-token value that means the signature is NOT a clean leading-return
+/// form: a declaration keyword (Go's `func`, etc.) or an access/storage
+/// modifier some builders prefix. Over-rejection is safe — the caller falls
+/// back to its prior detection — so this errs toward rejecting.
+fn is_decl_keyword_or_modifier(t: &str) -> bool {
+    matches!(
+        t,
+        "func" | "fn" | "def" | "function" | "fun"
+            | "struct" | "enum" | "union"
+            | "public" | "private" | "protected" | "internal"
+            | "static" | "final" | "abstract" | "virtual" | "override"
+            | "sealed" | "async" | "extern" | "unsafe" | "partial"
+            | "readonly" | "const" | "new" | "synchronized" | "native"
+            | "transient" | "volatile" | "default" | "strictfp"
+            | "explicit" | "implicit" | "export" | "inline"
+            | "signed" | "unsigned"
+    )
+}
+
 pub(crate) fn infer_type_from_chain(
     chain: &crate::types::MemberChain,
     scope_path: &Option<String>,

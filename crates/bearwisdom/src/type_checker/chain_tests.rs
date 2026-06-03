@@ -41,6 +41,7 @@ struct FakeLookup {
     field_types: Vec<(String, String)>,
     return_types: Vec<(String, String)>,
     type_args_store: Vec<(String, Vec<String>)>,
+    return_type_args_store: Vec<(String, Vec<String>)>,
     generic_params_store: Vec<(String, Vec<String>)>,
     parents: Vec<(String, String)>,
     aliases: Vec<(String, AliasTarget)>,
@@ -94,6 +95,11 @@ impl FakeLookup {
     }
     fn type_args(mut self, qname: &str, args: &[&str]) -> Self {
         self.type_args_store
+            .push((qname.to_string(), args.iter().map(|s| s.to_string()).collect()));
+        self
+    }
+    fn return_type_args(mut self, qname: &str, args: &[&str]) -> Self {
+        self.return_type_args_store
             .push((qname.to_string(), args.iter().map(|s| s.to_string()).collect()));
         self
     }
@@ -201,6 +207,12 @@ impl SymbolLookup for FakeLookup {
     }
     fn field_type_args(&self, qname: &str) -> Option<&[String]> {
         self.type_args_store
+            .iter()
+            .find(|(q, _)| q == qname)
+            .map(|(_, v)| v.as_slice())
+    }
+    fn return_type_args(&self, qname: &str) -> Option<&[String]> {
+        self.return_type_args_store
             .iter()
             .find(|(q, _)| q == qname)
             .map(|(_, v)| v.as_slice())
@@ -2044,7 +2056,7 @@ fn method_return_generic_arg_binds_element_type() {
         .sym(1, "Repo", "class")
         .sym(2, "Repo.getItems", "method")
         .ret("Repo.getItems", "List")
-        .type_args("Repo.getItems", &["User"])
+        .return_type_args("Repo.getItems", &["User"])
         .sym(3, "List", "class")
         .generic_params("List", &["E"])
         .sym(4, "List.get", "method")
@@ -2075,7 +2087,7 @@ fn method_return_without_args_does_not_bind_element_type() {
         .sym(1, "Repo", "class")
         .sym(2, "Repo.getItems", "method")
         .ret("Repo.getItems", "List")
-        // No type_args for Repo.getItems → E stays unbound.
+        // No return_type_args for Repo.getItems → E stays unbound.
         .sym(3, "List", "class")
         .generic_params("List", &["E"])
         .sym(4, "List.get", "method")

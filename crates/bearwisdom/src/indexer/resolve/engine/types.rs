@@ -172,10 +172,17 @@ pub fn intern_yield_type(
 pub struct TypeInfo {
     /// Field/property type rendered from `field_type_id`.
     pub field_type: Option<String>,
-    /// Generic type arguments rendered from `type_arg_ids`.
+    /// Generic type arguments of `field_type` (e.g. `["User"]` for a field
+    /// `Repository<User>`). Kept distinct from `return_type_args` so a symbol
+    /// that is both a field and a method of the same qname (legal in Java:
+    /// `List<X> size; List<Y> size()`) does not clobber one with the other.
     pub type_args: Vec<String>,
     /// Method return type rendered from `return_type_id`.
     pub return_type: Option<String>,
+    /// Generic type arguments of `return_type` (e.g. `["User"]` for a method
+    /// returning `Repository<User>`). Consulted by the chain walker on a
+    /// method-call yield to bind the element type parameter.
+    pub return_type_args: Vec<String>,
     /// Generic parameter names for type declarations (e.g., ["T"] for `interface Repository<T>`).
     pub generic_params: Vec<String>,
     /// Declared upper bounds for `generic_params`, index-aligned. `None` for an
@@ -188,6 +195,11 @@ pub struct TypeInfo {
     pub return_type_id: Option<TypeId>,
     /// Canonical TypeIds of `type_args`, in declaration order.
     pub type_arg_ids: Vec<TypeId>,
+    /// Canonical TypeIds of `return_type_args`, in declaration order. Kept in
+    /// sync with the string form through the same intern/format round-trip as
+    /// `type_arg_ids`, so a method-return arg canonicalizes the same way a
+    /// field arg does.
+    pub return_type_arg_ids: Vec<TypeId>,
     /// Canonical TypeIds of declared generic parameters — each one a
     /// `Type::Generic { param }` interned through the workspace arena.
     /// Populated alongside `generic_params` so consumers that drive

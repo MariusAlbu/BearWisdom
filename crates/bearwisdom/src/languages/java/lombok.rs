@@ -23,11 +23,10 @@
 // Each synthesized method carries a return-type `TypeRef` (the field type for a
 // getter, the builder qname for `builder()`/fluent setters, the class qname for
 // `build()`) so it types through a chain the same way a real method does. The
-// ref is the type head only: a getter for `List<User>` types to `List`, not the
-// element `User`. Element binding comes from the return type's generic args,
-// which the index reads from a parseable method signature; the Java synth
-// signature is leading-form (`List<User> getItems()`), which that parser does
-// not read. Void setters and primitive returns emit no ref.
+// ref is the type head only (`List<User>` → `List`); a generic getter's element
+// args (`User`) are recovered separately from the synthesized leading-form
+// signature (`List<User> getItems()`), so the getter types through to the
+// element. Void setters and primitive returns emit no ref.
 // =============================================================================
 
 use crate::languages::Synthesized;

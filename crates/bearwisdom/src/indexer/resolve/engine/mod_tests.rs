@@ -993,9 +993,69 @@ fn structural_return_type_records_no_generic_args() {
     let index = SymbolIndex::build(&[pf], &id_map);
 
     assert!(
-        index.field_type_args("Svc.getTuple").is_none(),
+        index.return_type_args("Svc.getTuple").is_none(),
         "structural return must not record generic element args, got {:?}",
-        index.field_type_args("Svc.getTuple")
+        index.return_type_args("Svc.getTuple")
+    );
+}
+
+#[test]
+fn leading_form_generic_return_records_element_args() {
+    // Java/C# `RetType name(params)` is leading-form: the return type is the
+    // first signature token. A generic application binds its element args even
+    // with NO return-type TypeRefs (the Java extractor emits none for methods),
+    // so the signature is the sole source.
+    let pf = ParsedFile {
+        path: "src/Repo.java".to_string(),
+        language: "java".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "getItems".to_string(),
+            qualified_name: "Repo.getItems".to_string(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("List<User> getItems()".to_string()),
+            doc_comment: None,
+            scope_path: Some("Repo".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("src/Repo.java".to_string(), "Repo.getItems".to_string()), 1);
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    assert_eq!(index.return_type_name("Repo.getItems"), Some("List"));
+    assert_eq!(
+        index.return_type_args("Repo.getItems").map(|a| a.to_vec()),
+        Some(vec!["User".to_string()])
     );
 }
 

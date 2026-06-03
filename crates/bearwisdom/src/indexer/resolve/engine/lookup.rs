@@ -105,6 +105,13 @@ pub trait SymbolLookup {
     /// e.g., "UserService.repo" → Some(["User"]) for `repo: Repository<User>`.
     fn field_type_args(&self, property_qname: &str) -> Option<&[String]>;
 
+    /// Get the generic type arguments of a method's return type.
+    /// e.g., "UserRepo.findAll" → Some(["User"]) for `findAll(): List<User>`.
+    /// Default `None` so synthetic test lookups need not opt in.
+    fn return_type_args(&self, _method_qname: &str) -> Option<&[String]> {
+        None
+    }
+
     /// Get the generic type parameter names for a type declaration.
     /// e.g., "Repository" → Some(["T"]) for `interface Repository<T>`
     fn generic_params(&self, type_name: &str) -> Option<&[String]>;

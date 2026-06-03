@@ -26,8 +26,8 @@ use crate::types::{
 
 use super::super::{
     file_belongs_to_npm_package, infer_type_from_chain, npm_package_from_external_path,
-    npm_package_from_specifier, parse_return_type_from_signature, parse_type_head_and_args,
-    resolve_type_name_in_scope,
+    npm_package_from_specifier, parse_return_type_from_signature, parse_return_type_positional,
+    parse_type_head_and_args, resolve_type_name_in_scope,
 };
 use super::{
     common_prefix_len, find_matching_bracket, is_ambient_global_lib_path, is_type_like_kind,
@@ -224,6 +224,7 @@ impl SymbolIndex {
         let mut field_type: FxHashMap<String, String> = FxHashMap::default();
         let mut field_type_args: FxHashMap<String, Vec<String>> = FxHashMap::default();
         let mut return_type: FxHashMap<String, String> = FxHashMap::default();
+        let mut return_type_args: FxHashMap<String, Vec<String>> = FxHashMap::default();
         let mut generic_params: FxHashMap<String, Vec<String>> = FxHashMap::default();
         let mut generic_param_bounds: FxHashMap<String, Vec<Option<String>>> = FxHashMap::default();
 
@@ -340,10 +341,21 @@ impl SymbolIndex {
                     SymbolKind::Method
                     | SymbolKind::Function
                     | SymbolKind::Constructor => {
-                        let sig_rt: Option<String> = sym
-                            .signature
-                            .as_deref()
-                            .and_then(parse_return_type_from_signature);
+                        let sig_rt: Option<String> = sym.signature.as_deref().and_then(|s| {
+                            parse_return_type_from_signature(s).or_else(|| {
+                                // Leading-form return (`RetType name(...)`,
+                                // Java/C#): the return type is the first depth-0
+                                // token (our signature builders omit modifiers).
+                                // Only reached when the colon/arrow parse failed,
+                                // so it never fires for params-first languages;
+                                // skipped for constructors (no return to read).
+                                if sym.kind == SymbolKind::Constructor {
+                                    None
+                                } else {
+                                    parse_return_type_positional(s)
+                                }
+                            })
+                        });
                         // A signature that parses to a generic application
                         // (`Repository<User>`) yields an unambiguous head + args.
                         // A structural type that merely CONTAINS an inner generic
@@ -374,7 +386,7 @@ impl SymbolIndex {
                                 &by_qname,
                             );
                             return_type.insert(sym.qualified_name.clone(), resolved);
-                            field_type_args.insert(sym.qualified_name.clone(), args);
+                            return_type_args.insert(sym.qualified_name.clone(), args);
                         } else {
                             // Non-generic / unparseable signature: the last
                             // TypeRef is the return-type head.
@@ -482,6 +494,9 @@ impl SymbolIndex {
         }
         for (qname, args) in field_type_args {
             type_info.entry(qname).or_default().type_args = args;
+        }
+        for (qname, args) in return_type_args {
+            type_info.entry(qname).or_default().return_type_args = args;
         }
         for (qname, rt) in return_type {
             type_info.entry(qname).or_default().return_type = Some(rt);
@@ -945,6 +960,14 @@ impl SymbolIndex {
                     .map(|s| type_arena.intern_type_str(s))
                     .collect();
             }
+            if ti.return_type_arg_ids.is_empty() && !ti.return_type_args.is_empty() {
+                ti.return_type_arg_ids = ti
+                    .return_type_args
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| type_arena.intern_type_str(s))
+                    .collect();
+            }
         }
 
         // Final sweep: re-derive the string fields from the canonical
@@ -966,6 +989,13 @@ impl SymbolIndex {
             if !ti.type_arg_ids.is_empty() {
                 ti.type_args = ti
                     .type_arg_ids
+                    .iter()
+                    .map(|id| type_arena.format_type(*id))
+                    .collect();
+            }
+            if !ti.return_type_arg_ids.is_empty() {
+                ti.return_type_args = ti
+                    .return_type_arg_ids
                     .iter()
                     .map(|id| type_arena.format_type(*id))
                     .collect();

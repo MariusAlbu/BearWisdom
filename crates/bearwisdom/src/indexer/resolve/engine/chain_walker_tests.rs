@@ -1,4 +1,4 @@
-use super::{merge_where_bounds, parse_generic_param_clause, parse_return_type_from_signature, parse_type_head_and_args};
+use super::{merge_where_bounds, parse_generic_param_clause, parse_return_type_from_signature, parse_return_type_positional, parse_type_head_and_args};
 
 #[test]
 fn names_only_when_unbounded() {
@@ -244,6 +244,76 @@ fn return_type_rust_arrow_strips_block() {
 fn return_type_none_when_no_return() {
     assert_eq!(parse_return_type_from_signature("void Foo()"), None);
     assert_eq!(parse_return_type_from_signature(""), None);
+}
+
+// --- parse_return_type_positional: leading-form (Java/C#) ---
+
+#[test]
+fn positional_java_leading_generic() {
+    // `{ret} {name}{params}` — the first depth-0 token is the return type.
+    assert_eq!(
+        parse_return_type_positional("List<User> getItems()"),
+        Some("List<User>".to_string())
+    );
+}
+
+#[test]
+fn positional_java_leading_nongeneric() {
+    assert_eq!(
+        parse_return_type_positional("String getName()"),
+        Some("String".to_string())
+    );
+}
+
+#[test]
+fn positional_generic_with_spaced_args() {
+    // The space inside `<>` is depth-1, so the whole type stays one token.
+    assert_eq!(
+        parse_return_type_positional("Map<String, Integer> getMap()"),
+        Some("Map<String, Integer>".to_string())
+    );
+}
+
+#[test]
+fn positional_java_generic_method_returns_param() {
+    // `{ret} {type_params}{name}{params}` — ret precedes the method's own `<T>`.
+    assert_eq!(
+        parse_return_type_positional("T <T>get(int i)"),
+        Some("T".to_string())
+    );
+}
+
+#[test]
+fn positional_csharp_generic_method_with_constraints() {
+    assert_eq!(
+        parse_return_type_positional("Task<int> GetAsync<T>() where T : class"),
+        Some("Task<int>".to_string())
+    );
+}
+
+#[test]
+fn positional_rejects_go_func_keyword() {
+    // Go's trailing-return form leads with `func` — must not be read as a type.
+    assert_eq!(parse_return_type_positional("func (s *S) F(a A) Ret"), None);
+}
+
+#[test]
+fn positional_rejects_modifier_prefix() {
+    // A builder that prefixes a modifier fails safe (over-rejection is harmless).
+    assert_eq!(parse_return_type_positional("static int foo()"), None);
+}
+
+#[test]
+fn positional_rejects_no_return_token() {
+    // First token opens the param list → the signature carries no return type.
+    assert_eq!(parse_return_type_positional("getItems()"), None);
+    assert_eq!(parse_return_type_positional(""), None);
+}
+
+#[test]
+fn positional_rejects_void() {
+    // `void` is no return value — a void setter must carry no return type.
+    assert_eq!(parse_return_type_positional("void setName(String n)"), None);
 }
 
 #[test]

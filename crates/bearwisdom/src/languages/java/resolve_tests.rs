@@ -306,6 +306,26 @@ fn lombok_synthesized_methods_carry_return_types_in_index() {
 }
 
 #[test]
+fn lombok_generic_getter_binds_element_via_signature() {
+    use crate::indexer::resolve::engine::SymbolLookup;
+
+    // A generic getter's synthesized leading-form signature (`List<User>
+    // getItems()`) lets the index recover the element args, so the getter
+    // carries return_type_args=["User"] and a chain types through to the element.
+    let order = synth_splice(
+        "src/Order.java",
+        "@Data\npublic class Order { private List<User> items; }",
+    );
+    let (index, _id_map) = build_test_env(&[&order]);
+
+    assert_eq!(index.return_type_name("Order.getItems"), Some("List"));
+    assert_eq!(
+        index.return_type_args("Order.getItems").map(|a| a.to_vec()),
+        Some(vec!["User".to_string()])
+    );
+}
+
+#[test]
 fn test_same_package_resolution() {
     let file1 = make_file(
         "src/Order.java",

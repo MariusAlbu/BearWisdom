@@ -156,6 +156,16 @@ impl SymbolLookup for SymbolIndex {
         })
     }
 
+    fn return_type_args(&self, method_qname: &str) -> Option<&[String]> {
+        self.type_info.get(method_qname).and_then(|ti| {
+            if ti.return_type_args.is_empty() {
+                None
+            } else {
+                Some(ti.return_type_args.as_slice())
+            }
+        })
+    }
+
     fn generic_params(&self, type_name: &str) -> Option<&[String]> {
         self.type_info.get(type_name).and_then(|ti| {
             if ti.generic_params.is_empty() {
