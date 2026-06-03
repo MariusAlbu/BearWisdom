@@ -680,32 +680,23 @@ impl SymbolIndex {
             }
         }
 
-        // Build structural enclosing-type / enclosing-namespace maps.
-        //
-        // For each symbol, `build_containing_scope` walks its `parent_index`
-        // chain (kind-tagged frames, innermost first) — immune to the
-        // qname-construction bug that drops a parameter's package. The nearest
-        // *type* frame (excluding self) gives the enclosing type; the nearest
-        // *namespace/module* frame gives the enclosing namespace. Keyed by the
-        // source symbol's qname, which is correct for the methods/classes that
-        // pose these queries.
-        let mut enclosing_type_qname: FxHashMap<String, String> = FxHashMap::default();
-        let mut enclosing_namespace_qname: FxHashMap<String, String> = FxHashMap::default();
+        // Build the structured containment chain for every symbol — the single
+        // source of truth behind the enclosing-type / enclosing-namespace
+        // queries. `build_containing_scope` walks each symbol's `parent_index`
+        // chain (kind-tagged frames, innermost first), immune to the
+        // qname-construction bug that drops a parameter's package. Consumers
+        // select the enclosing type/namespace by *kind* off the chain rather
+        // than re-splitting a dotted string. Keyed by the source symbol's qname,
+        // first write wins.
+        let mut containing_scope: FxHashMap<String, crate::containment::ContainingScope> =
+            FxHashMap::default();
         for pf in parsed {
             for (i, sym) in pf.symbols.iter().enumerate() {
-                let scope = crate::containment::build_containing_scope(&pf.symbols, i, None);
-                if let Some(frame) = scope.containing_of_kind(|k| k.is_type()) {
-                    if let Some(parent) = frame.sym.and_then(|s| pf.symbols.get(s as usize)) {
-                        enclosing_type_qname
-                            .entry(sym.qualified_name.clone())
-                            .or_insert_with(|| parent.qualified_name.clone());
-                    }
-                }
-                if let Some(ns) = enclosing_namespace_from_scope(&scope, &pf.symbols) {
-                    enclosing_namespace_qname
-                        .entry(sym.qualified_name.clone())
-                        .or_insert(ns);
-                }
+                containing_scope
+                    .entry(sym.qualified_name.clone())
+                    .or_insert_with(|| {
+                        crate::containment::build_containing_scope(&pf.symbols, i, None)
+                    });
             }
         }
 
@@ -1166,8 +1157,7 @@ impl SymbolIndex {
             path_aliases_union,
             tsconfig_types_union,
             inherits_map,
-            enclosing_type_qname,
-            enclosing_namespace_qname,
+            containing_scope,
             alias_target: alias_target_map,
             qname_duplicates,
             ambient_global_method_names,
@@ -1179,40 +1169,6 @@ impl SymbolIndex {
             type_arena,
         }
     }
-}
-
-/// The qualified name of the nearest enclosing namespace/module of `scope`.
-///
-/// When that frame is a real indexed symbol, its own qname is authoritative.
-/// When it is a synthesized package segment (a namespace hoisted into the qname
-/// rather than modeled as a parent — Java packages), the qname is rebuilt by
-/// joining the synthesized namespace tail outermost → innermost with `.`.
-fn enclosing_namespace_from_scope(
-    scope: &crate::containment::ContainingScope,
-    symbols: &[crate::types::ExtractedSymbol],
-) -> Option<String> {
-    let frames = scope.frames();
-    // Index of the nearest enclosing namespace frame, excluding self.
-    let idx = frames
-        .iter()
-        .enumerate()
-        .skip(1)
-        .find(|(_, f)| f.kind.is_namespace())
-        .map(|(i, _)| i)?;
-    if let Some(parent) = frames[idx].sym.and_then(|s| symbols.get(s as usize)) {
-        return Some(parent.qualified_name.clone());
-    }
-    // Synthesized tail: the trailing run of namespace frames carries the package
-    // segments innermost-first; join from the outermost down to this frame.
-    let tail: Vec<&str> = frames[idx..]
-        .iter()
-        .filter(|f| f.kind.is_namespace())
-        .map(|f| f.name.as_str())
-        .collect();
-    if tail.is_empty() {
-        return None;
-    }
-    Some(tail.iter().rev().cloned().collect::<Vec<_>>().join("."))
 }
 
 /// Entry-file extensions probed when mapping a workspace package's declared

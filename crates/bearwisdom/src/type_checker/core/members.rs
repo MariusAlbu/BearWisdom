@@ -17,6 +17,7 @@ use crate::indexer::canonical_form::signature_arity;
 use crate::indexer::resolve::engine::{strip_generic_args, SymbolInfo, SymbolLookup};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
+use crate::type_checker::core::symbol_view::SymbolView;
 use crate::type_checker::subtype::args_assignable;
 use crate::type_checker::profile::language_profile::{
     KindCompatibility, LanguageProfile,
@@ -347,10 +348,10 @@ impl MembersIndex {
                 // parameter types accept the call's argument types.
                 if arity_match && type_hit.is_none() {
                     if let Some(t) = types {
-                        if let Some(data) = t.symbol_types.get(s.id) {
-                            if !data.param_types.is_empty()
+                        if let Some(params) = SymbolView::new(s, t.symbol_types).param_types() {
+                            if !params.is_empty()
                                 && args_assignable(
-                                    &data.param_types,
+                                    params,
                                     t.arg_types,
                                     arena,
                                     t.lookup,

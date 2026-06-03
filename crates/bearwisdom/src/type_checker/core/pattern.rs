@@ -22,6 +22,7 @@ use crate::type_checker::core::inference::unwrap_iterator;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
+use crate::type_checker::core::symbol_view::SymbolView;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::EdgeKind;
 
@@ -160,8 +161,8 @@ fn lookup_member_type(
     profile: &LanguageProfile,
 ) -> Option<TypeId> {
     let sym = members.lookup(value_ty, prop, EdgeKind::TypeRef, supertypes, arena, profile)?;
-    let data = symbol_types.get(sym.id)?;
-    data.declared_type.or(data.return_type)
+    let view = SymbolView::new(&sym, symbol_types);
+    view.declared_type().or(view.return_type())
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@
 
 use crate::containment::{ContainingScope, FrameKind, ScopeFrame};
 use crate::indexer::resolve::engine::SymbolInfo;
-use crate::type_checker::core::symbol_types::SymbolTypeMap;
+use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::{GenericParamId, TypeId};
 
 /// Read-only view over one symbol's identity, type bundle, and containment.
@@ -47,7 +47,7 @@ impl<'a> SymbolView<'a> {
     /// Positional parameter types. `None` when no `SymbolTypeData` record
     /// exists for this symbol id (no type info, or not yet hydrated);
     /// `Some(&[])` when a record exists but declares zero parameters.
-    pub fn param_types(&self) -> Option<&[TypeId]> {
+    pub fn param_types(&self) -> Option<&'a [TypeId]> {
         self.types.get(self.info.id).map(|d| d.param_types.as_slice())
     }
 
@@ -67,24 +67,34 @@ impl<'a> SymbolView<'a> {
     /// Generic parameter slots bound by this symbol. Empty slice when none
     /// are recorded; the empty-vs-absent distinction is not meaningful for
     /// generics, so this collapses both to an empty slice.
-    pub fn generic_params(&self) -> &[GenericParamId] {
+    pub fn generic_params(&self) -> &'a [GenericParamId] {
         self.types
             .get(self.info.id)
             .map(|d| d.generic_params.as_slice())
             .unwrap_or(&[])
     }
 
+    /// The whole `SymbolTypeData` record this view is over, or `None` when no
+    /// record exists for this id. The per-field accessors above collapse "no
+    /// record" into their `None`/empty result; this accessor is the one that
+    /// preserves the record-existence distinction, for a caller that needs it
+    /// or that reads several fields together under a single borrow. Prefer the
+    /// per-field accessors otherwise.
+    pub fn type_data(&self) -> Option<&'a SymbolTypeData> {
+        self.types.get(self.info.id)
+    }
+
     /// The nearest enclosing type frame, excluding the symbol itself —
     /// Roslyn's `ContainingType`. `None` when no containment chain was
     /// supplied or no enclosing type exists.
-    pub fn containing_type(&self) -> Option<&ScopeFrame> {
+    pub fn containing_type(&self) -> Option<&'a ScopeFrame> {
         self.scope?.containing_of_kind(FrameKind::is_type)
     }
 
     /// The nearest enclosing namespace/module frame, excluding the symbol
     /// itself — Roslyn's `ContainingNamespace`. `None` when no containment
     /// chain was supplied or no enclosing namespace exists.
-    pub fn containing_namespace(&self) -> Option<&ScopeFrame> {
+    pub fn containing_namespace(&self) -> Option<&'a ScopeFrame> {
         self.scope?.containing_of_kind(FrameKind::is_namespace)
     }
 }

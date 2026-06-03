@@ -320,13 +320,22 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
-        self.enclosing_type_qname.get(source_qname).map(|s| s.as_str())
+        self.containing_scope
+            .get(source_qname)
+            .and_then(|s| s.containing_type_qname())
     }
 
     fn enclosing_namespace_qname(&self, source_qname: &str) -> Option<&str> {
-        self.enclosing_namespace_qname
+        self.containing_scope
             .get(source_qname)
-            .map(|s| s.as_str())
+            .and_then(|s| s.containing_namespace_qname())
+    }
+
+    fn containing_scope(
+        &self,
+        source_qname: &str,
+    ) -> Option<&crate::containment::ContainingScope> {
+        self.containing_scope.get(source_qname)
     }
 
     fn angular_selector(&self, raw_selector: &str) -> Option<&str> {

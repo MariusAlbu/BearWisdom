@@ -43,6 +43,7 @@
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
+use crate::type_checker::core::symbol_view::SymbolView;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena, TypeId};
 
 /// TypeScript primitives the conservative branch uses to detect
@@ -462,9 +463,10 @@ fn member_types_assignable(
     // Both members must have recorded type data. Missing on either side →
     // Unknown. This is the conservatism that keeps a (name, kind) match from
     // standing in for an actual type comparison.
-    let (Some(src_data), Some(tgt_data)) =
-        (symbol_types.get(source.id), symbol_types.get(target.id))
-    else {
+    let (Some(src_data), Some(tgt_data)) = (
+        SymbolView::new(source, symbol_types).type_data(),
+        SymbolView::new(target, symbol_types).type_data(),
+    ) else {
         return SubtypeResult::Unknown;
     };
 

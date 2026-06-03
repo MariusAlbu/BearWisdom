@@ -2,7 +2,7 @@ use super::*;
 use crate::types::{ExtractedSymbol, SymbolKind};
 
 fn frame(kind: FrameKind, name: &str) -> ScopeFrame {
-    ScopeFrame::new(kind, name, None)
+    ScopeFrame::new(kind, name, name, None)
 }
 
 fn ns(name: &str) -> ScopeFrame {
@@ -206,6 +206,38 @@ fn multi_segment_package_tail() {
     let scope = build_containing_scope(&symbols, 0, None);
     assert_eq!(scope.to_qualified_name("."), "com.fakeext.greeter.Greeter");
     assert_eq!(scope.containing_of_kind(FrameKind::is_namespace).map(|f| f.name.as_str()), Some("greeter"));
+}
+
+/// The structured accessors return the enclosing type / namespace *qualified*
+/// name straight off the chain — the projection the flat string maps used to
+/// precompute, now derived from the structure.
+#[test]
+fn containing_type_and_namespace_qnames_from_chain() {
+    let symbols = vec![
+        esym("Eshop", "Eshop", SymbolKind::Namespace, None, None), // 0
+        esym("Catalog", "Eshop.Catalog", SymbolKind::Class, Some("Eshop"), Some(0)), // 1
+        esym("Get", "Eshop.Catalog.Get", SymbolKind::Method, Some("Eshop.Catalog"), Some(1)), // 2
+    ];
+    let get = build_containing_scope(&symbols, 2, None);
+    assert_eq!(get.containing_type_qname(), Some("Eshop.Catalog"));
+    assert_eq!(get.containing_namespace_qname(), Some("Eshop"));
+}
+
+/// A synthesized namespace tail yields the FULL package qname (not just the last
+/// segment) from `containing_namespace_qname`.
+#[test]
+fn synthesized_namespace_tail_qname_is_full_package() {
+    let symbols = vec![esym(
+        "Greeter",
+        "com.fakeext.greeter.Greeter",
+        SymbolKind::Class,
+        Some("com.fakeext.greeter"),
+        None,
+    )];
+    let scope = build_containing_scope(&symbols, 0, None);
+    assert_eq!(scope.containing_namespace_qname(), Some("com.fakeext.greeter"));
+    // No enclosing type — the class is top-level within its package.
+    assert_eq!(scope.containing_type_qname(), None);
 }
 
 /// The optional project root caps the chain but never appears in the qname.

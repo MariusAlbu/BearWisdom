@@ -25,7 +25,7 @@ fn sym(id: i64, name: &str, qname: &str, kind: &str) -> SymbolInfo {
 }
 
 fn frame(kind: FrameKind, name: &str) -> ScopeFrame {
-    ScopeFrame::new(kind, name, None)
+    ScopeFrame::new(kind, name, name, None)
 }
 
 #[test]
@@ -119,6 +119,33 @@ fn return_and_declared_type_passthrough() {
     assert_eq!(va.return_type(), None);
     assert_eq!(va.declared_type(), None);
     assert!(va.generic_params().is_empty());
+}
+
+#[test]
+fn type_data_some_when_recorded_none_when_absent() {
+    let arena = TypeArena::new();
+    let int_ty = arena.primitive(PrimKind::Int);
+
+    let mut types = SymbolTypeMap::new();
+    types.insert(
+        7,
+        SymbolTypeData {
+            declared_type: Some(int_ty),
+            ..Default::default()
+        },
+    );
+
+    let has = sym(7, "name", "User.name", "field");
+    let absent = sym(8, "ghost", "User.ghost", "field");
+    assert!(
+        SymbolView::new(&has, &types).type_data().is_some(),
+        "a recorded id exposes its whole record"
+    );
+    assert_eq!(
+        SymbolView::new(&absent, &types).type_data(),
+        None,
+        "an unrecorded id has no record — the distinction the per-field accessors collapse"
+    );
 }
 
 #[test]

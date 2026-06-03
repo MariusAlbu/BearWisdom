@@ -41,6 +41,7 @@ use crate::type_checker::core::dispatch::{
 use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
+use crate::type_checker::core::symbol_view::SymbolView;
 use crate::type_checker::profile::language_profile::{DispatchAxis, LanguageProfile};
 use crate::types::{CallArg, ChainSegment, EdgeKind, MemberChain, SegmentKind};
 
@@ -570,20 +571,19 @@ impl<'a> ChainWalker<'a> {
         env: &GenericEnv,
         current_ty: TypeId,
     ) -> Option<TypeId> {
-        let data_raw = self.symbol_types.get(sym.id).and_then(|data| {
-            match sym.kind.as_str() {
-                "method" | "function" | "constructor" => data.return_type,
-                "field" | "property" | "variable" | "parameter" | "enum_member" => {
-                    data.declared_type
-                }
-                "class" | "struct" | "interface" | "trait" | "enum" | "type_alias"
-                    if seg.kind == SegmentKind::Construction =>
-                {
-                    data.return_type
-                }
-                _ => data.declared_type.or(data.return_type),
+        let view = SymbolView::new(sym, self.symbol_types);
+        let data_raw = match sym.kind.as_str() {
+            "method" | "function" | "constructor" => view.return_type(),
+            "field" | "property" | "variable" | "parameter" | "enum_member" => {
+                view.declared_type()
             }
-        });
+            "class" | "struct" | "interface" | "trait" | "enum" | "type_alias"
+                if seg.kind == SegmentKind::Construction =>
+            {
+                view.return_type()
+            }
+            _ => view.declared_type().or(view.return_type()),
+        };
         if let Some(raw) = data_raw {
             // Canonicalize nominal param tokens (`Class("T")`/`Class("U")`) in
             // the stored return to the owner's / method's `Generic` ids before
@@ -978,10 +978,8 @@ impl<'a> ChainWalker<'a> {
         // Declared return, param-blind from the SymbolTypeMap (or the string
         // fallback), rebound to the callee's canonical `Generic` ids so
         // substitution can resolve it.
-        let raw = self
-            .symbol_types
-            .get(sym.id)
-            .and_then(|d| d.return_type)
+        let raw = SymbolView::new(sym, self.symbol_types)
+            .return_type()
             .or_else(|| {
                 self.lookup
                     .return_type_name(&sym.qualified_name)

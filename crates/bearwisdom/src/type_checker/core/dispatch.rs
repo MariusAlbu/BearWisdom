@@ -180,9 +180,9 @@ fn most_specific_index(
     prims: &[(&str, PrimKind)],
 ) -> usize {
     let params = |s: &SymbolInfo| {
-        symbol_types
-            .get(s.id)
-            .map(|d| d.param_types.clone())
+        SymbolView::new(s, symbol_types)
+            .param_types()
+            .map(|p| p.to_vec())
             .unwrap_or_default()
     };
     'outer: for i in 0..matches.len() {
@@ -221,10 +221,7 @@ fn select_return_type(
 ) -> Option<SymbolInfo> {
     if let Some(expected) = query.expected_return {
         for candidate in candidates(query, members, supertypes) {
-            let Some(data) = symbol_types.get(candidate.id) else {
-                continue;
-            };
-            let Some(return_ty) = data.return_type else {
+            let Some(return_ty) = SymbolView::new(&candidate, symbol_types).return_type() else {
                 continue;
             };
             if matches!(

@@ -70,6 +70,13 @@ pub struct ScopeFrame {
     pub kind: FrameKind,
     /// Simple (unqualified) name of this level: `"repo"`, `"run"`, `"App"`.
     pub name: String,
+    /// Qualified name of the symbol this frame *is* — the canonical cross-file
+    /// key, carried so a consumer reads the enclosing type/namespace qname off
+    /// the structure instead of re-splitting a dotted string. For a real indexed
+    /// frame it is the symbol's own `qualified_name`; for a synthesized
+    /// namespace-tail frame it is the cumulative package path up to that segment;
+    /// for the project root it is the project name.
+    pub qname: String,
     /// In-file index of the symbol this frame *is*, when it is an indexed
     /// symbol. `None` for synthesized namespace/project frames. Lets a consumer
     /// recover the frame's full symbol record (generics, member index, …).
@@ -77,10 +84,16 @@ pub struct ScopeFrame {
 }
 
 impl ScopeFrame {
-    pub fn new(kind: FrameKind, name: impl Into<String>, sym: Option<u32>) -> Self {
+    pub fn new(
+        kind: FrameKind,
+        name: impl Into<String>,
+        qname: impl Into<String>,
+        sym: Option<u32>,
+    ) -> Self {
         Self {
             kind,
             name: name.into(),
+            qname: qname.into(),
             sym,
         }
     }
@@ -139,6 +152,22 @@ impl ContainingScope {
     /// its outer type, not itself.
     pub fn containing_of_kind(&self, pred: impl Fn(FrameKind) -> bool) -> Option<&ScopeFrame> {
         self.frames.iter().skip(1).find(|f| pred(f.kind))
+    }
+
+    /// Qualified name of the nearest enclosing type frame, excluding self —
+    /// Roslyn's `ContainingType` as the cross-file key. `None` when no enclosing
+    /// type exists.
+    pub fn containing_type_qname(&self) -> Option<&str> {
+        self.containing_of_kind(FrameKind::is_type)
+            .map(|f| f.qname.as_str())
+    }
+
+    /// Qualified name of the nearest enclosing namespace/module frame, excluding
+    /// self — Roslyn's `ContainingNamespace`. `None` when no enclosing namespace
+    /// exists.
+    pub fn containing_namespace_qname(&self) -> Option<&str> {
+        self.containing_of_kind(FrameKind::is_namespace)
+            .map(|f| f.qname.as_str())
     }
 
     /// Serialize to a qualified name joined by `sep`, outermost → innermost,
@@ -226,6 +255,7 @@ pub fn build_containing_scope(
         frames.push(ScopeFrame {
             kind: FrameKind::Sym(sym.kind),
             name: sym.name.clone(),
+            qname: sym.qualified_name.clone(),
             sym: Some(i as u32),
         });
         topmost = i;
@@ -235,11 +265,16 @@ pub fn build_containing_scope(
     let top = &symbols[topmost];
     if !matches!(top.kind, SymbolKind::Namespace | SymbolKind::Module) {
         if let Some(sp) = top.scope_path.as_deref().filter(|s| !s.is_empty()) {
-            // rsplit yields innermost-first, matching the frame order.
-            for seg in sp.rsplit('.') {
+            // One namespace frame per segment, innermost first. Each frame's
+            // qname is the cumulative package path up to that segment, so the
+            // nearest-namespace qname is the full package and the tail
+            // serializes back to the dotted prefix.
+            let segs: Vec<&str> = sp.split('.').collect();
+            for k in (0..segs.len()).rev() {
                 frames.push(ScopeFrame {
                     kind: FrameKind::Sym(SymbolKind::Namespace),
-                    name: seg.to_string(),
+                    name: segs[k].to_string(),
+                    qname: segs[..=k].join("."),
                     sym: None,
                 });
             }
@@ -250,6 +285,7 @@ pub fn build_containing_scope(
         frames.push(ScopeFrame {
             kind: FrameKind::Project,
             name: proj.to_string(),
+            qname: proj.to_string(),
             sym: None,
         });
     }
