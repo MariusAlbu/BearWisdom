@@ -110,6 +110,17 @@ pub struct ChainExtensions {
     /// name when no type-kind symbol owns it). The receiver is then that type.
     pub root_type_access: bool,
 
+    /// Before each member lookup, qualify a bare `current_type` to its
+    /// package-qualified qname so members keyed under the full package path
+    /// resolve. Two deterministic sources (see `qualify_current_type`): the
+    /// receiver's own package (a method's same-package return type) and the
+    /// file's explicit non-wildcard imports (`import a.b.C` makes a receiver
+    /// typed `C` resolve under `a.b.C`). Only promotes to a qname that keys a
+    /// type or member, so it can only widen resolution — never a global
+    /// same-name scan. For languages whose members are keyed under
+    /// package-qualified qnames (Java) while the receiver type is a bare name.
+    pub qualify_via_imports: bool,
+
 }
 
 impl ChainExtensions {
@@ -123,6 +134,7 @@ impl ChainExtensions {
         extension_method_fallback: false,
         root_fallback: None,
         root_type_access: false,
+        qualify_via_imports: false,
     };
 }
 
@@ -312,10 +324,23 @@ pub fn resolve_via_chain(
     // its own — walk to the alias's concrete head first.
     expand_current_type(config, &mut current_type, &initial_generic_args, lookup, env.as_mut());
 
+    // The qualified type the current bare `current_type` was yielded from, used
+    // by `qualify_current_type` for same-package promotion of a method's return
+    // type. `None` at the root (which qualifies via imports instead).
+    let mut prev_scope: Option<String> = None;
+
     for seg in &segments[1..segments.len() - 1] {
         // Re-expand: the previous yield may itself name an alias.
         expand_current_type(config, &mut current_type, &[], lookup, env.as_mut());
+        // Qualify a bare receiver type to its package-qualified qname so members
+        // keyed under the full package path resolve (`Repository` →
+        // `com.fakeext.data.Repository`, or a same-package return type
+        // `Entity` → `com.fakeext.data.Entity`). Deterministic — same-package
+        // scope first, then the file's explicit imports.
+        qualify_current_type(config, &mut current_type, prev_scope.as_deref(), file_ctx, lookup);
         let member_qname = format!("{current_type}.{}", seg.name);
+        // This receiver scopes the next yielded type for same-package qualify.
+        prev_scope = Some(current_type.clone());
 
         // Try field type (property access).
         if let Some(next_type) = lookup.field_type_str(&member_qname) {
@@ -470,6 +495,7 @@ pub fn resolve_via_chain(
     // Alias-aware final hop, then promote a short receiver to its external
     // package qname. With extensions off, `effective_type == current_type`.
     expand_current_type(config, &mut current_type, &[], lookup, env.as_mut());
+    qualify_current_type(config, &mut current_type, prev_scope.as_deref(), file_ctx, lookup);
     let effective_type = if config.extensions.promote_external_qname {
         external_type_qname(&current_type, lookup).unwrap_or_else(|| current_type.clone())
     } else {
@@ -758,6 +784,78 @@ pub fn external_type_qname(current_type: &str, lookup: &dyn SymbolLookup) -> Opt
         .iter()
         .find(|s| s.file_path.starts_with("ext:"))
         .map(|s| s.qualified_name.clone())
+}
+
+/// Promote a bare `current_type` to its package-qualified qname when the
+/// language opts into `qualify_via_imports`.
+///
+/// A receiver typed by a bare simple name (`Repository`) whose members are
+/// keyed under a package-qualified qname (`com.fakeext.data.Repository.findOne`)
+/// can't be walked until the bare name is qualified. Two deterministic sources
+/// supply that mapping, tried in order:
+///
+///   1. **Same-package scope.** `scope_qname` is the qualified receiver the
+///      bare type was just yielded from (the method/field's owning type). Its
+///      package qualifies a sibling type declared in the same package — the
+///      transitive return-type case: `com.fakeext.data.Repository.findOne`
+///      returns `Entity`, which is `com.fakeext.data.Entity`. This is never
+///      imported (it's only a return type), so imports can't supply it.
+///   2. **Explicit imports.** `import com.fakeext.data.Repository` makes a
+///      receiver typed `Repository` resolve to `com.fakeext.data.Repository`.
+///      The import form names the class itself, so the module IS the qname.
+///
+/// Guarded so it can only widen resolution:
+///   * no-op unless the flag is set and `current_type` is bare (no `.`),
+///   * the candidate qname must own a type symbol OR at least one member —
+///     promoting to a qname nothing keys under would strand the walk.
+fn qualify_current_type(
+    config: &ChainConfig,
+    current_type: &mut String,
+    scope_qname: Option<&str>,
+    file_ctx: Option<&FileContext>,
+    lookup: &dyn SymbolLookup,
+) {
+    if !config.extensions.qualify_via_imports {
+        return;
+    }
+    if current_type.contains('.') {
+        return;
+    }
+
+    // 1. Same-package: the receiver's package + the bare type name.
+    if let Some(scope) = scope_qname {
+        if let Some((pkg, _)) = scope.rsplit_once('.') {
+            let candidate = format!("{pkg}.{current_type}");
+            if keys_a_type_or_member(&candidate, lookup) {
+                *current_type = (config.normalize_type)(&candidate);
+                return;
+            }
+        }
+    }
+
+    // 2. Explicit (non-wildcard) imports name the class qname directly.
+    if let Some(fc) = file_ctx {
+        for import in &fc.imports {
+            if import.is_wildcard {
+                continue;
+            }
+            if import.imported_name.as_str() != current_type.as_str() {
+                continue;
+            }
+            let Some(module) = import.module_path.as_deref() else { continue };
+            if keys_a_type_or_member(module, lookup) {
+                *current_type = (config.normalize_type)(module);
+                return;
+            }
+        }
+    }
+}
+
+/// True when `qname` owns a type symbol OR keys at least one member — the
+/// guard for `qualify_current_type` so it never promotes to a qname nothing
+/// keys under.
+fn keys_a_type_or_member(qname: &str, lookup: &dyn SymbolLookup) -> bool {
+    lookup.by_qualified_name(qname).is_some() || !lookup.members_of(qname).is_empty()
 }
 
 /// Root-type resolution for an imported identifier.

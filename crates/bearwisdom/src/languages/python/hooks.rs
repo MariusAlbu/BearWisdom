@@ -59,6 +59,7 @@ pub(crate) static PYTHON_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
             extension_method_fallback: false,
             root_fallback: None,
             root_type_access: false,
+            qualify_via_imports: false,
         },
     };
 

@@ -263,15 +263,16 @@ fn internal_java_param_rooted_chain_resolves() {
 /// return type is hydrated from the Maven sources jar, and the never-imported
 /// return-type class is pulled on demand so the second hop binds.
 ///
-/// The parameter root now types (see internal_java_param_rooted_chain_resolves).
-/// The remaining blocker is demand-hydration of the transitive return type:
-/// `Repository.findOne(): Entity` resolves, but `Entity` — never imported, only
-/// a return type — is not pulled from the Maven sources jar, so the `getEmail`
-/// second hop has no target. Uses an isolated extraction cache (the `.m2`
+/// `repo.findOne().getEmail()`: the parameter root types to `Repository`, the
+/// chain qualifies it to its imported qname `com.fakeext.data.Repository`, walks
+/// `findOne` to its return type `Entity`, qualifies that same-package to
+/// `com.fakeext.data.Entity`, and pulls `Entity` from the jar on the chain-miss
+/// pass — `Entity` is never imported (only a return type), so the same-package
+/// qualification is the only path to the right one of the several `Entity`
+/// classes the JDK also publishes. Uses an isolated extraction cache (the `.m2`
 /// nested under a fresh TempDir) so results aren't polluted by the shared
 /// system-temp `bearwisdom-sources-cache` across runs.
 #[test]
-#[ignore = "EXT-2: transitive return type (Entity) not demand-pulled from the Maven jar"]
 fn external_java_chain_types_past_external_method_return() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let anchor = seed_isolated_chain_repo();

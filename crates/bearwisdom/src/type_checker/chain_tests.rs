@@ -1191,6 +1191,76 @@ fn java_chain_inheritance_gated_by_none() {
     assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
 }
 
+#[test]
+fn java_chain_qualifies_bare_receiver_via_import() {
+    // `repo.findOne()` where `repo: Repository` and `Repository` is brought in
+    // by `import com.fakeext.data.Repository`. The bare receiver type doesn't
+    // own `findOne`; qualify_via_imports promotes `Repository` to its imported
+    // qname so the package-keyed member binds.
+    let lookup = FakeLookup::default()
+        .local("repo", "Repository")
+        .sym(1, "com.fakeext.data.Repository", "class")
+        .sym(2, "com.fakeext.data.Repository.findOne", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("findOne", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![import("Repository", "com.fakeext.data.Repository")]);
+    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("import-qualified receiver resolves findOne");
+    assert_eq!(res.target_symbol_id, 2);
+}
+
+#[test]
+fn java_chain_qualifies_return_type_same_package() {
+    // `repo.findOne().getEmail()` where `findOne` returns the bare `Entity`,
+    // which is never imported (only a return type). The same-package
+    // qualification promotes `Entity` to `com.fakeext.data.Entity` using the
+    // receiver's package, so the second hop `getEmail` binds.
+    let lookup = FakeLookup::default()
+        .local("repo", "Repository")
+        .sym(1, "com.fakeext.data.Repository", "class")
+        .sym(2, "com.fakeext.data.Repository.findOne", "method")
+        .ret("com.fakeext.data.Repository.findOne", "Entity")
+        .sym(3, "com.fakeext.data.Entity", "class")
+        .sym(4, "com.fakeext.data.Entity.getEmail", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("findOne", SegmentKind::Property, true),
+            seg("getEmail", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![import("Repository", "com.fakeext.data.Repository")]);
+    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("same-package return type qualifies so getEmail binds");
+    assert_eq!(res.target_symbol_id, 4);
+}
+
+#[test]
+fn java_chain_qualify_via_imports_gated_by_none() {
+    // The import-qualification fixture under ChainExtensions::NONE: with the
+    // flag off, the bare `Repository` receiver never promotes, so `findOne`
+    // keyed under the package qname stays unreachable.
+    let lookup = FakeLookup::default()
+        .local("repo", "Repository")
+        .sym(1, "com.fakeext.data.Repository", "class")
+        .sym(2, "com.fakeext.data.Repository.findOne", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("findOne", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![import("Repository", "com.fakeext.data.Repository")]);
+    assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
+}
+
 // ---------------------------------------------------------------------------
 // Python differential tests (QUAL-2b-python).
 //
