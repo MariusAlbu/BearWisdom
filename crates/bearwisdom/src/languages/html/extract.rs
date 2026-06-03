@@ -13,6 +13,9 @@ use crate::types::{
 };
 use tree_sitter::{Node, Parser};
 
+/// Tag names that start uppercase but are not component usages.
+const BUILTIN_TAGS: &[&str] = &["DOCTYPE", "CDATA"];
+
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     // Auto-generated HTML files (Robot Framework reports, JavaDoc,
     // pydoc, etc.) embed thousands of script-block calls into legacy
@@ -95,8 +98,14 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         };
     };
 
-    collect_anchors(&tree.root_node(), source, &file_name, host_index, &mut symbols);
-    let _ = &mut refs; // silence unused-mut lint when no refs were added
+    collect_anchors(
+        &tree.root_node(),
+        source,
+        &file_name,
+        host_index,
+        &mut symbols,
+        &mut refs,
+    );
 
     ExtractionResult {
         symbols,
@@ -115,11 +124,13 @@ fn collect_anchors(
     file_name: &str,
     host_index: usize,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let kind = child.kind();
         if matches!(kind, "element" | "self_closing_element") {
+            process_component_tag(&child, source, host_index, refs);
             if let Some(id) = element_id(&child, source) {
                 symbols.push(ExtractedSymbol {
                     name: id.clone(),
@@ -142,8 +153,80 @@ fn collect_anchors(
 });
             }
         }
-        collect_anchors(&child, source, file_name, host_index, symbols);
+        collect_anchors(&child, source, file_name, host_index, symbols, refs);
     }
+}
+
+/// Emit a `Calls` ref when an element tag names a component rather than a
+/// standard HTML element: PascalCase tags (`<UserCard>`) bind directly,
+/// kebab-case custom elements (`<my-widget>`) bind to their PascalCase form
+/// (`MyWidget`). Standard lowercase tags (`div`, `section`) and the
+/// uppercase SGML relics in `BUILTIN_TAGS` emit nothing.
+fn process_component_tag(
+    element: &Node,
+    source: &str,
+    host_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let tag = element_tag_name(element, source);
+    if tag.is_empty() || BUILTIN_TAGS.contains(&tag.as_str()) {
+        return;
+    }
+
+    let target_name = if tag.chars().next().is_some_and(|c| c.is_uppercase()) {
+        tag
+    } else if tag.contains('-') {
+        kebab_to_pascal(&tag)
+    } else {
+        return;
+    };
+
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: host_index,
+        target_name,
+        kind: EdgeKind::Calls,
+        line: element.start_position().row as u32,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: element.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
+}
+
+/// Read the tag name from the start tag of an `element` /
+/// `self_closing_element`. Returns an empty string when absent.
+fn element_tag_name(element: &Node, source: &str) -> String {
+    let mut cursor = element.walk();
+    for child in element.children(&mut cursor) {
+        if matches!(child.kind(), "start_tag" | "self_closing_tag") {
+            let mut tag_cursor = child.walk();
+            for tag_child in child.children(&mut tag_cursor) {
+                if tag_child.kind() == "tag_name" {
+                    return source
+                        .get(tag_child.start_byte()..tag_child.end_byte())
+                        .unwrap_or("")
+                        .to_string();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+fn kebab_to_pascal(s: &str) -> String {
+    s.split('-')
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect()
 }
 
 /// Read `id="…"` from the start tag of an `element` / `self_closing_element`
