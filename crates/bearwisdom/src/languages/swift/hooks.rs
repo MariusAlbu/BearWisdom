@@ -7,7 +7,6 @@ use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::chain::{self, identity_normalize, ChainConfig, ChainExtensions, NamespaceLookup};
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -361,13 +360,7 @@ impl LanguageEngineHooks for SwiftHooks {
                 }
             }
         }
-        DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        }
-        .resolve_all()
+        None
     }
 }
 
