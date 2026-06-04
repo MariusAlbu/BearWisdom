@@ -87,6 +87,7 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
         confidence: 0.8,
     }),
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
+    package_by_directory: false,
     constructor_patterns: &[ConstructorPattern::ClassDotNew],
     class_builder_specs: &[],
     decorator_syntax: None,

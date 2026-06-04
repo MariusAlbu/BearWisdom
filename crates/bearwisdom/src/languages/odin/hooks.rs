@@ -1,11 +1,9 @@
 // Odin language hooks. Absorbed from the deleted `odin/resolve.rs`.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -109,45 +107,6 @@ impl LanguageEngineHooks for OdinHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if let Some(res) = (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all() {
-            return Some(res);
-        }
-        let source_normalized = file_ctx.file_path.replace('\\', "/");
-        let source_dir = source_normalized.rsplit('/').nth(1).unwrap_or("");
-        if !source_dir.is_empty() {
-            for sym in lookup.by_name(target) {
-                let sym_normalized = sym.file_path.replace('\\', "/");
-                let sym_dir = sym_normalized.rsplit('/').nth(1).unwrap_or("");
-                if sym_dir == source_dir
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.95,
-                        strategy: "odin_same_package",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        None
     }
 }
 

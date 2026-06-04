@@ -27,7 +27,7 @@ use crate::indexer::resolve::engine::{
 use crate::type_checker::profile::language_profile::{
     CandidateDirs, ChainQualification, ExternalByImport, ImportResolution, KindCompatibility,
     KindTable, ModuleAnchor, ModuleAnchorBind, NameNormalization, NormSpec, RelativeMarker,
-    StemMatch,
+    StemMatch, StemSource,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -66,6 +66,7 @@ struct LadderProfileData<'p> {
     self_keywords: &'p [&'p str],
     ambient_namespace_prefixes: &'p [&'p str],
     name_normalization: NameNormalization,
+    package_by_directory: bool,
 }
 
 impl LadderProfileData<'static> {
@@ -80,6 +81,7 @@ impl LadderProfileData<'static> {
         self_keywords: &[],
         ambient_namespace_prefixes: &[],
         name_normalization: NameNormalization::None,
+        package_by_directory: false,
     };
 }
 
@@ -964,16 +966,25 @@ impl<'a> DefaultResolver<'a> {
     ///     (case-insensitive) when present, else the first symbol in the module.
     ///   - `ByNameUnderModuleDir` — `by_name(target)` whose `file_path` contains
     ///     `module.replace('.', "/")`, plus the `{module}.{target}` qname probe.
+    ///   - `ByFileStem` — `by_name(target)`, kind-compatible, whose file
+    ///     basename-stem OR a path dir-segment equals the module's leaf (its
+    ///     last `.`-segment, lowercased) per `path_stem_matches`.
+    ///   - `MemberOfModuleType` — `members_of(module)` where `module` names a
+    ///     TYPE: the member whose name equals `target` under `norm` and whose
+    ///     kind is compatible.
     ///
     /// `relative_marker` splits which modules take the `in_module_from` bind: with
     /// a marker set, only a prefixed (relative) module runs the configured bind and
     /// every other (absolute) module routes to `ByNameUnderModuleDir`. With
-    /// `RelativeMarker::None` every module runs the configured bind. Returns `None`
-    /// when no module is set, the anchor is `Off`, or no candidate matches.
+    /// `RelativeMarker::None` every module runs the configured bind. `norm` folds
+    /// the name comparison for `MemberOfModuleType` (the same `NameNormalization`
+    /// the scope / same-file probes use). Returns `None` when no module is set,
+    /// the anchor is `Off`, or no candidate matches.
     pub fn resolve_via_module_anchor(
         &self,
         anchor: ModuleAnchor,
         relative_marker: RelativeMarker,
+        norm: NameNormalization,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
     ) -> Option<Resolution> {
         let ModuleAnchor::On(bind) = anchor else {
@@ -1026,9 +1037,34 @@ impl<'a> DefaultResolver<'a> {
                 }
                 let module_as_path = module.replace('.', "/");
                 for sym in self.lookup.by_name(target) {
-                    let norm = sym.file_path.replace('\\', "/");
-                    if norm.contains(&module_as_path) && kind(edge_kind, &sym.kind) {
+                    let path = sym.file_path.replace('\\', "/");
+                    if path.contains(&module_as_path) && kind(edge_kind, &sym.kind) {
                         return Some(self.resolution(sym.id, "default_module_anchor"));
+                    }
+                }
+            }
+            ModuleAnchorBind::ByFileStem { against } => {
+                let leaf = match against {
+                    StemSource::ModuleLeaf => {
+                        module.rsplit('.').next().unwrap_or(module).to_lowercase()
+                    }
+                };
+                for sym in self.lookup.by_name(target) {
+                    if !kind(edge_kind, &sym.kind) {
+                        continue;
+                    }
+                    if path_stem_matches(&sym.file_path.to_lowercase(), &leaf) {
+                        return Some(self.resolution(sym.id, "default_module_anchor"));
+                    }
+                }
+            }
+            ModuleAnchorBind::MemberOfModuleType => {
+                let target_norm = normalize_name(norm, target);
+                for member in self.lookup.members_of(module) {
+                    if normalize_name(norm, &member.name) == target_norm
+                        && kind(edge_kind, &member.kind)
+                    {
+                        return Some(self.resolution(member.id, "default_module_anchor"));
                     }
                 }
             }
@@ -1101,6 +1137,36 @@ impl<'a> DefaultResolver<'a> {
         None
     }
 
+    /// Strategy — bare target in a sibling file of the SAME directory.
+    ///
+    /// For a language whose package IS its directory (Odin), a bare reference
+    /// to a symbol declared in another file of the same directory is the
+    /// canonical resolution — there is no `module` to anchor on. Bind any
+    /// kind-compatible `by_name(target)` candidate whose immediate parent-dir
+    /// basename equals the source file's immediate parent-dir basename.
+    ///
+    /// Module-independent: it does NOT consult `r.module`, so it runs even when
+    /// the ref carries none (unlike `resolve_via_module_anchor`, which early-
+    /// returns on a missing module). Gated by `package_by_directory`.
+    pub fn resolve_via_same_dir(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty() || target.contains('.') || target.contains("::") || target.contains('/')
+        {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let src_parent = parent_dir_basename(&self.file_ctx.file_path)?;
+        for sym in self.lookup.by_name(target) {
+            if !kind(edge_kind, &sym.kind) {
+                continue;
+            }
+            if parent_dir_basename(&sym.file_path).as_deref() == Some(src_parent.as_str()) {
+                return Some(self.resolution(sym.id, "default_same_dir"));
+            }
+        }
+        None
+    }
+
     /// Run every strategy in canonical order, returning the first hit.
     ///
     /// Canonical order, most-specific evidence first. The two profile-gated
@@ -1128,6 +1194,8 @@ impl<'a> DefaultResolver<'a> {
     ///   16. ambient package — candidate lives in a declared ambient pkg
     ///   16b. external-by-import — bare target bound to an import-scoped
     ///        external symbol at reduced confidence (gated on `external_by_import`)
+    ///   16c. same dir — bare target in a sibling file of the same directory
+    ///        (gated on `package_by_directory`; module-independent)
     ///   17. wildcard import — bare target under a wildcard import's namespace
     ///   18. generic param — bare target matches a declared generic parameter
     ///
@@ -1181,6 +1249,7 @@ impl<'a> DefaultResolver<'a> {
                 self_keywords: profile.self_keywords,
                 ambient_namespace_prefixes: profile.ambient_namespace_prefixes,
                 name_normalization: profile.name_normalization,
+                package_by_directory: profile.package_by_directory,
             },
         )
     }
@@ -1229,9 +1298,12 @@ impl<'a> DefaultResolver<'a> {
         if let Some(res) = import_resolution.and_then(|ir| self.resolve_via_import_path(ir)) {
             return Some(res);
         }
-        if let Some(res) =
-            self.resolve_via_module_anchor(pd.module_anchor, pd.relative_marker, kind)
-        {
+        if let Some(res) = self.resolve_via_module_anchor(
+            pd.module_anchor,
+            pd.relative_marker,
+            pd.name_normalization,
+            kind,
+        ) {
             return Some(res);
         }
         // Terminal guard: a non-`Imports` ref that carries a module and opted
@@ -1285,6 +1357,11 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| {
                 pd.external_by_import
                     .and_then(|cfg| self.resolve_via_external_by_import(cfg, kind))
+            })
+            .or_else(|| {
+                pd.package_by_directory
+                    .then(|| self.resolve_via_same_dir(kind))
+                    .flatten()
             })
             .or_else(|| self.resolve_via_wildcard_import(kind))
             .or_else(|| self.resolve_via_generic_param());
@@ -1630,6 +1707,15 @@ fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
         seg == module_lower
             || seg.split(':').next_back().map_or(false, |tail| tail == module_lower)
     })
+}
+
+/// The basename of a file path's immediate parent directory. Path separators
+/// are normalized to `/`. Returns `None` when the path has no parent directory
+/// (a bare filename). For `pkg/foo/bar.odin` returns `Some("foo")`.
+fn parent_dir_basename(file_path: &str) -> Option<String> {
+    let normalized = file_path.replace('\\', "/");
+    let (dir, _file) = normalized.rsplit_once('/')?;
+    Some(dir.rsplit('/').next().unwrap_or(dir).to_string())
 }
 
 /// Handles relative TS specifiers (`./catalog` → `src/catalog.ts`),

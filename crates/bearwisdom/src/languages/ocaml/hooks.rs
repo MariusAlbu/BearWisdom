@@ -1,11 +1,9 @@
 // OCaml language hooks. Absorbed from the deleted `ocaml/resolve.rs`.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -186,78 +184,6 @@ impl LanguageEngineHooks for OcamlHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if let Some(res) = (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all() {
-            return Some(res);
-        }
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            let target = &ref_ctx.extracted_ref.target_name;
-            if let Some(dot) = module.find('.') {
-                let stripped_module = &module[dot + 1..];
-                let candidate = format!("{stripped_module}.{target}");
-                if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.90,
-                            strategy: "ocaml_stem_stripped",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-                let stripped_lower = stripped_module.to_lowercase();
-                let last_seg = stripped_lower.rsplit('.').next().unwrap_or(&stripped_lower);
-                let by_name = lookup.by_name(target);
-                if let Some(sym) = by_name.iter().find(|s: &&SymbolInfo| {
-                    let fl = s.file_path.to_lowercase().replace('\\', "/");
-                    (fl.contains(&format!("/{last_seg}."))
-                        || fl.contains(&format!("/{last_seg}/")))
-                        && predicates::kind_compatible(edge_kind, &s.kind)
-                }) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.88,
-                        strategy: "ocaml_stem_stripped_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            } else {
-                let module_lower = module.to_lowercase();
-                let by_name = lookup.by_name(target);
-                if let Some(sym) = by_name.iter().find(|s: &&SymbolInfo| {
-                    let fl = s.file_path.to_lowercase().replace('\\', "/");
-                    (fl.ends_with(&format!("/{module_lower}.ml"))
-                        || fl.ends_with(&format!("/{module_lower}.mli"))
-                        || fl.contains(&format!("/{module_lower}/")))
-                        && predicates::kind_compatible(edge_kind, &s.kind)
-                }) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.92,
-                        strategy: "ocaml_module_to_file_stem",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        None
     }
 }
 

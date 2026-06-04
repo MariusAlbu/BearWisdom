@@ -45,11 +45,21 @@ pub const FORTRAN_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::MemberOfModuleType,
+    ),
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
-    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
+    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::Spec(
+        crate::type_checker::profile::language_profile::NormSpec {
+            case_insensitive: true,
+            strip_chars: &[],
+            strip_prefixes: &[],
+            strip_sigils: &[],
+        },
+    ),
+    package_by_directory: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -29,6 +29,7 @@ pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
+    package_by_directory: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

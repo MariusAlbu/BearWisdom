@@ -1,11 +1,9 @@
 // Fortran language hooks. Absorbed from the deleted `fortran/resolve.rs`.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -102,68 +100,6 @@ impl LanguageEngineHooks for FortranHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let target_lower = target.to_lowercase();
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name.to_lowercase() == target_lower
-                && predicates::kind_compatible(ref_ctx.extracted_ref.kind, &sym.kind)
-            {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "fortran_same_file",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        if let Some(type_name) = &ref_ctx.extracted_ref.module {
-            let type_lower = type_name.to_lowercase();
-            for tname in [type_name.as_str(), type_lower.as_str()] {
-                for member in lookup.members_of(tname) {
-                    if member.name.to_lowercase() == target_lower {
-                        for sym in lookup.by_name(target) {
-                            if sym.name.to_lowercase() == target_lower
-                                && predicates::kind_compatible(
-                                    ref_ctx.extracted_ref.kind,
-                                    &sym.kind,
-                                )
-                            {
-                                return Some(Resolution {
-                                    target_symbol_id: sym.id,
-                                    confidence: 0.9,
-                                    strategy: "fortran_type_member",
-                                    resolved_yield_type: None,
-                                    flow_emit: None,
-                                });
-                            }
-                        }
-                        return Some(Resolution {
-                            target_symbol_id: member.id,
-                            confidence: 0.85,
-                            strategy: "fortran_type_member_direct",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

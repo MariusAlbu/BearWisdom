@@ -73,11 +73,16 @@ pub const OCAML_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::ByFileStem {
+            against: crate::type_checker::profile::language_profile::StemSource::ModuleLeaf,
+        },
+    ),
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
+    package_by_directory: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

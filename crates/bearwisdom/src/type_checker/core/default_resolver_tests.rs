@@ -1957,7 +1957,7 @@ fn import_path_no_candidate_returns_none() {
 // ---------------------------------------------------------------------------
 
 use crate::type_checker::profile::language_profile::{
-    ExternalByImport, ModuleAnchor, ModuleAnchorBind, RelativeMarker,
+    ExternalByImport, ModuleAnchor, ModuleAnchorBind, RelativeMarker, StemSource,
 };
 
 #[test]
@@ -1984,6 +1984,7 @@ fn module_anchor_name_exact_kind_binds_via_in_module_from() {
         .resolve_via_module_anchor(
             ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
             RelativeMarker::DotSlashPrefix,
+            NameNormalization::None,
             &accept_any,
         )
         .expect("name-exact anchor resolves");
@@ -2008,8 +2009,13 @@ fn module_anchor_off_is_inert() {
         kind_compatible: accept_any,
     };
     assert!(
-        d.resolve_via_module_anchor(ModuleAnchor::Off, RelativeMarker::None, &accept_any)
-            .is_none(),
+        d.resolve_via_module_anchor(
+            ModuleAnchor::Off,
+            RelativeMarker::None,
+            NameNormalization::None,
+            &accept_any,
+        )
+        .is_none(),
         "Off leaves the anchor inert"
     );
 }
@@ -2031,6 +2037,7 @@ fn module_anchor_returns_none_without_module() {
         .resolve_via_module_anchor(
             ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
             RelativeMarker::None,
+            NameNormalization::None,
             &accept_any,
         )
         .is_none());
@@ -2068,6 +2075,7 @@ fn module_anchor_prefer_named_else_first_picks_same_named() {
         .resolve_via_module_anchor(
             ModuleAnchor::On(ModuleAnchorBind::PreferNamedElseFirst),
             RelativeMarker::None,
+            NameNormalization::None,
             &accept_any,
         )
         .expect("require anchor resolves");
@@ -2101,6 +2109,7 @@ fn module_anchor_prefer_named_else_first_falls_back_to_first() {
         .resolve_via_module_anchor(
             ModuleAnchor::On(ModuleAnchorBind::PreferNamedElseFirst),
             RelativeMarker::None,
+            NameNormalization::None,
             &accept_any,
         )
         .expect("first-symbol anchor resolves");
@@ -2133,6 +2142,7 @@ fn module_anchor_by_name_under_module_dir_for_absolute_python() {
         .resolve_via_module_anchor(
             ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
             RelativeMarker::DotPrefix,
+            NameNormalization::None,
             &accept_any,
         )
         .expect("dir-containment anchor resolves the absolute module");
@@ -2163,10 +2173,359 @@ fn module_anchor_by_name_under_module_dir_qname_probe() {
         .resolve_via_module_anchor(
             ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
             RelativeMarker::None,
+            NameNormalization::None,
             &accept_any,
         )
         .expect("qname probe resolves");
     assert_eq!(resolved.target_symbol_id, 10);
+}
+
+#[test]
+fn module_anchor_by_file_stem_binds_on_basename_stem() {
+    // OCaml `List.map` — module leaf `list` (lowercased) matches the basename
+    // stem of `list.ml`, where `map` is declared.
+    let lookup = Lookup::new().with(sym(50, "map", "List.map", "function", "lib/list.ml"));
+    let r = extracted_call_with_module("map", "List");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::ByFileStem {
+                against: StemSource::ModuleLeaf,
+            }),
+            RelativeMarker::None,
+            NameNormalization::None,
+            &accept_any,
+        )
+        .expect("file-stem anchor resolves on basename stem");
+    assert_eq!(resolved.target_symbol_id, 50);
+    assert_eq!(resolved.strategy, "default_module_anchor");
+}
+
+#[test]
+fn module_anchor_by_file_stem_strips_dotted_module_head() {
+    // A dotted module `Stdlib.List` — the head `Stdlib` is an alias root; the
+    // LEAF `list` drives the stem match against `list.ml`.
+    let lookup = Lookup::new().with(sym(51, "map", "List.map", "function", "lib/list.ml"));
+    let r = extracted_call_with_module("map", "Stdlib.List");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::ByFileStem {
+                against: StemSource::ModuleLeaf,
+            }),
+            RelativeMarker::None,
+            NameNormalization::None,
+            &accept_any,
+        )
+        .expect("dotted-module leaf drives the stem match");
+    assert_eq!(resolved.target_symbol_id, 51);
+}
+
+#[test]
+fn module_anchor_by_file_stem_matches_dir_segment() {
+    // The leaf matches a path DIR segment (`/list/`), not just a basename.
+    let lookup = Lookup::new().with(sym(52, "map", "List.map", "function", "lib/list/core.ml"));
+    let r = extracted_call_with_module("map", "List");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::ByFileStem {
+                against: StemSource::ModuleLeaf,
+            }),
+            RelativeMarker::None,
+            NameNormalization::None,
+            &accept_any,
+        )
+        .expect("dir-segment match resolves");
+    assert_eq!(resolved.target_symbol_id, 52);
+}
+
+#[test]
+fn module_anchor_by_file_stem_declines_unrelated_file() {
+    // No candidate whose stem / dir-segment equals the leaf → no bind.
+    let lookup = Lookup::new().with(sym(53, "map", "Other.map", "function", "lib/other.ml"));
+    let r = extracted_call_with_module("map", "List");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::ByFileStem {
+                against: StemSource::ModuleLeaf,
+            }),
+            RelativeMarker::None,
+            NameNormalization::None,
+            &accept_any,
+        )
+        .is_none());
+}
+
+#[test]
+fn module_anchor_member_of_module_type_folds_case() {
+    // Fortran derived-type member: `module` names a TYPE; the member's name is
+    // compared under a case-insensitive NormSpec, so `getval` (ref) binds the
+    // `GetVal` member declared on type `Particle`.
+    let lookup = Lookup::new().with_member(
+        "Particle",
+        sym(60, "GetVal", "Particle.GetVal", "method", "src/particle.f90"),
+    );
+    let r = extracted_call_with_module("getval", "Particle");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let norm = NameNormalization::Spec(NormSpec {
+        case_insensitive: true,
+        strip_chars: &[],
+        strip_prefixes: &[],
+        strip_sigils: &[],
+    });
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::MemberOfModuleType),
+            RelativeMarker::None,
+            norm,
+            &accept_any,
+        )
+        .expect("case-insensitive member of module type resolves");
+    assert_eq!(resolved.target_symbol_id, 60);
+    assert_eq!(resolved.strategy, "default_module_anchor");
+}
+
+#[test]
+fn module_anchor_member_of_module_type_declines_unknown_member() {
+    // No member of the type matches the target → no bind.
+    let lookup = Lookup::new().with_member(
+        "Particle",
+        sym(61, "GetVal", "Particle.GetVal", "method", "src/particle.f90"),
+    );
+    let r = extracted_call_with_module("missing", "Particle");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let norm = NameNormalization::Spec(NormSpec {
+        case_insensitive: true,
+        strip_chars: &[],
+        strip_prefixes: &[],
+        strip_sigils: &[],
+    });
+    assert!(d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::MemberOfModuleType),
+            RelativeMarker::None,
+            norm,
+            &accept_any,
+        )
+        .is_none());
+}
+
+// ---------------------------------------------------------------------------
+// resolve_via_same_dir — bare target in a sibling file of the same directory
+// ---------------------------------------------------------------------------
+
+#[test]
+fn same_dir_binds_sibling_in_same_directory() {
+    // Odin: the source file's parent dir `game` is the package; a bare target
+    // declared in a sibling file of the same dir resolves.
+    let lookup = Lookup::new().with(sym(70, "update", "update", "function", "src/game/player.odin"));
+    let r = extracted_call("update");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "src/game/world.odin".to_string(),
+        language: "odin".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_same_dir(&accept_any)
+        .expect("same-dir sibling resolves");
+    assert_eq!(resolved.target_symbol_id, 70);
+    assert_eq!(resolved.strategy, "default_same_dir");
+}
+
+#[test]
+fn same_dir_declines_candidate_in_other_directory() {
+    // A candidate in a DIFFERENT directory is a different package → no bind.
+    let lookup = Lookup::new().with(sym(71, "update", "update", "function", "src/render/gpu.odin"));
+    let r = extracted_call("update");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "src/game/world.odin".to_string(),
+        language: "odin".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_same_dir(&accept_any).is_none(),
+        "cross-directory candidate is a different package"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// End-to-end through resolve_all_with_profile — OCaml / Fortran / Odin
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ocaml_profile_resolves_dotted_module_via_file_stem() {
+    let lookup = Lookup::new().with(sym(80, "map", "List.map", "function", "lib/list.ml"));
+    let r = extracted_call_with_module("map", "List");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "lib/main.ml".to_string(),
+        language: "ocaml".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::ocaml::OCAML_PROFILE)
+        .expect("ocaml file-stem anchor resolves through the ladder");
+    assert_eq!(resolved.target_symbol_id, 80);
+    assert_eq!(resolved.strategy, "default_module_anchor");
+}
+
+#[test]
+fn fortran_profile_resolves_derived_type_member_case_insensitively() {
+    let lookup = Lookup::new().with_member(
+        "Particle",
+        sym(81, "GetVal", "Particle.GetVal", "method", "src/particle.f90"),
+    );
+    let r = extracted_call_with_module("getval", "Particle");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "src/main.f90".to_string(),
+        language: "fortran".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::fortran::FORTRAN_PROFILE)
+        .expect("fortran derived-type member resolves through the ladder");
+    assert_eq!(resolved.target_symbol_id, 81);
+    assert_eq!(resolved.strategy, "default_module_anchor");
+}
+
+#[test]
+fn fortran_profile_folds_case_in_same_file_step() {
+    // With name_normalization set, the same-file step also folds case — a
+    // module-less ref binds a differently-cased sibling without a pre-resolver.
+    let lookup = Lookup::new().with_in_file(
+        "src/main.f90",
+        sym(82, "Compute", "Compute", "function", "src/main.f90"),
+    );
+    let r = extracted_call("compute");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "src/main.f90".to_string(),
+        language: "fortran".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::fortran::FORTRAN_PROFILE)
+        .expect("case-folded same-file sibling resolves");
+    assert_eq!(resolved.target_symbol_id, 82);
+    assert_eq!(resolved.strategy, "default_same_file");
+}
+
+#[test]
+fn odin_profile_resolves_same_package_directory_sibling() {
+    let lookup = Lookup::new().with(sym(83, "update", "update", "function", "src/game/player.odin"));
+    let r = extracted_call("update");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "src/game/world.odin".to_string(),
+        language: "odin".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::odin::ODIN_PROFILE)
+        .expect("odin same-package directory sibling resolves through the ladder");
+    assert_eq!(resolved.target_symbol_id, 83);
+    assert_eq!(resolved.strategy, "default_same_dir");
 }
 
 #[test]

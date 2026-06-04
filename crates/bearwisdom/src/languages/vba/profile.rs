@@ -37,6 +37,7 @@ pub const VBA_PROFILE: LanguageProfile = LanguageProfile {
         strip_prefixes: &[],
         strip_sigils: &[],
     }),
+    package_by_directory: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -121,6 +121,13 @@ pub struct LanguageProfile {
     /// language (Pascal, SQL, Fortran, VB) or a sigil-carrying one binds a
     /// reference written in a different surface form. See `NameNormalization`.
     pub name_normalization: NameNormalization,
+    /// The source file's parent directory is itself the package: a bare target
+    /// binds to any kind-compatible `by_name(target)` candidate whose immediate
+    /// parent-dir basename equals the source file's immediate parent-dir
+    /// basename. `false` (the default) leaves the strategy inert. `true` opts a
+    /// language in (Odin same-package references — no `module` to anchor on, so
+    /// this runs module-independently near the end of the ladder).
+    pub package_by_directory: bool,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -241,6 +248,28 @@ pub enum ModuleAnchorBind {
     /// Maps a dotted module to a directory and accepts any kind-compatible
     /// file under it (Python `models.TextChoices` at `.../models/enums.py`).
     ByNameUnderModuleDir,
+    /// `by_name(target)` filtered to candidates, kind-compatible, whose file
+    /// basename-stem OR a path dir-segment equals the `module`'s leaf — the
+    /// last `.`-separated segment, lowercased — under the `StemSource` rule.
+    /// The module head is an alias root; its leaf is the file that owns the
+    /// target. OCaml dotted-module references (`List.map` where the file
+    /// `list.ml` declares `map`).
+    ByFileStem { against: StemSource },
+    /// `members_of(module)` where `module` names a TYPE: the member whose name
+    /// equals `target` under the profile's `NameNormalization` and whose kind
+    /// is compatible. Fortran derived-type-member references, where the
+    /// extractor sets `module` to the type name and the member is
+    /// case-insensitively matched.
+    MemberOfModuleType,
+}
+
+/// What a `ModuleAnchorBind::ByFileStem` compares the candidate file-stem
+/// against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StemSource {
+    /// The `module`'s last `.`-separated segment, lowercased — the leaf that
+    /// names the file (OCaml `List.map` → leaf `list`).
+    ModuleLeaf,
 }
 
 /// Which `module` specifiers the module-anchor treats as relative.
@@ -538,6 +567,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     relative_marker: RelativeMarker::None,
     external_by_import: None,
     name_normalization: NameNormalization::None,
+    package_by_directory: false,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,
