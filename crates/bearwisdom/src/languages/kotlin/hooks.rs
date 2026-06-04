@@ -1,205 +1,22 @@
 // =============================================================================
-// languages/kotlin/hooks.rs — KotlinHooks impl plus the concrete
-// KotlinResolver (chain via generic ChainConfig walker over class/interface/
-// object enclosing types with WildcardOnly NamespaceLookup, scope-chain
-// walk, same-package, exact + wildcard imports with alias support, fully-
-// qualified names, inheritance via implicit `this`, by-name lookup for
-// DSL-lambda receivers and synthesized stubs, `.kt`/`.kts` bare-name
-// fallback for extension functions and top-level declarations) plus 5 flow
-// detectors (Akka tell/ask, Ktor server routes including WebSocket,
-// Ktor client, Exposed ORM, gRPC stub/CoroutineStub) plus external
-// classifier with Gradle version-catalog accessors and namespace-negative
-// fallback plus build_file_context.
+// languages/kotlin/hooks.rs — KotlinHooks impl of LanguageEngineHooks: external
+// classification (Gradle version-catalog accessors, namespace-negative
+// fallback), 5 flow detectors (Akka tell/ask, Ktor server routes including
+// WebSocket, Ktor client, Exposed ORM, gRPC stub/CoroutineStub), and
+// file-context (import + package) construction. Resolution runs through the
+// generic engine; the chain walker qualifies bare receivers per
+// `ChainQualification::SamePackageAndImports` and binds extension functions via
+// the receiver folded into the signature as a leading `this <Recv>` parameter.
 // =============================================================================
 
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::chain::{
-    self, ChainConfig, ChainExtensions, NamespaceLookup, identity_normalize,
-};
-use crate::type_checker::inheritance;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
-
-pub struct KotlinResolver;
-
-impl KotlinResolver {
-    pub(crate) fn build_file_context(
-        &self,
-        file: &ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> FileContext {
-        build_file_context_inner(file, project_ctx)
-    }
-
-    pub(crate) fn resolve(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            let config = ChainConfig {
-                strategy_prefix: "kotlin",
-                normalize_type: identity_normalize,
-                has_self_ref: true,
-                enclosing_type_kinds: &["class", "interface", "object"],
-                static_type_kinds: &["class", "interface", "enum", "type_alias", "object"],
-                use_generics: true,
-                namespace_lookup: NamespaceLookup::WildcardOnly,
-                kind_compatible: predicates::kind_compatible,
-                // Extension functions (`fun String.shout()`) bind by receiver
-                // type at the chain's final segment. The receiver is folded into
-                // the function signature as a leading `this <Recv>` parameter at
-                // extract time, which the generic extension-method fallback reads.
-                extensions: ChainExtensions {
-                    extension_method_fallback: true,
-                    ..ChainExtensions::NONE
-                },
-            };
-            if let Some(res) = chain::resolve_via_chain(
-                &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
-            ) {
-                return Some(res);
-            }
-        }
-
-        let effective_target = target.strip_prefix("this.").unwrap_or(target);
-
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "kotlin_scope_chain",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        if let Some(pkg) = &file_ctx.file_namespace {
-            let candidate = format!("{pkg}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "kotlin_same_package",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        for import in &file_ctx.imports {
-            if import.is_wildcard {
-                continue;
-            }
-            let name_match = import.imported_name == effective_target
-                || import.alias.as_deref() == Some(effective_target);
-            if !name_match {
-                continue;
-            }
-            if let Some(module) = &import.module_path {
-                if let Some(sym) = lookup.by_qualified_name(module) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "kotlin_import",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        for import in &file_ctx.imports {
-            if !import.is_wildcard {
-                continue;
-            }
-            if let Some(module) = &import.module_path {
-                let candidate = format!("{module}.{effective_target}");
-                if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "kotlin_wildcard_import",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        if effective_target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "kotlin_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        // Inheritance walk for implicit `this` calls.
-        if edge_kind == EdgeKind::Calls && !effective_target.contains('.') {
-            if let Some(calling_class) =
-                inheritance::enclosing_class_from_scope(&ref_ctx.source_symbol.qualified_name, lookup)
-            {
-                if let Some(res) = inheritance::resolve_via_inheritance(
-                    calling_class,
-                    effective_target,
-                    edge_kind,
-                    file_ctx,
-                    ref_ctx,
-                    lookup,
-                    predicates::kind_compatible,
-                    |fc, rc, sym| self.is_visible(fc, rc, sym),
-                    "kotlin_inherited_method",
-                ) {
-                    return Some(res);
-                }
-            }
-        }
-
-        None
-    }
-
-    pub(crate) fn is_visible(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _target: &SymbolInfo,
-    ) -> bool {
-        // Navigation tool: visibility never gates resolution, so go-to-definition
-        // reaches private members. Deliberate divergence from compiler behavior.
-        true
-    }
-}
 
 // Akka `actor.tell(msg, sender)` / `actor.ask(msg)` / `actorRef ! msg`.
 // The `!` infix form is hard to detect through chain refs (operator tokens
@@ -634,24 +451,6 @@ impl LanguageEngineHooks for KotlinHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(build_file_context_inner(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if let Some(res) = KotlinResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        (crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

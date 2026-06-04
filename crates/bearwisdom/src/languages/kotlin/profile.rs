@@ -73,7 +73,10 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: KOTLIN_PRIMITIVES,
     kind_compatible_table: KOTLIN_KIND_TABLE,
-    chain_qualification: ChainQualification::None,
+    // JVM package visibility: members are keyed under package-qualified qnames,
+    // so a bare mid-chain receiver (`Repository`, or a same-package return type)
+    // qualifies via its package then explicit imports before member lookup.
+    chain_qualification: ChainQualification::SamePackageAndImports,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

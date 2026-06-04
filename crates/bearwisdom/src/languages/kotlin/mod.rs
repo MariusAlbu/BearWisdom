@@ -15,7 +15,6 @@ pub(crate) mod hooks;
 pub(crate) mod profile;
 
 pub use hooks::KOTLIN_HOOKS;
-pub use hooks::KotlinResolver;
 pub use profile::KOTLIN_PROFILE;
 
 #[cfg(test)]

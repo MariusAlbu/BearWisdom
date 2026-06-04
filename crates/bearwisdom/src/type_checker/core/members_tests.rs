@@ -685,17 +685,150 @@ fn non_generic_type_members_keyed_once() {
 }
 
 #[test]
-fn csharp_extension_target_recognises_simple_signature() {
+fn scope_less_extension_keyed_under_receiver_for_opted_in_language() {
+    // A Kotlin top-level extension (`fun String.shout()`) has no scope_path —
+    // the receiver is folded into the signature as a leading `this String`
+    // parameter. It must register as an extension member of `String` even
+    // though it owns no enclosing type, so a `s.shout()` chain resolves.
+    use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
+
+    let ext = ExtractedSymbol {
+        name: "shout".to_string(),
+        qualified_name: "shout".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: Some("fun shout(this String): String".to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    };
+    let pf = ParsedFile {
+        path: "Ext.kt".to_string(),
+        language: "kotlin".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: vec![ext],
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("Ext.kt".to_string(), 0), 11);
+
+    let arena = TypeArena::new();
+    let index = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &arena,
+    );
+
+    let string_ty = arena.class("String");
+    assert!(
+        index.extensions_of(string_ty).iter().any(|m| m.id == 11),
+        "scope-less Kotlin extension must register against its receiver type"
+    );
+}
+
+#[test]
+fn scope_less_extension_ignored_for_non_opted_in_language() {
+    // The same scope-less `this`-signature shape in a language that does NOT
+    // use the convention (Rust) must not register as an extension — the gate is
+    // per-language.
+    use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
+
+    let ext = ExtractedSymbol {
+        name: "shout".to_string(),
+        qualified_name: "shout".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: Some("fn shout(this String): String".to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    };
+    let pf = ParsedFile {
+        path: "lib.rs".to_string(),
+        language: "rust".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: vec![ext],
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("lib.rs".to_string(), 0), 12);
+
+    let arena = TypeArena::new();
+    let index = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &arena,
+    );
+
+    let string_ty = arena.class("String");
+    assert!(
+        index.extensions_of(string_ty).is_empty(),
+        "non-opted-in language must not register a `this`-signature as an extension"
+    );
+}
+
+#[test]
+fn this_extension_target_recognises_simple_signature() {
     assert_eq!(
-        super::csharp_extension_target("string MyExt(this string s, int x)"),
+        super::this_extension_target("string MyExt(this string s, int x)"),
         Some("string")
     );
 }
 
 #[test]
-fn csharp_extension_target_handles_generic_receiver() {
+fn this_extension_target_handles_generic_receiver() {
     assert_eq!(
-        super::csharp_extension_target(
+        super::this_extension_target(
             "T MyExtAsync<T>(this IServiceCollection<T> services, Action a)"
         ),
         Some("IServiceCollection")
@@ -703,34 +836,34 @@ fn csharp_extension_target_handles_generic_receiver() {
 }
 
 #[test]
-fn csharp_extension_target_returns_none_for_regular_method() {
+fn this_extension_target_returns_none_for_regular_method() {
     assert_eq!(
-        super::csharp_extension_target("int Add(int a, int b)"),
+        super::this_extension_target("int Add(int a, int b)"),
         None
     );
 }
 
 #[test]
-fn csharp_extension_target_returns_none_for_empty_params() {
+fn this_extension_target_returns_none_for_empty_params() {
     assert_eq!(
-        super::csharp_extension_target("void DoWork()"),
+        super::this_extension_target("void DoWork()"),
         None
     );
 }
 
 #[test]
-fn csharp_extension_target_handles_extra_whitespace() {
+fn this_extension_target_handles_extra_whitespace() {
     assert_eq!(
-        super::csharp_extension_target("Result<T> Try<T>( this  IObservable<T> source )"),
+        super::this_extension_target("Result<T> Try<T>( this  IObservable<T> source )"),
         Some("IObservable")
     );
 }
 
 #[test]
-fn csharp_extension_target_only_first_param_counts() {
+fn this_extension_target_only_first_param_counts() {
     // `this` on a non-first parameter is invalid C# but should not match.
     assert_eq!(
-        super::csharp_extension_target("void Bind(IDictionary d, this string key)"),
+        super::this_extension_target("void Bind(IDictionary d, this string key)"),
         None
     );
 }

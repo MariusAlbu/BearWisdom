@@ -4,9 +4,8 @@
 // MembersIndex is built once per indexing run from ParsedFiles. It owns two
 // maps keyed by TypeId: `direct` (members declared inside the type's body —
 // methods, fields, properties, enum members) and `extensions` (extension
-// members declared outside the type — C# extension methods, Rust `impl T for
-// U` blocks, Ruby class reopens). The chain walker calls `lookup` at every
-// segment.
+// members declared outside the type, bound by their receiver type). The chain
+// walker calls `lookup` at every segment.
 //
 // Spec: research/architecture/02-engine-internal-architecture.html § Layer 3
 //       research/architecture/04-implementation-phases.html § Phase 3
@@ -85,15 +84,47 @@ impl MembersIndex {
             }
             let file_path: Arc<str> = Arc::from(pf.path.as_str());
             for (idx, sym) in pf.symbols.iter().enumerate() {
+                let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
+                    continue;
+                };
+                let info = SymbolInfo {
+                    id: sym_id,
+                    name: sym.name.clone(),
+                    qualified_name: sym.qualified_name.clone(),
+                    kind: sym.kind.as_str().to_string(),
+                    visibility: sym.visibility.map(|v| v.as_str().to_string()),
+                    file_path: file_path.clone(),
+                    scope_path: sym.scope_path.clone(),
+                    package_id: pf.package_id,
+                    signature: sym.signature.clone(),
+                };
+
+                // Extension members bind by their receiver type, declared
+                // outside the receiver's body. Languages that fold the receiver
+                // into the signature as a leading `this <Recv>` parameter expose
+                // it the same way regardless of where the function lives — a C#
+                // extension sits in a static class (scoped), a Kotlin top-level
+                // extension has no scope. Detect the receiver before the scope
+                // gate below so both shapes register.
+                if extension_receiver_in_signature(&pf.language) {
+                    if let Some(ext_type) =
+                        sym.signature.as_deref().and_then(this_extension_target)
+                    {
+                        let ext_ty = arena.class(ext_type);
+                        index.extensions.entry(ext_ty).or_default().push(info.clone());
+                    }
+                }
+
+                // Direct membership requires a scope: the symbol is declared
+                // inside the parent named by `scope_path`. Top-level symbols
+                // (free functions, top-level types, top-level extensions) have
+                // none and are resolved through the namespace / scope path.
                 let Some(scope) = &sym.scope_path else {
                     continue;
                 };
                 if scope.is_empty() {
                     continue;
                 }
-                let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
-                    continue;
-                };
                 let parent_ty = arena.class(scope);
                 // A member of a generic type carries the impl's type params in
                 // its scope (`IndexWriter<D>`). The chain walker reaches this
@@ -106,28 +137,6 @@ impl MembersIndex {
                 let bare_scope = strip_generic_args(scope);
                 let bare_parent_ty = (bare_scope.as_str() != scope.as_str())
                     .then(|| arena.class(&bare_scope));
-                let info = SymbolInfo {
-                    id: sym_id,
-                    name: sym.name.clone(),
-                    qualified_name: sym.qualified_name.clone(),
-                    kind: sym.kind.as_str().to_string(),
-                    visibility: sym.visibility.map(|v| v.as_str().to_string()),
-                    file_path: file_path.clone(),
-                    scope_path: sym.scope_path.clone(),
-                    package_id: pf.package_id,
-                    signature: sym.signature.clone(),
-                };
-                let ext_target = if pf.language == "csharp" {
-                    sym.signature
-                        .as_deref()
-                        .and_then(csharp_extension_target)
-                } else {
-                    None
-                };
-                if let Some(ext_type) = ext_target {
-                    let ext_ty = arena.class(ext_type);
-                    index.extensions.entry(ext_ty).or_default().push(info.clone());
-                }
                 if let Some(bare_ty) = bare_parent_ty {
                     index.direct.entry(bare_ty).or_default().push(info.clone());
                 }
@@ -385,12 +394,25 @@ fn kind_matches(profile: &LanguageProfile, edge: EdgeKind, sym_kind: &str) -> bo
     KindCompatibility::check(profile.kind_compatible_table, edge, parsed)
 }
 
-/// Returns the extended type when a C# method signature describes an extension
-/// method: `<ret> Name(this <Type> self, ...)`. The first parameter must use
-/// the `this` modifier; the type identifier is taken up to the next
-/// whitespace, generic bracket, or comma. Returns `None` for non-extension
-/// signatures. Caller is responsible for restricting to C# files.
-fn csharp_extension_target(signature: &str) -> Option<&str> {
+/// True when the language declares an extension function with the receiver
+/// folded into the signature as a leading `this <Recv>` parameter — the shape
+/// `this_extension_target` parses. C# extension methods
+/// (`static R M(this T self, ...)`) and Kotlin extension functions
+/// (`fun T.m()`, whose receiver the extractor lowers to a leading `this T`
+/// parameter) both use it. Other languages do not, so their signatures are
+/// never scanned for it.
+fn extension_receiver_in_signature(language: &str) -> bool {
+    matches!(language, "csharp" | "kotlin")
+}
+
+/// Returns the extended type when a method/function signature describes an
+/// extension by folding its receiver into a leading `this <Type>` parameter:
+/// `<ret> Name(this <Type> self, ...)`. The first parameter must use the
+/// `this` modifier; the type identifier is taken up to the next whitespace,
+/// generic bracket, or comma. Returns `None` for non-extension signatures.
+/// Caller restricts to languages using this convention via
+/// `extension_receiver_in_signature`.
+fn this_extension_target(signature: &str) -> Option<&str> {
     let open = signature.find('(')?;
     let body = signature[open + 1..].trim_start();
     let rest = body.strip_prefix("this ")?.trim_start();

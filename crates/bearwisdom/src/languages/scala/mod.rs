@@ -13,7 +13,6 @@ pub(crate) mod hooks;
 pub(crate) mod profile;
 
 pub use hooks::SCALA_HOOKS;
-pub use hooks::ScalaResolver;
 pub use profile::SCALA_PROFILE;
 
 #[cfg(test)]

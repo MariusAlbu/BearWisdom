@@ -74,7 +74,10 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: SCALA_PRIMITIVES,
     kind_compatible_table: SCALA_KIND_TABLE,
-    chain_qualification: ChainQualification::None,
+    // JVM package visibility: members are keyed under package-qualified qnames,
+    // so a bare mid-chain receiver (a same-package type or one named by an
+    // explicit import) qualifies before member lookup.
+    chain_qualification: ChainQualification::SamePackageAndImports,
     constructor_patterns: &[
         crate::type_checker::profile::language_profile::ConstructorPattern::New,
         crate::type_checker::profile::language_profile::ConstructorPattern::CallableClass,

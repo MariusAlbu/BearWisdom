@@ -1,198 +1,19 @@
 // =============================================================================
-// languages/scala/hooks.rs — ScalaHooks impl plus the concrete ScalaResolver
-// (chain via generic ChainConfig walker, scope-chain walk, same-package,
-// exact + wildcard imports, fully-qualified names, implicit java.lang /
-// scala / scala.Predef imports) and the external classifier + flow detectors
-// + file-context builder it dispatches.
+// languages/scala/hooks.rs — ScalaHooks impl of LanguageEngineHooks: external
+// classification, flow detectors, and file-context (import + package)
+// construction. Resolution runs through the generic engine; the chain walker
+// expands `type` member aliases and qualifies bare receivers per
+// `ChainQualification::SamePackageAndImports`.
 // =============================================================================
 
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
-};
-use crate::type_checker::chain::{
-    self, ChainConfig, ChainExtensions, NamespaceLookup, identity_normalize,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
-
-pub struct ScalaResolver;
-
-impl ScalaResolver {
-    pub(crate) fn build_file_context(
-        &self,
-        file: &ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> FileContext {
-        build_file_context_inner(file, project_ctx)
-    }
-
-    pub(crate) fn resolve(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            let config = ChainConfig {
-                strategy_prefix: "scala",
-                normalize_type: identity_normalize,
-                has_self_ref: true,
-                enclosing_type_kinds: &["class", "trait", "object"],
-                static_type_kinds: &["class", "trait", "object", "enum", "type_alias"],
-                use_generics: true,
-                namespace_lookup: NamespaceLookup::WildcardOnly,
-                kind_compatible: predicates::kind_compatible,
-                // A value typed as a Scala `type` member alias walks to the
-                // alias's target before member lookup.
-                extensions: ChainExtensions {
-                    expand_aliases: true,
-                    ..ChainExtensions::NONE
-                },
-            };
-            if let Some(res) = chain::resolve_via_chain(
-                &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
-            ) {
-                return Some(res);
-            }
-        }
-
-        let effective_target = target.strip_prefix("this.").unwrap_or(target);
-
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "scala_scope_chain",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        if let Some(pkg) = &file_ctx.file_namespace {
-            let candidate = format!("{pkg}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "scala_same_package",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        for import in &file_ctx.imports {
-            if import.is_wildcard {
-                continue;
-            }
-            let name_match = import.imported_name == effective_target
-                || import.alias.as_deref() == Some(effective_target);
-            if !name_match {
-                continue;
-            }
-            if let Some(module) = &import.module_path {
-                if let Some(sym) = lookup.by_qualified_name(module) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "scala_import",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        for import in &file_ctx.imports {
-            if !import.is_wildcard {
-                continue;
-            }
-            if let Some(module) = &import.module_path {
-                let candidate = format!("{module}.{effective_target}");
-                if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "scala_wildcard_import",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        if effective_target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "scala_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        // Scala compiles every file with the equivalent of `import
-        // java.lang._; import scala._; import scala.Predef._`. Bare
-        // references to `Throwable`, `Exception`, `Object`, `Class`,
-        // `Number`, `Integer`, etc. are valid because java.lang is
-        // implicitly imported. Try the three implicit namespaces in
-        // compiler order.
-        if !effective_target.contains('.') {
-            for prefix in &["java.lang", "scala", "scala.Predef"] {
-                let candidate = format!("{prefix}.{effective_target}");
-                if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "scala_implicit_import",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    pub(crate) fn is_visible(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _target: &SymbolInfo,
-    ) -> bool {
-        // Navigation tool: visibility never gates resolution, so go-to-definition
-        // reaches private members. Deliberate divergence from compiler behavior.
-        true
-    }
-}
 
 // sttp `basicRequest.get(uri"...")` / Akka HTTP `Http().singleRequest(...)`.
 // Also covers WS Producer for `client.get("/x")`-style chains.
@@ -591,24 +412,6 @@ impl LanguageEngineHooks for ScalaHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(build_file_context_inner(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if let Some(res) = ScalaResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        (crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 
