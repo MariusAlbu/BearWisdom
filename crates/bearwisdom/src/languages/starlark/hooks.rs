@@ -1,10 +1,12 @@
-// Starlark / Bazel BUILD file hooks. Absorbed from the deleted
-// `starlark/resolve.rs`.
+// Starlark / Bazel BUILD file hooks. Only the data-inexpressible seams remain:
+// external classification of Bazel framework chains / runtime-type method tails,
+// and the file-context import table built from `load()` module labels. Bare-name,
+// chain, and module-anchored binding run through the generic engine + profile data.
 
-use super::{chain, predicates};
+use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ExtractedRef, ParsedFile};
@@ -21,11 +23,6 @@ fn dotted_name(r: &ExtractedRef) -> String {
     } else {
         r.target_name.clone()
     }
-}
-
-fn bazel_label_to_path(label: &str) -> String {
-    let label = label.trim_start_matches("//");
-    label.replacen(':', "/", 1)
 }
 
 pub(crate) fn infer_external_inner(
@@ -97,114 +94,6 @@ impl LanguageEngineHooks for StarlarkHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        let full_name = dotted_name(&ref_ctx.extracted_ref);
-        if full_name.contains('.') && predicates::is_builtin_method_tail(&full_name) {
-            return None;
-        }
-        if predicates::is_bazel_framework_chain(&full_name)
-            || ref_ctx.extracted_ref.chain.is_some()
-        {
-            if let Some(res) = chain::resolve(
-                ref_ctx.extracted_ref.chain.as_ref(),
-                &full_name,
-                edge_kind,
-                Some(file_ctx),
-                ref_ctx,
-                lookup,
-            ) {
-                return Some(res);
-            }
-        }
-        if full_name.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(&full_name) {
-                if sym.file_path.starts_with("ext:bazel-builtins:")
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.95,
-                        strategy: "starlark_bazel_synthetic",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        if predicates::is_bazel_framework_chain(&full_name) {
-            return None;
-        }
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "starlark_same_file",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        let (import_alias, member_name) = if full_name.contains('.') {
-            let dot = full_name.find('.').unwrap();
-            (&full_name[..dot], Some(&full_name[dot + 1..]))
-        } else {
-            (full_name.as_str(), None)
-        };
-        for import in &file_ctx.imports {
-            if import.imported_name != import_alias {
-                continue;
-            }
-            let Some(mod_path) = &import.module_path else {
-                continue;
-            };
-            if mod_path.starts_with('@') {
-                return None;
-            }
-            let file_path = bazel_label_to_path(mod_path);
-            let resolve_name = member_name.unwrap_or(target.as_str());
-            for sym in lookup.in_file(&file_path) {
-                if sym.name == resolve_name {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "starlark_load_import",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-            for sym in lookup.by_name(resolve_name) {
-                if matches!(sym.kind.as_str(), "function" | "variable") {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.9,
-                        strategy: "starlark_load_global",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        if let Some(sym) = lookup.by_name(target).into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.75,
-                strategy: "starlark_global_fallback",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
-        }
-        None
     }
 }
 

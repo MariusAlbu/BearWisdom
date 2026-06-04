@@ -52,6 +52,9 @@ pub const FRAMEWORK_AMBIENT_MARKERS: &[AmbientPathMarker] = &[
     // Bicep runtime grammar symbols (built-in functions, decorators, the
     // `sys`/`az` namespace markers) the language compiler treats as ambient.
     AmbientPathMarker { contains: "ext:bicep-runtime:", ends_with: ".bicep" },
+    // Bazel built-in rules and the `ctx` / `env` API namespaces, available in
+    // BUILD/.bzl files without an explicit `load()`.
+    AmbientPathMarker { contains: "ext:bazel-builtins:", ends_with: ".bzl" },
 ];
 
 /// True when `normalized_lower_path` (pre-lowercased, `/`-normalised) matches

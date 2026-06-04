@@ -8,7 +8,6 @@ pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
-pub(crate) mod chain;
 mod predicates;
 
 pub use hooks::STARLARK_HOOKS;

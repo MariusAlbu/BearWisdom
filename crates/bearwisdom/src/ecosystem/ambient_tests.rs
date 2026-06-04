@@ -53,6 +53,19 @@ fn matches_bicep_runtime_path() {
 }
 
 #[test]
+fn matches_bazel_builtins_path() {
+    // The synthetic built-in / ctx / env files the bazel-central-registry
+    // ecosystem emits.
+    for p in [
+        "ext:bazel-builtins:rules.bzl",
+        "ext:bazel-builtins:ctx.bzl",
+        "ext:bazel-builtins:env.bzl",
+    ] {
+        assert!(is_framework_ambient_path(&norm(p)), "bazel builtin should match: {p}");
+    }
+}
+
+#[test]
 fn rejects_ordinary_files() {
     for p in [
         "src/app.ts",

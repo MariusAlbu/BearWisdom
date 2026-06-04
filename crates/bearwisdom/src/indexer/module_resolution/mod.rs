@@ -17,6 +17,7 @@ pub mod php_mod;
 pub mod python_mod;
 pub mod ruby_mod;
 pub mod rust_mod;
+pub mod starlark_mod;
 
 // ---------------------------------------------------------------------------
 // FilePathIndex — O(1) suffix lookup replacing O(N) linear scans
@@ -208,6 +209,7 @@ pub fn all_resolvers_with_manifest_data(
         Box::new(dart_mod::DartModuleResolver::new(
             dart_self_package.map(str::to_string),
         )),
+        Box::new(starlark_mod::StarlarkModuleResolver::new()),
     ]
 }
 
