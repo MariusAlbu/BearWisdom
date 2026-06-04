@@ -1,8 +1,31 @@
 // Minimal LanguageProfile for Bicep in shadow mode.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
+use crate::types::{EdgeKind, SymbolKind};
+
+// Bicep user-defined functions and types; ARM resource API methods land as
+// methods. `variable`/`function` are valid TypeRef targets (`param x type` and
+// user-defined functions referenced as types).
+const BICEP_KIND_TABLE: KindTable = &[
+    (
+        EdgeKind::Calls,
+        &[SymbolKind::Method, SymbolKind::Function, SymbolKind::Constructor],
+    ),
+    (
+        EdgeKind::TypeRef,
+        &[
+            SymbolKind::Class,
+            SymbolKind::Interface,
+            SymbolKind::Enum,
+            SymbolKind::TypeAlias,
+            SymbolKind::Variable,
+            SymbolKind::Function,
+        ],
+    ),
+    (EdgeKind::Instantiates, &[SymbolKind::Class, SymbolKind::Function]),
+];
 
 pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     id: "bicep",
@@ -18,9 +41,9 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     iterator_method: None,
     primitive_mapping: &[],
-    kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    kind_compatible_table: BICEP_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::hooks::is_azure_resource_type),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

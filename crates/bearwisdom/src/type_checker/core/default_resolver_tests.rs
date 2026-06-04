@@ -632,9 +632,73 @@ fn scope_visible_resolves_against_innermost_scope_first() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_scope_visible(&accept_any).expect("scope walk resolves");
+    let resolved = d
+        .resolve_via_scope_visible(&accept_any, &["."])
+        .expect("scope walk resolves");
     assert_eq!(resolved.target_symbol_id, 61, "innermost scope wins");
     assert_eq!(resolved.strategy, "default_scope_visible");
+}
+
+#[test]
+fn scope_visible_resolves_with_profile_separator() {
+    // A `::`-keyed scope member resolves when the profile separator is `::`.
+    let lookup = Lookup::new().with(sym(
+        90,
+        "baz",
+        "Foo::Bar::baz",
+        "function",
+        "src/foo.cpp",
+    ));
+    let r = extracted_call("baz");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec!["Foo::Bar".to_string()]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_scope_visible(&accept_any, &["."]).is_none(),
+        "the `.` join cannot match a `::`-keyed qname"
+    );
+    let resolved = d
+        .resolve_via_scope_visible(&accept_any, &[".", "::"])
+        .expect("the `::` separator resolves the scope member");
+    assert_eq!(resolved.target_symbol_id, 90);
+    assert_eq!(resolved.strategy, "default_scope_visible");
+}
+
+#[test]
+fn scope_visible_dot_separator_is_unaffected_by_extra_separators() {
+    // Passing `["."]` only resolves a `.`-keyed member; the additive form is
+    // a no-op for the universal `.`-keyed index.
+    let lookup = Lookup::new().with(sym(
+        91,
+        "helper",
+        "outer.helper",
+        "function",
+        "src/outer.rs",
+    ));
+    let r = extracted_call("helper");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec!["outer".to_string()]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let with_extra = d
+        .resolve_via_scope_visible(&accept_any, &[".", "::"])
+        .expect("`.`-keyed member still resolves with an extra separator present");
+    assert_eq!(with_extra.target_symbol_id, 91);
+    let dot_only = d
+        .resolve_via_scope_visible(&accept_any, &["."])
+        .expect("`.`-keyed member resolves with `.` alone");
+    assert_eq!(dot_only.target_symbol_id, 91);
 }
 
 #[test]
@@ -1474,9 +1538,44 @@ fn package_short_name_resolves_under_import_short_name() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_package_short_name(&accept_any)
+        .resolve_via_package_short_name(&accept_any, ".")
         .expect("resolves under the import short name");
     assert_eq!(resolved.target_symbol_id, 5);
+    assert_eq!(resolved.strategy, "default_package_short_name");
+}
+
+#[test]
+fn package_short_name_joins_with_profile_separator() {
+    // Hare-shaped: `use fmt;` keys the package's members under `fmt::printfln`
+    // (qname separator `::`, not `.`). A bare `printfln` ref whose qualifier
+    // the extractor dropped resolves under `{imported_name}::{target}` when the
+    // separator is threaded through from the profile.
+    let lookup = Lookup::new().with(sym(
+        9,
+        "printfln",
+        "fmt::printfln",
+        "function",
+        "ext:hare:fmt/fmt.ha",
+    ));
+    let r = extracted_call("printfln");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("fmt", Some("fmt"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    // The `.`-join form must NOT match the `::`-keyed qname.
+    assert!(
+        d.resolve_via_package_short_name(&accept_any, ".").is_none(),
+        "dot join cannot reach a `::`-keyed package member"
+    );
+    let resolved = d
+        .resolve_via_package_short_name(&accept_any, "::")
+        .expect("resolves under the import short name with the `::` separator");
+    assert_eq!(resolved.target_symbol_id, 9);
     assert_eq!(resolved.strategy, "default_package_short_name");
 }
 
@@ -1500,7 +1599,7 @@ fn package_short_name_resolves_aliased_import_via_last_segment() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_package_short_name(&accept_any)
+        .resolve_via_package_short_name(&accept_any, ".")
         .expect("resolves via the path's last segment");
     assert_eq!(resolved.target_symbol_id, 6);
 }

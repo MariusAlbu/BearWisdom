@@ -6,10 +6,14 @@ use crate::type_checker::profile::language_profile::{
 };
 use crate::types::{EdgeKind, SymbolKind};
 
+// The extractor emits Struct/Enum for type declarations (never Class) and only
+// `Calls` / `TypeRef` ref edges. The Calls row adds Variable for the
+// `const assert = std.debug.assert` idiom, which binds a callable to a Variable
+// symbol.
 const ZIG_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
-        &[SymbolKind::Function, SymbolKind::Method],
+        &[SymbolKind::Function, SymbolKind::Method, SymbolKind::Variable],
     ),
     (
         EdgeKind::TypeRef,
@@ -52,7 +56,7 @@ pub const ZIG_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: ZIG_PRIMITIVES,
     kind_compatible_table: ZIG_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::predicates::is_zig_builtin),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

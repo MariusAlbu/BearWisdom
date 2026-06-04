@@ -1,5 +1,6 @@
 // LanguageProfile for C/C++ in shadow mode.
 
+use super::predicates;
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
     ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
@@ -31,7 +32,7 @@ const C_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     id: "c",
-    qname_separator: ".",
+    qname_separator: "::",
     self_keywords: &["this"],
     supertype_discovery: SupertypeDiscovery::Explicit,
     members_can_be_external: true,
@@ -45,7 +46,10 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: C_PRIMITIVES,
     kind_compatible_table: C_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    // Template parameters (`T`, `U`, `_Range`, `<...>`, `this`, `nullptr`, …)
+    // are not project symbols; decline them before the bare-name ladder so they
+    // are never bound to a same-named project symbol or seeded as a chain miss.
+    builtin_skip: Some(predicates::is_template_param),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

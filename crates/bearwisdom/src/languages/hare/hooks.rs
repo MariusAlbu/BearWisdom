@@ -2,9 +2,8 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -110,51 +109,6 @@ impl LanguageEngineHooks for HareHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if is_hare_primitive(target) {
-            return None;
-        }
-        for import in &file_ctx.imports {
-            let Some(mod_path) = &import.module_path else {
-                continue;
-            };
-            let candidate = format!("{mod_path}::{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "hare_import_qualified",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-            let candidate2 = format!("{}::{}", import.imported_name, target);
-            if let Some(sym) = lookup.by_qualified_name(&candidate2) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "hare_import_local",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: |_, _| true,
-        })
-        .resolve_all()
     }
 }
 

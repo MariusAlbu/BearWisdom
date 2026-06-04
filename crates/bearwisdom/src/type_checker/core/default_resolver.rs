@@ -168,17 +168,27 @@ impl<'a> DefaultResolver<'a> {
     ///
     /// An import that names a package (`import "github.com/gin-gonic/gin"`)
     /// brings the short name `gin` into scope; the package's members are keyed
-    /// `gin.{Name}`. When the extractor dropped the qualifier off a member ref,
-    /// the bare `target` is `NewRouter` and resolves under
-    /// `{import.imported_name}.{target}`. For an aliased import
+    /// `gin{sep}{Name}`. When the extractor dropped the qualifier off a member
+    /// ref, the bare `target` is `NewRouter` and resolves under
+    /// `{import.imported_name}{sep}{target}`. For an aliased import
     /// (`import mygin "github.com/gin-gonic/gin"`) the symbol stays keyed under
-    /// the path's last segment, so try `{last_path_segment}.{target}` too.
+    /// the path's last segment, so try `{last_path_segment}{sep}{target}` too.
+    ///
+    /// `sep` is the profile's qname separator (`.` for Go, `::` for Hare). The
+    /// last-path-segment probe splits the module path on `/` first (slash-pathed
+    /// imports like Go's) and then on `sep` (a `::`-pathed import like Hare's
+    /// `crypto::sha256`), so the trailing component is the package's short name
+    /// under either path syntax.
     ///
     /// Probes both forms by exact qname, dotless prefixes included (the
     /// dotted-prefix guard in `resolve_via_namespace_import` skips exactly these
     /// short names). Gated by `ChainQualification::PackageShortName` in the
     /// ladder so languages whose imports name the type itself stay untouched.
-    pub fn resolve_via_package_short_name(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_package_short_name(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+        sep: &str,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() || target.contains('.') || target.contains("::") || target.contains('/') {
             return None;
@@ -188,12 +198,18 @@ impl<'a> DefaultResolver<'a> {
             let Some(module) = import.module_path.as_deref() else {
                 continue;
             };
-            let last_seg = module.rsplit('/').next().unwrap_or(module);
+            let last_seg = module
+                .rsplit('/')
+                .next()
+                .unwrap_or(module)
+                .rsplit(sep)
+                .next()
+                .unwrap_or(module);
             for prefix in [import.imported_name.as_str(), last_seg] {
                 if prefix.is_empty() {
                     continue;
                 }
-                let qname = format!("{prefix}.{target}");
+                let qname = format!("{prefix}{sep}{target}");
                 if let Some(sym) = self.lookup.by_qualified_name(&qname) {
                     if kind(edge_kind, &sym.kind) {
                         return Some(self.resolution(sym.id, "default_package_short_name"));
@@ -568,18 +584,30 @@ impl<'a> DefaultResolver<'a> {
 
     /// Strategy 12 — scope-chain walk.
     ///
-    /// Try `{scope}.{target}` for each scope in `ref_ctx.scope_chain`
-    /// (innermost first). Catches local symbols defined in the source
-    /// symbol's own enclosing type / namespace / module before we widen
-    /// to file or project scope.
-    pub fn resolve_via_scope_visible(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    /// Try `{scope}{sep}{target}` for each scope in `ref_ctx.scope_chain`
+    /// (innermost first) and each `sep` in `separators`. Catches local symbols
+    /// defined in the source symbol's own enclosing type / namespace / module
+    /// before we widen to file or project scope.
+    ///
+    /// `separators` always contains `"."` (the universal index join) and, for a
+    /// language whose `qname_separator` differs, that separator too — so a
+    /// `::`-keyed index resolves the same scope-visible members a `.`-keyed one
+    /// does. The list is deduped by the caller, so a `.`-separator language tries
+    /// `"."` exactly once.
+    pub fn resolve_via_scope_visible(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+        separators: &[&str],
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for scope in &self.ref_ctx.scope_chain {
-            let qname = format!("{scope}.{target}");
-            if let Some(sym) = self.lookup.by_qualified_name(&qname) {
-                if kind(edge_kind, &sym.kind) {
-                    return Some(self.resolution(sym.id, "default_scope_visible"));
+            for sep in separators {
+                let qname = format!("{scope}{sep}{target}");
+                if let Some(sym) = self.lookup.by_qualified_name(&qname) {
+                    if kind(edge_kind, &sym.kind) {
+                        return Some(self.resolution(sym.id, "default_scope_visible"));
+                    }
                 }
             }
         }
@@ -815,7 +843,11 @@ impl<'a> DefaultResolver<'a> {
     /// specific strategies call individual methods themselves.
     pub fn resolve_all(&self) -> Option<Resolution> {
         let kind = self.kind_compatible;
-        self.run_ladder(&move |edge, sym_kind| kind(edge, sym_kind), ChainQualification::None)
+        self.run_ladder(
+            &move |edge, sym_kind| kind(edge, sym_kind),
+            ChainQualification::None,
+            &["."],
+        )
     }
 
     /// Engine entry: run the same ladder but gate candidate kinds against a
@@ -827,9 +859,18 @@ impl<'a> DefaultResolver<'a> {
         profile: &crate::type_checker::profile::language_profile::LanguageProfile,
     ) -> Option<Resolution> {
         let table = profile.kind_compatible_table;
+        // The index join is always `.`; add the profile separator only when it
+        // differs, so a `.`-separator language probes `.` exactly once.
+        let both = [".", profile.qname_separator];
+        let separators: &[&str] = if profile.qname_separator == "." {
+            &both[..1]
+        } else {
+            &both[..]
+        };
         self.run_ladder(
             &move |edge, sym_kind| kind_ok_table(table, edge, sym_kind),
             profile.chain_qualification,
+            separators,
         )
     }
 
@@ -837,12 +878,15 @@ impl<'a> DefaultResolver<'a> {
     /// Canonical order, most-specific evidence first (see the per-method docs).
     /// `chain_qual` gates the profile-specific import-shape strategies; the
     /// fn-pointer `resolve_all` path passes `None` so those stay off.
+    /// `separators` is the set of qname joins the scope-visible probe tries
+    /// (always `"."`, plus the profile separator when it differs).
     fn run_ladder(
         &self,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
         chain_qual: ChainQualification,
+        separators: &[&str],
     ) -> Option<Resolution> {
-        let result = self.resolve_via_scope_visible(kind)
+        let result = self.resolve_via_scope_visible(kind, separators)
             .or_else(|| self.resolve_via_same_file(kind))
             .or_else(|| self.resolve_via_self_keyword(kind))
             .or_else(|| self.resolve_via_enclosing_member(kind))
@@ -856,7 +900,10 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_namespace_import(kind))
             .or_else(|| {
                 (chain_qual == ChainQualification::PackageShortName)
-                    .then(|| self.resolve_via_package_short_name(kind))
+                    .then(|| {
+                        let sep = separators.last().copied().unwrap_or(".");
+                        self.resolve_via_package_short_name(kind, sep)
+                    })
                     .flatten()
             })
             .or_else(|| self.resolve_via_ambient_namespace_path(kind))
