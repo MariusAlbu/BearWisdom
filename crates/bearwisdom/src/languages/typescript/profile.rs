@@ -128,6 +128,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // segments. Engine accepts both.
     builtin_skip: None,
     namespace_decline: None,
+    module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,

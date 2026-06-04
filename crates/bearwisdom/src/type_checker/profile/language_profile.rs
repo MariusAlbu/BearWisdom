@@ -55,6 +55,17 @@ pub struct LanguageProfile {
     /// symbol binds; external classification brands the target afterward. See
     /// `NamespaceDecline`.
     pub namespace_decline: Option<NamespaceDecline>,
+    /// Module-string decline, the module-keyed sibling of `builtin_skip`.
+    /// `builtin_skip` keys on the ref's TARGET string; this keys on the ref's
+    /// extractor-set `module` string. When a ref carries a `module` and this
+    /// returns true for it, the engine declines before the strategy ladder runs
+    /// — the same pre-ladder decline as `builtin_skip`, so no same-named project
+    /// symbol binds and external classification brands the ref afterward. `Some`
+    /// for languages whose module specifiers name a non-project provider that
+    /// the ladder must never bind through (SCSS `@use` of a Sass built-in module
+    /// `sass:math`, or a synthesized CSS-function-call hint). `None` (the
+    /// default) leaves every module-carrying ref on the ladder.
+    pub module_skip: Option<fn(&str) -> bool>,
     /// Namespace-alias prefixes the engine strips from a dotted target before
     /// the ambient-package lookup. A target `{prefix}.{leaf}` whose `{prefix}`
     /// is one of these is rewritten to `{leaf}` for that one strategy, so a
@@ -474,6 +485,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
+    module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: ImportModulePath::None,

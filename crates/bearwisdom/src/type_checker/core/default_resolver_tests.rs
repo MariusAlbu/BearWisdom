@@ -2371,3 +2371,109 @@ fn scope_visible_empty_self_keywords_does_not_strip() {
         "no strip with empty self_keywords"
     );
 }
+
+// ---------------------------------------------------------------------------
+// module_skip — module-keyed pre-ladder decline (sibling of builtin_skip)
+// ---------------------------------------------------------------------------
+
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
+
+/// Profile mirroring DEFAULT but declining any ref whose `module` is one of two
+/// non-project providers — the shape SCSS folds into (`__css_fn__` synthesized
+/// hint OR a `sass:`-prefixed built-in module).
+static MODULE_SKIP_PROFILE: LanguageProfile = LanguageProfile {
+    module_skip: Some(|m| m == "__css_fn__" || m.starts_with("sass:")),
+    ..DEFAULT_PROFILE
+};
+
+/// Resolve through the full profile ladder against a single same-file sibling
+/// named `target`, with the ref carrying `module`. Absent any decline the
+/// same-file strategy binds the sibling (id 1).
+fn resolve_module_sibling(
+    profile: &LanguageProfile,
+    target: &str,
+    module: &str,
+) -> Option<Resolution> {
+    let sibling = sym(1, target, target, "function", "src/main.ts");
+    let lookup = Lookup::new().with_in_file("src/main.ts", sibling);
+    let r = extracted_call_with_module(target, module);
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    d.resolve_all_with_profile(profile)
+}
+
+#[test]
+fn module_skip_declines_before_ladder_binds_sibling() {
+    // With no module_skip, the same-file strategy binds the sibling even when
+    // the ref carries a module (DEFAULT_PROFILE has module_anchor Off, so a
+    // module-carrying ref falls straight through to the bare-name strategies).
+    let bound = resolve_module_sibling(&DEFAULT_PROFILE, "lighten", "sass:color")
+        .expect("the ladder binds the same-file sibling when nothing skips the module");
+    assert_eq!(bound.target_symbol_id, 1);
+
+    // With module_skip recognizing `sass:`-prefixed modules, the ladder declines
+    // before any strategy — the sibling is NOT bound, leaving the ref for
+    // external classification.
+    assert!(
+        resolve_module_sibling(&MODULE_SKIP_PROFILE, "lighten", "sass:color").is_none(),
+        "module_skip must decline the ref before the ladder binds a homonym"
+    );
+}
+
+#[test]
+fn module_skip_declines_synthesized_hint_module() {
+    // The second decline branch: a synthesized non-project hint module declines
+    // identically, proving the predicate (not a single literal) drives the gate.
+    assert!(
+        resolve_module_sibling(&MODULE_SKIP_PROFILE, "rgba", "__css_fn__").is_none(),
+        "module_skip declines the synthesized hint module"
+    );
+}
+
+#[test]
+fn module_skip_leaves_other_modules_resolvable() {
+    // A ref whose module the predicate does NOT match still resolves through the
+    // ladder under the same profile — the gate is per-module, not a blanket
+    // decline of every module-carrying ref.
+    let bound = resolve_module_sibling(&MODULE_SKIP_PROFILE, "render", "./_card")
+        .expect("a non-skipped module still resolves the same-file sibling");
+    assert_eq!(bound.target_symbol_id, 1);
+}
+
+#[test]
+fn module_skip_ignores_refs_without_a_module() {
+    // module_skip keys on the ref's `module`; a moduleless ref is never declined
+    // even when its bare target would match the predicate string.
+    let sibling = sym(1, "sass:color", "sass:color", "function", "src/main.ts");
+    let lookup = Lookup::new().with_in_file("src/main.ts", sibling);
+    let r = extracted_call("sass:color"); // no module
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let bound = d
+        .resolve_all_with_profile(&MODULE_SKIP_PROFILE)
+        .expect("a moduleless ref is unaffected by module_skip");
+    assert_eq!(bound.target_symbol_id, 1);
+}
+
+#[test]
+fn module_skip_none_is_inert() {
+    // The default (None) leaves every module-carrying ref on the ladder — a ref
+    // whose module would have matched a predicate still binds.
+    let bound = resolve_module_sibling(&DEFAULT_PROFILE, "rgba", "__css_fn__")
+        .expect("module_skip None resolves the sibling for any module");
+    assert_eq!(bound.target_symbol_id, 1);
+}

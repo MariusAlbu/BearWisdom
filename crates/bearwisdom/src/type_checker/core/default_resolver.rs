@@ -56,6 +56,7 @@ pub struct DefaultResolver<'a> {
 /// ladder).
 #[derive(Clone, Copy)]
 struct LadderProfileData<'p> {
+    module_skip: Option<fn(&str) -> bool>,
     module_anchor: ModuleAnchor,
     module_anchor_terminal: bool,
     relative_marker: RelativeMarker,
@@ -68,6 +69,7 @@ impl LadderProfileData<'static> {
     /// All deltas off — the fn-pointer ladder and any language whose profile
     /// opts into none of them.
     const INERT: LadderProfileData<'static> = LadderProfileData {
+        module_skip: None,
         module_anchor: ModuleAnchor::Off,
         module_anchor_terminal: false,
         relative_marker: RelativeMarker::None,
@@ -1147,6 +1149,7 @@ impl<'a> DefaultResolver<'a> {
             separators,
             profile.import_resolution.as_ref(),
             LadderProfileData {
+                module_skip: profile.module_skip,
                 module_anchor: profile.module_anchor,
                 module_anchor_terminal: profile.module_anchor_terminal,
                 relative_marker: profile.relative_marker,
@@ -1168,13 +1171,15 @@ impl<'a> DefaultResolver<'a> {
     /// only strategy that binds a path-stem target to a file symbol; for every
     /// other ref shape it short-circuits to `None`.
     ///
-    /// `pd` carries the pure-data profile deltas: the module-anchor bind off
-    /// `r.module` (runs just after `import_resolution`, the most specific
-    /// evidence for a module-carrying ref), its terminal guard (a missed anchor
-    /// on a non-`Imports` module-carrying ref ends the ladder so an external
-    /// prefix isn't hijacked by a same-named local), the import-scoped external
-    /// bind (near the end, around ambient), and the self-keyword strip threaded
-    /// into the scope / same-file probes.
+    /// `pd` carries the pure-data profile deltas: the module-string decline off
+    /// `r.module` (runs FIRST, before any binding strategy, so a module that
+    /// names a non-project provider leaves the ref for external classification),
+    /// the module-anchor bind off `r.module` (runs just after `import_resolution`,
+    /// the most specific evidence for a module-carrying ref), its terminal guard
+    /// (a missed anchor on a non-`Imports` module-carrying ref ends the ladder so
+    /// an external prefix isn't hijacked by a same-named local), the import-scoped
+    /// external bind (near the end, around ambient), and the self-keyword strip
+    /// threaded into the scope / same-file probes.
     fn run_ladder(
         &self,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
@@ -1183,6 +1188,17 @@ impl<'a> DefaultResolver<'a> {
         import_resolution: Option<&ImportResolution>,
         pd: LadderProfileData,
     ) -> Option<Resolution> {
+        // Module-string decline: a ref whose extractor-set `module` names a
+        // non-project provider declines before any binding strategy, so no
+        // same-named project symbol binds and external classification brands it
+        // after. The module-keyed sibling of the target-keyed `builtin_skip`.
+        if let (Some(skip), Some(module)) =
+            (pd.module_skip, self.ref_ctx.extracted_ref.module.as_deref())
+        {
+            if skip(module) {
+                return None;
+            }
+        }
         // Most-specific evidence: a template include or a module anchor.
         if let Some(res) = import_resolution.and_then(|ir| self.resolve_via_import_path(ir)) {
             return Some(res);

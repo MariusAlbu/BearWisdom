@@ -1,6 +1,5 @@
 //! Dockerfile language plugin.
 
-mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub mod connectors;
@@ -18,6 +17,10 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub struct DockerfilePlugin;
 

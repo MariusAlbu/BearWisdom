@@ -89,6 +89,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // these as Construction segments without needing a profile pattern.
     builtin_skip: None,
     namespace_decline: None,
+    module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,

@@ -1,7 +1,26 @@
 // Minimal LanguageProfile for Jinja. Templating language; no chains.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    CandidateDirs, ChainQualification, DispatchAxis, ImportResolution, LanguageProfile, StemMatch,
+    SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+};
+
+/// `{% extends "X" %}` / `{% include "X" %}` / `{% import "X" %}` /
+/// `{% from "X" %}` template-path resolution. `X` is a path relative to the
+/// referencing template's directory; the extractor strips the extension at
+/// extract time, so the candidate generation re-appends each Jinja extension.
+/// The candidate file's single file-stem `class` host is the template
+/// regardless of its name (`AnyClassInFile`).
+const JINJA_IMPORTS: ImportResolution = ImportResolution {
+    extensions: &["j2", "jinja", "jinja2"],
+    candidate_dirs: CandidateDirs::SelfDir,
+    index_files: &[],
+    underscore_variant: false,
+    kebab_variant: false,
+    decline_leading_slash: false,
+    stem_match: StemMatch::AnyClassInFile,
+    bind_kind: "class",
+    strategy_tag: "jinja_template_path",
 };
 
 pub const JINJA_PROFILE: LanguageProfile = LanguageProfile {
@@ -22,8 +41,9 @@ pub const JINJA_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
+    module_skip: None,
     ambient_namespace_prefixes: &[],
-    import_resolution: None,
+    import_resolution: Some(JINJA_IMPORTS),
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
     module_anchor_terminal: false,

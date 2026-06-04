@@ -58,6 +58,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
         file_namespace: super::hooks::R_PACKAGE_SENTINEL,
         is_reserved: predicates::is_r_c_api_symbol,
     }),
+    module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,

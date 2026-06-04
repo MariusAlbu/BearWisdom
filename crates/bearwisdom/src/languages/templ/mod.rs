@@ -9,8 +9,11 @@
 
 pub mod extract;
 pub mod hooks;
-pub(crate) mod predicates;
 pub(crate) mod profile;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 pub use hooks::TEMPL_HOOKS;
 pub use profile::TEMPL_PROFILE;

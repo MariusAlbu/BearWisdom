@@ -2,8 +2,18 @@
 // language; no chains. Engine doesn't take the resolution slot.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
+use crate::types::{EdgeKind, SymbolKind};
+
+/// Edge-kind × symbol-kind compatibility for Dockerfile refs. A `COPY --from`
+/// stage ref (`Calls`) binds only to a same-file build-stage host (`class`) or
+/// an `ARG`/`ENV` (`variable`); `TypeRef` carries the same constraint. Edges
+/// not listed accept any kind (empty-row default).
+const DOCKERFILE_KIND_TABLE: KindTable = &[
+    (EdgeKind::Calls, &[SymbolKind::Class, SymbolKind::Variable]),
+    (EdgeKind::TypeRef, &[SymbolKind::Class, SymbolKind::Variable]),
+];
 
 pub const DOCKERFILE_PROFILE: LanguageProfile = LanguageProfile {
     id: "dockerfile",
@@ -19,10 +29,11 @@ pub const DOCKERFILE_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     iterator_method: None,
     primitive_mapping: &[],
-    kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    kind_compatible_table: DOCKERFILE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
+    module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,

@@ -1,9 +1,7 @@
-// HEEx language hooks. Absorbed from the deleted `heex/resolve.rs`.
+// HEEx language hooks.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::languages::elixir;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::ParsedFile;
@@ -39,15 +37,6 @@ impl LanguageEngineHooks for HeexHooks {
             imports: Vec::<ImportEntry>::new(),
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext<'_>,
-        _lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        None
     }
 }
 

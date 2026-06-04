@@ -39,6 +39,7 @@ pub const PUG_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
+    module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: Some(PUG_IMPORTS),
     import_module_path: ImportModulePath::None,

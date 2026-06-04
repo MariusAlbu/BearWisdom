@@ -52,6 +52,7 @@ pub const BASH_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: Some(super::predicates::is_bash_builtin),
     namespace_decline: None,
+    module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,

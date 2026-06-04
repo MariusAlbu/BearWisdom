@@ -1,13 +1,7 @@
-// Dockerfile language hooks. Absorbed contents of the deleted
-// `dockerfile/resolve.rs` — the resolver struct now lives here as a
-// language-private inherent impl.
+// Dockerfile language hooks.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    self as engine, FileContext, RefContext, Resolution, SymbolLookup,
-};
-use crate::type_checker::core::DefaultResolver;
+use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -44,21 +38,6 @@ impl LanguageEngineHooks for DockerfileHooks {
             imports: Vec::new(),
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

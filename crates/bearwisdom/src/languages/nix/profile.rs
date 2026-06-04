@@ -22,6 +22,7 @@ pub const NIX_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: Some(super::hooks::is_nix_builtin),
     namespace_decline: None,
+    module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
