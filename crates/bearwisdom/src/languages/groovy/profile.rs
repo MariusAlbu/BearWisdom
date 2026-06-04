@@ -2,8 +2,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
-    SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable,
+    LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -49,6 +49,9 @@ pub const GROOVY_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: GROOVY_PRIMITIVES,
     kind_compatible_table: GROOVY_KIND_TABLE,
+    // Groovy shares Java's package-qualified member keying; same-package +
+    // explicit-import qualification of a bare mid-chain receiver.
+    chain_qualification: ChainQualification::SamePackageAndImports,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

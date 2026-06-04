@@ -1,5 +1,5 @@
 // =============================================================================
-// groovy/resolve_tests.rs — unit tests for GroovyResolver
+// groovy/resolve_tests.rs — unit tests for Groovy hooks (GORM flow emission).
 // =============================================================================
 
 use crate::indexer::resolve::engine::{FileContext};

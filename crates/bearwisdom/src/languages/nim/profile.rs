@@ -2,7 +2,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -49,6 +49,7 @@ pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: NIM_PRIMITIVES,
     kind_compatible_table: NIM_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

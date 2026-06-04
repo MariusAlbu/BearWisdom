@@ -1,13 +1,12 @@
 // Groovy hooks. Absorbed from the deleted `groovy/resolve.rs`. Groovy reuses
 // Java's resolver and external classifier; GORM detection layers on top.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
+use crate::languages::java::hooks::build_file_context_inner as java_build_file_context;
 use crate::languages::java::hooks::infer_external_inner as java_infer;
-use crate::languages::java::hooks::JavaResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::{EdgeKind, MemberChain, ParsedFile};
+use crate::types::{MemberChain, ParsedFile};
 
 pub struct GroovyHooks;
 
@@ -69,16 +68,7 @@ impl LanguageEngineHooks for GroovyHooks {
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
-        Some(JavaResolver.build_file_context(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        JavaResolver.resolve(file_ctx, ref_ctx, lookup)
+        Some(java_build_file_context(file, project_ctx))
     }
 }
 

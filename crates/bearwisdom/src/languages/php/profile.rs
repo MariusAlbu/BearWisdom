@@ -6,7 +6,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
     SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
@@ -67,6 +67,7 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: PHP_PRIMITIVES,
     kind_compatible_table: PHP_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AttrBracket),

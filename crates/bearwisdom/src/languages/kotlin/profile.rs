@@ -4,7 +4,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
     SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
@@ -73,6 +73,7 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: KOTLIN_PRIMITIVES,
     kind_compatible_table: KOTLIN_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

@@ -8,7 +8,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
     SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
@@ -105,6 +105,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("next"),
     primitive_mapping: RUST_PRIMITIVES,
     kind_compatible_table: RUST_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     // Shadow mode: engine builds its indexes from Rust extraction output
     // for future use, but the legacy `RustResolver` retains the resolution
     // slot. Flip after recapture-validating ±0.1pp on representative

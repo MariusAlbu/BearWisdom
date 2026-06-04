@@ -4,7 +4,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -50,6 +50,7 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: JS_PRIMITIVES,
     kind_compatible_table: JS_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[ConstructorPattern::New, ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

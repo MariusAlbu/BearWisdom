@@ -4,7 +4,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
     SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
@@ -66,6 +66,7 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: DART_PRIMITIVES,
     kind_compatible_table: DART_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[
         ConstructorPattern::New,
         ConstructorPattern::CallableClass,

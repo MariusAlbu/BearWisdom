@@ -2,7 +2,7 @@
 // language; no chains. Engine doesn't take the resolution slot.
 
 use crate::type_checker::profile::language_profile::{
-    DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
 };
 
 pub const DOCKERFILE_PROFILE: LanguageProfile = LanguageProfile {
@@ -20,6 +20,7 @@ pub const DOCKERFILE_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

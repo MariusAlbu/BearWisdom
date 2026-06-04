@@ -1,8 +1,8 @@
 // =============================================================================
-// languages/java/hooks.rs — JavaHooks impl of LanguageEngineHooks plus the
-// concrete JavaResolver (chain-aware, scope-chain, same-package, import,
-// wildcard-import, qualified-name, inheritance, bare-name fallback) and the
-// external-classifier / flow-detector / file-context helpers it dispatches.
+// languages/java/hooks.rs — JavaHooks impl of LanguageEngineHooks: external
+// classification, flow-emission detection, and file-context (import + package)
+// construction. Resolution runs through the generic engine; the chain walker
+// qualifies bare receivers per `ChainQualification::SamePackageAndImports`.
 //
 // Java import model:
 //   The Java extractor emits EdgeKind::Imports refs for import statements:
@@ -26,203 +26,10 @@ use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::inheritance;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
-
-pub struct JavaResolver;
-
-/// Java `ChainConfig` for the unified `resolve_via_chain`.
-///
-/// Java carries one delta as `ChainExtensions` data — inheritance climbing on a
-/// member miss (`extends`/`implements` chains, plus the members_of final
-/// fallback the bespoke walker emitted) — and one as `NamespaceLookup::WildcardOnly`
-/// for resolving members through wildcard `import com.foo.*` statements
-/// (intermediate and final segments). It has no type aliases, no external-qname
-/// promotion, no `new X().m()` construction roots, no extension methods, and no
-/// ambient-globals root fallback. `enclosing_type_kinds` / `static_type_kinds`
-/// match the type kinds the Java extractor emits.
-pub(crate) static JAVA_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
-    crate::type_checker::chain::ChainConfig {
-        strategy_prefix: "java",
-        normalize_type: crate::type_checker::chain::identity_normalize,
-        has_self_ref: true,
-        enclosing_type_kinds: &["class", "interface", "enum"],
-        static_type_kinds: &["class", "interface", "enum", "type_alias"],
-        use_generics: true,
-        namespace_lookup: crate::type_checker::chain::NamespaceLookup::WildcardOnly,
-        kind_compatible: predicates::kind_compatible,
-        extensions: crate::type_checker::chain::ChainExtensions {
-            expand_aliases: false,
-            walk_inheritance: true,
-            promote_external_qname: false,
-            root_construction: false,
-            extension_method_fallback: false,
-            root_fallback: None,
-            root_type_access: false,
-            qualify_via_imports: true,
-        },
-    };
-
-impl JavaResolver {
-    pub(crate) fn build_file_context(
-        &self,
-        file: &ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> FileContext {
-        build_file_context_inner(file, project_ctx)
-    }
-
-    pub(crate) fn resolve(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = crate::type_checker::chain::resolve_via_chain(
-                &JAVA_CHAIN_CONFIG, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
-            ) {
-                return Some(res);
-            }
-        }
-
-        let effective_target = target.strip_prefix("this.").unwrap_or(target);
-
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "java_scope_chain",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        if let Some(pkg) = &file_ctx.file_namespace {
-            let candidate = format!("{pkg}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "java_same_package",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        for import in &file_ctx.imports {
-            if import.is_wildcard {
-                continue;
-            }
-            if import.imported_name == effective_target {
-                if let Some(module) = &import.module_path {
-                    if let Some(sym) = lookup.by_qualified_name(module) {
-                        if predicates::kind_compatible(edge_kind, &sym.kind) {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 1.0,
-                                strategy: "java_import",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        for import in &file_ctx.imports {
-            if !import.is_wildcard {
-                continue;
-            }
-            if let Some(module) = &import.module_path {
-                let candidate = format!("{module}.{effective_target}");
-                if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "java_wildcard_import",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        if effective_target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "java_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        // Inheritance-chain walk for implicit `this` calls.
-        //
-        // Java and Groovy both allow bare method calls inside a class body —
-        // `myMethod()` means `this.myMethod()` and can target a parent class.
-        if edge_kind == EdgeKind::Calls && !effective_target.contains('.') {
-            if let Some(calling_class) =
-                inheritance::enclosing_class_from_scope(&ref_ctx.source_symbol.qualified_name, lookup)
-            {
-                if let Some(res) = inheritance::resolve_via_inheritance(
-                    calling_class,
-                    effective_target,
-                    edge_kind,
-                    file_ctx,
-                    ref_ctx,
-                    lookup,
-                    predicates::kind_compatible,
-                    |fc, rc, sym| self.is_visible(fc, rc, sym),
-                    "java_inherited_method",
-                ) {
-                    return Some(res);
-                }
-            }
-        }
-
-        // Bare-name fallback. Spring fluent APIs, Stream / Optional
-        // methods, and AssertJ matchers leave the chain walker without
-        None
-    }
-
-    pub(crate) fn is_visible(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _target: &SymbolInfo,
-    ) -> bool {
-        // Navigation tool: visibility never gates resolution, so go-to-definition
-        // reaches private members. Deliberate divergence from compiler behavior.
-        true
-    }
-}
 
 pub(crate) fn infer_external_inner(
     file_ctx: &FileContext,
@@ -433,24 +240,6 @@ impl LanguageEngineHooks for JavaHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(build_file_context_inner(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if let Some(res) = JavaResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        (crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

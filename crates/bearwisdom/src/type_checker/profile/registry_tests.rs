@@ -1,6 +1,6 @@
 use super::*;
 use crate::type_checker::profile::language_profile::{
-    DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
 };
 
 static TS_PROFILE: LanguageProfile = LanguageProfile {
@@ -18,6 +18,7 @@ static TS_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("[Symbol.iterator]"),
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

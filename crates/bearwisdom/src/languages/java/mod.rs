@@ -16,7 +16,6 @@ pub mod hooks;
 mod predicates;
 pub mod profile;
 pub use hooks::JAVA_HOOKS;
-pub use hooks::JavaResolver;
 pub use profile::JAVA_PROFILE;
 
 #[cfg(test)]

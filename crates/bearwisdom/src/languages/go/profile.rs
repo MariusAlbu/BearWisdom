@@ -8,7 +8,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -80,6 +80,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: GO_PRIMITIVES,
     kind_compatible_table: GO_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     // Validated under engine-primary at Phase 6 wave-A gate: go-
     // bubbletea rate parity 99.37% = 99.37%, no regression.
     // Go has no `new` operator at the surface form the engine recognises.

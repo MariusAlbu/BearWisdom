@@ -4,7 +4,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -74,6 +74,7 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: SCALA_PRIMITIVES,
     kind_compatible_table: SCALA_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[
         crate::type_checker::profile::language_profile::ConstructorPattern::New,
         crate::type_checker::profile::language_profile::ConstructorPattern::CallableClass,

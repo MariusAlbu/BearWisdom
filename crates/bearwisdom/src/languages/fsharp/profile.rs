@@ -2,7 +2,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -59,6 +59,7 @@ pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: FSHARP_PRIMITIVES,
     kind_compatible_table: FSHARP_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AttrBracket),

@@ -35,6 +35,7 @@ pub struct LanguageProfile {
     pub iterator_method: Option<&'static str>,
     pub primitive_mapping: &'static [(&'static str, PrimKind)],
     pub kind_compatible_table: KindTable,
+    pub chain_qualification: ChainQualification,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -66,6 +67,28 @@ pub enum DispatchAxis {
     MultiArg,
     /// Return-type dispatch. Haskell typeclass instance.
     ReturnType,
+}
+
+/// How a bare (unqualified) receiver type encountered mid-chain is promoted to
+/// its package-qualified qname before member lookup. Members are keyed under
+/// the fully package-qualified qname (`com.foo.Repository.findOne`), while a
+/// receiver typed by a simple name (`Repository`, or a method's same-package
+/// return type `Entity`) carries only the bare head — the walker can't step
+/// past it until the bare name is qualified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChainQualification {
+    /// No mid-chain qualification. The receiver's qname is used verbatim. The
+    /// default for every language whose members are keyed under the same
+    /// (bare or already-qualified) name the receiver type carries.
+    None,
+    /// Promote a bare receiver to its package-qualified qname via two
+    /// deterministic sources, tried in order: (1) same-package — the previous
+    /// receiver's package (a method's same-package return type) or, at the
+    /// root, the file's own package; (2) the file's explicit non-wildcard
+    /// imports (`import com.foo.Bar` makes a receiver typed `Bar` resolve under
+    /// `com.foo.Bar`). Only promotes to a qname that owns a type or keys a
+    /// member, so it can only widen resolution. Java / Groovy.
+    SamePackageAndImports,
 }
 
 /// Edge-kind × symbol-kind compatibility entries. An empty table means "any
@@ -221,6 +244,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

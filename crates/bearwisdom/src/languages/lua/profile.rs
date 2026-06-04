@@ -7,7 +7,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -57,6 +57,7 @@ pub const LUA_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: LUA_PRIMITIVES,
     kind_compatible_table: LUA_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     constructor_patterns: &[ConstructorPattern::LuaColonNew],
     class_builder_specs: &[],
     decorator_syntax: None,

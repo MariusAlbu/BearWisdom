@@ -10,7 +10,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
     SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
@@ -119,6 +119,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: TS_PRIMITIVES,
     kind_compatible_table: TS_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     // Validated under engine-primary mode at Phase 5 § stage 4 — rate
     // parity ±0.0pp across ts-rallly, vue-vben-admin, ts-immich;
     // ±0.05pp on ts-nextjs. Engine takes the chain slot for TS.

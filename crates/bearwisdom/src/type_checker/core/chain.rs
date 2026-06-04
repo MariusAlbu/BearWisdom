@@ -42,7 +42,9 @@ use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::symbol_view::SymbolView;
-use crate::type_checker::profile::language_profile::{DispatchAxis, LanguageProfile};
+use crate::type_checker::profile::language_profile::{
+    ChainQualification, DispatchAxis, LanguageProfile,
+};
 use crate::types::{CallArg, ChainSegment, EdgeKind, MemberChain, SegmentKind};
 
 /// Engine-side resolution result for a chain. Distinct from the legacy
@@ -185,12 +187,32 @@ impl RootResolver for DefaultRootResolver {
                         }
                     });
                 }
-                // 2. Unique type symbol with this simple name.
+                // 2. Parameter / local of the enclosing symbol roots the chain.
+                //    `members_by_parent` is keyed by the parent symbol's qname
+                //    (resolved structurally via `parent_index`), so a parameter
+                //    files under its method even when its own qname dropped its
+                //    package. Its declared type was resolved in the parent's
+                //    scope at build time (`field_type` for `m.qualified_name`),
+                //    so it carries the package-qualified head. This shadows
+                //    enclosing-class fields and same-named global types — a
+                //    name in the innermost scope wins.
+                if let Some(type_name) = lookup
+                    .members_of(&ref_ctx.source_symbol.qualified_name)
+                    .iter()
+                    .find_map(|m| {
+                        (m.name == seg.name)
+                            .then(|| lookup.field_type_str(&m.qualified_name))
+                            .flatten()
+                    })
+                {
+                    return Some(arena.class(&type_name));
+                }
+                // 3. Unique type symbol with this simple name.
                 let matches = lookup.types_by_name(&seg.name);
                 if matches.len() == 1 {
                     return Some(arena.class(&matches[0].qualified_name));
                 }
-                // 3. Variable / parameter / field declared in an enclosing
+                // 4. Variable / parameter / field declared in an enclosing
                 //    scope. For each scope walking outward, try the qualified
                 //    name `{scope}.{name}` and consult the declared-type
                 //    map. The map is keyed by qname and built from extractor
@@ -216,7 +238,7 @@ impl RootResolver for DefaultRootResolver {
                         return Some(arena.class(type_name));
                     }
                 }
-                // 4. Bare-specifier import binding. `import { vi } from 'vitest'`
+                // 5. Bare-specifier import binding. `import { vi } from 'vitest'`
                 //    brings `vi` into scope as a value whose type lives at
                 //    `vitest.vi`'s field_type / return_type. Iterate the file's
                 //    imports for entries matching seg.name (by imported_name or
@@ -245,7 +267,7 @@ impl RootResolver for DefaultRootResolver {
                         return Some(arena.class(ft));
                     }
                 }
-                // 5. npm globals fallback. When a project enables vitest /
+                // 6. npm globals fallback. When a project enables vitest /
                 //    jest `globals: true`, identifiers like `vi`, `expect`,
                 //    `describe`, `test` enter the file's scope without an
                 //    explicit import. The npm ecosystem walker writes their
@@ -262,7 +284,7 @@ impl RootResolver for DefaultRootResolver {
                 if let Some(ft) = lookup.field_type_name(&globals_candidate) {
                     return Some(arena.class(ft));
                 }
-                // 6. Fall back to interning the bare identifier as a class
+                // 7. Fall back to interning the bare identifier as a class
                 //    qname. Per-language scope tracking (Rust use, C#
                 //    using, TS imports) plugs its own RootResolver to
                 //    rewrite module-relative names before this fallback.
@@ -369,9 +391,23 @@ impl<'a> ChainWalker<'a> {
         let mut last_member: Option<SymbolInfo> = None;
         let last_idx = chain.segments.len() - 1;
 
+        // The package-qualified qname the current bare receiver was yielded
+        // from — supplies same-package qualification of the next bare type.
+        // `None` until the first member resolves; the root falls back to the
+        // file's own package.
+        let mut prev_owner_qname: Option<String> = None;
+
         for (i, seg) in chain.segments.iter().enumerate().skip(1) {
             // Re-expand aliases in case the previous yield landed on one.
             current_ty = self.expand_aliases(current_ty);
+
+            // Promote a bare receiver to its package-qualified qname before
+            // member lookup so members keyed under the full package path
+            // resolve. Profile-gated — `ChainQualification::None` leaves
+            // `current_ty` untouched. The qualified receiver then scopes the
+            // next yielded type for same-package qualification.
+            current_ty = self.qualify_current_ty(current_ty, prev_owner_qname.as_deref(), file_ctx);
+            prev_owner_qname = self.class_qname(current_ty);
 
             // Cast / type-assertion mid-chain (`(a.x() as Foo).y`): the
             // `declared_type` asserts the value's type — adopt it and skip
@@ -720,6 +756,128 @@ impl<'a> ChainWalker<'a> {
             target_name: target_name.to_string(),
             module: None,
         });
+    }
+
+    /// Bare qname of a receiver type. `Class(q)` yields `q`; `Apply { base }`
+    /// yields the base class's qname so generic receivers
+    /// (`Repository<User>`) qualify by their head. Other type shapes have no
+    /// qname.
+    fn class_qname(&self, ty: TypeId) -> Option<String> {
+        match self.arena.get(ty) {
+            Type::Class(q) => Some(q),
+            Type::Apply { base, .. } => match self.arena.get(base) {
+                Type::Class(q) => Some(q),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Promote a bare receiver type to its package-qualified qname so members
+    /// keyed under the full package path resolve. Ported from the legacy
+    /// string walker's `qualify_current_type`; gated on
+    /// `ChainQualification::SamePackageAndImports` so default-profile
+    /// languages are untouched.
+    ///
+    /// Two deterministic sources, tried in order:
+    ///   1. **Same-package.** The previous receiver's package qualifies a
+    ///      sibling type declared in the same package — the transitive
+    ///      return-type case (`Repository.findOne` returns `Entity`, which is
+    ///      `<pkg>.Entity`). At the root (`prev_owner` is `None`) the file's
+    ///      own package supplies the same source, covering a root receiver
+    ///      that names an unimported same-package type.
+    ///   2. **Explicit imports.** A non-wildcard `import a.b.C` makes a
+    ///      receiver typed `C` resolve to `a.b.C` — the import names the class
+    ///      itself, so the module IS the qname.
+    ///
+    /// Only promotes to a qname that owns a type or keys a member, so it can
+    /// only widen resolution. Preserves an `Apply`'s args by rebuilding it on
+    /// the qualified base.
+    fn qualify_current_ty(
+        &self,
+        current_ty: TypeId,
+        prev_owner: Option<&str>,
+        file_ctx: &FileContext,
+    ) -> TypeId {
+        if self.profile.chain_qualification != ChainQualification::SamePackageAndImports {
+            return current_ty;
+        }
+        // Decompose into the bare base qname plus any Apply args to re-wrap.
+        let (base_qname, apply_args) = match self.arena.get(current_ty) {
+            Type::Class(q) => (q, None),
+            Type::Apply { base, args } => match self.arena.get(base) {
+                Type::Class(q) => (q, Some(args)),
+                _ => return current_ty,
+            },
+            _ => return current_ty,
+        };
+        if base_qname.contains('.') {
+            return current_ty;
+        }
+
+        let mut qualified: Option<String> = None;
+
+        // 1. Same-package via the previous receiver's package. A bare type
+        //    yielded by a member of a resolved package-qualified receiver is a
+        //    sibling in that package (`com.foo.Repository.findOne` returns
+        //    `Entity` → `com.foo.Entity`). Qualified UNCONDITIONALLY: a method's
+        //    return-type sibling is frequently not yet pulled, and the
+        //    package-qualified miss is exactly what the expand stage needs to
+        //    demand-pull the right one of several same-named externals. Guarding
+        //    on an already-keyed qname here would defeat that pull.
+        if let Some(scope) = prev_owner {
+            if let Some((pkg, _)) = scope.rsplit_once('.') {
+                qualified = Some(format!("{pkg}.{base_qname}"));
+            }
+        }
+
+        // 2. Same-package via the file's own package (root receiver). The
+        //    `file_namespace` IS the package — used directly, not stripped like
+        //    a receiver qname. Speculative (the bare root may name an unrelated
+        //    global), so guard on a qname that actually keys a type or member.
+        if qualified.is_none() {
+            if let Some(pkg) = file_ctx.file_namespace.as_deref() {
+                let candidate = format!("{pkg}.{base_qname}");
+                if self.keys_a_type_or_member(&candidate) {
+                    qualified = Some(candidate);
+                }
+            }
+        }
+
+        // 3. Explicit (non-wildcard) imports name the class qname directly.
+        if qualified.is_none() {
+            for import in &file_ctx.imports {
+                if import.is_wildcard || import.imported_name != base_qname {
+                    continue;
+                }
+                let Some(module) = import.module_path.as_deref() else {
+                    continue;
+                };
+                if self.keys_a_type_or_member(module) {
+                    qualified = Some(module.to_string());
+                    break;
+                }
+            }
+        }
+
+        let Some(q) = qualified else {
+            return current_ty;
+        };
+        let base_ty = self.arena.class(&q);
+        match apply_args {
+            Some(args) if !args.is_empty() => {
+                self.arena.intern(Type::Apply { base: base_ty, args })
+            }
+            _ => base_ty,
+        }
+    }
+
+    /// True when `qname` owns a type symbol OR keys at least one member — the
+    /// guard for `qualify_current_ty` so it never promotes to a qname nothing
+    /// keys under.
+    fn keys_a_type_or_member(&self, qname: &str) -> bool {
+        self.lookup.by_qualified_name(qname).is_some()
+            || !self.lookup.members_of(qname).is_empty()
     }
 
     fn qualified_member_lookup(

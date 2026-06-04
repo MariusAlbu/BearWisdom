@@ -6,8 +6,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
-    SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable,
+    LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -65,6 +65,10 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: JAVA_PRIMITIVES,
     kind_compatible_table: JAVA_KIND_TABLE,
+    // Members are keyed under package-qualified qnames; a bare receiver
+    // (`Repository`, or a same-package return type `Entity`) qualifies via
+    // its package then explicit imports before member lookup.
+    chain_qualification: ChainQualification::SamePackageAndImports,
     // Engine-primary validated post java.lang pre-pull (commit 0548421a).
     // java-spring-petclinic gate: 92.19% > 83.26% baseline (+8.93pp).
     // The earlier -2.68pp regression was a JDK demand-walker gap (bare

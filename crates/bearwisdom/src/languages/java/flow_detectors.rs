@@ -1,10 +1,10 @@
 // =============================================================================
 // java/flow_detectors.rs — Java FlowEmission detectors
 //
-// Free helpers invoked by `JavaResolver::detect_flow_emission` (in resolve.rs)
-// to recognise framework-specific call shapes and annotation forms, and turn
-// them into `FlowEmission` values for the architecture overview / blast-radius
-// graph. Each detector owns one library or one shape:
+// Free helpers invoked by `JavaHooks::detect_flow_emissions` to recognise
+// framework-specific call shapes and annotation forms, and turn them into
+// `FlowEmission` values for the architecture overview / blast-radius graph.
+// Each detector owns one library or one shape:
 //
 //   - Quartz / Spring `@Scheduled` programmatic registration (BgJob)
 //   - JMS / Kafka `producer.send(...)` (MessageQueue Producer)

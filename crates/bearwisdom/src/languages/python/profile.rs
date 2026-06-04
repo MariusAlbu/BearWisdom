@@ -8,7 +8,7 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
     SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
@@ -87,6 +87,7 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("__iter__"),
     primitive_mapping: PY_PRIMITIVES,
     kind_compatible_table: PY_KIND_TABLE,
+    chain_qualification: ChainQualification::None,
     // Phase 6 wave-A diagnosis: engine-primary on vs off produced
     // identical rates on python-black (91.86%), confirming the engine
     // doesn't regress Python chain resolution today. The 0.5pp gap vs

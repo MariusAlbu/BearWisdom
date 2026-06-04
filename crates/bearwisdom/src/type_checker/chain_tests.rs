@@ -18,7 +18,6 @@ use crate::indexer::resolve::engine::{
 use crate::languages::c_lang::hooks::C_LANG_CHAIN_CONFIG;
 use crate::languages::csharp::hooks::CSHARP_CHAIN_CONFIG;
 use crate::languages::go::hooks::GO_CHAIN_CONFIG;
-use crate::languages::java::hooks::JAVA_CHAIN_CONFIG;
 use crate::languages::php::hooks::PHP_CHAIN_CONFIG;
 use crate::languages::python::hooks::PYTHON_CHAIN_CONFIG;
 use crate::languages::ruby::hooks::RUBY_CHAIN_CONFIG;
@@ -1031,17 +1030,39 @@ fn go_chain_empty_chain_returns_none() {
 }
 
 // ---------------------------------------------------------------------------
-// Java differential tests (QUAL-2b-java).
+// Java differential tests.
 //
-// Anchor the JAVA_CHAIN_CONFIG case-space that the deleted walk_java_chain
-// covered, now through the generic engine: SelfRef enclosing-type root
-// (implicit `this.method()`), static-type root + by_qualified_name final at
-// 1.0, field-type root progression, the wildcard-import namespace final hit at
+// Anchor the legacy `resolve_via_chain` ladder driven by the Java-shaped
+// `ChainExtensions` (`java_config()`): SelfRef enclosing-type root (implicit
+// `this.method()`), static-type root + by_qualified_name final at 1.0,
+// field-type root progression, the wildcard-import namespace final hit at
 // 0.95 (`NamespaceLookup::WildcardOnly`), and the inheritance climb for an
-// inherited member (the bespoke walker's members_of/0.90 last resort folds
-// into the shared walk_inheritance ladder). A NONE-gate guard proves the
-// inheritance climb requires the flag.
+// inherited member via `walk_inheritance`. A NONE-gate guard proves the
+// inheritance climb requires the flag. These flags still ship in production
+// for other languages (C#, PHP).
 // ---------------------------------------------------------------------------
+
+/// Legacy-walker fixture mirroring the Java `ChainExtensions` deltas:
+/// `walk_inheritance` + `qualify_via_imports`, `NamespaceLookup::WildcardOnly`.
+/// Anchors the generic `resolve_via_chain` ladder these flags drive (other
+/// languages — C#, PHP — still ship them in production).
+fn java_config() -> ChainConfig {
+    ChainConfig {
+        strategy_prefix: "java",
+        normalize_type: identity_normalize,
+        has_self_ref: true,
+        enclosing_type_kinds: &["class", "interface", "enum"],
+        static_type_kinds: &["class", "interface", "enum", "type_alias"],
+        use_generics: true,
+        namespace_lookup: NamespaceLookup::WildcardOnly,
+        kind_compatible: crate::languages::typescript::predicates::kind_compatible,
+        extensions: ChainExtensions {
+            walk_inheritance: true,
+            qualify_via_imports: true,
+            ..ChainExtensions::NONE
+        },
+    }
+}
 
 #[test]
 fn java_chain_self_ref_implicit_this() {
@@ -1060,7 +1081,7 @@ fn java_chain_self_ref_implicit_this() {
     );
     let fc = file_ctx_with_imports(vec![]);
     let res = run_res(
-        &JAVA_CHAIN_CONFIG,
+        &java_config(),
         &r,
         &fc,
         vec!["com.example.OrderService".to_string()],
@@ -1087,7 +1108,7 @@ fn java_chain_static_type_root_by_qname_final() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+    let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
         .expect("Foo.staticMethod() resolves");
     assert_eq!(res.target_symbol_id, 2);
     assert_eq!(res.confidence, 1.0);
@@ -1112,7 +1133,7 @@ fn java_chain_field_type_root() {
     let fc = file_ctx_with_imports(vec![]);
     assert_eq!(
         run_res(
-            &JAVA_CHAIN_CONFIG,
+            &java_config(),
             &r,
             &fc,
             vec!["com.example.Svc".to_string()],
@@ -1140,7 +1161,7 @@ fn java_chain_wildcard_namespace_final() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![wildcard_import("java.util")]);
-    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+    let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
         .expect("wildcard-import namespace final resolves");
     assert_eq!(res.target_symbol_id, 2);
     assert_eq!(res.confidence, 0.95);
@@ -1165,7 +1186,7 @@ fn java_chain_inheritance_final_segment() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+    let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
         .expect("repo.findOne() resolves via inheritance climb");
     assert_eq!(res.target_symbol_id, 2);
     assert_eq!(res.strategy, "java_chain_inheritance");
@@ -1209,7 +1230,7 @@ fn java_chain_qualifies_bare_receiver_via_import() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![import("Repository", "com.fakeext.data.Repository")]);
-    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+    let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
         .expect("import-qualified receiver resolves findOne");
     assert_eq!(res.target_symbol_id, 2);
 }
@@ -1236,7 +1257,7 @@ fn java_chain_qualifies_return_type_same_package() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![import("Repository", "com.fakeext.data.Repository")]);
-    let res = run_res(&JAVA_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
+    let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
         .expect("same-package return type qualifies so getEmail binds");
     assert_eq!(res.target_symbol_id, 4);
 }
@@ -2144,7 +2165,7 @@ fn method_return_generic_arg_binds_element_type() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![]);
-    assert_eq!(run(&JAVA_CHAIN_CONFIG, &r, &fc, &lookup), Some(6));
+    assert_eq!(run(&java_config(), &r, &fc, &lookup), Some(6));
 }
 
 /// Control: without type_args registered for the method, the element type
@@ -2176,5 +2197,5 @@ fn method_return_without_args_does_not_bind_element_type() {
     );
     let fc = file_ctx_with_imports(vec![]);
     // Without the arg, E stays as "E" which has no members, so resolution fails.
-    assert_eq!(run(&JAVA_CHAIN_CONFIG, &r, &fc, &lookup), None);
+    assert_eq!(run(&java_config(), &r, &fc, &lookup), None);
 }
