@@ -49,6 +49,7 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
+    decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
@@ -57,8 +58,19 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
-    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
+    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::Spec(
+        crate::type_checker::profile::language_profile::NormSpec {
+            case_insensitive: true,
+            strip_chars: &[],
+            strip_prefixes: &[],
+            strip_sigils: &[],
+        },
+    ),
     package_by_directory: false,
+    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
+        underscore_prefix: true,
+    },
+    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

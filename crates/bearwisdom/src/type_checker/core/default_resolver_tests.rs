@@ -1957,7 +1957,7 @@ fn import_path_no_candidate_returns_none() {
 // ---------------------------------------------------------------------------
 
 use crate::type_checker::profile::language_profile::{
-    ExternalByImport, ModuleAnchor, ModuleAnchorBind, RelativeMarker, StemSource,
+    ExtMatch, ExternalByImport, ModuleAnchor, ModuleAnchorBind, RelativeMarker, StemSource,
 };
 
 #[test]
@@ -2621,7 +2621,11 @@ fn external_by_import_binds_gem_family_at_reduced_confidence() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_external_by_import(&ExternalByImport { confidence: 0.8 }, &accept_any)
+        .resolve_via_external_by_import(
+            &ExternalByImport { confidence: 0.8 },
+            ExtMatch::PkgSegment,
+            &accept_any,
+        )
         .expect("gem-family external resolves");
     assert_eq!(resolved.target_symbol_id, 40);
     assert_eq!(resolved.strategy, "default_external_by_import");
@@ -2649,7 +2653,11 @@ fn external_by_import_declines_unimported_gem() {
         kind_compatible: accept_any,
     };
     assert!(d
-        .resolve_via_external_by_import(&ExternalByImport { confidence: 0.8 }, &accept_any)
+        .resolve_via_external_by_import(
+            &ExternalByImport { confidence: 0.8 },
+            ExtMatch::PkgSegment,
+            &accept_any,
+        )
         .is_none());
 }
 
@@ -2674,7 +2682,11 @@ fn external_by_import_ignores_internal_symbols() {
         kind_compatible: accept_any,
     };
     assert!(d
-        .resolve_via_external_by_import(&ExternalByImport { confidence: 0.8 }, &accept_any)
+        .resolve_via_external_by_import(
+            &ExternalByImport { confidence: 0.8 },
+            ExtMatch::PkgSegment,
+            &accept_any,
+        )
         .is_none());
 }
 
@@ -3054,4 +3066,171 @@ fn is_identity_spec_recognizes_all_default_fields() {
     };
     assert!(is_identity_spec(&identity));
     assert!(!is_identity_spec(&CASE_FOLD_SPEC));
+}
+
+// ---------------------------------------------------------------------------
+// WildcardMatch::FileStem — wildcard import binds by candidate FILE-stem
+// ---------------------------------------------------------------------------
+
+fn wildcard_import(module: &str) -> ImportEntry {
+    ImportEntry {
+        imported_name: module.to_string(),
+        module_path: Some(module.to_string()),
+        alias: None,
+        is_wildcard: true,
+    }
+}
+
+/// FileStem mode binds a symbol whose file basename-stem equals the wildcard's
+/// module name, with the name comparison folded by the profile's
+/// NameNormalization (Pascal is case-insensitive: a `FreeAndNil` symbol binds a
+/// `freeandnil` ref because both fold equal AND `by_name` returns it).
+#[test]
+fn wildcard_file_stem_binds_on_basename_stem() {
+    let lookup = Lookup::new().with(sym(
+        7,
+        "FreeAndNil",
+        "FreeAndNil",
+        "function",
+        "rtl/sysutils.pas",
+    ));
+    let r = extracted_call("FreeAndNil");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("SysUtils")], None);
+    fc.language = "pascal".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE)
+    .expect("FileStem wildcard binds via sysutils.pas stem");
+    assert_eq!(resolved.target_symbol_id, 7);
+    assert_eq!(resolved.strategy, "default_wildcard_import");
+}
+
+/// The underscore-prefix probe accepts an include-file sibling whose stem is
+/// `{module}_…` — a unit split across `{unit}_part.inc` files.
+#[test]
+fn wildcard_file_stem_binds_on_underscore_include() {
+    let lookup = Lookup::new().with(sym(
+        42,
+        "CastleNow",
+        "CastleNow",
+        "function",
+        "src/base/castleutils_now.inc",
+    ));
+    let r = extracted_call("CastleNow");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("CastleUtils")], None);
+    fc.language = "pascal".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE)
+    .expect("FileStem wildcard binds via castleutils_ include stem");
+    assert_eq!(resolved.target_symbol_id, 42);
+}
+
+/// FileStem mode does not bind when the symbol's file names a different unit
+/// than any wildcard import — the unit's file is the gate, not the bare name.
+#[test]
+fn wildcard_file_stem_declines_unrelated_unit() {
+    let lookup = Lookup::new().with(sym(
+        42,
+        "CastleNow",
+        "CastleNow",
+        "function",
+        "src/base/castleutils_now.inc",
+    ));
+    let r = extracted_call("CastleNow");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("Classes")], None);
+    fc.language = "pascal".to_string();
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE)
+        .is_none(),
+        "a wildcard for an unrelated unit must not bind the symbol"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ExtMatch::FileStemOrDir — external bind by file-stem / dir against imports
+// ---------------------------------------------------------------------------
+
+/// FileStemOrDir matches an external candidate whose basename-stem equals an
+/// import LEAF (`httpclient` import → `…/httpclient.nim`).
+#[test]
+fn ext_match_file_stem_binds_on_import_leaf() {
+    let lookup = Lookup::new().with(sym(
+        50,
+        "getContent",
+        "getContent",
+        "function",
+        "ext:nim:nim-stdlib/pure/httpclient.nim",
+    ));
+    let r = extracted_call("getContent");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![import("httpclient", Some("std/httpclient"))], None);
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_via_external_by_import(
+        &ExternalByImport { confidence: 0.85 },
+        ExtMatch::FileStemOrDir,
+        &accept_any,
+    )
+    .expect("external binds via httpclient.nim file stem");
+    assert_eq!(resolved.target_symbol_id, 50);
+    assert_eq!(resolved.confidence, 0.85);
+    assert_eq!(resolved.strategy, "default_external_by_import");
+}
+
+/// FileStemOrDir declines when no import leaf / package names the external's
+/// file — the import set is the gate.
+#[test]
+fn ext_match_file_stem_declines_unimported_module() {
+    let lookup = Lookup::new().with(sym(
+        51,
+        "getContent",
+        "getContent",
+        "function",
+        "ext:nim:nim-stdlib/pure/httpclient.nim",
+    ));
+    let r = extracted_call("getContent");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![import("strutils", Some("std/strutils"))], None);
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_via_external_by_import(
+            &ExternalByImport { confidence: 0.85 },
+            ExtMatch::FileStemOrDir,
+            &accept_any,
+        )
+        .is_none(),
+        "an external not named by any import leaf/package must not bind"
+    );
 }

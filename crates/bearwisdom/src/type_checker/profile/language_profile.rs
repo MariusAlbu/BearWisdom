@@ -55,6 +55,17 @@ pub struct LanguageProfile {
     /// symbol binds; external classification brands the target afterward. See
     /// `NamespaceDecline`.
     pub namespace_decline: Option<NamespaceDecline>,
+    /// Import-prefix decline, the import-set-keyed sibling of `namespace_decline`.
+    /// When set and the target carries the `qname_separator` and its leading
+    /// segment (sigil-stripped per `self_keywords` / a leading `$`) equals any
+    /// of the file's import module paths, the engine declines before the
+    /// strategy ladder — a qualified reference into a declared dependency module
+    /// is external, not a project symbol, so no same-named local binds and
+    /// external classification brands it after. `false` (the default) leaves it
+    /// inert. This is the one decline shape `namespace_decline` can't express:
+    /// the gate is the target's own leading namespace segment against the
+    /// import set, not the resolving file's namespace.
+    pub decline_qualified_when_prefix_imported: bool,
     /// Module-string decline, the module-keyed sibling of `builtin_skip`.
     /// `builtin_skip` keys on the ref's TARGET string; this keys on the ref's
     /// extractor-set `module` string. When a ref carries a `module` and this
@@ -128,6 +139,22 @@ pub struct LanguageProfile {
     /// language in (Odin same-package references — no `module` to anchor on, so
     /// this runs module-independently near the end of the ladder).
     pub package_by_directory: bool,
+    /// How `resolve_via_wildcard_import` decides a candidate sits under a
+    /// wildcard import's module. `QnameUnder` (the default) keeps the current
+    /// qname-prefix test (`{module}.{name}`, exactly one segment deeper).
+    /// `FileStem` instead matches by the candidate's FILE — its basename-stem or
+    /// a path dir-segment equals the import's module name — under
+    /// `name_normalization` for the name comparison, with an optional
+    /// `{stem}_`-prefixed include-file probe. See `WildcardMatch`.
+    pub wildcard_match: WildcardMatch,
+    /// How the import-scoped external bind (`resolve_via_external_by_import`)
+    /// matches an external candidate's file against the file's imports.
+    /// `PkgSegment` (the default) keys on the `ext:<lang>:<pkg>` package segment
+    /// equalling an import root. `FileStemOrDir` keys on the external file's
+    /// basename-stem / dir-segment matching an import leaf or package (Nim,
+    /// whose externals are named by file rather than `ext:`-package). See
+    /// `ExtMatch`. Only consulted when `external_by_import` is `Some`.
+    pub ext_match: ExtMatch,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -311,6 +338,40 @@ pub struct ExternalByImport {
     /// Confidence recorded on a hit. Below 1.0 by design — this is the only
     /// strategy that intentionally binds to externals.
     pub confidence: f64,
+}
+
+/// How `resolve_via_wildcard_import` tests whether a candidate sits under a
+/// wildcard import's module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WildcardMatch {
+    /// The candidate's qualified name is exactly one segment deeper than the
+    /// wildcard's module path (`qname_directly_under`). The default — a member
+    /// keyed under the imported namespace (Java static wildcard, Rust `use ::*`,
+    /// Python `from m import *`, C++ `using namespace`).
+    QnameUnder,
+    /// The candidate's FILE names the wildcard's module: its basename-stem OR a
+    /// path dir-segment equals the module name (`path_stem_matches`). The name
+    /// comparison runs under the profile's `NameNormalization`, so a
+    /// case-insensitive language binds a reference written in a different
+    /// surface form. `underscore_prefix` additionally accepts a file whose stem
+    /// is `{module}_…` — the include-file convention where a unit's symbols are
+    /// split across `{unit}_part.inc` siblings (Pascal units / FPC includes).
+    FileStem { underscore_prefix: bool },
+}
+
+/// How `resolve_via_external_by_import` matches an external candidate's file
+/// against the resolving file's imports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtMatch {
+    /// The external file's `ext:<lang>:<pkg>` package segment equals an import
+    /// root, or starts with `{root}-` (package families). The default.
+    PkgSegment,
+    /// The external file's basename-stem OR a path dir-segment equals an import
+    /// LEAF (last path segment) or an import PACKAGE (first path segment) under
+    /// `path_stem_matches`. For ecosystems whose externals are named by file
+    /// rather than an `ext:`-package boundary (Nim: a `httpclient` import binds
+    /// a symbol in `…/httpclient.nim`).
+    FileStemOrDir,
 }
 
 // ---------------------------------------------------------------------------
@@ -558,6 +619,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
+    decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
@@ -568,6 +630,8 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     external_by_import: None,
     name_normalization: NameNormalization::None,
     package_by_directory: false,
+    wildcard_match: WildcardMatch::QnameUnder,
+    ext_match: ExtMatch::PkgSegment,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

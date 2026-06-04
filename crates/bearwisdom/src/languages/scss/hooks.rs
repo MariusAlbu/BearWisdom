@@ -2,14 +2,20 @@
 
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
-use crate::type_checker::core::DefaultResolver;
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
 pub struct ScssHooks;
+
+/// A ref's `module` names a non-project provider the binder must never resolve
+/// through: a Sass built-in module (`@use 'sass:math'`) or the synthesized
+/// CSS-function-call hint. Drives the profile's `module_skip` so a module-
+/// carrying ref declines before the ladder and external classification brands
+/// it. The target-keyed `builtin_skip` sibling, keyed on `r.module`.
+pub(crate) fn is_scss_skippable_module(module: &str) -> bool {
+    module == super::extract::SCSS_CSS_FN_HINT || predicates::is_sass_builtin_module(module)
+}
 
 impl LanguageEngineHooks for ScssHooks {
     fn classify_external(
@@ -88,36 +94,6 @@ impl LanguageEngineHooks for ScssHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            if module == super::extract::SCSS_CSS_FN_HINT {
-                return None;
-            }
-        }
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            if predicates::is_sass_builtin_module(module) {
-                return None;
-            }
-        }
-        if let Some(res) = (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all() {
-            return Some(res);
-        }
-        None
     }
 }
 

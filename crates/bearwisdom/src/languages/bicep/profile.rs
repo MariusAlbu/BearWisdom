@@ -49,6 +49,7 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     // (both members land under `bicep.builtins`/`bicep.decorators`), not qname
     // path segments. Strip the alias so `sys.concat`/`az.resourceId` resolve
     // against the bare ambient symbol.
+    decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &["sys", "az"],
     import_resolution: None,
@@ -59,6 +60,8 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     package_by_directory: false,
+    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

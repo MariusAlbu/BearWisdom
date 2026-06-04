@@ -976,3 +976,98 @@ fn namespace_decline_gates_on_both_keys() {
             .expect("a non-reserved name in the armed namespace must still resolve");
     assert_eq!(bound.target_symbol_id, 1);
 }
+
+/// Resolve a `sep`-qualified `target` whose sibling is named identically (so
+/// the same-file strategy WOULD bind it) against `profile`, in a file whose
+/// import set declares `import_module`.
+fn resolve_qualified_sibling_with_import(
+    profile: &'static LanguageProfile,
+    target: &str,
+    import_module: &str,
+) -> Option<Resolution> {
+    let arena = Arc::new(TypeArena::new());
+    let (mut pf, mut sym_ids, mut infos) = foo_overloads(&arena, Vec::new(), Vec::new());
+    pf.symbols.truncate(1);
+    pf.symbols[0].name = target.to_string();
+    pf.symbols[0].qualified_name = target.to_string();
+    sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("src/f.ts".to_string(), 0), 1);
+    infos.truncate(1);
+    infos[0].name = target.to_string();
+    infos[0].qualified_name = target.to_string();
+    let lookup = SiblingLookup { sib: infos, empty: Vec::new(), empty_reexports: Vec::new() };
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("typescript", profile);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let mut r = bare_call_ref(0);
+    r.target_name = target.to_string();
+    let rc = ref_ctx_for(&r, &source);
+    let mut fc = file_ctx_ts("src/f.ts");
+    fc.imports.push(crate::indexer::resolve::engine::ImportEntry {
+        imported_name: import_module.to_string(),
+        module_path: Some(import_module.to_string()),
+        alias: None,
+        is_wildcard: true,
+    });
+    engine.resolve(&rc, &fc, &lookup)
+}
+
+/// Profile mirroring DEFAULT but with a `::` separator and the import-prefix
+/// decline armed — the Puppet shape.
+static IMPORT_PREFIX_DECLINE_PROFILE: LanguageProfile = LanguageProfile {
+    qname_separator: "::",
+    decline_qualified_when_prefix_imported: true,
+    ..DEFAULT_PROFILE
+};
+
+/// Control: same `::` separator, decline OFF.
+static IMPORT_PREFIX_NO_DECLINE_PROFILE: LanguageProfile = LanguageProfile {
+    qname_separator: "::",
+    decline_qualified_when_prefix_imported: false,
+    ..DEFAULT_PROFILE
+};
+
+#[test]
+fn import_prefix_decline_gates_on_leading_segment_vs_imports() {
+    // Decline armed + target's leading `::` segment names a declared import →
+    // declines before the ladder, so the same-file sibling is NOT bound.
+    assert!(
+        resolve_qualified_sibling_with_import(
+            &IMPORT_PREFIX_DECLINE_PROFILE,
+            "apache::config",
+            "apache",
+        )
+        .is_none(),
+        "a qualified target under an imported module must decline before binding a local"
+    );
+
+    // Control: decline OFF → the same-file strategy binds the sibling.
+    let bound = resolve_qualified_sibling_with_import(
+        &IMPORT_PREFIX_NO_DECLINE_PROFILE,
+        "apache::config",
+        "apache",
+    )
+    .expect("with the decline off the ladder binds the same-file sibling");
+    assert_eq!(bound.target_symbol_id, 1);
+
+    // Decline armed but the leading segment is NOT in the import set → the gate
+    // is absent, so the ladder still binds. Proves the gate keys on the import
+    // set, not on the mere presence of the separator.
+    let bound = resolve_qualified_sibling_with_import(
+        &IMPORT_PREFIX_DECLINE_PROFILE,
+        "nginx::config",
+        "apache",
+    )
+    .expect("a qualified target whose head is not imported must still resolve");
+    assert_eq!(bound.target_symbol_id, 1);
+}

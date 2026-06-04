@@ -89,6 +89,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // these as Construction segments without needing a profile pattern.
     builtin_skip: None,
     namespace_decline: None,
+    decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
@@ -99,6 +100,8 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     package_by_directory: false,
+    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

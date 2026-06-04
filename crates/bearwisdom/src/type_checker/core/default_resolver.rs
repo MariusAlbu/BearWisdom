@@ -25,9 +25,9 @@ use crate::indexer::resolve::engine::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::profile::language_profile::{
-    CandidateDirs, ChainQualification, ExternalByImport, ImportResolution, KindCompatibility,
-    KindTable, ModuleAnchor, ModuleAnchorBind, NameNormalization, NormSpec, RelativeMarker,
-    StemMatch, StemSource,
+    CandidateDirs, ChainQualification, ExtMatch, ExternalByImport, ImportResolution,
+    KindCompatibility, KindTable, ModuleAnchor, ModuleAnchorBind, NameNormalization, NormSpec,
+    RelativeMarker, StemMatch, StemSource, WildcardMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -63,10 +63,12 @@ struct LadderProfileData<'p> {
     module_anchor_terminal: bool,
     relative_marker: RelativeMarker,
     external_by_import: Option<&'p ExternalByImport>,
+    ext_match: ExtMatch,
     self_keywords: &'p [&'p str],
     ambient_namespace_prefixes: &'p [&'p str],
     name_normalization: NameNormalization,
     package_by_directory: bool,
+    wildcard_match: WildcardMatch,
 }
 
 impl LadderProfileData<'static> {
@@ -78,10 +80,12 @@ impl LadderProfileData<'static> {
         module_anchor_terminal: false,
         relative_marker: RelativeMarker::None,
         external_by_import: None,
+        ext_match: ExtMatch::PkgSegment,
         self_keywords: &[],
         ambient_namespace_prefixes: &[],
         name_normalization: NameNormalization::None,
         package_by_directory: false,
+        wildcard_match: WildcardMatch::QnameUnder,
     };
 }
 
@@ -1078,16 +1082,25 @@ impl<'a> DefaultResolver<'a> {
     /// (`resolve_via_unique_internal_name` filters `is_external_file`;
     /// `resolve_via_ranked_candidates` admits externals but only on a score
     /// margin, ungated by the import set). This binds a bare `target` to an
-    /// external symbol whose `ext:<lang>:<pkg>` package segment matches a
-    /// non-relative import root from the file's imports — equality OR
-    /// `starts_with("{root}-")` for package families (`aws-sdk-s3` under gem
-    /// `aws`). Kind-compatible, at the profile-supplied confidence.
+    /// external symbol whose FILE is named by one of the resolving file's
+    /// non-relative imports, at the profile-supplied confidence.
+    ///
+    /// `ext_match` selects how the external file is matched:
+    ///   - `PkgSegment` — the file's `ext:<lang>:<pkg>` package segment equals
+    ///     an import root, OR starts with `{root}-` for package families
+    ///     (`aws-sdk-s3` under gem `aws`).
+    ///   - `FileStemOrDir` — the file's basename-stem / a dir-segment equals an
+    ///     import LEAF (last path segment, `std/` / `pkg/` prefix stripped) or
+    ///     an import PACKAGE (first path segment) under `path_stem_matches`, for
+    ///     ecosystems whose externals are named by file rather than an
+    ///     `ext:`-package boundary.
     ///
     /// Gated by `external_by_import` so non-opted-in languages never touch
     /// externals here.
     pub fn resolve_via_external_by_import(
         &self,
         cfg: &ExternalByImport,
+        ext_match: ExtMatch,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
     ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
@@ -1095,21 +1108,53 @@ impl<'a> DefaultResolver<'a> {
             return None;
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
-        let import_roots: Vec<&str> = self
-            .file_ctx
-            .imports
-            .iter()
-            .filter_map(|imp| {
-                let m = imp.module_path.as_deref()?;
-                if m.starts_with('.') {
+        let matcher = match ext_match {
+            ExtMatch::PkgSegment => {
+                let import_roots: Vec<&str> = self
+                    .file_ctx
+                    .imports
+                    .iter()
+                    .filter_map(|imp| {
+                        let m = imp.module_path.as_deref()?;
+                        if m.starts_with('.') {
+                            return None;
+                        }
+                        Some(m.split('/').next().unwrap_or(m))
+                    })
+                    .collect();
+                if import_roots.is_empty() {
                     return None;
                 }
-                Some(m.split('/').next().unwrap_or(m))
-            })
-            .collect();
-        if import_roots.is_empty() {
-            return None;
-        }
+                ExtFileMatcher::PkgSegment(import_roots)
+            }
+            ExtMatch::FileStemOrDir => {
+                // Leaf = last path segment (with `std/` / `pkg/` prefix dropped);
+                // package = first path segment (skipping the `std` / `pkg` root).
+                let mut needles: Vec<String> = Vec::new();
+                for imp in &self.file_ctx.imports {
+                    let Some(m) = imp.module_path.as_deref() else {
+                        continue;
+                    };
+                    if m.starts_with('.') {
+                        continue;
+                    }
+                    let stripped =
+                        m.strip_prefix("std/").or_else(|| m.strip_prefix("pkg/")).unwrap_or(m);
+                    let leaf = stripped.rsplit('/').next().unwrap_or(stripped);
+                    if !leaf.is_empty() {
+                        needles.push(leaf.to_lowercase());
+                    }
+                    let pkg = m.split('/').next().unwrap_or(m);
+                    if pkg != "std" && pkg != "pkg" && !pkg.is_empty() {
+                        needles.push(pkg.to_lowercase());
+                    }
+                }
+                if needles.is_empty() {
+                    return None;
+                }
+                ExtFileMatcher::FileStemOrDir(needles)
+            }
+        };
         for sym in self.lookup.by_name(target) {
             if !self.lookup.is_external_file(&sym.file_path) {
                 continue;
@@ -1117,14 +1162,20 @@ impl<'a> DefaultResolver<'a> {
             if !kind(edge_kind, &sym.kind) {
                 continue;
             }
-            let pkg_seg = external_package_segment(&sym.file_path);
-            if pkg_seg.is_empty() {
-                continue;
-            }
-            if import_roots
-                .iter()
-                .any(|root| pkg_seg == *root || pkg_seg.starts_with(&format!("{root}-")))
-            {
+            let matched = match &matcher {
+                ExtFileMatcher::PkgSegment(roots) => {
+                    let pkg_seg = external_package_segment(&sym.file_path);
+                    !pkg_seg.is_empty()
+                        && roots
+                            .iter()
+                            .any(|root| pkg_seg == *root || pkg_seg.starts_with(&format!("{root}-")))
+                }
+                ExtFileMatcher::FileStemOrDir(needles) => {
+                    let file_lower = sym.file_path.to_lowercase();
+                    needles.iter().any(|n| path_stem_matches(&file_lower, n))
+                }
+            };
+            if matched {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: cfg.confidence,
@@ -1246,10 +1297,12 @@ impl<'a> DefaultResolver<'a> {
                 module_anchor_terminal: profile.module_anchor_terminal,
                 relative_marker: profile.relative_marker,
                 external_by_import: profile.external_by_import.as_ref(),
+                ext_match: profile.ext_match,
                 self_keywords: profile.self_keywords,
                 ambient_namespace_prefixes: profile.ambient_namespace_prefixes,
                 name_normalization: profile.name_normalization,
                 package_by_directory: profile.package_by_directory,
+                wildcard_match: profile.wildcard_match,
             },
         )
     }
@@ -1356,14 +1409,16 @@ impl<'a> DefaultResolver<'a> {
             })
             .or_else(|| {
                 pd.external_by_import
-                    .and_then(|cfg| self.resolve_via_external_by_import(cfg, kind))
+                    .and_then(|cfg| self.resolve_via_external_by_import(cfg, pd.ext_match, kind))
             })
             .or_else(|| {
                 pd.package_by_directory
                     .then(|| self.resolve_via_same_dir(kind))
                     .flatten()
             })
-            .or_else(|| self.resolve_via_wildcard_import(kind))
+            .or_else(|| {
+                self.resolve_via_wildcard_import(kind, pd.wildcard_match, pd.name_normalization)
+            })
             .or_else(|| self.resolve_via_generic_param());
         if result.is_none() {
             self.record_bare_name_chain_miss();
@@ -1412,11 +1467,26 @@ impl<'a> DefaultResolver<'a> {
     /// `import static org.junit.jupiter.api.Assertions.*;` (Java),
     /// `use foo::*;` (Rust), `from utils import *` (Python),
     /// `using namespace std;` (C++) bring every exported member of the
-    /// imported namespace into bare-name scope. When a candidate's
-    /// qualified name lives directly under any wildcard import's
-    /// module_path, resolve to it. Returns None when no wildcard import
-    /// matches OR when multiple candidates from different wildcards tie.
-    pub fn resolve_via_wildcard_import(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    /// imported namespace into bare-name scope.
+    ///
+    /// `mode` decides how a candidate is matched to a wildcard's module:
+    ///   - `QnameUnder` — the candidate's qualified name lives directly under
+    ///     the module path (`qname_directly_under`); the member is keyed under
+    ///     the imported namespace.
+    ///   - `FileStem` — the candidate's FILE names the module: its basename-stem
+    ///     OR a path dir-segment equals the module name, under `norm` for the
+    ///     name comparison and, when `underscore_prefix`, accepting a `{module}_…`
+    ///     include-file stem. For languages whose unit import brings a FILE into
+    ///     scope rather than a namespace (Pascal units / FPC includes).
+    ///
+    /// Returns None when no wildcard import matches OR when multiple candidates
+    /// from different wildcards tie.
+    pub fn resolve_via_wildcard_import(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+        mode: WildcardMatch,
+        norm: NameNormalization,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() || target.contains('.') || target.contains("::") {
             return None;
@@ -1433,16 +1503,33 @@ impl<'a> DefaultResolver<'a> {
         if wildcards.is_empty() {
             return None;
         }
+        let target_norm = normalize_name(norm, target);
         let mut hits: Vec<&SymbolInfo> = Vec::new();
         for sym in self.lookup.by_name(target) {
             if !kind(edge_kind, &sym.kind) {
                 continue;
             }
-            for ns in &wildcards {
-                if qname_directly_under(&sym.qualified_name, ns) {
-                    hits.push(sym);
-                    break;
+            let under_a_wildcard = match mode {
+                WildcardMatch::QnameUnder => {
+                    wildcards.iter().any(|ns| qname_directly_under(&sym.qualified_name, ns))
                 }
+                WildcardMatch::FileStem { underscore_prefix } => {
+                    // The candidate's surface name must match the ref under the
+                    // profile's normalization before its file is checked — a
+                    // case-insensitive language binds a differently-cased ref.
+                    if normalize_name(norm, &sym.name) != target_norm {
+                        false
+                    } else {
+                        let file_lower = sym.file_path.to_lowercase();
+                        wildcards.iter().any(|ns| {
+                            let ns_lower = ns.to_lowercase();
+                            wildcard_file_stem_matches(&file_lower, &ns_lower, underscore_prefix)
+                        })
+                    }
+                }
+            };
+            if under_a_wildcard {
+                hits.push(sym);
             }
         }
         // Single hit — accept. Multiple — let the candidate-ranking
@@ -1581,6 +1668,15 @@ impl<'a> DefaultResolver<'a> {
     }
 }
 
+/// The precomputed match data for `resolve_via_external_by_import`, built once
+/// from the file's imports before the candidate loop. `PkgSegment` carries the
+/// import roots; `FileStemOrDir` carries the lowercased import leaves and
+/// packages probed against each candidate's file path.
+enum ExtFileMatcher<'m> {
+    PkgSegment(Vec<&'m str>),
+    FileStemOrDir(Vec<String>),
+}
+
 /// Profile-table-driven kind compatibility check. Unrecognised symbol-kind
 /// strings default to permissive so an extractor typo doesn't silently hide a
 /// real symbol. Mirrors `core::members::kind_matches` / the bare-name check.
@@ -1707,6 +1803,28 @@ fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
         seg == module_lower
             || seg.split(':').next_back().map_or(false, |tail| tail == module_lower)
     })
+}
+
+/// `path_stem_matches` extended with the include-file underscore-prefix probe.
+/// True when the file's basename-stem / a dir-segment equals `module_lower`
+/// (the shared `path_stem_matches` rule) OR, when `underscore_prefix`, the
+/// basename-stem is `{module_lower}_…` — a unit's symbols split across
+/// `{unit}_part.inc` siblings. Both inputs are already lowercased.
+fn wildcard_file_stem_matches(
+    file_path_lower: &str,
+    module_lower: &str,
+    underscore_prefix: bool,
+) -> bool {
+    if path_stem_matches(file_path_lower, module_lower) {
+        return true;
+    }
+    if !underscore_prefix || module_lower.is_empty() {
+        return false;
+    }
+    let normalized = file_path_lower.replace('\\', "/");
+    let basename = normalized.rsplit('/').next().unwrap_or(&normalized);
+    let stem = basename.rsplit_once('.').map(|(s, _)| s).unwrap_or(basename);
+    stem.starts_with(&format!("{module_lower}_"))
 }
 
 /// The basename of a file path's immediate parent directory. Path separators

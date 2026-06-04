@@ -1,12 +1,8 @@
 // Puppet language hooks. Absorbed from the deleted `puppet/resolve.rs`.
 
-use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
-use crate::type_checker::core::DefaultResolver;
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -109,64 +105,6 @@ impl LanguageEngineHooks for PuppetHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if target.contains("::") {
-            if let Some(prefix) = target.split("::").next() {
-                let bare = prefix.strip_prefix('$').unwrap_or(prefix);
-                if file_ctx
-                    .imports
-                    .iter()
-                    .any(|i| i.module_path.as_deref() == Some(bare))
-                {
-                    return None;
-                }
-            }
-        }
-        if target.contains("::") {
-            let last_segment = target.split("::").last().unwrap_or(target.as_str());
-            for sym in lookup.in_file(&file_ctx.file_path) {
-                if (sym.name == *target
-                    || sym.name == last_segment
-                    || sym.qualified_name == *target)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "puppet_qualified_same_file",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-            if let Some(sym) = lookup.by_qualified_name(target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "puppet_qualified_global",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

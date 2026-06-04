@@ -318,6 +318,27 @@ impl<'a> Engine<'a> {
                 return None;
             }
         }
+        // Import-prefix decline: a qualified target whose leading namespace
+        // segment names a declared dependency module is external, not a project
+        // symbol. Declines before the ladder so no same-named local binds and
+        // external classification brands it. The import-set-keyed sibling of
+        // `namespace_decline` — keyed on the target's own leading segment rather
+        // than the resolving file's namespace.
+        if profile.decline_qualified_when_prefix_imported {
+            let target = ref_ctx.extracted_ref.target_name.as_str();
+            let sep = profile.qname_separator;
+            if let Some(head) = target.find(sep).map(|i| &target[..i]) {
+                let bare_head = strip_leading_sigil(head, profile.self_keywords);
+                if !bare_head.is_empty()
+                    && file_ctx
+                        .imports
+                        .iter()
+                        .any(|i| i.module_path.as_deref() == Some(bare_head))
+                {
+                    return None;
+                }
+            }
+        }
         crate::type_checker::core::DefaultResolver {
             file_ctx,
             ref_ctx,
@@ -577,6 +598,21 @@ impl<'a> Engine<'a> {
     pub fn profile_for(&self, language: &str) -> Option<&LanguageProfile> {
         self.profiles.get(language).copied()
     }
+}
+
+/// Strip a leading variable sigil from a target's namespace head before the
+/// import-prefix decline compares it against the import set. Removes a `$`
+/// (the variable sigil) or any of the profile's `self_keywords` used as a bare
+/// leading token, so `$foo::bar` and `foo::bar` compare identically against an
+/// imported `foo` module.
+fn strip_leading_sigil<'t>(head: &'t str, self_keywords: &[&str]) -> &'t str {
+    let stripped = head.strip_prefix('$').unwrap_or(head);
+    for kw in self_keywords {
+        if stripped == *kw {
+            return "";
+        }
+    }
+    stripped
 }
 
 /// Generic `FileContext` built purely from profile data, for languages that

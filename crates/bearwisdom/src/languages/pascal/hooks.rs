@@ -1,11 +1,7 @@
 // Pascal/Delphi language hooks. Absorbed from the deleted `pascal/resolve.rs`.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
-use crate::type_checker::core::DefaultResolver;
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -38,66 +34,6 @@ pub(crate) fn is_delphi_namespaced_file(file_ctx: &FileContext) -> bool {
             DELPHI_PREFIXES.iter().any(|p| ml.starts_with(p))
         })
     })
-}
-
-pub(crate) fn pascal_stem_matches(file_path: &str, module_lower: &str) -> bool {
-    let normalized = file_path.replace('\\', "/");
-    let basename = normalized.rsplit('/').next().unwrap_or(&normalized);
-    let stem = basename.rsplit_once('.').map(|(s, _)| s).unwrap_or(basename);
-    let stem_lower = stem.to_lowercase();
-    stem_lower == module_lower || stem_lower.starts_with(&format!("{module_lower}_"))
-}
-
-pub(crate) fn resolve_pascal_wildcard(
-    edge_kind: EdgeKind,
-    target_orig: &str,
-    target_lower: &str,
-    file_ctx: &FileContext,
-    lookup: &dyn SymbolLookup,
-) -> Option<Resolution> {
-    let target_upper = target_orig.to_uppercase();
-    let target_title: String = {
-        let mut c = target_orig.chars();
-        match c.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().collect::<String>() + &target_lower[f.len_utf8()..],
-        }
-    };
-    let probes: [&str; 4] = [
-        target_orig,
-        target_lower,
-        target_title.as_str(),
-        target_upper.as_str(),
-    ];
-    for import in &file_ctx.imports {
-        if !import.is_wildcard {
-            continue;
-        }
-        let Some(module_path) = &import.module_path else {
-            continue;
-        };
-        let mod_lower = module_path.to_lowercase();
-        for probe in probes {
-            for sym in lookup.by_name(probe) {
-                if sym.name.to_lowercase() != target_lower {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                if pascal_stem_matches(&sym.file_path, &mod_lower) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.95,
-                        strategy: "pascal_wildcard_import",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-    }
-    None
 }
 
 pub(crate) fn detect_pascal_http_producer(
@@ -259,42 +195,6 @@ impl LanguageEngineHooks for PascalHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        let target_lower = ref_ctx.extracted_ref.target_name.to_lowercase();
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name.to_lowercase() == target_lower
-                && predicates::kind_compatible(edge_kind, &sym.kind)
-            {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "pascal_same_file",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        let target_orig = &ref_ctx.extracted_ref.target_name;
-        if let Some(res) =
-            resolve_pascal_wildcard(edge_kind, target_orig, &target_lower, file_ctx, lookup)
-        {
-            return Some(res);
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

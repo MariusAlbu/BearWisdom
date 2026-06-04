@@ -1,11 +1,7 @@
 // Erlang language hooks. Absorbed from the deleted `erlang/resolve.rs`.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
-use crate::type_checker::core::DefaultResolver;
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -90,39 +86,6 @@ pub(crate) fn detect_flow_inner(
     Vec::new()
 }
 
-fn resolve_via_import(
-    file_ctx: &FileContext,
-    target: &str,
-    lookup: &dyn SymbolLookup,
-) -> Option<Resolution> {
-    for entry in &file_ctx.imports {
-        if entry.imported_name != target {
-            continue;
-        }
-        let source_mod = entry.module_path.as_deref()?;
-        for sym in lookup.by_name(target) {
-            let path = sym.file_path.as_ref();
-            let matches = path.contains(source_mod)
-                || path
-                    .rsplit('/')
-                    .next()
-                    .and_then(|f| f.strip_suffix(".erl"))
-                    .map(|stem| stem == source_mod)
-                    .unwrap_or(false);
-            if matches && predicates::kind_compatible(EdgeKind::Calls, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.92,
-                    strategy: "erlang_import_arity",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-    }
-    None
-}
-
 impl LanguageEngineHooks for ErlangHooks {
     fn classify_external(
         &self,
@@ -182,65 +145,6 @@ impl LanguageEngineHooks for ErlangHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind == EdgeKind::Calls && !target.contains(':') {
-            if let Some(res) = resolve_via_import(file_ctx, target, lookup) {
-                return Some(res);
-            }
-        }
-        if let Some(res) = (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all() {
-            return Some(res);
-        }
-        if edge_kind == EdgeKind::Calls {
-            for sym in lookup.in_file(&file_ctx.file_path) {
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                if sym.name == target.as_str() {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.9,
-                        strategy: "erlang_same_file_arity",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-            let target_base = target.split('/').next().unwrap_or(target.as_str());
-            if !target_base.is_empty() && !target.contains('/') {
-                for sym in lookup.in_file(&file_ctx.file_path) {
-                    if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                        continue;
-                    }
-                    let sym_base = sym.name.split('/').next().unwrap_or(&sym.name);
-                    if sym_base == target_base {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.8,
-                            strategy: "erlang_same_file_base",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-        None
     }
 }
 

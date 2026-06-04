@@ -61,6 +61,7 @@ pub const R_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
+    decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
@@ -71,6 +72,8 @@ pub const R_PROFILE: LanguageProfile = LanguageProfile {
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     package_by_directory: false,
+    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     constructor_patterns: &[
         ConstructorPattern::R6DollarNew,
         ConstructorPattern::S4New,
