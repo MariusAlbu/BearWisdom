@@ -1,4 +1,5 @@
-// Tests for bicep/resolve.rs — decorator-builtin filtering and module path resolution.
+// Tests for bicep external classification — Azure resource types and child
+// resource shorthand routed via `classify_external`.
 
 
 use crate::indexer::resolve::engine::{

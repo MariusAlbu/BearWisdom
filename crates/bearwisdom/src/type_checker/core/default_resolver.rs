@@ -61,6 +61,7 @@ struct LadderProfileData<'p> {
     relative_marker: RelativeMarker,
     external_by_import: Option<&'p ExternalByImport>,
     self_keywords: &'p [&'p str],
+    ambient_namespace_prefixes: &'p [&'p str],
 }
 
 impl LadderProfileData<'static> {
@@ -72,6 +73,7 @@ impl LadderProfileData<'static> {
         relative_marker: RelativeMarker::None,
         external_by_import: None,
         self_keywords: &[],
+        ambient_namespace_prefixes: &[],
     };
 }
 
@@ -503,9 +505,20 @@ impl<'a> DefaultResolver<'a> {
     /// providers, so an unimported reference to one of their members is
     /// the intended target — not an ambiguous bare-name guess.
     pub fn resolve_via_ambient_package(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
-        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        self.resolve_via_ambient_package_named(self.ref_ctx.extracted_ref.target_name.as_str(), kind)
+    }
+
+    /// `resolve_via_ambient_package` against an explicit `name` rather than the
+    /// ref's raw target. Lets the ladder strip a profile-declared namespace-
+    /// alias prefix (`sys.concat` → `concat`) before the ambient-package probe
+    /// without rewriting the ref or affecting the bare-name strategies above.
+    fn resolve_via_ambient_package_named(
+        &self,
+        name: &str,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let edge_kind = self.ref_ctx.extracted_ref.kind;
-        let candidates = self.lookup.by_name(target);
+        let candidates = self.lookup.by_name(name);
         let ambient: Vec<&SymbolInfo> = candidates
             .iter()
             .filter(|sym| self.lookup.is_ambient_path(&sym.file_path))
@@ -1139,6 +1152,7 @@ impl<'a> DefaultResolver<'a> {
                 relative_marker: profile.relative_marker,
                 external_by_import: profile.external_by_import.as_ref(),
                 self_keywords: profile.self_keywords,
+                ambient_namespace_prefixes: profile.ambient_namespace_prefixes,
             },
         )
     }
@@ -1214,6 +1228,16 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_same_namespace(kind))
             .or_else(|| self.resolve_via_imported_namespace(kind))
             .or_else(|| self.resolve_via_ambient_package(kind))
+            .or_else(|| {
+                // A target under a profile-declared namespace alias
+                // (`sys.concat`, `az.resourceId`) names a bare ambient symbol;
+                // strip the prefix and retry the ambient-package probe.
+                strip_ambient_prefix(
+                    self.ref_ctx.extracted_ref.target_name.as_str(),
+                    pd.ambient_namespace_prefixes,
+                )
+                .and_then(|leaf| self.resolve_via_ambient_package_named(leaf, kind))
+            })
             .or_else(|| {
                 pd.external_by_import
                     .and_then(|cfg| self.resolve_via_external_by_import(cfg, kind))
@@ -1587,6 +1611,23 @@ fn strip_self_keyword<'t>(target: &'t str, self_keywords: &[&str]) -> &'t str {
         }
     }
     target
+}
+
+/// Strip a leading `{prefix}.` when `prefix` is one of `ambient_prefixes`.
+/// Returns the stripped leaf, or `None` when no prefix matches (so the caller
+/// only retries the ambient probe for genuinely aliased targets). Mirrors
+/// `strip_self_keyword`'s shape but signals a match via `Option`.
+fn strip_ambient_prefix<'t>(target: &'t str, ambient_prefixes: &[&str]) -> Option<&'t str> {
+    for prefix in ambient_prefixes {
+        if let Some(rest) = target.strip_prefix(prefix) {
+            if let Some(after) = rest.strip_prefix('.') {
+                if !after.is_empty() {
+                    return Some(after);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// The package segment of an external file path under the

@@ -88,6 +88,8 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // Construction is `Foo{}` / `&Foo{}` / `make(...)` — extractor emits
     // these as Construction segments without needing a profile pattern.
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

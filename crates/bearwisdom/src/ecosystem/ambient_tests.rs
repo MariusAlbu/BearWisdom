@@ -44,6 +44,15 @@ fn matches_vue_runtime_declarations() {
 }
 
 #[test]
+fn matches_bicep_runtime_path() {
+    // The synthetic runtime file the bicep-runtime ecosystem emits.
+    assert!(
+        is_framework_ambient_path(&norm("ext:bicep-runtime:namespace.bicep")),
+        "bicep runtime path should match",
+    );
+}
+
+#[test]
 fn rejects_ordinary_files() {
     for p in [
         "src/app.ts",

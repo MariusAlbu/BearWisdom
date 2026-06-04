@@ -114,6 +114,8 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // generic NamedFactory pattern catches `*::new` shapes the extractor
     // tags as Construction segments.
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

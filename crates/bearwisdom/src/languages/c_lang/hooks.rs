@@ -4,7 +4,7 @@ use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
@@ -174,25 +174,6 @@ impl LanguageEngineHooks for CHooks {
             imports,
             file_namespace,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        _lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        // R-package C-API sentinel decline: a `.C("symbol")` callee in an R
-        // package's native sources must not bind to a same-named project symbol
-        // — it names the R C API, which `classify_external` brands `r.c.api`.
-        // This is a per-file-namespace decline the profile can't express, so it
-        // stays as a hook. Everything else routes through the engine.
-        if file_ctx.file_namespace.as_deref() == Some(R_PACKAGE_SENTINEL)
-            && predicates::is_r_c_api_symbol(&ref_ctx.extracted_ref.target_name)
-        {
-            return None;
-        }
-        None
     }
 }
 

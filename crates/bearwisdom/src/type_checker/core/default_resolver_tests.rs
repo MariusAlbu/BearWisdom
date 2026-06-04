@@ -1060,6 +1060,77 @@ fn ambient_package_prefers_declared_ambient_paths() {
 }
 
 #[test]
+fn ambient_namespace_prefix_strips_then_binds_ambient_symbol() {
+    // `sys.concat` names the bare ambient `concat` under an alias prefix the
+    // bicep profile declares. The earlier dotted strategies decline (the qname
+    // is `bicep.builtins.concat`, not `*.sys.concat`); the prefix-strip retry
+    // of the ambient-package probe then binds the bare symbol.
+    let lookup = Lookup::new()
+        .with(sym(
+            200,
+            "concat",
+            "bicep.builtins.concat",
+            "function",
+            "ext:bicep-runtime:namespace.bicep",
+        ))
+        .with_ambient("ext:bicep-runtime:namespace.bicep");
+    let r = extracted_call("sys.concat");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "main.bicep".to_string(),
+        language: "bicep".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::bicep::BICEP_PROFILE)
+        .expect("aliased ambient member binds after the prefix strip");
+    assert_eq!(resolved.target_symbol_id, 200);
+    assert_eq!(resolved.strategy, "default_ambient_package");
+}
+
+#[test]
+fn ambient_namespace_prefix_bare_name_still_binds() {
+    // A bare `concat` (no alias prefix) binds via the ordinary ambient-package
+    // probe — the strip retry is additive, not a replacement.
+    let lookup = Lookup::new()
+        .with(sym(
+            201,
+            "concat",
+            "bicep.builtins.concat",
+            "function",
+            "ext:bicep-runtime:namespace.bicep",
+        ))
+        .with_ambient("ext:bicep-runtime:namespace.bicep");
+    let r = extracted_call("concat");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "main.bicep".to_string(),
+        language: "bicep".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::bicep::BICEP_PROFILE)
+        .expect("bare ambient member binds without any prefix");
+    assert_eq!(resolved.target_symbol_id, 201);
+}
+
+#[test]
 fn ambient_package_returns_none_without_declared_ambient_paths() {
     let lookup = Lookup::new().with(sym(102, "describe", "x.describe", "function", "src/x.ts"));
     let r = extracted_call("describe");

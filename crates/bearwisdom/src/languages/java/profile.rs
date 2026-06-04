@@ -74,6 +74,8 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     // The earlier -2.68pp regression was a JDK demand-walker gap (bare
     // `String` refs never triggering a pull), not the engine.
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

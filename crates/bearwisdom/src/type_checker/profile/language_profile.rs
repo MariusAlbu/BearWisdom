@@ -45,6 +45,23 @@ pub struct LanguageProfile {
     /// happens to share the name. `None` (the default) runs the ladder for every
     /// target, so languages with no reserved-name space are unaffected.
     pub builtin_skip: Option<fn(&str) -> bool>,
+    /// File-namespace-gated decline, the two-key sibling of `builtin_skip`.
+    /// `builtin_skip` keys only on the target string; this also requires the
+    /// resolving file's `file_namespace` to equal a sentinel before declining.
+    /// `Some` for languages where a name is reserved only inside a specific
+    /// kind of file (R-package native C sources naming the R C API), so the
+    /// same name binds normally everywhere else. `None` (the default) leaves
+    /// it inert. Declines before the strategy ladder so no same-named project
+    /// symbol binds; external classification brands the target afterward. See
+    /// `NamespaceDecline`.
+    pub namespace_decline: Option<NamespaceDecline>,
+    /// Namespace-alias prefixes the engine strips from a dotted target before
+    /// the ambient-package lookup. A target `{prefix}.{leaf}` whose `{prefix}`
+    /// is one of these is rewritten to `{leaf}` for that one strategy, so a
+    /// member exposed under an aliased namespace resolves against the bare
+    /// ambient symbol (Bicep `sys.concat` / `az.resourceId` → `concat` /
+    /// `resourceId`). `&[]` (the default) leaves every dotted target intact.
+    pub ambient_namespace_prefixes: &'static [&'static str],
     /// Template-include import resolution. `Some` for languages whose
     /// `Imports` refs name another template FILE by relative path / stem
     /// (handlebars partials, EJS / Pug / Nunjucks includes, GSP renders,
@@ -219,6 +236,20 @@ pub enum RelativeMarker {
     /// A leading `./` or `../` marks a relative module; everything else is
     /// absolute and routes to `ByNameUnderModuleDir`.
     DotSlashPrefix,
+}
+
+/// Data for the file-namespace-gated decline. A ref declines before the
+/// strategy ladder only when BOTH hold: the resolving file's `file_namespace`
+/// equals `file_namespace`, AND `is_reserved` returns true for the target.
+/// The two-key gate is why this can't fold into `builtin_skip` — that
+/// predicate never sees the file namespace, so it would decline the reserved
+/// names in every file rather than only the namespaced ones.
+#[derive(Debug, Clone, Copy)]
+pub struct NamespaceDecline {
+    /// The `FileContext::file_namespace` sentinel that arms the decline.
+    pub file_namespace: &'static str,
+    /// True when the target names a reserved symbol of that namespace.
+    pub is_reserved: fn(&str) -> bool,
 }
 
 /// Data for `resolve_via_external_by_import`: an import-scoped bind of a bare
@@ -442,6 +473,8 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: ImportModulePath::None,
     module_anchor: ModuleAnchor::Off,

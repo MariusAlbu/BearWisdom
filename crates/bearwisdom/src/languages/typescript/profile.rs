@@ -127,6 +127,8 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // both as construction; the extractor emits both as Construction
     // segments. Engine accepts both.
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

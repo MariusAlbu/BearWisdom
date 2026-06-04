@@ -53,6 +53,8 @@ pub const GROOVY_PROFILE: LanguageProfile = LanguageProfile {
     // explicit-import qualification of a bare mid-chain receiver.
     chain_qualification: ChainQualification::SamePackageAndImports,
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

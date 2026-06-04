@@ -44,6 +44,12 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: BICEP_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: Some(super::hooks::is_azure_resource_type),
+    namespace_decline: None,
+    // `sys`/`az` are namespace aliases over the bicep-runtime ambient symbols
+    // (both members land under `bicep.builtins`/`bicep.decorators`), not qname
+    // path segments. Strip the alias so `sys.concat`/`az.resourceId` resolve
+    // against the bare ambient symbol.
+    ambient_namespace_prefixes: &["sys", "az"],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

@@ -44,6 +44,8 @@ pub const HANDLEBARS_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: Some(HANDLEBARS_IMPORTS),
     import_module_path: ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

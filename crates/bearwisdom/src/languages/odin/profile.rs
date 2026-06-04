@@ -36,6 +36,8 @@ pub const ODIN_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: ODIN_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

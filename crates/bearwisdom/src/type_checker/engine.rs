@@ -307,6 +307,17 @@ impl<'a> Engine<'a> {
                 return None;
             }
         }
+        // Two-key sibling of `builtin_skip`: a name reserved only inside a
+        // specific kind of file. Declines before the ladder when the file's
+        // namespace arms the rule AND the target is reserved, so a same-named
+        // project symbol can't bind; external classification brands it after.
+        if let Some(nd) = profile.namespace_decline {
+            if file_ctx.file_namespace.as_deref() == Some(nd.file_namespace)
+                && (nd.is_reserved)(ref_ctx.extracted_ref.target_name.as_str())
+            {
+                return None;
+            }
+        }
         crate::type_checker::core::DefaultResolver {
             file_ctx,
             ref_ctx,

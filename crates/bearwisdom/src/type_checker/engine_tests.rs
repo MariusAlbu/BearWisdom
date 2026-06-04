@@ -900,3 +900,79 @@ fn builtin_skip_none_leaves_other_targets_resolvable() {
         .expect("non-builtin sibling still resolves under a builtin_skip profile");
     assert_eq!(resolution.target_symbol_id, 1);
 }
+
+/// Resolve a bare `target` call against a single same-file sibling of that
+/// name, under `profile`, in a file whose context carries `file_namespace`.
+fn resolve_sibling_in_namespace(
+    profile: &'static LanguageProfile,
+    target: &str,
+    file_namespace: Option<&str>,
+) -> Option<Resolution> {
+    let arena = Arc::new(TypeArena::new());
+    let (mut pf, mut sym_ids, mut infos) = foo_overloads(&arena, Vec::new(), Vec::new());
+    pf.symbols.truncate(1);
+    pf.symbols[0].name = target.to_string();
+    pf.symbols[0].qualified_name = target.to_string();
+    sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("src/f.ts".to_string(), 0), 1);
+    infos.truncate(1);
+    infos[0].name = target.to_string();
+    infos[0].qualified_name = target.to_string();
+    let lookup = SiblingLookup { sib: infos, empty: Vec::new(), empty_reexports: Vec::new() };
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("typescript", profile);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let mut r = bare_call_ref(0);
+    r.target_name = target.to_string();
+    let rc = ref_ctx_for(&r, &source);
+    let mut fc = file_ctx_ts("src/f.ts");
+    fc.file_namespace = file_namespace.map(|s| s.to_string());
+    engine.resolve(&rc, &fc, &lookup)
+}
+
+/// Profile mirroring DEFAULT but declining `reserved` only inside files whose
+/// namespace is `ns-sentinel` — the two-key namespace-gated decline.
+static NS_DECLINE_PROFILE: LanguageProfile = LanguageProfile {
+    namespace_decline: Some(
+        crate::type_checker::profile::language_profile::NamespaceDecline {
+            file_namespace: "ns-sentinel",
+            is_reserved: |n| n == "reserved",
+        },
+    ),
+    ..DEFAULT_PROFILE
+};
+
+#[test]
+fn namespace_decline_gates_on_both_keys() {
+    // Reserved name + armed namespace → declines before the ladder, so the
+    // same-file sibling is NOT bound.
+    assert!(
+        resolve_sibling_in_namespace(&NS_DECLINE_PROFILE, "reserved", Some("ns-sentinel"))
+            .is_none(),
+        "namespace_decline must decline when both the namespace and the name match"
+    );
+
+    // Reserved name but the file is in a different namespace → the second key
+    // is absent, so the ladder still binds the sibling.
+    let bound =
+        resolve_sibling_in_namespace(&NS_DECLINE_PROFILE, "reserved", Some("other-ns"))
+            .expect("a different namespace must not arm the decline");
+    assert_eq!(bound.target_symbol_id, 1);
+
+    // Armed namespace but a non-reserved name → the first key is absent, so the
+    // ladder still binds the sibling. Proves the gate is per-target.
+    let bound =
+        resolve_sibling_in_namespace(&NS_DECLINE_PROFILE, "ordinary", Some("ns-sentinel"))
+            .expect("a non-reserved name in the armed namespace must still resolve");
+    assert_eq!(bound.target_symbol_id, 1);
+}

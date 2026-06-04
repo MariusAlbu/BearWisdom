@@ -10,12 +10,19 @@ fn bicep_profile_identity_and_shadow_mode() {
 #[test]
 fn bicep_profile_declines_azure_resource_types() {
     // builtin_skip declines Azure resource type names (`Microsoft.Web/sites`)
-    // before the ladder; the rest of resolve_ref drained, leaving only the
-    // bicep-runtime fallback as a hook.
+    // before the ladder.
     assert!(BICEP_PROFILE.builtin_skip.is_some());
     let is_builtin = BICEP_PROFILE.builtin_skip.unwrap();
     assert!(is_builtin("Microsoft.Web/sites"));
     assert!(!is_builtin("myParameter"));
+}
+
+#[test]
+fn bicep_profile_strips_sys_az_namespace_aliases() {
+    // `sys`/`az` are namespace aliases over the bicep-runtime ambient symbols;
+    // the engine strips them before the ambient-package lookup so `sys.concat`
+    // resolves against the bare `concat` symbol.
+    assert_eq!(BICEP_PROFILE.ambient_namespace_prefixes, &["sys", "az"]);
 }
 
 #[test]

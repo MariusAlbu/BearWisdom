@@ -39,6 +39,8 @@ pub const MARKDOWN_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: Some(MARKDOWN_IMPORTS),
     import_module_path: ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

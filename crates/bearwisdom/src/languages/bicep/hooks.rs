@@ -1,9 +1,8 @@
 // Bicep language hooks. Absorbed from the deleted `bicep/resolve.rs`.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
@@ -45,45 +44,6 @@ pub(crate) fn is_child_resource_shorthand(name: &str) -> bool {
         .unwrap_or(false);
     let all_upper = base.chars().all(|c| !c.is_ascii_lowercase());
     starts_lower || all_upper
-}
-
-fn resolve_against_bicep_runtime(
-    target: &str,
-    edge_kind: EdgeKind,
-    lookup: &dyn SymbolLookup,
-) -> Option<Resolution> {
-    if target.is_empty() {
-        return None;
-    }
-    let bare = target
-        .strip_prefix("sys.")
-        .or_else(|| target.strip_prefix("az."))
-        .or_else(|| target.rsplit_once('.').map(|(_, t)| t))
-        .unwrap_or(target);
-    if !bare.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return None;
-    }
-    let lower = bare.to_ascii_lowercase();
-    for sym in lookup
-        .by_name(bare)
-        .into_iter()
-        .chain(lookup.by_name(&lower))
-    {
-        if !sym.qualified_name.starts_with("bicep.") {
-            continue;
-        }
-        if !predicates::kind_compatible(edge_kind, &sym.kind) {
-            continue;
-        }
-        return Some(Resolution {
-            target_symbol_id: sym.id,
-            confidence: 0.9,
-            strategy: "bicep_runtime_grammar",
-            resolved_yield_type: None,
-            flow_emit: None,
-        });
-    }
-    None
 }
 
 impl LanguageEngineHooks for BicepHooks {
@@ -128,22 +88,6 @@ impl LanguageEngineHooks for BicepHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    /// Residue tail. The generic engine ladder runs first (and declines Azure
-    /// resource types via `builtin_skip`); this binds the bare/`sys.`/`az.`
-    /// target against the `bicep.`-prefixed ecosystem-runtime symbols. That
-    /// `bicep.`-prefix-scoped, confidence-0.9, prefix-stripping lookup is not
-    /// expressible as `LanguageProfile` data, so it stays as a hook.
-    fn resolve_ref(
-        &self,
-        _file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        resolve_against_bicep_runtime(target, edge_kind, lookup)
     }
 }
 

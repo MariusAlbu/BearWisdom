@@ -49,6 +49,9 @@ pub const FRAMEWORK_AMBIENT_MARKERS: &[AmbientPathMarker] = &[
     AmbientPathMarker { contains: "node_modules/@vue/runtime-core/dist/", ends_with: ".d.ts" },
     AmbientPathMarker { contains: "node_modules/@vue/runtime-dom/dist/", ends_with: ".d.ts" },
     AmbientPathMarker { contains: "node_modules/@vue/reactivity/dist/", ends_with: ".d.ts" },
+    // Bicep runtime grammar symbols (built-in functions, decorators, the
+    // `sys`/`az` namespace markers) the language compiler treats as ambient.
+    AmbientPathMarker { contains: "ext:bicep-runtime:", ends_with: ".bicep" },
 ];
 
 /// True when `normalized_lower_path` (pre-lowercased, `/`-normalised) matches

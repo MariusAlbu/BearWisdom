@@ -31,6 +31,8 @@ pub const GRAPHQL_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: GRAPHQL_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: Some(super::hooks::is_graphql_builtin),
+    namespace_decline: None,
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,

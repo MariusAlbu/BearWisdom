@@ -50,6 +50,15 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     // are not project symbols; decline them before the bare-name ladder so they
     // are never bound to a same-named project symbol or seeded as a chain miss.
     builtin_skip: Some(predicates::is_template_param),
+    // R-package native C sources: a `.C("LENGTH")` callee names the R C API,
+    // not a same-named project symbol. Declined before the ladder only when
+    // the file carries the R-package namespace; external classification then
+    // brands it `r.c.api`.
+    namespace_decline: Some(crate::type_checker::profile::language_profile::NamespaceDecline {
+        file_namespace: super::hooks::R_PACKAGE_SENTINEL,
+        is_reserved: predicates::is_r_c_api_symbol,
+    }),
+    ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
