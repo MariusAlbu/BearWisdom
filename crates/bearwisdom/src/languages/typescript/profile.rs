@@ -126,6 +126,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // TS supports `new Foo()` (NewExpression) and `Foo()` (CallExpression)
     // both as construction; the extractor emits both as Construction
     // segments. Engine accepts both.
+    builtin_skip: None,
     constructor_patterns: &[
         ConstructorPattern::New,
         ConstructorPattern::CallableClass,

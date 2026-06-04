@@ -182,7 +182,7 @@ fn shell_source_resolves_relative_path() {
         file_package_id: None,
     };
 
-    let res = BashHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
+    let res = BashHooks.resolve_bare_pre(&ref_ctx, &file_ctx, &index);
     assert!(res.is_some(), "run_backup called in main.sh should resolve via shell source");
     let res = res.unwrap();
     assert_eq!(res.target_symbol_id, 10, "should resolve to helpers.sh:run_backup (id=10)");
@@ -242,7 +242,7 @@ fn shell_source_resolves_variable_prefixed_path() {
         file_package_id: None,
     };
 
-    let res = BashHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
+    let res = BashHooks.resolve_bare_pre(&ref_ctx, &file_ctx, &index);
     assert!(
         res.is_some(),
         "theme.sh should resolve __powerline_prompt_command via $OSH-prefixed source"
@@ -286,9 +286,9 @@ fn shell_source_skips_absolute_source_path() {
     };
 
     // Shell source step must not fire (absolute path → suffix is "").
-    // The ref may still resolve via P4 heuristic (name+kind), which is fine —
-    // we only assert that if it resolves, strategy is NOT bash_shell_source.
-    let res = BashHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
+    // resolve_bare_pre only runs the shell-source strategy, so it returns None
+    // here; if anything resolves, its strategy must not be bash_shell_source.
+    let res = BashHooks.resolve_bare_pre(&ref_ctx, &file_ctx, &index);
     if let Some(r) = res {
         assert_ne!(
             r.strategy, "bash_shell_source",

@@ -744,3 +744,159 @@ fn engine_infer_yield_returns_class_typeid_for_instantiates() {
         crate::type_checker::core::types::Type::Class(q) if q == "Foo"
     ));
 }
+
+/// `wildcard` names a sibling function in `src/f.ts`, so the generic ladder's
+/// same-file strategy would bind it. Returns the engine resolution for a bare
+/// `Calls` ref to it under `profile`.
+fn resolve_sibling_named(
+    profile: &'static LanguageProfile,
+) -> Option<Resolution> {
+    let arena = Arc::new(TypeArena::new());
+    let (mut pf, mut sym_ids, mut infos) = foo_overloads(&arena, Vec::new(), Vec::new());
+    // Reshape the first `foo` into a single `wildcard` callable; drop the
+    // second so the same-file strategy has one unambiguous target.
+    pf.symbols.truncate(1);
+    pf.symbols[0].name = "wildcard".to_string();
+    pf.symbols[0].qualified_name = "wildcard".to_string();
+    sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("src/f.ts".to_string(), 0), 1);
+    infos.truncate(1);
+    infos[0].name = "wildcard".to_string();
+    infos[0].qualified_name = "wildcard".to_string();
+    let lookup = SiblingLookup { sib: infos, empty: Vec::new(), empty_reexports: Vec::new() };
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("typescript", profile);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let mut r = bare_call_ref(0);
+    r.target_name = "wildcard".to_string();
+    let rc = ref_ctx_for(&r, &source);
+    let fc = file_ctx_ts("src/f.ts");
+    engine.resolve(&rc, &fc, &lookup)
+}
+
+/// Lookup that returns a single seeded sibling for both `by_name` and
+/// `in_file`, so the generic same-file strategy can bind a bare ref.
+struct SiblingLookup {
+    sib: Vec<SymbolInfo>,
+    empty: Vec<SymbolInfo>,
+    empty_reexports: Vec<(String, String)>,
+}
+
+impl SymbolLookup for SiblingLookup {
+    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+        if self.sib.first().map(|s| s.name.as_str()) == Some(name) {
+            &self.sib
+        } else {
+            &self.empty
+        }
+    }
+    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+        None
+    }
+    fn members_of(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+        Vec::new()
+    }
+    fn has_in_namespace(&self, _: &str) -> bool {
+        false
+    }
+    fn in_file(&self, _: &str) -> &[SymbolInfo] {
+        &self.sib
+    }
+    fn field_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn alias_target(&self, _: &str) -> Option<&AliasTarget> {
+        None
+    }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] {
+        &self.empty_reexports
+    }
+    fn is_external_name(&self, _: &str, _: &str) -> bool {
+        false
+    }
+}
+
+/// Profile mirroring DEFAULT but skipping the `wildcard` builtin name.
+static SKIP_WILDCARD_PROFILE: LanguageProfile = LanguageProfile {
+    builtin_skip: Some(|n| n == "wildcard"),
+    ..DEFAULT_PROFILE
+};
+
+#[test]
+fn builtin_skip_declines_before_ladder_binds_sibling() {
+    // With no builtin_skip, the same-file strategy binds the sibling `wildcard`.
+    let bound = resolve_sibling_named(&DEFAULT_PROFILE)
+        .expect("ladder binds the same-file sibling when nothing skips it");
+    assert_eq!(bound.target_symbol_id, 1);
+
+    // With builtin_skip recognizing `wildcard`, the engine declines outright —
+    // the ladder never runs, so the sibling is NOT bound.
+    assert!(
+        resolve_sibling_named(&SKIP_WILDCARD_PROFILE).is_none(),
+        "builtin_skip must decline the ref before the ladder binds a homonym"
+    );
+}
+
+#[test]
+fn builtin_skip_none_leaves_other_targets_resolvable() {
+    // The skip predicate matches ONLY `wildcard`; a sibling under any other
+    // name still resolves through the ladder under the same profile. Proves the
+    // gate is per-target, not a blanket decline.
+    let arena = Arc::new(TypeArena::new());
+    let (mut pf, mut sym_ids, mut infos) = foo_overloads(&arena, Vec::new(), Vec::new());
+    pf.symbols.truncate(1);
+    pf.symbols[0].name = "helper".to_string();
+    pf.symbols[0].qualified_name = "helper".to_string();
+    sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("src/f.ts".to_string(), 0), 1);
+    infos.truncate(1);
+    infos[0].name = "helper".to_string();
+    infos[0].qualified_name = "helper".to_string();
+    let lookup = SiblingLookup { sib: infos, empty: Vec::new(), empty_reexports: Vec::new() };
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("typescript", &SKIP_WILDCARD_PROFILE);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let mut r = bare_call_ref(0);
+    r.target_name = "helper".to_string();
+    let rc = ref_ctx_for(&r, &source);
+    let fc = file_ctx_ts("src/f.ts");
+    let resolution = engine
+        .resolve(&rc, &fc, &lookup)
+        .expect("non-builtin sibling still resolves under a builtin_skip profile");
+    assert_eq!(resolution.target_symbol_id, 1);
+}

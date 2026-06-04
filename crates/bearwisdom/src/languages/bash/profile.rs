@@ -3,8 +3,36 @@
 // DEFAULT_PROFILE at runtime.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
+use crate::types::{EdgeKind, SymbolKind};
+
+const BASH_KIND_TABLE: KindTable = &[
+    (
+        EdgeKind::Calls,
+        &[
+            SymbolKind::Method,
+            SymbolKind::Function,
+            SymbolKind::Constructor,
+            SymbolKind::Test,
+            SymbolKind::Class,
+        ],
+    ),
+    (EdgeKind::Inherits, &[SymbolKind::Class]),
+    (EdgeKind::Implements, &[SymbolKind::Class, SymbolKind::Interface]),
+    (
+        EdgeKind::TypeRef,
+        &[
+            SymbolKind::Class,
+            SymbolKind::Interface,
+            SymbolKind::Enum,
+            SymbolKind::TypeAlias,
+            SymbolKind::Function,
+            SymbolKind::Variable,
+        ],
+    ),
+    (EdgeKind::Instantiates, &[SymbolKind::Class, SymbolKind::Function]),
+];
 
 pub const BASH_PROFILE: LanguageProfile = LanguageProfile {
     id: "shell",
@@ -20,8 +48,9 @@ pub const BASH_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     iterator_method: None,
     primitive_mapping: &[],
-    kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    kind_compatible_table: BASH_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: Some(super::predicates::is_bash_builtin),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

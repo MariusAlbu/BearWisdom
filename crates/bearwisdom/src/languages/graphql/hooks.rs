@@ -2,11 +2,10 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::ParsedFile;
 
 pub struct GraphQlHooks;
 
@@ -53,32 +52,6 @@ impl LanguageEngineHooks for GraphQlHooks {
             imports: Vec::new(),
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if ref_ctx.extracted_ref.kind != EdgeKind::TypeRef {
-            return None;
-        }
-        if is_graphql_builtin(&ref_ctx.extracted_ref.target_name) {
-            return None;
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: |_, sym_kind| {
-                matches!(
-                    sym_kind,
-                    "class" | "interface" | "enum" | "struct" | "type_alias"
-                )
-            },
-        })
-        .resolve_all()
     }
 }
 

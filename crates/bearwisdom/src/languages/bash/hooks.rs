@@ -5,7 +5,6 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -113,32 +112,20 @@ impl LanguageEngineHooks for BashHooks {
         })
     }
 
-    fn resolve_ref(
+    fn resolve_bare_pre(
         &self,
-        file_ctx: &FileContext,
         ref_ctx: &RefContext<'_>,
+        file_ctx: &FileContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if predicates::is_bash_builtin(target) {
+        // `source ./path.sh` binds a same-named symbol whose file path matches
+        // the sourced script. No generic strategy keys on a sourced-path suffix,
+        // so this stays language code. Runs ahead of the engine ladder because
+        // its 0.90 confidence beats the generic bare-name fallback.
+        if ref_ctx.extracted_ref.kind != EdgeKind::Calls {
             return None;
         }
-        // Bash-specific `source ./path.sh` resolution runs first — its
-        // confidence is higher than the generic DefaultResolver fallback
-        // when an explicit `source` directive is in scope.
-        if edge_kind == EdgeKind::Calls {
-            if let Some(res) = resolve_via_shell_source(target, file_ctx, lookup) {
-                return Some(res);
-            }
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
+        resolve_via_shell_source(&ref_ctx.extracted_ref.target_name, file_ctx, lookup)
     }
 }
 

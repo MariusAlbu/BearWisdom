@@ -52,6 +52,7 @@ pub const GROOVY_PROFILE: LanguageProfile = LanguageProfile {
     // Groovy shares Java's package-qualified member keying; same-package +
     // explicit-import qualification of a bare mid-chain receiver.
     chain_qualification: ChainQualification::SamePackageAndImports,
+    builtin_skip: None,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

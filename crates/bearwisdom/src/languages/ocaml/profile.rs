@@ -67,6 +67,7 @@ pub const OCAML_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: OCAML_PRIMITIVES,
     kind_compatible_table: OCAML_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

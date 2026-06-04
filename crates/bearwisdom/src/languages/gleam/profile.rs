@@ -37,7 +37,12 @@ pub const GLEAM_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: GLEAM_PRIMITIVES,
     kind_compatible_table: GLEAM_KIND_TABLE,
-    chain_qualification: ChainQualification::None,
+    // A Gleam import (`import gleam/io`) names a module; its members are keyed
+    // under the path's last segment (`io.println`). A bare member ref whose
+    // qualifier the extractor dropped resolves under `{short}.{target}` — the
+    // same shape the engine's package-short-name strategy binds.
+    chain_qualification: ChainQualification::PackageShortName,
+    builtin_skip: Some(super::hooks::is_gleam_operator),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

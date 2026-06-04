@@ -89,6 +89,7 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     // the structured walker's `qualify_current_ty` reproduces the .NET
     // qualification the C# resolver did by hand.
     chain_qualification: ChainQualification::SamePackageAndImports,
+    builtin_skip: None,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AttrBracket),

@@ -19,6 +19,7 @@ const fn minimal(id: &'static str) -> LanguageProfile {
         primitive_mapping: &[],
         kind_compatible_table: PERMISSIVE_KIND_TABLE,
         chain_qualification: ChainQualification::None,
+        builtin_skip: None,
         constructor_patterns: &[],
         class_builder_specs: &[],
         decorator_syntax: None,

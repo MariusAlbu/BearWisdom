@@ -78,6 +78,7 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     // so a bare mid-chain receiver (a same-package type or one named by an
     // explicit import) qualifies before member lookup.
     chain_qualification: ChainQualification::SamePackageAndImports,
+    builtin_skip: None,
     constructor_patterns: &[
         crate::type_checker::profile::language_profile::ConstructorPattern::New,
         crate::type_checker::profile::language_profile::ConstructorPattern::CallableClass,

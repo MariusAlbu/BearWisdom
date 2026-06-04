@@ -16,7 +16,6 @@ mod commands;
 mod dotnet_bindings;
 mod node_helpers;
 
-mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 

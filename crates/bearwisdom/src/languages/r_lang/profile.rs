@@ -10,10 +10,28 @@ use crate::types::{EdgeKind, SymbolKind};
 const R_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
-        &[SymbolKind::Function, SymbolKind::Method],
+        &[
+            SymbolKind::Method,
+            SymbolKind::Function,
+            SymbolKind::Constructor,
+            SymbolKind::Test,
+            SymbolKind::Class,
+        ],
     ),
-    (EdgeKind::TypeRef, &[SymbolKind::Class]),
-    (EdgeKind::Instantiates, &[SymbolKind::Class]),
+    (EdgeKind::Inherits, &[SymbolKind::Class]),
+    (EdgeKind::Implements, &[SymbolKind::Class, SymbolKind::Interface]),
+    (
+        EdgeKind::TypeRef,
+        &[
+            SymbolKind::Class,
+            SymbolKind::Interface,
+            SymbolKind::Enum,
+            SymbolKind::TypeAlias,
+            SymbolKind::Function,
+            SymbolKind::Variable,
+        ],
+    ),
+    (EdgeKind::Instantiates, &[SymbolKind::Class, SymbolKind::Function]),
 ];
 
 const R_PRIMITIVES: &[(&str, PrimKind)] = &[
@@ -41,6 +59,7 @@ pub const R_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: R_PRIMITIVES,
     kind_compatible_table: R_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[
         ConstructorPattern::R6DollarNew,
         ConstructorPattern::S4New,

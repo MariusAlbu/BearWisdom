@@ -41,6 +41,7 @@ pub const PERL_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: PERL_PRIMITIVES,
     kind_compatible_table: PERL_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[ConstructorPattern::ArrowNew],
     class_builder_specs: &[],
     decorator_syntax: None,

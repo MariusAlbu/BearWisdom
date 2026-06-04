@@ -67,6 +67,7 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: DART_PRIMITIVES,
     kind_compatible_table: DART_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[
         ConstructorPattern::New,
         ConstructorPattern::CallableClass,

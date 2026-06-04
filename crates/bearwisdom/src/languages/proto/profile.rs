@@ -1,6 +1,12 @@
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
+use crate::types::{EdgeKind, SymbolKind};
+
+const PROTO_KIND_TABLE: KindTable = &[(
+    EdgeKind::TypeRef,
+    &[SymbolKind::Struct, SymbolKind::Enum, SymbolKind::Class],
+)];
 
 pub const PROTO_PROFILE: LanguageProfile = LanguageProfile {
     id: "proto",
@@ -16,8 +22,9 @@ pub const PROTO_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     iterator_method: None,
     primitive_mapping: &[],
-    kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    kind_compatible_table: PROTO_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: Some(super::hooks::is_proto_builtin),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

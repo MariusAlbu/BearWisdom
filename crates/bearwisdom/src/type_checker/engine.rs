@@ -295,6 +295,16 @@ impl<'a> Engine<'a> {
         lookup: &dyn SymbolLookup,
         profile: &LanguageProfile,
     ) -> Option<Resolution> {
+        // Language builtins/primitives (scalar types, built-in functions,
+        // operators, reserved namespace prefixes) are not project symbols.
+        // Decline before the ladder so they are never bound to a same-named
+        // project symbol and never seed a chain miss — Tier 1.5 classifies
+        // them as external/builtin instead.
+        if let Some(is_builtin) = profile.builtin_skip {
+            if is_builtin(ref_ctx.extracted_ref.target_name.as_str()) {
+                return None;
+            }
+        }
         crate::type_checker::core::DefaultResolver {
             file_ctx,
             ref_ctx,

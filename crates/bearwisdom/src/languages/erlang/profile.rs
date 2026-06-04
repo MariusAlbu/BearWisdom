@@ -41,6 +41,7 @@ pub const ERLANG_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: ERLANG_PRIMITIVES,
     kind_compatible_table: ERLANG_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

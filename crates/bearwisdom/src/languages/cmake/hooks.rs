@@ -2,9 +2,8 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -31,14 +30,6 @@ pub(crate) fn is_cmake_builtin(name: &str) -> bool {
         return true;
     }
     super::keywords::KEYWORDS.contains(&s)
-}
-
-fn cmake_kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
-    match edge_kind {
-        EdgeKind::Calls => matches!(sym_kind, "function" | "macro"),
-        EdgeKind::TypeRef => matches!(sym_kind, "variable" | "function" | "macro"),
-        _ => true,
-    }
 }
 
 impl LanguageEngineHooks for CMakeHooks {
@@ -75,26 +66,6 @@ impl LanguageEngineHooks for CMakeHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if is_cmake_builtin(target) {
-            return None;
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: cmake_kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

@@ -36,6 +36,7 @@ pub const GDSCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: GD_PRIMITIVES,
     kind_compatible_table: GD_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

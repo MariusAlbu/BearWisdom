@@ -113,6 +113,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // `Foo::new(...)`, `Foo::build(...)`, and turbofish factories. The
     // generic NamedFactory pattern catches `*::new` shapes the extractor
     // tags as Construction segments.
+    builtin_skip: None,
     constructor_patterns: &[
         ConstructorPattern::TypeColonColonNew,
         ConstructorPattern::TypeColonColonBuild,

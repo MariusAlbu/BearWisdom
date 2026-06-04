@@ -1,17 +1,17 @@
 // =============================================================================
 // languages/elixir/hooks.rs — ElixirHooks impl plus the concrete
-// ElixirResolver (scope-chain walk; same-module via file_namespace; alias
-// resolution against ImportEntry.imported_name + module_path; fully-
-// qualified module reference) plus 6 flow detectors (Ecto Repo ops on
-// `.Repo`-suffix modules, HTTPoison/Tesla/Req/Finch/Mojito chains,
-// grpc-elixir generated stubs ending in `.Stub`, Oban bgjob,
-// Phoenix.Channel / Phoenix.LiveView WebSocket Consumer from `use` macro,
-// Bamboo/Swoosh mailer deliver_*) plus infer_external_inner with mix.exs
-// dep matching (CamelCase root ↔ snake_case dep atom, plus first-segment
-// prefix), the `Routes` Phoenix-convention universal alias rule,
-// import-wildcard fallback for `import Bamboo.Test`-style injection, and
-// use-injection inference via `lookup.by_qualified_name(module.target)`
-// confirmation against the externals symbol set.
+// ElixirResolver (alias-to-module-qname binding only; scope-chain,
+// same-module, and fully-qualified lookups are handled by the engine ladder)
+// plus 6 flow detectors (Ecto Repo ops on `.Repo`-suffix modules,
+// HTTPoison/Tesla/Req/Finch/Mojito chains, grpc-elixir generated stubs ending
+// in `.Stub`, Oban bgjob, Phoenix.Channel / Phoenix.LiveView WebSocket
+// Consumer from `use` macro, Bamboo/Swoosh mailer deliver_*) plus
+// infer_external_inner with mix.exs dep matching (CamelCase root ↔
+// snake_case dep atom, plus first-segment prefix), the `Routes`
+// Phoenix-convention universal alias rule, import-wildcard fallback for
+// `import Bamboo.Test`-style injection, and use-injection inference via
+// `lookup.by_qualified_name(module.target)` confirmation against the
+// externals symbol set.
 // =============================================================================
 
 use super::predicates;
@@ -34,6 +34,16 @@ impl ElixirResolver {
         build_file_context_inner(file, project_ctx)
     }
 
+    /// Resolve an `alias MyApp.Foo` reference to the module symbol itself.
+    ///
+    /// When an import's bound name equals the target (`alias MyApp.Foo` then a
+    /// bare `Foo`), the answer is the symbol whose qname IS the import's full
+    /// module path — not a member under that module's file. The generic
+    /// file-import strategy keys on the module's file path and on a member
+    /// name, so it can't bind a bare alias to the module qname; this stays as
+    /// language code. Scope-chain (`{scope}.{target}`), same-module
+    /// (`{file_namespace}.{target}`), and fully-qualified dotted lookups are
+    /// all covered by the engine ladder and run before this hook.
     pub(crate) fn resolve(
         &self,
         file_ctx: &FileContext,
@@ -42,36 +52,6 @@ impl ElixirResolver {
     ) -> Option<Resolution> {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "elixir_scope_chain",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        if let Some(module) = &file_ctx.file_namespace {
-            let candidate = format!("{module}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "elixir_same_module",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
 
         for import in &file_ctx.imports {
             if import.imported_name != *target {
@@ -88,20 +68,6 @@ impl ElixirResolver {
                             flow_emit: None,
                         });
                     }
-                }
-            }
-        }
-
-        if target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "elixir_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
                 }
             }
         }
@@ -648,16 +614,7 @@ impl LanguageEngineHooks for ElixirHooks {
         ref_ctx: &RefContext<'_>,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        if let Some(res) = ElixirResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        (crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
+        ElixirResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 }
 

@@ -47,6 +47,7 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: PASCAL_PRIMITIVES,
     kind_compatible_table: PASCAL_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -77,6 +77,7 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     // so a bare mid-chain receiver (`Repository`, or a same-package return type)
     // qualifies via its package then explicit imports before member lookup.
     chain_qualification: ChainQualification::SamePackageAndImports,
+    builtin_skip: None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

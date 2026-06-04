@@ -45,6 +45,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: C_PRIMITIVES,
     kind_compatible_table: C_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

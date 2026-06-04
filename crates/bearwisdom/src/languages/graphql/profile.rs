@@ -1,6 +1,18 @@
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
+use crate::types::{EdgeKind, SymbolKind};
+
+const GRAPHQL_KIND_TABLE: KindTable = &[(
+    EdgeKind::TypeRef,
+    &[
+        SymbolKind::Class,
+        SymbolKind::Interface,
+        SymbolKind::Enum,
+        SymbolKind::Struct,
+        SymbolKind::TypeAlias,
+    ],
+)];
 
 pub const GRAPHQL_PROFILE: LanguageProfile = LanguageProfile {
     id: "graphql",
@@ -16,8 +28,9 @@ pub const GRAPHQL_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     iterator_method: None,
     primitive_mapping: &[],
-    kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    kind_compatible_table: GRAPHQL_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: Some(super::hooks::is_graphql_builtin),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

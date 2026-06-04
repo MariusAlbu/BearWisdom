@@ -51,6 +51,7 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: JS_PRIMITIVES,
     kind_compatible_table: JS_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[ConstructorPattern::New, ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

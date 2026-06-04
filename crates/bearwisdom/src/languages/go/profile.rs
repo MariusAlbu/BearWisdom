@@ -87,6 +87,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // Go has no `new` operator at the surface form the engine recognises.
     // Construction is `Foo{}` / `&Foo{}` / `make(...)` — extractor emits
     // these as Construction segments without needing a profile pattern.
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

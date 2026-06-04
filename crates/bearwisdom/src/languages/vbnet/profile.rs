@@ -58,6 +58,7 @@ pub const VBNET_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: VBNET_PRIMITIVES,
     kind_compatible_table: VBNET_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

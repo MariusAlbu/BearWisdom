@@ -42,6 +42,7 @@ pub const ADA_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: ADA_PRIMITIVES,
     kind_compatible_table: ADA_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

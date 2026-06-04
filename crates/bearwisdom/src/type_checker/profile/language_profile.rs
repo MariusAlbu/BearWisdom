@@ -36,6 +36,15 @@ pub struct LanguageProfile {
     pub primitive_mapping: &'static [(&'static str, PrimKind)],
     pub kind_compatible_table: KindTable,
     pub chain_qualification: ChainQualification,
+    /// Names the generic resolver must treat as language builtins/primitives:
+    /// scalar types (`int32`, `Int`), built-in functions (`subst`, `wildcard`),
+    /// operators, and reserved namespace prefixes (`builtins.`, `cmake_`). When
+    /// this returns true for a ref's target, the engine declines without running
+    /// the strategy ladder and without recording a chain miss — the ref is left
+    /// for external classification rather than bound to a project symbol that
+    /// happens to share the name. `None` (the default) runs the ladder for every
+    /// target, so languages with no reserved-name space are unaffected.
+    pub builtin_skip: Option<fn(&str) -> bool>,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -253,6 +262,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

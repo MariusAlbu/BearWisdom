@@ -14,13 +14,32 @@ use crate::types::{EdgeKind, SymbolKind};
 const ELIXIR_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
-        &[SymbolKind::Function, SymbolKind::Method],
+        &[
+            SymbolKind::Method,
+            SymbolKind::Function,
+            SymbolKind::Constructor,
+            SymbolKind::Test,
+            SymbolKind::Property,
+            SymbolKind::Module,
+        ],
+    ),
+    (EdgeKind::Inherits, &[SymbolKind::Class, SymbolKind::Module]),
+    (
+        EdgeKind::Implements,
+        &[SymbolKind::Class, SymbolKind::Module, SymbolKind::Interface],
     ),
     (
         EdgeKind::TypeRef,
-        &[SymbolKind::Module, SymbolKind::TypeAlias],
+        &[
+            SymbolKind::Class,
+            SymbolKind::Module,
+            SymbolKind::Interface,
+            SymbolKind::Enum,
+            SymbolKind::TypeAlias,
+            SymbolKind::Namespace,
+        ],
     ),
-    (EdgeKind::Implements, &[SymbolKind::Module]),
+    (EdgeKind::Instantiates, &[SymbolKind::Class, SymbolKind::Module]),
 ];
 
 const ELIXIR_PRIMITIVES: &[(&str, PrimKind)] = &[
@@ -48,6 +67,7 @@ pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: ELIXIR_PRIMITIVES,
     kind_compatible_table: ELIXIR_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

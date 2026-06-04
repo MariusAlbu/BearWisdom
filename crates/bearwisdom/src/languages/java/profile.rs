@@ -73,6 +73,7 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     // java-spring-petclinic gate: 92.19% > 83.26% baseline (+8.93pp).
     // The earlier -2.68pp regression was a JDK demand-walker gap (bare
     // `String` refs never triggering a pull), not the engine.
+    builtin_skip: None,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

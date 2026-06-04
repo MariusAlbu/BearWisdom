@@ -2,9 +2,8 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -30,6 +29,15 @@ pub(crate) fn is_proto_scalar(name: &str) -> bool {
             | "string"
             | "bytes"
     )
+}
+
+/// Proto targets the generic resolver must not bind to a project symbol: the
+/// scalar types and the `google.protobuf.*` well-known types. Tolerates the
+/// leading-dot form (`.google.protobuf.Timestamp`) the extractor emits for
+/// fully-qualified references.
+pub(crate) fn is_proto_builtin(name: &str) -> bool {
+    let bare = name.trim_start_matches('.');
+    is_proto_scalar(bare) || bare.starts_with("google.protobuf.")
 }
 
 impl LanguageEngineHooks for ProtoHooks {
@@ -71,56 +79,6 @@ impl LanguageEngineHooks for ProtoHooks {
                 .find(|s| s.kind.as_str() == "package" || s.name.starts_with("package"))
                 .map(|s| s.name.clone()),
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if edge_kind != EdgeKind::TypeRef {
-            return None;
-        }
-        if is_proto_scalar(target) {
-            return None;
-        }
-        if target.starts_with("google.protobuf.") {
-            return None;
-        }
-        let bare_target = target.trim_start_matches('.');
-        if let Some(sym) = lookup.by_qualified_name(bare_target) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 1.0,
-                strategy: "proto_qualified",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
-        }
-        if let Some(pkg) = &file_ctx.file_namespace {
-            let candidate = format!("{pkg}.{bare_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "proto_package_qualified",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: |_, sym_kind| {
-                matches!(sym_kind, "struct" | "enum" | "class")
-            },
-        })
-        .resolve_all()
     }
 }
 

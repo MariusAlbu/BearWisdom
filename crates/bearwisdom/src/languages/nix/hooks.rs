@@ -2,13 +2,22 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
 pub struct NixHooks;
+
+/// Reserved Nix namespace prefixes — `builtins`, `lib`, `pkgs`, `config` —
+/// whose dotted members (`builtins.toString`, `lib.mkOption`) are language /
+/// nixpkgs builtins, not project symbols.
+pub(crate) fn is_nix_builtin(name: &str) -> bool {
+    name.starts_with("builtins.")
+        || name.starts_with("lib.")
+        || name.starts_with("pkgs.")
+        || name.starts_with("config.")
+}
 
 impl LanguageEngineHooks for NixHooks {
     fn classify_external(
@@ -30,11 +39,7 @@ impl LanguageEngineHooks for NixHooks {
             }
             return None;
         }
-        if target.starts_with("builtins.")
-            || target.starts_with("lib.")
-            || target.starts_with("pkgs.")
-            || target.starts_with("config.")
-        {
+        if is_nix_builtin(target) {
             return Some("builtin".to_string());
         }
         None
@@ -64,40 +69,6 @@ impl LanguageEngineHooks for NixHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        if target.starts_with("builtins.")
-            || target.starts_with("lib.")
-            || target.starts_with("pkgs.")
-            || target.starts_with("config.")
-        {
-            return None;
-        }
-        if target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(target.as_str()) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "nix_qualified_name",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: |_, _| true,
-        })
-        .resolve_all()
     }
 }
 

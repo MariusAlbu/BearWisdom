@@ -2,15 +2,14 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
 pub struct GleamHooks;
 
-fn is_gleam_operator(name: &str) -> bool {
+pub(crate) fn is_gleam_operator(name: &str) -> bool {
     matches!(
         name,
         "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | "<=" | ">" | ">="
@@ -140,55 +139,6 @@ impl LanguageEngineHooks for GleamHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if is_gleam_operator(target) {
-            return None;
-        }
-        for import in &file_ctx.imports {
-            let Some(full_path) = &import.module_path else {
-                continue;
-            };
-            let module_alias = import.alias.as_deref().unwrap_or_else(|| {
-                full_path.rsplit('/').next().unwrap_or(full_path.as_str())
-            });
-            let candidate = format!("{module_alias}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "gleam_import_qualified",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-            for sym in lookup.in_file(full_path) {
-                if sym.name == *target {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "gleam_import_file",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: |_, _| true,
-        })
-        .resolve_all()
     }
 }
 

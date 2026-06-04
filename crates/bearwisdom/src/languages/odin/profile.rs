@@ -35,6 +35,7 @@ pub const ODIN_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: ODIN_PRIMITIVES,
     kind_compatible_table: ODIN_KIND_TABLE,
     chain_qualification: ChainQualification::None,
+    builtin_skip: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,
