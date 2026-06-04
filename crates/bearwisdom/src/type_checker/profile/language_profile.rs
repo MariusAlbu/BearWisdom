@@ -155,6 +155,23 @@ pub struct LanguageProfile {
     /// whose externals are named by file rather than `ext:`-package). See
     /// `ExtMatch`. Only consulted when `external_by_import` is `Some`.
     pub ext_match: ExtMatch,
+    /// Head-of-target alias binding. A dotted target's HEAD (the segment before
+    /// the first `.`) names an in-file declaration the rest of the target reads
+    /// against — an HCL provider-alias block (`google.compute_instance` where
+    /// `google` is a `provider` block declared in the file). When set, the
+    /// engine truncates the target at the first `.`, declines a head that is
+    /// empty or carries a `_` (a provider RESOURCE type, not an alias), and
+    /// binds the head to an in-file symbol of the configured kind.
+    /// `Off` (the default) leaves the strategy inert. See `HeadAliasBind`.
+    pub head_alias: HeadAliasBind,
+    /// File-scoped import binding. An import whose `module_path` names a FILE
+    /// (a `.robot` / `.resource` resource import, a Python library file) brings
+    /// that file's members into bare-name scope; a bare target binds to a
+    /// kind-compatible symbol in the imported file whose name matches under
+    /// `name_normalization`. `Off` (the default) leaves the strategy inert.
+    /// `On { wildcard_only }` opts a language in, optionally restricting the
+    /// scan to wildcard imports. See `FileScopedImports`.
+    pub file_scoped_imports: FileScopedImports,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -372,6 +389,75 @@ pub enum ExtMatch {
     /// rather than an `ext:`-package boundary (Nim: a `httpclient` import binds
     /// a symbol in `…/httpclient.nim`).
     FileStemOrDir,
+}
+
+/// Whether a dotted target's HEAD binds to an in-file alias declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadAliasBind {
+    /// No head-alias binding. The default for every language whose dotted
+    /// targets resolve through the regular ladder.
+    Off,
+    /// Truncate the target at its first `.` and bind the head to a same-file
+    /// symbol. The head is declined when empty or when it carries a `_` — a
+    /// `_`-bearing head is a provider resource TYPE (`aws_instance`), not an
+    /// alias. `require_kind`, when `Some`, restricts the bound symbol to that
+    /// kind (HCL provider-alias blocks are `class`); `None` accepts any
+    /// kind-compatible in-file symbol.
+    OnSameFile { require_kind: Option<&'static str> },
+}
+
+/// Whether a file-naming import brings its members into bare-name scope.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FileScopedImports {
+    /// No file-scoped import binding. The default.
+    Off,
+    /// Bind a bare target to a kind-compatible symbol in an imported file
+    /// (matched under `NameNormalization`).
+    On {
+        /// Scan only imports flagged `is_wildcard`. `true` for languages whose
+        /// member-bearing file imports are marked wildcard (Robot resource /
+        /// Python-library imports); `false` to scan every file-naming import.
+        wildcard_only: bool,
+        /// Confidence recorded on a hit. The bind is structural — an import
+        /// names the file and the file owns a matching symbol — but a language
+        /// may rate it below 1.0 when the import-to-file mapping is heuristic.
+        confidence: f64,
+        /// Alias-decoded entry binding. `None` (the default shape) matches a
+        /// target only against a SYMBOL NAME in the imported file. `Some`
+        /// additionally matches a target against an import entry's
+        /// `imported_name` and, on a hit, binds the symbol named by that
+        /// entry's `alias` — the import table itself carries the
+        /// target-name → owning-symbol mapping. The entry's `alias` decodes as
+        /// `{type}{separator}{member}`: a non-empty member binds the symbol of
+        /// that name (at `member_confidence`); else a non-empty type binds that
+        /// type symbol (at `confidence`); else the entry names neither and the
+        /// first symbol of `fallback_kind` in the file binds (at
+        /// `fallback_confidence`). Robot dynamic-library keywords — a
+        /// `@keyword("alias")` decorator routes a Robot keyword to a specific
+        /// Python method, a `get_keyword_names` / `KEYWORDS` entry routes to the
+        /// owning class, a module-level `KEYWORDS` dict falls back to the
+        /// dispatch class.
+        alias_decode: Option<AliasDecode>,
+    },
+}
+
+/// Data for the alias-decoded file-scoped bind. See `FileScopedImports::On`.
+/// The three confidences track how specific the bind was: a named member is
+/// the strongest evidence, a named owning type weaker, the dispatch-class
+/// fallback weakest.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AliasDecode {
+    /// Splits an entry's `alias` into `{type}{separator}{member}`.
+    pub separator: &'static str,
+    /// Symbol kind the no-type/no-member fallback binds to (the dispatch class
+    /// for a module-level keyword table). `None` disables the fallback.
+    pub fallback_kind: Option<&'static str>,
+    /// Confidence for a member-named (most specific) bind.
+    pub member_confidence: f64,
+    /// Confidence for a named-owning-type bind.
+    pub type_confidence: f64,
+    /// Confidence for a fallback bind.
+    pub fallback_confidence: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -632,6 +718,8 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     package_by_directory: false,
     wildcard_match: WildcardMatch::QnameUnder,
     ext_match: ExtMatch::PkgSegment,
+    head_alias: HeadAliasBind::Off,
+    file_scoped_imports: FileScopedImports::Off,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

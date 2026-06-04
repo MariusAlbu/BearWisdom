@@ -71,6 +71,8 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
         underscore_prefix: true,
     },
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

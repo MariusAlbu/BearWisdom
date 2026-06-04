@@ -1,12 +1,13 @@
-// Robot Framework language hooks. Absorbed from the deleted `robot/resolve.rs`.
+// Robot Framework language hooks: file-context construction (resource-path
+// resolution + dynamic-library keyword import entries) and external
+// classification. Bare-name resolution runs through the generic engine — see
+// `ROBOT_PROFILE`'s `name_normalization` + `file_scoped_imports`.
 
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::{EdgeKind, ParsedFile, SymbolKind};
+use crate::types::{EdgeKind, ParsedFile};
 
 pub struct RobotHooks;
 
@@ -21,37 +22,9 @@ fn encode_dynamic_alias(class: &Option<String>, method: &Option<String>) -> Opti
     }
 }
 
-fn decode_dynamic_class_name(alias: Option<&str>) -> Option<&str> {
-    let s = alias?;
-    let cls = s.split(DYN_ALIAS_SEP).next().unwrap_or(s);
-    if cls.is_empty() {
-        None
-    } else {
-        Some(cls)
-    }
-}
-
-fn decode_dynamic_method_name(import: &ImportEntry) -> Option<&str> {
-    let s = import.alias.as_deref()?;
-    s.split_once(DYN_ALIAS_SEP)
-        .map(|(_, m)| m)
-        .filter(|m| !m.is_empty())
-}
-
 fn is_variable_ref(name: &str) -> bool {
     (name.starts_with("${") || name.starts_with("@{") || name.starts_with("&{"))
         && name.ends_with('}')
-}
-
-fn variable_inner_normalized(name: &str) -> Option<String> {
-    if name.len() < 4 {
-        return None;
-    }
-    let inner = &name[2..name.len() - 1];
-    if inner.is_empty() {
-        return None;
-    }
-    Some(predicates::normalize_robot_name(inner))
 }
 
 fn qualified_library_prefix(target: &str) -> Option<&str> {
@@ -117,16 +90,6 @@ fn resolve_qualified_library<'a>(
         }
     }
     None
-}
-
-fn resolve_variable<'a>(
-    normalized_inner: &str,
-    symbols: &'a [SymbolInfo],
-) -> Option<&'a SymbolInfo> {
-    symbols.iter().find(|s| {
-        s.kind == SymbolKind::Variable.as_str()
-            && predicates::normalize_robot_name(&s.name) == normalized_inner
-    })
 }
 
 pub(crate) fn infer_external_inner(
@@ -238,7 +201,10 @@ impl LanguageEngineHooks for RobotHooks {
                                         &kw.class_name,
                                         &kw.method_name,
                                     ),
-                                    is_wildcard: false,
+                                    // Wildcard so the alias-decode pass of the
+                                    // file-scoped-import strategy (gated on
+                                    // `wildcard_only`) reaches this entry.
+                                    is_wildcard: true,
                                 });
                             }
                         }
@@ -252,167 +218,6 @@ impl LanguageEngineHooks for RobotHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        if resolve_qualified_library(
-            file_ctx,
-            ref_ctx.extracted_ref.module.as_deref(),
-            target,
-        )
-        .is_some()
-        {
-            return None;
-        }
-        if is_variable_ref(target) {
-            if let Some(norm_inner) = variable_inner_normalized(target) {
-                if let Some(sym) =
-                    resolve_variable(&norm_inner, lookup.in_file(&file_ctx.file_path))
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "robot_variable_same_file",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-                for import in &file_ctx.imports {
-                    let Some(path) = &import.module_path else {
-                        continue;
-                    };
-                    if !path.ends_with(".robot") && !path.ends_with(".resource") {
-                        continue;
-                    }
-                    if let Some(sym) = resolve_variable(&norm_inner, lookup.in_file(path)) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.95,
-                            strategy: "robot_variable_resource",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-            return None;
-        }
-        let normalized_target = predicates::normalize_robot_name(target);
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.kind == SymbolKind::Function.as_str()
-                && predicates::normalize_robot_name(&sym.name) == normalized_target
-            {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "robot_same_file",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        for import in &file_ctx.imports {
-            let Some(path) = &import.module_path else {
-                continue;
-            };
-            if !path.ends_with(".robot") && !path.ends_with(".resource") {
-                continue;
-            }
-            for sym in lookup.in_file(path) {
-                if sym.kind == SymbolKind::Function.as_str()
-                    && predicates::normalize_robot_name(&sym.name) == normalized_target
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "robot_resource_import",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        for import in &file_ctx.imports {
-            let Some(path) = &import.module_path else {
-                continue;
-            };
-            if !path.ends_with(".py") || !import.is_wildcard {
-                continue;
-            }
-            for sym in lookup.in_file(path) {
-                let is_callable =
-                    matches!(sym.kind.as_str(), "function" | "method" | "test");
-                let py_normalized = predicates::normalize_robot_name(&sym.name);
-                if is_callable && py_normalized == normalized_target {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.95,
-                        strategy: "robot_python_library",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        for import in &file_ctx.imports {
-            let Some(path) = &import.module_path else {
-                continue;
-            };
-            if !path.ends_with(".py") || import.is_wildcard {
-                continue;
-            }
-            if import.imported_name != normalized_target {
-                continue;
-            }
-            let target_class = decode_dynamic_class_name(import.alias.as_deref());
-            let target_method = decode_dynamic_method_name(import);
-            if let Some(method_name) = target_method {
-                for sym in lookup.in_file(path) {
-                    if sym.name == method_name
-                        && matches!(sym.kind.as_str(), "function" | "method" | "test")
-                    {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.95,
-                            strategy: "robot_dynamic_library_method",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-            if let Some(class_name) = target_class {
-                for sym in lookup.in_file(path) {
-                    if sym.kind == SymbolKind::Class.as_str() && sym.name == class_name {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.85,
-                            strategy: "robot_dynamic_library",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-            for sym in lookup.in_file(path) {
-                if sym.kind == SymbolKind::Class.as_str() {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.75,
-                        strategy: "robot_dynamic_library_fallback",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        None
     }
 }
 

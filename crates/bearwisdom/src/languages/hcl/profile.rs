@@ -1,4 +1,4 @@
-// Minimal LanguageProfile for HCL (Terraform / Packer / etc.) in shadow mode.
+// LanguageProfile for HCL (Terraform / Packer / etc.).
 
 use crate::type_checker::profile::language_profile::{
     ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
@@ -7,7 +7,9 @@ use crate::type_checker::profile::language_profile::{
 pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     id: "hcl",
     qname_separator: ".",
-    self_keywords: &[],
+    // `var.X` / `local.X` carry a sigil head the bare-name probes strip so the
+    // reference binds to the same-file `X` Variable / `local` attribute.
+    self_keywords: &["var", "local"],
     supertype_discovery: SupertypeDiscovery::Explicit,
     members_can_be_external: false,
     dispatch_axis: DispatchAxis::Receiver,
@@ -20,7 +22,11 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    // Terraform meta-references (`each.value`, `count.index`, `self`, `path.*`,
+    // `terraform.*`) are runtime-provided, not project symbols — decline before
+    // the ladder so a same-named local can't be bound and external
+    // classification brands them.
+    builtin_skip: Some(super::hooks::is_terraform_meta_ref),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
@@ -35,6 +41,14 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     package_by_directory: false,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+    // A dotted target whose head names an in-file `provider` block
+    // (`google.compute_instance` → the `provider "google"` class) binds the
+    // head to that declaration. A `_`-bearing head is a resource TYPE
+    // (`aws_instance.web`), not an alias, and is declined by the strategy.
+    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::OnSameFile {
+        require_kind: Some("class"),
+    },
+    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

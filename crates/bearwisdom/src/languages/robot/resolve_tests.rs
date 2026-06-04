@@ -1,23 +1,55 @@
 // =============================================================================
 // robot/resolve_tests.rs — resolver-level tests for Robot Framework
 //
-// Covers:
+// Bare-name resolution runs through the generic engine ladder
+// (`DefaultResolver::resolve_all_with_profile`) gated on `ROBOT_PROFILE` data —
+// `name_normalization` (case-insensitive, spaces == underscores, BDD-prefix and
+// `${…}` sigil stripping) plus `file_scoped_imports` (resource / Python-library
+// keywords + dynamic-library alias decode). The hook supplies only the file
+// context (resolved resource paths + dynamic-keyword import entries) and
+// external classification. Covers:
 //   1. Keyword name normalization — case-insensitive, spaces == underscores
 //   2. Library imports are external — not resolved against project index
 //   3. Resource imports — keywords resolved by normalized name
 //   4. Variable references — ${VAR} resolves to Variables section symbols
 //   5. Qualified `Library.Keyword` extraction and external classification
+//   6. Dynamic libraries — KEYWORDS dict / get_keyword_names / @keyword alias
 // =============================================================================
 
 use super::extract;
 use super::hooks::RobotHooks;
+use super::profile::ROBOT_PROFILE;
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, FileContext, RefContext, SymbolIndex,
+    build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
 };
 use crate::types::*;
 use std::collections::HashMap;
+
+/// Edge-kind / symbol-kind gate seed for the ladder. The real gate is
+/// `ROBOT_PROFILE.kind_compatible_table` (permissive); this fn-pointer slot is
+/// only consulted by strategies the table-driven path doesn't reach.
+fn accept_any(_edge: EdgeKind, _sym_kind: &str) -> bool {
+    true
+}
+
+/// Resolve `ref_ctx` through the generic ladder under the Robot profile — the
+/// exact path the engine takes for a chain-less Robot ref.
+fn resolve_via_profile(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext<'_>,
+    index: &SymbolIndex,
+) -> Option<Resolution> {
+    DefaultResolver {
+        file_ctx,
+        ref_ctx,
+        lookup: index,
+        kind_compatible: accept_any,
+    }
+    .resolve_all_with_profile(&ROBOT_PROFILE)
+}
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -174,7 +206,7 @@ fn resolve_first_ref(
         scope_chain: build_scope_chain(src_sym.scope_path.as_deref()),
     file_package_id: None,
     };
-    RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    resolve_via_profile(&file_ctx, &ref_ctx, &index)
 }
 
 fn infer_ns_first_ref(file: &ParsedFile, all_files: &[&ParsedFile]) -> Option<String> {
@@ -218,8 +250,8 @@ fn resolve_same_file_exact_name() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("should resolve");
-    assert_eq!(res.strategy, "robot_same_file");
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index).expect("should resolve");
+    assert_eq!(res.strategy, "default_same_file");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
 }
 
@@ -244,8 +276,8 @@ fn resolve_same_file_case_insensitive() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("case-insensitive match");
-    assert_eq!(res.strategy, "robot_same_file");
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index).expect("case-insensitive match");
+    assert_eq!(res.strategy, "default_same_file");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
 }
 
@@ -270,7 +302,7 @@ fn resolve_same_file_underscore_space_equivalence() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("underscore/space normalization should match");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
 }
@@ -314,7 +346,7 @@ fn library_import_keyword_not_resolved_to_project_symbol() {
     };
     // The qualified-library guard at step 1 fires (SeleniumLibrary is a library import)
     // and returns None without reaching the project-symbol lookup.
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index);
     let project_sym_id = sym_id(&id_map, "lib/keywords.robot", "Open Browser");
     let resolves_to_project = res.as_ref().map_or(false, |r| r.target_symbol_id == project_sym_id);
     assert!(
@@ -387,8 +419,8 @@ fn resolve_resource_import_exact() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("resource import resolution");
-    assert_eq!(res.strategy, "robot_resource_import");
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index).expect("resource import resolution");
+    assert_eq!(res.strategy, "default_file_scoped_import");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "common.robot", "Setup Database"));
 }
 
@@ -419,7 +451,7 @@ fn resolve_resource_import_normalized() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("normalized resource import resolution");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "common.robot", "Setup Database"));
 }
@@ -449,8 +481,8 @@ fn resolve_variable_same_file() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("variable resolution");
-    assert_eq!(res.strategy, "robot_variable_same_file");
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index).expect("variable resolution");
+    assert_eq!(res.strategy, "default_same_file");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/config.robot", "HOST"));
 }
 
@@ -475,7 +507,7 @@ fn resolve_variable_case_insensitive() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("case-insensitive variable resolution");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/config.robot", "HOST"));
 }
@@ -507,9 +539,9 @@ fn resolve_variable_from_resource() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("variable from resource resolution");
-    assert_eq!(res.strategy, "robot_variable_resource");
+    assert_eq!(res.strategy, "default_file_scoped_import");
     assert_eq!(res.target_symbol_id, sym_id(&id_map, "vars/common.robot", "DB_URL"));
 }
 
@@ -577,7 +609,7 @@ fn qualified_library_keyword_not_resolved() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index);
     assert!(
         res.is_none(),
         "SeleniumLibrary.Click Element should not resolve to project symbol; got: {res:?}"
@@ -709,9 +741,9 @@ fn dynamic_keyword_resolves_to_owning_class() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("dynamic keyword should resolve to AsyncDynamicLibrary class");
-    assert_eq!(res.strategy, "robot_dynamic_library");
+    assert_eq!(res.strategy, "default_alias_decoded_import");
     assert_eq!(
         res.target_symbol_id,
         sym_id(&id_map, "lib/async.py", "AsyncDynamicLibrary")
@@ -757,9 +789,9 @@ fn module_level_keywords_dict_falls_back_to_first_class() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("module-level dynamic keyword should fall back to first class");
-    assert_eq!(res.strategy, "robot_dynamic_library_fallback");
+    assert_eq!(res.strategy, "default_alias_decoded_import");
     assert_eq!(
         res.target_symbol_id,
         sym_id(&id_map, "lib/dyn.py", "DynamicWithoutKwargs")
@@ -810,9 +842,9 @@ fn keyword_decorator_alias_resolves_to_specific_method() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("decorator alias should resolve to its method");
-    assert_eq!(res.strategy, "robot_dynamic_library_method");
+    assert_eq!(res.strategy, "default_alias_decoded_import");
     assert_eq!(
         res.target_symbol_id,
         sym_id(&id_map, "lib/cart_lib.py", "add_copies_to_cart")
@@ -860,9 +892,9 @@ fn dynamic_keyword_normalization_matches_call_site() {
         scope_chain: vec![],
         file_package_id: None,
     };
-    let res = RobotHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("normalised keyword should match call-site spaces form");
-    assert_eq!(res.strategy, "robot_dynamic_library");
+    assert_eq!(res.strategy, "default_alias_decoded_import");
 }
 
 #[test]

@@ -6,7 +6,7 @@ use super::*;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
-use crate::type_checker::profile::language_profile::{NameNormalization, NormSpec};
+use crate::type_checker::profile::language_profile::{AliasDecode, NameNormalization, NormSpec};
 use crate::types::{
     ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
     SymbolKind, Visibility,
@@ -2915,6 +2915,56 @@ fn normalize_name_strips_sigil_pair_then_prefix_then_chars() {
 }
 
 #[test]
+fn normalize_name_strips_prefix_case_insensitively_when_folding() {
+    // A case-insensitive spec strips a declared prefix regardless of the call
+    // site's casing — a lowercase `when ` must strip against a title-case
+    // `When ` prefix (the BDD-prefix shape). The strip runs before the
+    // case-fold step, so without case-insensitive prefix matching a lowercase
+    // call would slip through unstripped.
+    let spec = NormSpec {
+        case_insensitive: true,
+        strip_chars: &[' '],
+        strip_prefixes: &["When "],
+        strip_sigils: &[],
+    };
+    // `when I Park` → strip `When ` (folded) → `I Park` → strip ` ` → fold → `ipark`.
+    assert_eq!(
+        normalize_name(NameNormalization::Spec(spec), "when I Park"),
+        "ipark"
+    );
+    // Title-case form folds to the same normalized key.
+    assert_eq!(
+        normalize_name(NameNormalization::Spec(spec), "When I Park"),
+        "ipark"
+    );
+    // No prefix → unchanged but for space-strip + fold.
+    assert_eq!(
+        normalize_name(NameNormalization::Spec(spec), "I Park"),
+        "ipark"
+    );
+}
+
+#[test]
+fn normalize_name_case_sensitive_prefix_stays_exact() {
+    // Without case folding, the prefix match stays byte-exact: a differently
+    // cased prefix does NOT strip.
+    let spec = NormSpec {
+        case_insensitive: false,
+        strip_chars: &[],
+        strip_prefixes: &["When "],
+        strip_sigils: &[],
+    };
+    assert_eq!(
+        normalize_name(NameNormalization::Spec(spec), "when foo"),
+        "when foo"
+    );
+    assert_eq!(
+        normalize_name(NameNormalization::Spec(spec), "When foo"),
+        "foo"
+    );
+}
+
+#[test]
 fn normalize_name_bare_sigil_prefix_strips() {
     // A `(prefix, "")` pair strips a bare leading sigil with no closing form.
     let spec = NormSpec {
@@ -3233,4 +3283,560 @@ fn ext_match_file_stem_declines_unimported_module() {
         .is_none(),
         "an external not named by any import leaf/package must not bind"
     );
+}
+
+// ---------------------------------------------------------------------------
+// HeadAliasBind — a dotted target's HEAD names an in-file alias declaration.
+// ---------------------------------------------------------------------------
+
+fn wildcard_named_import(name: &str, module: &str) -> ImportEntry {
+    ImportEntry {
+        imported_name: name.to_string(),
+        module_path: Some(module.to_string()),
+        alias: None,
+        is_wildcard: true,
+    }
+}
+
+/// A wildcard import whose `imported_name` is the lookup key and whose `alias`
+/// carries the decoded bind target (the dynamic-library keyword entry shape).
+fn wildcard_alias_import(name: &str, alias: Option<&str>, module: &str) -> ImportEntry {
+    ImportEntry {
+        imported_name: name.to_string(),
+        module_path: Some(module.to_string()),
+        alias: alias.map(|s| s.to_string()),
+        is_wildcard: true,
+    }
+}
+
+const ALIAS_DECODE: AliasDecode = AliasDecode {
+    separator: "::",
+    fallback_kind: Some("class"),
+    member_confidence: 0.95,
+    type_confidence: 0.85,
+    fallback_confidence: 0.75,
+};
+
+#[test]
+fn head_alias_off_is_inert() {
+    // The default — a dotted target whose head is a same-file `class` never
+    // binds when the strategy is Off.
+    let lookup = Lookup::new().with_in_file(
+        "src/main.ts",
+        sym(60, "google", "google", "class", "src/main.ts"),
+    );
+    let r = extracted_call("google.compute_instance");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d.resolve_via_head_alias(HeadAliasBind::Off, &accept_any).is_none());
+}
+
+#[test]
+fn head_alias_binds_in_file_head_of_required_kind() {
+    let lookup = Lookup::new().with_in_file(
+        "src/main.ts",
+        sym(61, "google", "google", "class", "src/main.ts"),
+    );
+    let r = extracted_call("google.compute_instance");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_head_alias(
+            HeadAliasBind::OnSameFile { require_kind: Some("class") },
+            &accept_any,
+        )
+        .expect("dotted target head binds to the in-file class declaration");
+    assert_eq!(resolved.target_symbol_id, 61);
+    assert_eq!(resolved.strategy, "default_head_alias");
+    assert_eq!(resolved.confidence, 1.0);
+}
+
+#[test]
+fn head_alias_declines_underscore_head() {
+    // A `_`-bearing head is a provider RESOURCE TYPE, not an alias — declined
+    // even when a same-file declaration of that name exists.
+    let lookup = Lookup::new().with_in_file(
+        "src/main.ts",
+        sym(62, "aws_instance", "aws_instance", "class", "src/main.ts"),
+    );
+    let r = extracted_call("aws_instance.web");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_head_alias(
+            HeadAliasBind::OnSameFile { require_kind: Some("class") },
+            &accept_any,
+        )
+        .is_none(),
+        "an underscore-bearing head is a resource type, not an alias"
+    );
+}
+
+#[test]
+fn head_alias_declines_bare_target() {
+    // No `.` in the target — no head to truncate.
+    let lookup = Lookup::new().with_in_file(
+        "src/main.ts",
+        sym(63, "google", "google", "class", "src/main.ts"),
+    );
+    let r = extracted_call("google");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_head_alias(
+            HeadAliasBind::OnSameFile { require_kind: Some("class") },
+            &accept_any,
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn head_alias_require_kind_filters_wrong_kind() {
+    // A same-file declaration named `google` exists but is a `function`; the
+    // `require_kind: Some("class")` filter rejects it.
+    let lookup = Lookup::new().with_in_file(
+        "src/main.ts",
+        sym(64, "google", "google", "function", "src/main.ts"),
+    );
+    let r = extracted_call("google.compute_instance");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_head_alias(
+            HeadAliasBind::OnSameFile { require_kind: Some("class") },
+            &accept_any,
+        )
+        .is_none(),
+        "require_kind must reject a head of the wrong kind"
+    );
+}
+
+#[test]
+fn head_alias_none_kind_accepts_any() {
+    // With `require_kind: None`, any kind-compatible head binds.
+    let lookup = Lookup::new().with_in_file(
+        "src/main.ts",
+        sym(65, "google", "google", "function", "src/main.ts"),
+    );
+    let r = extracted_call("google.compute_instance");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_head_alias(
+            HeadAliasBind::OnSameFile { require_kind: None },
+            &accept_any,
+        )
+        .expect("require_kind None accepts any kind-compatible head");
+    assert_eq!(resolved.target_symbol_id, 65);
+}
+
+// ---------------------------------------------------------------------------
+// FileScopedImports — a bare target binds to a symbol in a file-naming import.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn file_scoped_import_off_is_inert() {
+    let lookup = Lookup::new().with_in_file(
+        "common.robot",
+        sym(70, "Open Browser", "Open Browser", "function", "common.robot"),
+    );
+    let r = extracted_call("Open Browser");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![wildcard_named_import("common", "common.robot")], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_file_scoped_import(
+            FileScopedImports::Off,
+            NameNormalization::None,
+            &accept_any,
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn file_scoped_import_binds_symbol_in_imported_file() {
+    let lookup = Lookup::new().with_in_file(
+        "common.robot",
+        sym(71, "Open Browser", "Open Browser", "function", "common.robot"),
+    );
+    let r = extracted_call("Open Browser");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![wildcard_named_import("common", "common.robot")], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_file_scoped_import(
+            FileScopedImports::On { wildcard_only: true, confidence: 1.0, alias_decode: None },
+            NameNormalization::None,
+            &accept_any,
+        )
+        .expect("bare target binds to a symbol in the imported file");
+    assert_eq!(resolved.target_symbol_id, 71);
+    assert_eq!(resolved.strategy, "default_file_scoped_import");
+}
+
+#[test]
+fn file_scoped_import_records_profile_confidence() {
+    let lookup = Lookup::new().with_in_file(
+        "lib.py",
+        sym(72, "do_thing", "do_thing", "function", "lib.py"),
+    );
+    let r = extracted_call("do_thing");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![wildcard_named_import("lib", "lib.py")], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_file_scoped_import(
+            FileScopedImports::On { wildcard_only: true, confidence: 0.95, alias_decode: None },
+            NameNormalization::None,
+            &accept_any,
+        )
+        .expect("hit");
+    assert_eq!(resolved.confidence, 0.95);
+}
+
+#[test]
+fn file_scoped_import_wildcard_only_skips_non_wildcard() {
+    // The same symbol is reachable through a NON-wildcard import; with
+    // wildcard_only the import is skipped.
+    let lookup = Lookup::new().with_in_file(
+        "common.robot",
+        sym(73, "Open Browser", "Open Browser", "function", "common.robot"),
+    );
+    let r = extracted_call("Open Browser");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("common", Some("common.robot"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_file_scoped_import(
+            FileScopedImports::On { wildcard_only: true, confidence: 1.0, alias_decode: None },
+            NameNormalization::None,
+            &accept_any,
+        )
+        .is_none(),
+        "wildcard_only must skip a non-wildcard import"
+    );
+}
+
+#[test]
+fn file_scoped_import_scans_non_wildcard_when_not_restricted() {
+    // wildcard_only: false scans every file-naming import.
+    let lookup = Lookup::new().with_in_file(
+        "common.robot",
+        sym(74, "Open Browser", "Open Browser", "function", "common.robot"),
+    );
+    let r = extracted_call("Open Browser");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("common", Some("common.robot"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_file_scoped_import(
+            FileScopedImports::On { wildcard_only: false, confidence: 1.0, alias_decode: None },
+            NameNormalization::None,
+            &accept_any,
+        )
+        .expect("a non-wildcard import is scanned when wildcard_only is false");
+    assert_eq!(resolved.target_symbol_id, 74);
+}
+
+#[test]
+fn file_scoped_import_matches_under_normalization() {
+    // A case-insensitive, space/underscore-stripping spec binds a Robot
+    // keyword written in a different surface form ("openbrowser") to the
+    // declared "Open Browser".
+    let spec = NormSpec {
+        case_insensitive: true,
+        strip_chars: &[' ', '_'],
+        strip_prefixes: &[],
+        strip_sigils: &[],
+    };
+    let lookup = Lookup::new().with_in_file(
+        "common.robot",
+        sym(75, "Open Browser", "Open Browser", "function", "common.robot"),
+    );
+    let r = extracted_call("openbrowser");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![wildcard_named_import("common", "common.robot")], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_file_scoped_import(
+            FileScopedImports::On { wildcard_only: true, confidence: 1.0, alias_decode: None },
+            NameNormalization::Spec(spec),
+            &accept_any,
+        )
+        .expect("normalized name binds across surface forms");
+    assert_eq!(resolved.target_symbol_id, 75);
+}
+
+// ---------------------------------------------------------------------------
+// FileScopedImports alias-decode — an import entry's `imported_name` is the
+// lookup key and its `alias` names the bind target in the imported file.
+// ---------------------------------------------------------------------------
+
+const ROBOT_KW_SPEC: NormSpec = NormSpec {
+    case_insensitive: true,
+    strip_chars: &[' ', '_'],
+    strip_prefixes: &[],
+    strip_sigils: &[],
+};
+
+#[test]
+fn alias_decode_binds_named_member_at_member_confidence() {
+    // `alias = "Lib::add_to_cart"` decodes to the method `add_to_cart`. The
+    // keyword's surface name (`Buy ${item}`) does NOT normalize to the method
+    // name, so the plain symbol-name pass misses and the alias pass binds the
+    // method over the owning class, at member confidence.
+    let lookup = Lookup::new()
+        .with_in_file("lib/cart.py", sym(80, "Lib", "Lib", "class", "lib/cart.py"))
+        .with_in_file(
+            "lib/cart.py",
+            sym(81, "add_to_cart", "add_to_cart", "function", "lib/cart.py"),
+        );
+    let r = extracted_call("Buy ${item}");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![wildcard_alias_import("buy${item}", Some("Lib::add_to_cart"), "lib/cart.py")],
+        None,
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_file_scoped_import(
+            FileScopedImports::On {
+                wildcard_only: true,
+                confidence: 1.0,
+                alias_decode: Some(ALIAS_DECODE),
+            },
+            NameNormalization::Spec(ROBOT_KW_SPEC),
+            &accept_any,
+        )
+        .expect("alias member binds");
+    assert_eq!(resolved.target_symbol_id, 81);
+    assert_eq!(resolved.strategy, "default_alias_decoded_import");
+    assert_eq!(resolved.confidence, 0.95);
+}
+
+#[test]
+fn alias_decode_binds_named_type_at_type_confidence() {
+    // `alias = "AsyncLib"` (no member separator) decodes to the owning class.
+    let lookup = Lookup::new().with_in_file(
+        "lib/async.py",
+        sym(82, "AsyncLib", "AsyncLib", "class", "lib/async.py"),
+    );
+    let r = extracted_call("Async Keyword");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![wildcard_alias_import("asynckeyword", Some("AsyncLib"), "lib/async.py")],
+        None,
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_file_scoped_import(
+            FileScopedImports::On {
+                wildcard_only: true,
+                confidence: 1.0,
+                alias_decode: Some(ALIAS_DECODE),
+            },
+            NameNormalization::Spec(ROBOT_KW_SPEC),
+            &accept_any,
+        )
+        .expect("alias type binds");
+    assert_eq!(resolved.target_symbol_id, 82);
+    assert_eq!(resolved.confidence, 0.85);
+}
+
+#[test]
+fn alias_decode_no_alias_falls_back_to_fallback_kind() {
+    // A keyword entry with no `alias` (module-level KEYWORDS dict) binds the
+    // file's first `fallback_kind` symbol — the dispatch class — at fallback
+    // confidence.
+    let lookup = Lookup::new().with_in_file(
+        "lib/dyn.py",
+        sym(83, "Dispatcher", "Dispatcher", "class", "lib/dyn.py"),
+    );
+    let r = extracted_call("One Arg");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![wildcard_alias_import("onearg", None, "lib/dyn.py")],
+        None,
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_file_scoped_import(
+            FileScopedImports::On {
+                wildcard_only: true,
+                confidence: 1.0,
+                alias_decode: Some(ALIAS_DECODE),
+            },
+            NameNormalization::Spec(ROBOT_KW_SPEC),
+            &accept_any,
+        )
+        .expect("fallback binds the dispatch class");
+    assert_eq!(resolved.target_symbol_id, 83);
+    assert_eq!(resolved.confidence, 0.75);
+}
+
+#[test]
+fn alias_decode_off_does_not_match_imported_name() {
+    // With `alias_decode: None`, a target equal to an import entry's
+    // `imported_name` (not to any symbol NAME in the file) does NOT bind —
+    // the plain symbol-name pass is the only behavior.
+    let lookup = Lookup::new().with_in_file(
+        "lib/async.py",
+        sym(84, "AsyncLib", "AsyncLib", "class", "lib/async.py"),
+    );
+    let r = extracted_call("Async Keyword");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![wildcard_alias_import("asynckeyword", Some("AsyncLib"), "lib/async.py")],
+        None,
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_file_scoped_import(
+            FileScopedImports::On { wildcard_only: true, confidence: 1.0, alias_decode: None },
+            NameNormalization::Spec(ROBOT_KW_SPEC),
+            &accept_any,
+        )
+        .is_none(),
+        "without alias_decode an imported_name match must not bind"
+    );
+}
+
+#[test]
+fn alias_decode_member_missing_falls_through_to_type_then_fallback() {
+    // The decoded member name isn't a symbol in the file, but the type is —
+    // bind the type rather than failing.
+    let lookup = Lookup::new().with_in_file(
+        "lib/cart.py",
+        sym(85, "Lib", "Lib", "class", "lib/cart.py"),
+    );
+    let r = extracted_call("Add To Cart");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![wildcard_alias_import("addtocart", Some("Lib::missing_method"), "lib/cart.py")],
+        None,
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_file_scoped_import(
+            FileScopedImports::On {
+                wildcard_only: true,
+                confidence: 1.0,
+                alias_decode: Some(ALIAS_DECODE),
+            },
+            NameNormalization::Spec(ROBOT_KW_SPEC),
+            &accept_any,
+        )
+        .expect("falls through to the named type");
+    assert_eq!(resolved.target_symbol_id, 85);
+    assert_eq!(resolved.confidence, 0.85);
 }

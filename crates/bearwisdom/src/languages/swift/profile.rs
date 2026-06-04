@@ -96,6 +96,8 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     package_by_directory: false,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

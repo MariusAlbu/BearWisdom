@@ -1,10 +1,7 @@
-// HCL / Terraform language hooks. Absorbed from the deleted `hcl/resolve.rs`.
+// HCL / Terraform language hooks.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, RefContext, Resolution, SymbolLookup,
-};
-use crate::type_checker::core::DefaultResolver;
+use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -53,15 +50,6 @@ pub(crate) fn is_provider_resource_type(name: &str) -> bool {
             || name.starts_with("nomad_"))
 }
 
-fn strip_hcl_prefix(name: &str) -> &str {
-    for prefix in ["var.", "local."] {
-        if let Some(rest) = name.strip_prefix(prefix) {
-            return rest.splitn(2, '.').next().unwrap_or(rest);
-        }
-    }
-    name
-}
-
 impl LanguageEngineHooks for HclHooks {
     fn classify_external(
         &self,
@@ -106,64 +94,6 @@ impl LanguageEngineHooks for HclHooks {
             imports: Vec::new(),
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        if is_terraform_meta_ref(target) {
-            return None;
-        }
-        if let Some(sym) = lookup.by_qualified_name(target) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 1.0,
-                strategy: "hcl_qname_direct",
-                resolved_yield_type: None,
-                flow_emit: None,
-            });
-        }
-        if let Some(dot_pos) = target.find('.') {
-            let head = &target[..dot_pos];
-            if !head.contains('_') && !head.is_empty() {
-                for sym in lookup.in_file(&file_ctx.file_path) {
-                    if sym.name == head && sym.kind == "class" {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.95,
-                            strategy: "hcl_provider_alias",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-        let bare = strip_hcl_prefix(target);
-        if bare != target.as_str() {
-            for sym in lookup.in_file(&file_ctx.file_path) {
-                if sym.name == bare {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "hcl_same_file_bare",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: |_, _| true,
-        })
-        .resolve_all()
     }
 }
 

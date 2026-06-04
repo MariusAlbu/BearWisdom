@@ -25,9 +25,9 @@ use crate::indexer::resolve::engine::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::profile::language_profile::{
-    CandidateDirs, ChainQualification, ExtMatch, ExternalByImport, ImportResolution,
-    KindCompatibility, KindTable, ModuleAnchor, ModuleAnchorBind, NameNormalization, NormSpec,
-    RelativeMarker, StemMatch, StemSource, WildcardMatch,
+    AliasDecode, CandidateDirs, ChainQualification, ExtMatch, ExternalByImport, FileScopedImports,
+    HeadAliasBind, ImportResolution, KindCompatibility, KindTable, ModuleAnchor, ModuleAnchorBind,
+    NameNormalization, NormSpec, RelativeMarker, StemMatch, StemSource, WildcardMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -69,6 +69,8 @@ struct LadderProfileData<'p> {
     name_normalization: NameNormalization,
     package_by_directory: bool,
     wildcard_match: WildcardMatch,
+    head_alias: HeadAliasBind,
+    file_scoped_imports: FileScopedImports,
 }
 
 impl LadderProfileData<'static> {
@@ -86,6 +88,8 @@ impl LadderProfileData<'static> {
         name_normalization: NameNormalization::None,
         package_by_directory: false,
         wildcard_match: WildcardMatch::QnameUnder,
+        head_alias: HeadAliasBind::Off,
+        file_scoped_imports: FileScopedImports::Off,
     };
 }
 
@@ -1218,6 +1222,212 @@ impl<'a> DefaultResolver<'a> {
         None
     }
 
+    /// Strategy — dotted target whose HEAD names an in-file alias declaration.
+    ///
+    /// A dotted target `{head}.{rest}` whose `{head}` is a declaration in the
+    /// resolving file binds to that declaration: the head is an alias block the
+    /// rest of the target reads against (an HCL provider alias —
+    /// `google.compute_instance` where `google` is a `provider` block in the
+    /// file). Truncate at the first `.`, bind the head.
+    ///
+    /// The head is declined when empty or when it carries a `_`: a `_`-bearing
+    /// head is a provider RESOURCE TYPE (`aws_instance.web`), not an alias, and
+    /// must not bind to an in-file declaration. `require_kind`, when `Some`,
+    /// restricts the in-file candidate to that kind; `None` accepts any
+    /// kind-compatible one. Gated by `HeadAliasBind::OnSameFile` — `Off` (every
+    /// other language) never reaches the in-file scan.
+    pub fn resolve_via_head_alias(
+        &self,
+        cfg: HeadAliasBind,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let HeadAliasBind::OnSameFile { require_kind } = cfg else {
+            return None;
+        };
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        let dot = target.find('.')?;
+        let head = &target[..dot];
+        if head.is_empty() || head.contains('_') {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        for sym in self.lookup.in_file(&self.file_ctx.file_path) {
+            if sym.name != head {
+                continue;
+            }
+            if let Some(req) = require_kind {
+                if sym.kind != req {
+                    continue;
+                }
+            }
+            if kind(edge_kind, &sym.kind) {
+                return Some(self.resolution(sym.id, "default_head_alias"));
+            }
+        }
+        None
+    }
+
+    /// Strategy — bare target bound to a symbol in a file-naming import.
+    ///
+    /// An import whose `module_path` names a FILE (a Robot `.robot` / `.resource`
+    /// resource import, a Python-library file) brings that file's members into
+    /// bare-name scope. Two passes, most-specific first:
+    ///
+    ///   1. SYMBOL-NAME pass — scan each import's file for a kind-compatible
+    ///      symbol whose name matches `target` under `norm`. Covers resource
+    ///      keywords and Python-library methods callable by their own name.
+    ///   2. ALIAS-DECODE pass (only when `alias_decode` is set) — match `target`
+    ///      against an import entry's `imported_name` and bind the symbol named
+    ///      by that entry's decoded `alias`. The import table carries the
+    ///      target-name → owning-symbol mapping for names that are not
+    ///      themselves symbol identifiers (`@keyword("Add ${n} items")` aliases,
+    ///      `KEYWORDS`-dict / `get_keyword_names` entries).
+    ///
+    /// `wildcard_only` restricts both passes to imports flagged `is_wildcard`
+    /// (the file-import flag for languages that mark member-bearing file imports
+    /// wildcard). `module_path` is treated as the imported file path directly —
+    /// these imports already carry the resolved on-disk path (the language's
+    /// `build_file_context` resolves resource basenames before the ladder runs),
+    /// so each scan is a single `in_file` lookup per import. Gated by
+    /// `FileScopedImports::On`; `Off` (every other language) never scans.
+    pub fn resolve_via_file_scoped_import(
+        &self,
+        cfg: FileScopedImports,
+        norm: NameNormalization,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let FileScopedImports::On {
+            wildcard_only,
+            confidence,
+            alias_decode,
+        } = cfg
+        else {
+            return None;
+        };
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty() {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let target_norm = normalize_name(norm, target);
+        // Pass 1 — match the target against a symbol NAME in the imported file.
+        for import in &self.file_ctx.imports {
+            if wildcard_only && !import.is_wildcard {
+                continue;
+            }
+            let Some(path) = import.module_path.as_deref() else {
+                continue;
+            };
+            for sym in self.lookup.in_file(path) {
+                if normalize_name(norm, &sym.name) == target_norm && kind(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence,
+                        strategy: "default_file_scoped_import",
+                        resolved_yield_type: None,
+                        flow_emit: None,
+                    });
+                }
+            }
+        }
+        // Pass 2 — match the target against an import entry's `imported_name`
+        // and bind the symbol named by its decoded `alias`.
+        if let Some(decode) = alias_decode {
+            return self.resolve_via_alias_decoded_import(
+                decode,
+                wildcard_only,
+                norm,
+                &target_norm,
+                edge_kind,
+                kind,
+            );
+        }
+        None
+    }
+
+    /// Alias-decode pass of `resolve_via_file_scoped_import`. For each scanned
+    /// import entry whose `imported_name` matches the target under `norm`,
+    /// decode the entry's `alias` as `{type}{separator}{member}` and bind:
+    ///   - the symbol named `member` (most specific), else
+    ///   - the symbol named `type`, else
+    ///   - the first `fallback_kind` symbol in the file (the dispatch class).
+    /// An entry with no `alias` only participates through the fallback, so a
+    /// plain (non-aliased) import never binds here.
+    fn resolve_via_alias_decoded_import(
+        &self,
+        decode: AliasDecode,
+        wildcard_only: bool,
+        norm: NameNormalization,
+        target_norm: &str,
+        edge_kind: EdgeKind,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        for import in &self.file_ctx.imports {
+            if wildcard_only && !import.is_wildcard {
+                continue;
+            }
+            if normalize_name(norm, &import.imported_name) != target_norm {
+                continue;
+            }
+            let Some(path) = import.module_path.as_deref() else {
+                continue;
+            };
+            let (type_name, member_name) = match import.alias.as_deref() {
+                Some(alias) => match alias.split_once(decode.separator) {
+                    Some((t, m)) => (
+                        (!t.is_empty()).then_some(t),
+                        (!m.is_empty()).then_some(m),
+                    ),
+                    None => ((!alias.is_empty()).then_some(alias), None),
+                },
+                None => (None, None),
+            };
+            // Most specific: a named member.
+            if let Some(member) = member_name {
+                for sym in self.lookup.in_file(path) {
+                    if sym.name == member && kind(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: decode.member_confidence,
+                            strategy: "default_alias_decoded_import",
+                            resolved_yield_type: None,
+                            flow_emit: None,
+                        });
+                    }
+                }
+            }
+            // Next: the named owning type.
+            if let Some(ty) = type_name {
+                for sym in self.lookup.in_file(path) {
+                    if sym.name == ty && kind(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: decode.type_confidence,
+                            strategy: "default_alias_decoded_import",
+                            resolved_yield_type: None,
+                            flow_emit: None,
+                        });
+                    }
+                }
+            }
+            // Fallback: the dispatch type the file owns.
+            if let Some(fallback_kind) = decode.fallback_kind {
+                for sym in self.lookup.in_file(path) {
+                    if sym.kind == fallback_kind && kind(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: decode.fallback_confidence,
+                            strategy: "default_alias_decoded_import",
+                            resolved_yield_type: None,
+                            flow_emit: None,
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Run every strategy in canonical order, returning the first hit.
     ///
     /// Canonical order, most-specific evidence first. The two profile-gated
@@ -1229,10 +1439,14 @@ impl<'a> DefaultResolver<'a> {
     ///       `module_anchor`); a missed terminal anchor ends the ladder
     ///   1.  scope chain  — innermost enclosing scope wins
     ///   2.  same file    — sibling symbol in the source file
+    ///   2b. file-scoped import — bare target in a file-naming import's file
+    ///        (gated on `file_scoped_imports`)
     ///   3.  self keyword — `this`/`self`/`super` against the enclosing type
     ///   4.  enclosing member — inherited member of the enclosing type
     ///   5.  r.module     — extractor-set module prefix
     ///   6.  qname exact  — dotted target matches a stored qname
+    ///   6b. head alias   — dotted target's head names an in-file declaration
+    ///        (gated on `head_alias`)
     ///   7.  chain prefix — second-to-last chain segment matches an import
     ///   8.  reexport chain — import points at a re-exporting package
     ///   9.  file import  — bare target matches an imported name
@@ -1303,6 +1517,8 @@ impl<'a> DefaultResolver<'a> {
                 name_normalization: profile.name_normalization,
                 package_by_directory: profile.package_by_directory,
                 wildcard_match: profile.wildcard_match,
+                head_alias: profile.head_alias,
+                file_scoped_imports: profile.file_scoped_imports,
             },
         )
     }
@@ -1375,10 +1591,18 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| {
                 self.resolve_via_same_file(kind, pd.self_keywords, pd.name_normalization)
             })
+            .or_else(|| {
+                self.resolve_via_file_scoped_import(
+                    pd.file_scoped_imports,
+                    pd.name_normalization,
+                    kind,
+                )
+            })
             .or_else(|| self.resolve_via_self_keyword(kind))
             .or_else(|| self.resolve_via_enclosing_member(kind))
             .or_else(|| self.resolve_via_ref_module(kind))
             .or_else(|| self.resolve_via_qname_exact(kind))
+            .or_else(|| self.resolve_via_head_alias(pd.head_alias, kind))
             .or_else(|| self.resolve_via_chain_prefix(kind))
             .or_else(|| self.resolve_via_reexport_chain(kind))
             .or_else(|| self.resolve_via_file_import(kind))
@@ -1879,10 +2103,21 @@ fn normalize_name(norm: NameNormalization, s: &str) -> Cow<'_, str> {
         }
     }
 
-    // 2. Leading prefix: drop the first declared prefix that matches.
+    // 2. Leading prefix: drop the first declared prefix that matches. When the
+    //    spec folds case, the prefix match folds too — a prefix runs before the
+    //    case-fold step below, so a differently-cased call site (`when foo` vs a
+    //    `When ` prefix) must still strip. Case-sensitive specs keep the exact
+    //    byte-prefix match.
     for prefix in spec.strip_prefixes {
-        if let Some(rest) = cur.strip_prefix(*prefix) {
-            cur = rest;
+        let matched_len = if spec.case_insensitive {
+            cur.get(..prefix.len())
+                .filter(|head| head.eq_ignore_ascii_case(prefix))
+                .map(|_| prefix.len())
+        } else {
+            cur.starts_with(*prefix).then_some(prefix.len())
+        };
+        if let Some(len) = matched_len {
+            cur = &cur[len..];
             break;
         }
     }

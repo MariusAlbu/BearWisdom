@@ -50,6 +50,8 @@ pub const ODIN_PROFILE: LanguageProfile = LanguageProfile {
     package_by_directory: true,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,
