@@ -42,6 +42,8 @@ pub const ERLANG_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: ERLANG_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

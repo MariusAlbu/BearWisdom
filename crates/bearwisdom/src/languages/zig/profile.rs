@@ -57,6 +57,8 @@ pub const ZIG_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: ZIG_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: Some(super::predicates::is_zig_builtin),
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

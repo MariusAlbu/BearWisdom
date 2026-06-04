@@ -37,6 +37,8 @@ pub const HARE_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: HARE_KIND_TABLE,
     chain_qualification: ChainQualification::PackageShortName,
     builtin_skip: Some(super::hooks::is_hare_primitive),
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

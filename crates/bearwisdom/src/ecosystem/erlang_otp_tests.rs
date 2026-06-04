@@ -1,8 +1,16 @@
 use std::fs;
+use std::sync::Mutex;
 
 use tempfile::TempDir;
 
 use super::*;
+
+// `discover()` reads `BEARWISDOM_OTP_ROOT` and `ERL_TOP` from the process
+// environment, and these tests set/remove those vars. Cargo's default runner
+// spreads tests across threads, so without a guard one test's env mutation
+// leaks into another's `discover()` call mid-flight. Any test that touches
+// those vars or calls `discover()` holds this mutex for its full duration.
+static ENV_GUARD: Mutex<()> = Mutex::new(());
 
 /// Build an OTP-shaped fixture under `root`:
 ///   root/lib/
@@ -54,6 +62,7 @@ fn make_otp_fixture(root: &std::path::Path) -> std::path::PathBuf {
 
 #[test]
 fn discover_uses_explicit_otp_root_override() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -70,6 +79,7 @@ fn discover_uses_explicit_otp_root_override() {
 
 #[test]
 fn discover_returns_empty_for_missing_root() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     std::env::set_var("BEARWISDOM_OTP_ROOT", "/nonexistent/path/erlang");
     // Override ERL_TOP too so we don't accidentally hit a real install.
     std::env::set_var("ERL_TOP", "/nonexistent");
@@ -83,6 +93,7 @@ fn discover_returns_empty_for_missing_root() {
 
 #[test]
 fn discover_version_captured() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -96,6 +107,7 @@ fn discover_version_captured() {
 
 #[test]
 fn discover_roots_are_sorted() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -111,6 +123,7 @@ fn discover_roots_are_sorted() {
 
 #[test]
 fn walk_emits_correct_virtual_paths() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -135,6 +148,7 @@ fn walk_emits_correct_virtual_paths() {
 
 #[test]
 fn walk_includes_hrl_files() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -152,6 +166,7 @@ fn walk_includes_hrl_files() {
 
 #[test]
 fn walk_skips_pruned_directories() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -174,6 +189,7 @@ fn walk_skips_pruned_directories() {
 
 #[test]
 fn walk_language_is_erlang() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -190,6 +206,7 @@ fn walk_language_is_erlang() {
 
 #[test]
 fn demand_pre_pull_returns_only_substrate_apps() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -253,6 +270,7 @@ fn extract_module_name_returns_none_for_hrl() {
 
 #[test]
 fn build_symbol_index_maps_module_names() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     make_otp_fixture(tmp.path());
 
@@ -282,6 +300,7 @@ fn ecosystem_identity() {
 #[test]
 #[ignore] // requires real OTP install at scoop default path
 fn live_discovery_finds_scoop_install() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let scoop = std::env::var_os("USERPROFILE")
         .map(|h| std::path::PathBuf::from(h).join("scoop/apps/erlang/current"));
     if scoop.as_ref().is_none_or(|p| !p.is_dir()) {

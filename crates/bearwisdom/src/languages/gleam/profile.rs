@@ -43,6 +43,8 @@ pub const GLEAM_PROFILE: LanguageProfile = LanguageProfile {
     // same shape the engine's package-short-name strategy binds.
     chain_qualification: ChainQualification::PackageShortName,
     builtin_skip: Some(super::hooks::is_gleam_operator),
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -1,7 +1,24 @@
 // Minimal LanguageProfile for Pug. Templating language; no chains.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    CandidateDirs, ChainQualification, DispatchAxis, ImportModulePath, ImportResolution,
+    LanguageProfile, StemMatch, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+};
+
+/// `include` / `extends` resolution. The raw target is a relative stem; when it
+/// carries no `.pug` / `.jade` extension the candidate set adds those forms and
+/// an `index.{ext}` directory entry. The binding symbol is the candidate file's
+/// stem-named class.
+const PUG_IMPORTS: ImportResolution = ImportResolution {
+    extensions: &["pug", "jade"],
+    candidate_dirs: CandidateDirs::SelfDir,
+    index_files: &["index"],
+    underscore_variant: false,
+    kebab_variant: false,
+    decline_leading_slash: false,
+    stem_match: StemMatch::StemExact,
+    bind_kind: "class",
+    strategy_tag: "pug_template_include",
 };
 
 pub const PUG_PROFILE: LanguageProfile = LanguageProfile {
@@ -21,6 +38,8 @@ pub const PUG_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    import_resolution: Some(PUG_IMPORTS),
+    import_module_path: ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

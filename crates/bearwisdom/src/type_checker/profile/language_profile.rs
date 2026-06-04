@@ -45,6 +45,21 @@ pub struct LanguageProfile {
     /// happens to share the name. `None` (the default) runs the ladder for every
     /// target, so languages with no reserved-name space are unaffected.
     pub builtin_skip: Option<fn(&str) -> bool>,
+    /// Template-include import resolution. `Some` for languages whose
+    /// `Imports` refs name another template FILE by relative path / stem
+    /// (handlebars partials, EJS / Pug / Nunjucks includes, GSP renders,
+    /// markdown relative links, YAML `uses`) rather than a symbol. `None`
+    /// (the default) leaves the import-path strategy off, so a language's
+    /// `Imports` refs flow through the regular ladder untouched. The data
+    /// here fully describes the candidate-path generation and binding rule —
+    /// see `ImportResolution`.
+    pub import_resolution: Option<ImportResolution>,
+    /// How the generic `build_file_context` default fills each
+    /// `ImportEntry::module_path` from an `Imports` ref. `None` leaves it
+    /// empty; `EchoTarget` mirrors the raw target into the module path
+    /// (Nunjucks). Only consulted when no language hook builds the file
+    /// context.
+    pub import_module_path: ImportModulePath,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -52,6 +67,85 @@ pub struct LanguageProfile {
     pub decorator_syntax: Option<DecoratorSyntax>,
     pub doc_comment_kinds: &'static [&'static str],
     pub visibility_keywords: &'static [(&'static str, Visibility)],
+}
+
+// ---------------------------------------------------------------------------
+// Template-include import resolution (data for resolve_via_import_path)
+// ---------------------------------------------------------------------------
+
+/// Per-language data for the generic template-include resolver. Every field
+/// is a per-language delta of one shared algorithm: from an `Imports` ref
+/// whose `target_name` is a relative-path / stem reference to another
+/// template file, generate candidate project file paths and bind the first
+/// one whose in-file symbol matches `bind_kind` under `stem_match`.
+#[derive(Debug, Clone, Copy)]
+pub struct ImportResolution {
+    /// File extensions to try when the raw target carries none, in order.
+    /// A target already ending in one of these is taken verbatim.
+    pub extensions: &'static [&'static str],
+    /// Where to look for the target relative to the source file's directory.
+    pub candidate_dirs: CandidateDirs,
+    /// Directory-index entry stems probed inside a `target`-named directory
+    /// (`base.join(entry).join(ext)`): `[]`, `["index"]`,
+    /// `["index", "README", ...]`, `["action"]`. Empty disables the probe.
+    pub index_files: &'static [&'static str],
+    /// Also probe the `_{stem}` sibling of each candidate (partial-file
+    /// convention).
+    pub underscore_variant: bool,
+    /// Also probe a kebab-cased form of the target (`UserCard` → `user-card`).
+    pub kebab_variant: bool,
+    /// Decline a leading-slash target outright (views-root-relative with no
+    /// anchor — guessing would mis-bind).
+    pub decline_leading_slash: bool,
+    /// How a candidate file's in-file symbol name is matched against the
+    /// candidate path.
+    pub stem_match: StemMatch,
+    /// The symbol kind a candidate file's binding symbol must be.
+    pub bind_kind: &'static str,
+    /// The `Resolution::strategy` tag recorded on a hit (preserves the
+    /// per-language diagnostic strings).
+    pub strategy_tag: &'static str,
+}
+
+/// Where the import-path resolver looks for a target relative to the source
+/// file's directory. The source-dir candidates are always emitted; this
+/// governs whether a parent-walk over named subdirectories is added on top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CandidateDirs {
+    /// Source directory only.
+    SelfDir,
+    /// Walk parent directories up to `depth` levels (the source dir counts as
+    /// level 0), joining each of `dirs` before the target variant — the
+    /// handlebars partials-directory walk.
+    WalkUp {
+        dirs: &'static [&'static str],
+        depth: usize,
+    },
+}
+
+/// How a candidate file's binding symbol name is matched against the
+/// candidate path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StemMatch {
+    /// `sym.name == file_stem` (filename without extension).
+    StemExact,
+    /// `sym.name == stem` OR `sym.name == stem.trim_start_matches('_')`.
+    StemOrUnderscoreStripped,
+    /// `sym.name == file_name` (basename including extension).
+    BasenameWithExt,
+    /// No name check — accept any `bind_kind` symbol in the candidate file
+    /// (GSP: the partial's class is the only such symbol).
+    AnyClassInFile,
+}
+
+/// How the generic `build_file_context` default fills an `ImportEntry`'s
+/// `module_path` from an `Imports` ref's target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportModulePath {
+    /// Leave `module_path` empty.
+    None,
+    /// Mirror the raw target into `module_path`.
+    EchoTarget,
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +357,8 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    import_resolution: None,
+    import_module_path: ImportModulePath::None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

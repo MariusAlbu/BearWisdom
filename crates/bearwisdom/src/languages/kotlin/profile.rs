@@ -78,6 +78,8 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     // qualifies via its package then explicit imports before member lookup.
     chain_qualification: ChainQualification::SamePackageAndImports,
     builtin_skip: None,
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

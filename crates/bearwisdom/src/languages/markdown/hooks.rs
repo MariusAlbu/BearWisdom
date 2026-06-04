@@ -1,4 +1,14 @@
-// Markdown language hooks. Absorbed from the deleted `markdown/resolve.rs`.
+// Markdown language hooks.
+//
+// The plugin keeps a hook only to build the per-file resolution context (the
+// `Imports` ref list with empty module paths). Markdown's OWN relative-link
+// resolution is generic engine code driven by the profile's `import_resolution`
+// data; there is no `resolve_ref` impl here.
+//
+// `resolve_markdown_link` (and the path helpers it needs) is retained as a
+// shared resolver: the MDX plugin reuses it for the link-import half of its
+// own ref dispatch (the other half routes through TypeScript). It is not wired
+// into Markdown's own resolution path.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -59,6 +69,11 @@ pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
     stack.iter().collect()
 }
 
+/// Resolve a markdown relative link to the target file's stem-named class.
+/// Shared with the MDX plugin, which reuses it for its link-import refs. Mirrors
+/// the generic `resolve_via_import_path` behavior the `markdown` profile drives,
+/// expressed directly here because MDX's ref dispatch needs to special-case the
+/// `Imports` kind before falling through to its TypeScript resolution.
 pub(crate) fn resolve_markdown_link(
     file_ctx: &FileContext,
     ref_ctx: &RefContext<'_>,
@@ -124,15 +139,6 @@ impl LanguageEngineHooks for MarkdownHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        resolve_markdown_link(file_ctx, ref_ctx, lookup)
     }
 }
 

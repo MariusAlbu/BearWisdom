@@ -1,5 +1,26 @@
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    CandidateDirs, ChainQualification, DispatchAxis, ImportModulePath, ImportResolution,
+    LanguageProfile, StemMatch, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+};
+
+/// `<g:render template="X">` resolution. `X` is a bare template name (the
+/// extractor already strips a leading `_`), optionally with a directory
+/// segment. Grails resolves it to the `_X.gsp` partial in the rendering view's
+/// directory, or a directly-named `X.gsp`; both the `_{stem}` partial-file
+/// sibling and the direct form are probed via `underscore_variant`. A
+/// leading-slash target is views-root-relative with no engine anchor, so it is
+/// declined rather than mis-bound. The candidate file's single `class` symbol
+/// is the partial regardless of its name (`AnyClassInFile`).
+const GSP_IMPORTS: ImportResolution = ImportResolution {
+    extensions: &["gsp"],
+    candidate_dirs: CandidateDirs::SelfDir,
+    index_files: &[],
+    underscore_variant: true,
+    kebab_variant: false,
+    decline_leading_slash: true,
+    stem_match: StemMatch::AnyClassInFile,
+    bind_kind: "class",
+    strategy_tag: "gsp_template",
 };
 
 pub const GSP_PROFILE: LanguageProfile = LanguageProfile {
@@ -19,6 +40,8 @@ pub const GSP_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    import_resolution: Some(GSP_IMPORTS),
+    import_module_path: ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

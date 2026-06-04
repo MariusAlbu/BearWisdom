@@ -1,5 +1,25 @@
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    CandidateDirs, ChainQualification, DispatchAxis, ImportModulePath, ImportResolution,
+    LanguageProfile, StemMatch, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+};
+
+/// Relative-link resolution. The link target is joined to the source dir and
+/// lexically normalized; when it carries no markdown extension the candidate
+/// set appends each markdown-family extension, and in every case probes the
+/// `index` / `README` directory-entry forms (a link to a directory resolves to
+/// its index document). The binding symbol is the candidate file's stem-named
+/// class. A `.french`-style translation suffix is appended-to, not replaced,
+/// because it is not a markdown extension.
+const MARKDOWN_IMPORTS: ImportResolution = ImportResolution {
+    extensions: &["md", "markdown", "mdown", "mkd", "mkdn", "mdx"],
+    candidate_dirs: CandidateDirs::SelfDir,
+    index_files: &["index", "README", "readme", "Readme"],
+    underscore_variant: false,
+    kebab_variant: false,
+    decline_leading_slash: false,
+    stem_match: StemMatch::StemExact,
+    bind_kind: "class",
+    strategy_tag: "markdown_relative_link",
 };
 
 pub const MARKDOWN_PROFILE: LanguageProfile = LanguageProfile {
@@ -19,6 +39,8 @@ pub const MARKDOWN_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    import_resolution: Some(MARKDOWN_IMPORTS),
+    import_module_path: ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

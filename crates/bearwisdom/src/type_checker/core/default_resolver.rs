@@ -23,7 +23,9 @@ use super::reexport::follow_reexports;
 use crate::indexer::resolve::engine::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
-use crate::type_checker::profile::language_profile::{ChainQualification, KindCompatibility, KindTable};
+use crate::type_checker::profile::language_profile::{
+    CandidateDirs, ChainQualification, ImportResolution, KindCompatibility, KindTable, StemMatch,
+};
 use crate::types::{EdgeKind, SymbolKind};
 
 /// Language-agnostic engine resolver. Composes deterministic strategies
@@ -811,9 +813,72 @@ impl<'a> DefaultResolver<'a> {
         None
     }
 
+    /// Strategy — template-include import resolution.
+    ///
+    /// Fires only for `Imports` refs whose `target_name` is a relative-path /
+    /// stem reference to another template FILE (not a symbol): handlebars
+    /// partials, EJS / Pug / Nunjucks includes, GSP `<g:render template>`,
+    /// markdown relative links, GitHub-Actions YAML `uses`. From the raw
+    /// target and the `ImportResolution` data, generate candidate project file
+    /// paths (extensions, parent-dir walk, directory-index entries, underscore
+    /// and kebab variants) and bind the first candidate whose in-file symbol
+    /// matches `bind_kind` under the configured `stem_match` rule.
+    ///
+    /// All per-language behavior is in `ir` — the algorithm is one shape. A
+    /// non-`Imports` ref, an empty target, or a declined leading slash short-
+    /// circuits to `None` so the regular ladder is unaffected.
+    pub fn resolve_via_import_path(
+        &self,
+        ir: &ImportResolution,
+    ) -> Option<Resolution> {
+        if self.ref_ctx.extracted_ref.kind != EdgeKind::Imports {
+            return None;
+        }
+        let target = self.ref_ctx.extracted_ref.target_name.trim();
+        if target.is_empty() {
+            return None;
+        }
+        if ir.decline_leading_slash && target.starts_with('/') {
+            return None;
+        }
+        let source_dir = std::path::Path::new(self.file_ctx.file_path.as_str()).parent()?;
+
+        for candidate in import_path_candidates(source_dir, target, ir) {
+            let path_str = candidate.to_string_lossy().replace('\\', "/");
+            let file_stem = candidate
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            let file_name = candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            for sym in self.lookup.in_file(&path_str) {
+                if sym.kind != ir.bind_kind {
+                    continue;
+                }
+                let name_ok = match ir.stem_match {
+                    StemMatch::StemExact => sym.name == file_stem,
+                    StemMatch::StemOrUnderscoreStripped => {
+                        sym.name == file_stem
+                            || sym.name == file_stem.trim_start_matches('_')
+                    }
+                    StemMatch::BasenameWithExt => sym.name == file_name,
+                    StemMatch::AnyClassInFile => true,
+                };
+                if name_ok {
+                    return Some(self.resolution(sym.id, ir.strategy_tag));
+                }
+            }
+        }
+        None
+    }
+
     /// Run every strategy in canonical order, returning the first hit.
     ///
     /// Canonical order, most-specific evidence first:
+    ///   0.  import path  — template-include FILE binding (gated on
+    ///       `import_resolution`; fires only for `Imports` refs)
     ///   1.  scope chain  — innermost enclosing scope wins
     ///   2.  same file    — sibling symbol in the source file
     ///   3.  self keyword — `this`/`self`/`super` against the enclosing type
@@ -847,6 +912,7 @@ impl<'a> DefaultResolver<'a> {
             &move |edge, sym_kind| kind(edge, sym_kind),
             ChainQualification::None,
             &["."],
+            None,
         )
     }
 
@@ -871,6 +937,7 @@ impl<'a> DefaultResolver<'a> {
             &move |edge, sym_kind| kind_ok_table(table, edge, sym_kind),
             profile.chain_qualification,
             separators,
+            profile.import_resolution.as_ref(),
         )
     }
 
@@ -880,13 +947,20 @@ impl<'a> DefaultResolver<'a> {
     /// fn-pointer `resolve_all` path passes `None` so those stay off.
     /// `separators` is the set of qname joins the scope-visible probe tries
     /// (always `"."`, plus the profile separator when it differs).
+    /// `import_resolution`, when present, runs the template-include strategy
+    /// FIRST — it is the most specific evidence for an `Imports` ref and the
+    /// only strategy that binds a path-stem target to a file symbol; for every
+    /// other ref shape it short-circuits to `None`.
     fn run_ladder(
         &self,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
         chain_qual: ChainQualification,
         separators: &[&str],
+        import_resolution: Option<&ImportResolution>,
     ) -> Option<Resolution> {
-        let result = self.resolve_via_scope_visible(kind, separators)
+        let result = import_resolution
+            .and_then(|ir| self.resolve_via_import_path(ir))
+            .or_else(|| self.resolve_via_scope_visible(kind, separators))
             .or_else(|| self.resolve_via_same_file(kind))
             .or_else(|| self.resolve_via_self_keyword(kind))
             .or_else(|| self.resolve_via_enclosing_member(kind))
@@ -1264,6 +1338,92 @@ fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
 /// resolve inside the project and don't cross a package boundary.
 fn is_relative_specifier(spec: &str) -> bool {
     spec.starts_with("./") || spec.starts_with("../")
+}
+
+/// Generate the ordered candidate file paths for a template-include target.
+///
+/// Data-driven by `ir`: name variants (`target`, plus a kebab form when
+/// `kebab_variant`), then for each variant the source-dir base candidate set
+/// (the base itself; its `.ext` forms; directory-index `entry.ext` forms
+/// under the base; and the `_{stem}` sibling with its `.ext` forms when
+/// `underscore_variant`). When `candidate_dirs` is `WalkUp`, the same base
+/// candidate set is generated at `{ancestor}/{dir}/{variant}` for each named
+/// `dir` across the source dir and up to `depth` ancestors.
+fn import_path_candidates(
+    source_dir: &std::path::Path,
+    target: &str,
+    ir: &ImportResolution,
+) -> Vec<std::path::PathBuf> {
+    use crate::indexer::resolve::engine::{camel_to_kebab, lexical_normalize};
+    use std::path::PathBuf;
+
+    let mut out: Vec<PathBuf> = Vec::with_capacity(32);
+
+    // Append the full base candidate set for one base path. `base` is the
+    // already-`source_dir`-joined, lexically-normalized variant path.
+    let push_base_set = |out: &mut Vec<PathBuf>, base: PathBuf| {
+        let already_ext = base
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| ir.extensions.contains(&e))
+            .unwrap_or(false);
+        out.push(base.clone());
+        if !already_ext {
+            let base_str = base.to_string_lossy().to_string();
+            for ext in ir.extensions {
+                out.push(PathBuf::from(format!("{base_str}.{ext}")));
+            }
+            for entry in ir.index_files {
+                for ext in ir.extensions {
+                    out.push(base.join(format!("{entry}.{ext}")));
+                }
+            }
+        }
+        if ir.underscore_variant {
+            if let (Some(parent), Some(stem)) =
+                (base.parent(), base.file_name().and_then(|n| n.to_str()))
+            {
+                let underscored = parent.join(format!("_{stem}"));
+                out.push(underscored.clone());
+                if !already_ext {
+                    let und_str = underscored.to_string_lossy().to_string();
+                    for ext in ir.extensions {
+                        out.push(PathBuf::from(format!("{und_str}.{ext}")));
+                    }
+                }
+            }
+        }
+    };
+
+    let mut name_variants: Vec<String> = vec![target.to_string()];
+    if ir.kebab_variant {
+        if let Some(kebab) = camel_to_kebab(target) {
+            name_variants.push(kebab);
+        }
+    }
+
+    for variant in &name_variants {
+        let direct = lexical_normalize(&source_dir.join(variant));
+        push_base_set(&mut out, direct);
+
+        if let CandidateDirs::WalkUp { dirs, depth } = ir.candidate_dirs {
+            let mut current = Some(source_dir);
+            let mut level = 0usize;
+            while let Some(dir) = current {
+                for d in dirs {
+                    let base = lexical_normalize(&dir.join(d).join(variant));
+                    push_base_set(&mut out, base);
+                }
+                level += 1;
+                if level > depth {
+                    break;
+                }
+                current = dir.parent();
+            }
+        }
+    }
+
+    out
 }
 
 fn file_path_matches_module(file_path: &str, module: &str) -> bool {

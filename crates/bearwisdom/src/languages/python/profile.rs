@@ -96,6 +96,8 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     // black formats) — most unresolvable by design. Baseline updated to
     // reflect new extraction; engine-primary safe.
     builtin_skip: None,
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

@@ -1,7 +1,24 @@
 // Minimal LanguageProfile for EJS. Templating language; no chains.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    CandidateDirs, ChainQualification, DispatchAxis, ImportModulePath, ImportResolution,
+    LanguageProfile, StemMatch, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+};
+
+/// `include('partial')` resolution. The raw target is a relative partial path;
+/// when it carries no known extension the candidate set adds `.ejs` / `.html`
+/// forms and an `index.{ext}` directory entry. The binding symbol is the
+/// candidate file's stem-named class.
+const EJS_IMPORTS: ImportResolution = ImportResolution {
+    extensions: &["ejs", "html", "htm"],
+    candidate_dirs: CandidateDirs::SelfDir,
+    index_files: &["index"],
+    underscore_variant: false,
+    kebab_variant: false,
+    decline_leading_slash: false,
+    stem_match: StemMatch::StemExact,
+    bind_kind: "class",
+    strategy_tag: "ejs_partial",
 };
 
 pub const EJS_PROFILE: LanguageProfile = LanguageProfile {
@@ -21,6 +38,8 @@ pub const EJS_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
+    import_resolution: Some(EJS_IMPORTS),
+    import_module_path: ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -34,7 +34,7 @@ pub use types::{
     intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution,
     SymbolInfo, TypeInfo,
 };
-pub use util::build_scope_chain;
+pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
 
 // Crate-visible re-exports for items the engine's own submodules (and a
 // handful of language resolvers) consult via the engine path. Keeps every

@@ -3,7 +3,9 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{
+    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+};
 use crate::types::{
     ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
     SymbolKind, Visibility,
@@ -1628,4 +1630,249 @@ fn package_short_name_off_under_default_ladder() {
         d.resolve_all().is_none(),
         "default ladder (ChainQualification::None) must not reach package-short-name"
     );
+}
+
+// ---------------------------------------------------------------------------
+// resolve_via_import_path — template-include resolution (data-driven)
+// ---------------------------------------------------------------------------
+
+use crate::type_checker::profile::language_profile::{
+    CandidateDirs, ImportResolution, StemMatch,
+};
+
+/// A `FileContext` rooted at an arbitrary path (the `file_ctx` helper hardcodes
+/// `src/main.ts`, which has no meaningful template directory).
+fn file_ctx_at(path: &str) -> FileContext {
+    FileContext {
+        file_path: path.to_string(),
+        language: "template".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    }
+}
+
+fn extracted_import(target: &str) -> ExtractedRef {
+    let mut r = extracted_call(target);
+    r.kind = EdgeKind::Imports;
+    r
+}
+
+/// Base `ImportResolution` for tests — `.tmpl` ext, self-dir, exact stem
+/// match, binds a `class`. Individual tests tweak only the field under test.
+fn base_ir() -> ImportResolution {
+    ImportResolution {
+        extensions: &["tmpl"],
+        candidate_dirs: CandidateDirs::SelfDir,
+        index_files: &[],
+        underscore_variant: false,
+        kebab_variant: false,
+        decline_leading_slash: false,
+        stem_match: StemMatch::StemExact,
+        bind_kind: "class",
+        strategy_tag: "test_template_include",
+    }
+}
+
+fn run_import_path(
+    lookup: &Lookup,
+    fc: &FileContext,
+    r: &ExtractedRef,
+    ir: &ImportResolution,
+) -> Option<Resolution> {
+    let s = source_symbol("caller");
+    let rc = ref_ctx(r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: fc,
+        ref_ctx: &rc,
+        lookup,
+        kind_compatible: accept_any,
+    };
+    d.resolve_via_import_path(ir)
+}
+
+#[test]
+fn import_path_stem_exact_with_appended_extension() {
+    // `partial` from `views/page.tmpl` → `views/partial.tmpl`, bound by stem.
+    let lookup = Lookup::new().with_in_file(
+        "views/partial.tmpl",
+        sym(42, "partial", "views/partial.tmpl::partial", "class", "views/partial.tmpl"),
+    );
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_import("partial");
+    let res = run_import_path(&lookup, &fc, &r, &base_ir()).expect("stem-exact resolves");
+    assert_eq!(res.target_symbol_id, 42);
+    assert_eq!(res.strategy, "test_template_include");
+    assert_eq!(res.confidence, 1.0);
+}
+
+#[test]
+fn import_path_stem_exact_rejects_wrong_kind() {
+    // The only candidate symbol is a `function`, not the configured `class`.
+    let lookup = Lookup::new().with_in_file(
+        "views/partial.tmpl",
+        sym(1, "partial", "q", "function", "views/partial.tmpl"),
+    );
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_import("partial");
+    assert!(run_import_path(&lookup, &fc, &r, &base_ir()).is_none());
+}
+
+#[test]
+fn import_path_target_with_extension_taken_verbatim() {
+    // Target already carries a known extension — taken as-is, no appended forms.
+    let lookup = Lookup::new().with_in_file(
+        "views/partial.tmpl",
+        sym(7, "partial", "q", "class", "views/partial.tmpl"),
+    );
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_import("partial.tmpl");
+    let res = run_import_path(&lookup, &fc, &r, &base_ir()).expect("verbatim ext resolves");
+    assert_eq!(res.target_symbol_id, 7);
+}
+
+#[test]
+fn import_path_underscore_stripped_match() {
+    // `_card.tmpl` partial; the indexed symbol is named `card` (no underscore).
+    let lookup = Lookup::new().with_in_file(
+        "views/_card.tmpl",
+        sym(9, "card", "q", "class", "views/_card.tmpl"),
+    );
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_import("card");
+    let mut ir = base_ir();
+    ir.underscore_variant = true;
+    ir.stem_match = StemMatch::StemOrUnderscoreStripped;
+    let res = run_import_path(&lookup, &fc, &r, &ir).expect("underscore sibling resolves");
+    assert_eq!(res.target_symbol_id, 9);
+}
+
+#[test]
+fn import_path_basename_with_ext_match() {
+    // GitHub-Actions style: the binding symbol's name is the full basename.
+    let lookup = Lookup::new().with_in_file(
+        "ci/build/action.yml",
+        sym(13, "action.yml", "q", "class", "ci/build/action.yml"),
+    );
+    let fc = file_ctx_at("ci/workflow.yml");
+    let r = extracted_import("build");
+    let mut ir = base_ir();
+    ir.extensions = &["yml", "yaml"];
+    ir.index_files = &["action"];
+    ir.stem_match = StemMatch::BasenameWithExt;
+    let res = run_import_path(&lookup, &fc, &r, &ir).expect("action.yml index resolves");
+    assert_eq!(res.target_symbol_id, 13);
+}
+
+#[test]
+fn import_path_any_class_in_file_match() {
+    // GSP: no name check — any class-kind symbol in the candidate file binds.
+    // `_x.gsp` partial-file convention via underscore variant.
+    let lookup = Lookup::new().with_in_file(
+        "views/_x.gsp",
+        sym(21, "SomethingElse", "q", "class", "views/_x.gsp"),
+    );
+    let fc = file_ctx_at("views/show.gsp");
+    let r = extracted_import("x");
+    let mut ir = base_ir();
+    ir.extensions = &["gsp"];
+    ir.underscore_variant = true;
+    ir.decline_leading_slash = true;
+    ir.stem_match = StemMatch::AnyClassInFile;
+    let res = run_import_path(&lookup, &fc, &r, &ir).expect("any-class resolves");
+    assert_eq!(res.target_symbol_id, 21);
+}
+
+#[test]
+fn import_path_decline_leading_slash() {
+    let lookup = Lookup::new().with_in_file(
+        "views/_x.gsp",
+        sym(1, "x", "q", "class", "views/_x.gsp"),
+    );
+    let fc = file_ctx_at("views/show.gsp");
+    let r = extracted_import("/shared/x");
+    let mut ir = base_ir();
+    ir.extensions = &["gsp"];
+    ir.decline_leading_slash = true;
+    assert!(
+        run_import_path(&lookup, &fc, &r, &ir).is_none(),
+        "a views-root-relative leading-slash target must be declined"
+    );
+}
+
+#[test]
+fn import_path_index_file_entry() {
+    // `pkg` from `views/page.tmpl` → `views/pkg/index.tmpl`, bound by stem.
+    let lookup = Lookup::new().with_in_file(
+        "views/pkg/index.tmpl",
+        sym(31, "index", "q", "class", "views/pkg/index.tmpl"),
+    );
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_import("pkg");
+    let mut ir = base_ir();
+    ir.index_files = &["index"];
+    let res = run_import_path(&lookup, &fc, &r, &ir).expect("index entry resolves");
+    assert_eq!(res.target_symbol_id, 31);
+}
+
+#[test]
+fn import_path_kebab_variant() {
+    // `UserCard` → kebab `user-card` → `views/user-card.tmpl`.
+    let lookup = Lookup::new().with_in_file(
+        "views/user-card.tmpl",
+        sym(44, "user-card", "q", "class", "views/user-card.tmpl"),
+    );
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_import("UserCard");
+    let mut ir = base_ir();
+    ir.kebab_variant = true;
+    let res = run_import_path(&lookup, &fc, &r, &ir).expect("kebab variant resolves");
+    assert_eq!(res.target_symbol_id, 44);
+}
+
+#[test]
+fn import_path_walk_up_partial_dirs() {
+    // Handlebars partials walk: `header` from `views/pages/home.tmpl` resolves
+    // to `views/partials/header.tmpl` one directory up.
+    let lookup = Lookup::new().with_in_file(
+        "views/partials/header.tmpl",
+        sym(55, "header", "q", "class", "views/partials/header.tmpl"),
+    );
+    let fc = file_ctx_at("views/pages/home.tmpl");
+    let r = extracted_import("header");
+    let mut ir = base_ir();
+    ir.candidate_dirs = CandidateDirs::WalkUp {
+        dirs: &["partials"],
+        depth: 4,
+    };
+    let res = run_import_path(&lookup, &fc, &r, &ir).expect("partial-dir walk resolves");
+    assert_eq!(res.target_symbol_id, 55);
+}
+
+#[test]
+fn import_path_declines_non_imports_ref() {
+    // A non-`Imports` ref never enters the template strategy.
+    let lookup = Lookup::new().with_in_file(
+        "views/partial.tmpl",
+        sym(1, "partial", "q", "class", "views/partial.tmpl"),
+    );
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_call("partial"); // Calls, not Imports
+    assert!(run_import_path(&lookup, &fc, &r, &base_ir()).is_none());
+}
+
+#[test]
+fn import_path_declines_empty_target() {
+    let lookup = Lookup::new();
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_import("   ");
+    assert!(run_import_path(&lookup, &fc, &r, &base_ir()).is_none());
+}
+
+#[test]
+fn import_path_no_candidate_returns_none() {
+    // No symbol indexed at any candidate path → unresolved.
+    let lookup = Lookup::new();
+    let fc = file_ctx_at("views/page.tmpl");
+    let r = extracted_import("missing");
+    assert!(run_import_path(&lookup, &fc, &r, &base_ir()).is_none());
 }

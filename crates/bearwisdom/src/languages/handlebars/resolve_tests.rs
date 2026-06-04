@@ -1,6 +1,7 @@
-use super::hooks::HandlebarsHooks;
+use super::profile::HANDLEBARS_PROFILE;
+use crate::indexer::resolve::engine::{build_scope_chain, RefContext, Resolution, SymbolIndex};
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::indexer::resolve::engine::{build_scope_chain, RefContext, SymbolIndex};
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -19,15 +20,17 @@ fn make_class_symbol(name: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_partial_ref(target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
@@ -63,7 +66,6 @@ fn make_file(path: &str, syms: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) ->
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
-
         plugin_flow_emissions: Vec::new(),
     }
 }
@@ -85,6 +87,28 @@ fn build_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i
     (index, id_map)
 }
 
+/// Drive the generic engine resolver the way the production engine does for a
+/// chain-less `Imports` ref: the profile's `import_resolution` data makes
+/// `resolve_via_import_path` the first ladder rung.
+fn resolve(source: &ParsedFile, index: &SymbolIndex) -> Option<Resolution> {
+    let file_ctx = super::HANDLEBARS_HOOKS
+        .build_file_context(source, None)
+        .unwrap();
+    let ref_ctx = RefContext {
+        extracted_ref: &source.refs[0],
+        source_symbol: &source.symbols[0],
+        scope_chain: build_scope_chain(None),
+        file_package_id: None,
+    };
+    DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: index,
+        kind_compatible: |_, _| true,
+    }
+    .resolve_all_with_profile(&HANDLEBARS_PROFILE)
+}
+
 #[test]
 fn relative_partial_in_same_dir_resolves() {
     let target = make_file("themes/casper/header.hbs", vec![make_class_symbol("header")], vec![]);
@@ -94,14 +118,7 @@ fn relative_partial_in_same_dir_resolves() {
         vec![make_partial_ref("header")],
     );
     let (index, id_map) = build_env(&[&source, &target]);
-    let file_ctx = HandlebarsHooks.build_file_context(&source, None).unwrap();
-    let ref_ctx = RefContext {
-        extracted_ref: &source.refs[0],
-        source_symbol: &source.symbols[0],
-        scope_chain: build_scope_chain(None),
-        file_package_id: None,
-    };
-    let res = HandlebarsHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("should resolve");
+    let res = resolve(&source, &index).expect("should resolve");
     assert_eq!(res.strategy, "handlebars_partial");
     assert_eq!(
         res.target_symbol_id,
@@ -124,14 +141,7 @@ fn nested_partial_via_partials_dir_resolves() {
         vec![make_partial_ref("components/header-content")],
     );
     let (index, _id_map) = build_env(&[&source, &target]);
-    let file_ctx = HandlebarsHooks.build_file_context(&source, None).unwrap();
-    let ref_ctx = RefContext {
-        extracted_ref: &source.refs[0],
-        source_symbol: &source.symbols[0],
-        scope_chain: build_scope_chain(None),
-        file_package_id: None,
-    };
-    let res = HandlebarsHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("should resolve via partials dir");
+    let res = resolve(&source, &index).expect("should resolve via partials dir");
     assert_eq!(res.strategy, "handlebars_partial");
 }
 
@@ -145,14 +155,7 @@ fn mustache_underscore_prefix_resolves() {
         vec![make_partial_ref("footer")],
     );
     let (index, _id_map) = build_env(&[&source, &target]);
-    let file_ctx = HandlebarsHooks.build_file_context(&source, None).unwrap();
-    let ref_ctx = RefContext {
-        extracted_ref: &source.refs[0],
-        source_symbol: &source.symbols[0],
-        scope_chain: build_scope_chain(None),
-        file_package_id: None,
-    };
-    let res = HandlebarsHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("should resolve underscore variant");
+    let res = resolve(&source, &index).expect("should resolve underscore variant");
     assert_eq!(res.strategy, "handlebars_partial");
 }
 
@@ -170,14 +173,7 @@ fn partial_in_ancestor_partials_dir_resolves() {
         vec![make_partial_ref("icons/search")],
     );
     let (index, _id_map) = build_env(&[&source, &target]);
-    let file_ctx = HandlebarsHooks.build_file_context(&source, None).unwrap();
-    let ref_ctx = RefContext {
-        extracted_ref: &source.refs[0],
-        source_symbol: &source.symbols[0],
-        scope_chain: build_scope_chain(None),
-        file_package_id: None,
-    };
-    let res = HandlebarsHooks.resolve_ref(&file_ctx, &ref_ctx, &index).expect("should climb to partials/");
+    let res = resolve(&source, &index).expect("should climb to partials/");
     assert_eq!(res.strategy, "handlebars_partial");
 }
 
@@ -189,14 +185,7 @@ fn unmatched_partial_returns_none() {
         vec![make_partial_ref("nonexistent")],
     );
     let (index, _id_map) = build_env(&[&source]);
-    let file_ctx = HandlebarsHooks.build_file_context(&source, None).unwrap();
-    let ref_ctx = RefContext {
-        extracted_ref: &source.refs[0],
-        source_symbol: &source.symbols[0],
-        scope_chain: build_scope_chain(None),
-        file_package_id: None,
-    };
-    assert!(HandlebarsHooks.resolve_ref(&file_ctx, &ref_ctx, &index).is_none());
+    assert!(resolve(&source, &index).is_none());
 }
 
 #[test]
@@ -213,27 +202,23 @@ fn camelcase_partial_resolves_to_kebab_case_file() {
         vec![make_partial_ref("feedbackButton")],
     );
     let (index, _id_map) = build_env(&[&source, &target]);
-    let file_ctx = HandlebarsHooks.build_file_context(&source, None).unwrap();
-    let ref_ctx = RefContext {
-        extracted_ref: &source.refs[0],
-        source_symbol: &source.symbols[0],
-        scope_chain: build_scope_chain(None),
-        file_package_id: None,
-    };
-    let res = HandlebarsHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
+    let res = resolve(&source, &index)
         .expect("camelCase partial should resolve to kebab-case file");
     assert_eq!(res.strategy, "handlebars_partial");
 }
 
 #[test]
-fn calls_kind_refs_are_not_resolved_by_partial_resolver() {
+fn calls_kind_refs_are_not_resolved_by_partial_strategy() {
     // Helper-call refs (Calls kind) are emitted from the embedded JS path
-    // and route through the TS resolver, not this one. Returning Some for
-    // Calls would silently bind helper invocations to unrelated files.
+    // and route through the TS resolver, not the template strategy. The
+    // import-path rung short-circuits on a non-Imports ref; no template file
+    // named `eq` exists, so the ref stays unresolved here.
     let source = make_file(
         "templates/page.hbs",
         vec![make_class_symbol("page")],
-        vec![ExtractedRef { is_import_binding: false, is_reexport: false,
+        vec![ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: "eq".to_string(),
             kind: EdgeKind::Calls,
@@ -247,12 +232,5 @@ fn calls_kind_refs_are_not_resolved_by_partial_resolver() {
         }],
     );
     let (index, _id_map) = build_env(&[&source]);
-    let file_ctx = HandlebarsHooks.build_file_context(&source, None).unwrap();
-    let ref_ctx = RefContext {
-        extracted_ref: &source.refs[0],
-        source_symbol: &source.symbols[0],
-        scope_chain: build_scope_chain(None),
-        file_package_id: None,
-    };
-    assert!(HandlebarsHooks.resolve_ref(&file_ctx, &ref_ctx, &index).is_none());
+    assert!(resolve(&source, &index).is_none());
 }

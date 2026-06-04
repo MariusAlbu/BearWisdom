@@ -30,6 +30,8 @@ pub const CMAKE_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: CMAKE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: Some(super::hooks::is_cmake_builtin),
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

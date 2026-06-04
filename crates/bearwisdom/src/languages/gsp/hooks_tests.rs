@@ -1,9 +1,10 @@
-use super::{template_path_candidates, GspHooks};
+use super::super::profile::GSP_PROFILE;
+use super::GspHooks;
 use crate::indexer::resolve::engine::{build_scope_chain, RefContext, Resolution, SymbolIndex};
+use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
 use std::collections::HashMap;
-use std::path::Path;
 
 fn make_class_symbol(name: &str) -> ExtractedSymbol {
     ExtractedSymbol {
@@ -28,7 +29,9 @@ fn make_class_symbol(name: &str) -> ExtractedSymbol {
 }
 
 fn make_render_ref(target: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind,
@@ -64,7 +67,6 @@ fn make_file(path: &str, syms: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) ->
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
-
         plugin_flow_emissions: Vec::new(),
     }
 }
@@ -94,7 +96,13 @@ fn resolve(source: &ParsedFile, index: &SymbolIndex) -> Option<Resolution> {
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    GspHooks.resolve_ref(&file_ctx, &ref_ctx, index)
+    DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: index,
+        kind_compatible: |_, _| true,
+    }
+    .resolve_all_with_profile(&GSP_PROFILE)
 }
 
 #[test]
@@ -144,6 +152,25 @@ fn directly_named_template_resolves() {
 }
 
 #[test]
+fn dir_qualified_template_resolves() {
+    // `<g:render template="shared/footer">` resolves relative to the source
+    // view's directory: `shared/_footer.gsp`.
+    let target = make_file(
+        "grails-app/views/book/shared/_footer.gsp",
+        vec![make_class_symbol("_footer")],
+        vec![],
+    );
+    let source = make_file(
+        "grails-app/views/book/show.gsp",
+        vec![make_class_symbol("show")],
+        vec![make_render_ref("shared/footer", EdgeKind::Imports)],
+    );
+    let (index, _id_map) = build_env(&[&source, &target]);
+    let res = resolve(&source, &index).expect("dir-qualified partial should resolve");
+    assert_eq!(res.strategy, "gsp_template");
+}
+
+#[test]
 fn absolute_template_path_declines() {
     // `<g:render template="/shared/footer">` is views-root-relative in Grails,
     // but the engine has no views-root anchor, so it declines rather than
@@ -166,16 +193,22 @@ fn absolute_template_path_declines() {
 }
 
 #[test]
-fn non_imports_ref_declines() {
-    // Only the `<g:render template>` Imports ref binds here; any other ref
-    // kind passes through (the engine's other strategies own it).
+fn non_imports_ref_is_not_bound_by_template_strategy() {
+    // Only the `<g:render template>` Imports ref binds via the template
+    // strategy; a Calls ref to the same name does not bind to a `.gsp` file.
+    let target = make_file(
+        "grails-app/views/book/_summary.gsp",
+        vec![make_class_symbol("_summary")],
+        vec![],
+    );
     let source = make_file(
         "grails-app/views/book/show.gsp",
         vec![make_class_symbol("show")],
         vec![make_render_ref("summary", EdgeKind::Calls)],
     );
-    let (index, _id_map) = build_env(&[&source]);
-    assert!(resolve(&source, &index).is_none());
+    let (index, _id_map) = build_env(&[&source, &target]);
+    let res = resolve(&source, &index);
+    assert!(res.map_or(true, |r| r.strategy != "gsp_template"));
 }
 
 #[test]
@@ -189,21 +222,4 @@ fn unmatched_template_stays_unresolved() {
     );
     let (index, _id_map) = build_env(&[&source]);
     assert!(resolve(&source, &index).is_none());
-}
-
-#[test]
-fn empty_template_target_yields_no_candidates() {
-    assert!(template_path_candidates(Path::new("views/book"), "").is_empty());
-    assert!(template_path_candidates(Path::new("views/book"), "  ").is_empty());
-}
-
-#[test]
-fn bare_target_probes_partial_then_direct() {
-    let cands = template_path_candidates(Path::new("views/book"), "summary");
-    let strs: Vec<String> = cands
-        .iter()
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .collect();
-    assert!(strs.contains(&"views/book/_summary.gsp".to_string()));
-    assert!(strs.contains(&"views/book/summary.gsp".to_string()));
 }

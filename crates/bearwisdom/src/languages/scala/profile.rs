@@ -79,6 +79,8 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     // explicit import) qualifies before member lookup.
     chain_qualification: ChainQualification::SamePackageAndImports,
     builtin_skip: None,
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[
         crate::type_checker::profile::language_profile::ConstructorPattern::New,
         crate::type_checker::profile::language_profile::ConstructorPattern::CallableClass,

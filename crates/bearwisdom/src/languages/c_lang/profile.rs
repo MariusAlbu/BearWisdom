@@ -50,6 +50,8 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     // are not project symbols; decline them before the bare-name ladder so they
     // are never bound to a same-named project symbol or seeded as a chain miss.
     builtin_skip: Some(predicates::is_template_param),
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

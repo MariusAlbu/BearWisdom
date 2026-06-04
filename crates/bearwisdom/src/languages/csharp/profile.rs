@@ -90,6 +90,8 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     // qualification the C# resolver did by hand.
     chain_qualification: ChainQualification::SamePackageAndImports,
     builtin_skip: None,
+    import_resolution: None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AttrBracket),
