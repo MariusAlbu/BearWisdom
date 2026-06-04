@@ -12,7 +12,17 @@ use crate::type_checker::profile::language_profile::{
 use crate::types::{EdgeKind, SymbolKind};
 
 const HASKELL_KIND_TABLE: KindTable = &[
-    (EdgeKind::Calls, &[SymbolKind::Function]),
+    // Data constructors (`Just`, `Right`) are first-class values applied like
+    // functions and extracted as EnumMember; top-level operator bindings
+    // (`(<>) = ...`) are extracted as Variable. Both are valid Calls targets.
+    (
+        EdgeKind::Calls,
+        &[
+            SymbolKind::Function,
+            SymbolKind::EnumMember,
+            SymbolKind::Variable,
+        ],
+    ),
     (
         EdgeKind::TypeRef,
         &[

@@ -16,7 +16,6 @@
 pub(crate) mod keywords;
 pub mod extract;
 pub mod hooks;
-pub(crate) mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::VBNET_HOOKS;

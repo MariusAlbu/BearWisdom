@@ -7,7 +7,6 @@ pub mod keywords;
 pub mod extract;
 pub mod flow;
 
-mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 
