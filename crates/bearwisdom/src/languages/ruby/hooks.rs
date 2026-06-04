@@ -14,22 +14,23 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
 pub struct RubyResolver;
 
-/// Ruby `ChainConfig` for the unified `resolve_via_chain`.
-///
-/// Ruby is the bare three-phase walk: `has_self_ref` for `self.`-rooted chains
+/// Ruby's chain case-space, expressed as a `ChainConfig` and exercised through
+/// `resolve_via_chain` by the differential tests in `type_checker/chain_tests`.
+/// The production chain path for Ruby is the profile-driven engine `ChainWalker`
+/// (see `type_checker/engine.rs`); this config pins the same bare three-phase
+/// shape the walker must reproduce: `has_self_ref` for `self.`-rooted chains
 /// resolving the enclosing class/module from the scope chain, an `Identifier`
 /// root through `local_type` → static-type-name → enclosing-field → declared
 /// type, then field/return/members_of progression. Ruby modules index as
 /// `namespace` symbols, so both enclosing and static kinds admit `namespace`.
 /// No generics, no namespace-qualified lookups, and no `ChainExtensions`.
+#[cfg(test)]
 pub(crate) static RUBY_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
     crate::type_checker::chain::ChainConfig {
         strategy_prefix: "ruby",
@@ -50,162 +51,6 @@ impl RubyResolver {
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
-    }
-
-    pub(crate) fn resolve(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        // Imports: try to land the require on a real indexed file.
-        if edge_kind == EdgeKind::Imports {
-            if let Some(module) = &ref_ctx.extracted_ref.module {
-                let syms = lookup.in_module_from(&file_ctx.file_path, module);
-                // Prefer same-named module/class symbol when present
-                // (`require "sidekiq/api"` → `Sidekiq::Api`); otherwise any
-                // symbol in the file anchors the cross-file edge.
-                let pick = syms
-                    .iter()
-                    .find(|s| s.name.eq_ignore_ascii_case(target))
-                    .or_else(|| syms.first());
-                if let Some(sym) = pick {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "ruby_require_file",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-            return None;
-        }
-
-        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = crate::type_checker::chain::resolve_via_chain(
-                &RUBY_CHAIN_CONFIG, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
-            ) {
-                return Some(res);
-            }
-        }
-
-        // Scope chain walk. Ruby uses `::` for namespacing in qualified
-        // names; the index stores with `.` separator.
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "ruby_scope_chain",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "ruby_same_file",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
-        if let Some(ns) = &file_ctx.file_namespace {
-            let candidate = format!("{ns}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "ruby_same_module",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        if target.contains("::") || target.contains('.') {
-            let normalized = target.replace("::", ".");
-            if let Some(sym) = lookup.by_qualified_name(&normalized) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "ruby_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-            if let Some(sym) = lookup.by_qualified_name(target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "ruby_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        // External gem symbol lookup. When the project has external gem
-        // sources indexed (origin='external'), match bare names against
-        // external symbols gated by the file's imported gem set so a
-        // method named in one gem doesn't bind to a similarly-named
-        // method in an unrelated gem.
-        {
-            let candidates = lookup.by_name(target);
-            let imported_gems: Vec<&str> = file_ctx
-                .imports
-                .iter()
-                .filter_map(|imp| {
-                    let m = imp.module_path.as_deref()?;
-                    if m.starts_with('.') {
-                        return None;
-                    }
-                    Some(m.split('/').next().unwrap_or(m))
-                })
-                .collect();
-
-            for sym in candidates {
-                if !sym.file_path.starts_with("ext:ruby:") {
-                    continue;
-                }
-                if !predicates::kind_compatible(edge_kind, &sym.kind) {
-                    continue;
-                }
-                let gem_name = sym.file_path
-                    .strip_prefix("ext:ruby:")
-                    .and_then(|rest| rest.split('/').next())
-                    .unwrap_or("");
-                if imported_gems.iter().any(|&g| g == gem_name || gem_name.starts_with(&format!("{g}-"))) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.8,
-                        strategy: "ruby_external_gem",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        None
     }
 }
 
@@ -588,24 +433,6 @@ impl LanguageEngineHooks for RubyHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(build_file_context_inner(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if let Some(res) = RubyResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        (crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

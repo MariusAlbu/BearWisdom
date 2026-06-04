@@ -3,9 +3,7 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -309,47 +307,6 @@ impl LanguageEngineHooks for DartHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        // Library-prefix binding: `i0.Value` carries its prefix on
-        // `namespace_segments[0]` and the prefix's import URI on `module`. Bind
-        // the bare name in the prefix's module — `in_module_from` resolves a
-        // `package:`/relative Dart URI to a project file, which the generic
-        // ladder's file-import strategy does not do. A relative module resolves
-        // to a project file (`i2.X` → `package:app/x.dart` or `./x.dart`); an
-        // external one (drift, dart:async) has no local file and is left for
-        // `classify_external` to brand.
-        if !ref_ctx.extracted_ref.namespace_segments.is_empty() {
-            let target = &ref_ctx.extracted_ref.target_name;
-            let edge_kind = ref_ctx.extracted_ref.kind;
-            if let Some(module) = ref_ctx.extracted_ref.module.as_deref() {
-                for sym in lookup.in_module_from(&file_ctx.file_path, module) {
-                    if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "dart_library_prefix",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-            // A prefixed ref names a symbol in the prefix's library, never a
-            // local same-named symbol. When the module lookup misses (an
-            // external library with no indexed file), decline so Tier-1.5
-            // `classify_external` can brand it — letting the engine ladder fall
-            // to the bare-name strategies would bind the wrong, local symbol at
-            // confidence 1.0.
-            return None;
-        }
-        None
     }
 }
 

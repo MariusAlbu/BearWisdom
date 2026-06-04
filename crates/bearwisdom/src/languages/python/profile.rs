@@ -98,6 +98,16 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     builtin_skip: None,
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // A module-carrying ref binds by anchor: a relative `.foo`/`..bar` module
+    // resolves via `in_module_from` and binds the bare name there; an absolute
+    // `models`-style module maps to a directory and accepts any kind-compatible
+    // file under it (`models.TextChoices` at `.../models/enums.py`).
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
+    ),
+    module_anchor_terminal: false,
+    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotPrefix,
+    external_by_import: None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

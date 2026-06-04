@@ -635,7 +635,7 @@ fn scope_visible_resolves_against_innermost_scope_first() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_scope_visible(&accept_any, &["."])
+        .resolve_via_scope_visible(&accept_any, &["."], &[])
         .expect("scope walk resolves");
     assert_eq!(resolved.target_symbol_id, 61, "innermost scope wins");
     assert_eq!(resolved.strategy, "default_scope_visible");
@@ -662,11 +662,11 @@ fn scope_visible_resolves_with_profile_separator() {
         kind_compatible: accept_any,
     };
     assert!(
-        d.resolve_via_scope_visible(&accept_any, &["."]).is_none(),
+        d.resolve_via_scope_visible(&accept_any, &["."], &[]).is_none(),
         "the `.` join cannot match a `::`-keyed qname"
     );
     let resolved = d
-        .resolve_via_scope_visible(&accept_any, &[".", "::"])
+        .resolve_via_scope_visible(&accept_any, &[".", "::"], &[])
         .expect("the `::` separator resolves the scope member");
     assert_eq!(resolved.target_symbol_id, 90);
     assert_eq!(resolved.strategy, "default_scope_visible");
@@ -694,11 +694,11 @@ fn scope_visible_dot_separator_is_unaffected_by_extra_separators() {
         kind_compatible: accept_any,
     };
     let with_extra = d
-        .resolve_via_scope_visible(&accept_any, &[".", "::"])
+        .resolve_via_scope_visible(&accept_any, &[".", "::"], &[])
         .expect("`.`-keyed member still resolves with an extra separator present");
     assert_eq!(with_extra.target_symbol_id, 91);
     let dot_only = d
-        .resolve_via_scope_visible(&accept_any, &["."])
+        .resolve_via_scope_visible(&accept_any, &["."], &[])
         .expect("`.`-keyed member resolves with `.` alone");
     assert_eq!(dot_only.target_symbol_id, 91);
 }
@@ -851,7 +851,7 @@ fn same_file_resolves_sibling_in_same_path() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_same_file(&accept_any).expect("same-file sibling resolves");
+    let resolved = d.resolve_via_same_file(&accept_any, &[]).expect("same-file sibling resolves");
     assert_eq!(resolved.target_symbol_id, 110);
     assert_eq!(resolved.strategy, "default_same_file");
 }
@@ -1875,4 +1875,428 @@ fn import_path_no_candidate_returns_none() {
     let fc = file_ctx_at("views/page.tmpl");
     let r = extracted_import("missing");
     assert!(run_import_path(&lookup, &fc, &r, &base_ir()).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// resolve_via_module_anchor — module-anchored bind off r.module
+// ---------------------------------------------------------------------------
+
+use crate::type_checker::profile::language_profile::{
+    ExternalByImport, ModuleAnchor, ModuleAnchorBind, RelativeMarker,
+};
+
+#[test]
+fn module_anchor_name_exact_kind_binds_via_in_module_from() {
+    // Python relative import / Dart library prefix: the module resolves to a
+    // project file; the bare name binds there by name + kind.
+    let lookup = Lookup::new()
+        .with_module_file("./helpers", "myapp/services/helpers.py")
+        .with_in_file(
+            "myapp/services/helpers.py",
+            sym(7, "do_work", "helpers.do_work", "function", "myapp/services/helpers.py"),
+        );
+    let r = extracted_call_with_module("do_work", "./helpers");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
+            RelativeMarker::DotSlashPrefix,
+            &accept_any,
+        )
+        .expect("name-exact anchor resolves");
+    assert_eq!(resolved.target_symbol_id, 7);
+    assert_eq!(resolved.strategy, "default_module_anchor");
+    assert_eq!(resolved.confidence, 1.0);
+}
+
+#[test]
+fn module_anchor_off_is_inert() {
+    let lookup = Lookup::new()
+        .with_module_file("./helpers", "h.py")
+        .with_in_file("h.py", sym(7, "do_work", "do_work", "function", "h.py"));
+    let r = extracted_call_with_module("do_work", "./helpers");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_module_anchor(ModuleAnchor::Off, RelativeMarker::None, &accept_any)
+            .is_none(),
+        "Off leaves the anchor inert"
+    );
+}
+
+#[test]
+fn module_anchor_returns_none_without_module() {
+    let lookup = Lookup::new();
+    let r = extracted_call("do_work"); // no module
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
+            RelativeMarker::None,
+            &accept_any,
+        )
+        .is_none());
+}
+
+#[test]
+fn module_anchor_prefer_named_else_first_picks_same_named() {
+    // Ruby `require "sidekiq/api"` → Sidekiq::Api: the same-named module symbol
+    // (case-insensitive) wins over an unrelated sibling in the same file.
+    let lookup = Lookup::new()
+        .with_module_file("sidekiq/api", "vendor/sidekiq/api.rb")
+        .with_in_file(
+            "vendor/sidekiq/api.rb",
+            sym(1, "Helper", "Helper", "method", "vendor/sidekiq/api.rb"),
+        )
+        .with_in_file(
+            "vendor/sidekiq/api.rb",
+            sym(2, "Api", "Sidekiq.Api", "namespace", "vendor/sidekiq/api.rb"),
+        );
+    let r = {
+        let mut r = extracted_call_with_module("api", "sidekiq/api");
+        r.kind = EdgeKind::Imports;
+        r
+    };
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::PreferNamedElseFirst),
+            RelativeMarker::None,
+            &accept_any,
+        )
+        .expect("require anchor resolves");
+    assert_eq!(resolved.target_symbol_id, 2, "same-named symbol preferred");
+}
+
+#[test]
+fn module_anchor_prefer_named_else_first_falls_back_to_first() {
+    // No same-named symbol → the first symbol in the file anchors the edge.
+    let lookup = Lookup::new()
+        .with_module_file("logger", "vendor/logger.rb")
+        .with_in_file(
+            "vendor/logger.rb",
+            sym(5, "Setup", "Setup", "method", "vendor/logger.rb"),
+        );
+    let r = {
+        let mut r = extracted_call_with_module("logger", "logger");
+        r.kind = EdgeKind::Imports;
+        r
+    };
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::PreferNamedElseFirst),
+            RelativeMarker::None,
+            &accept_any,
+        )
+        .expect("first-symbol anchor resolves");
+    assert_eq!(resolved.target_symbol_id, 5);
+}
+
+#[test]
+fn module_anchor_by_name_under_module_dir_for_absolute_python() {
+    // Python `models.TextChoices` — module `models` is absolute (no dot
+    // prefix), so the anchor maps it to a directory and binds the bare name in
+    // a file under that directory, even though the qname is unqualified.
+    let lookup = Lookup::new().with(sym(
+        9,
+        "TextChoices",
+        "TextChoices",
+        "class",
+        "django/db/models/enums.py",
+    ));
+    let r = extracted_call_with_module("TextChoices", "models");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
+            RelativeMarker::DotPrefix,
+            &accept_any,
+        )
+        .expect("dir-containment anchor resolves the absolute module");
+    assert_eq!(resolved.target_symbol_id, 9);
+}
+
+#[test]
+fn module_anchor_by_name_under_module_dir_qname_probe() {
+    // The `{module}.{target}` qname probe — `models.User` keyed directly.
+    let lookup = Lookup::new().with(sym(
+        10,
+        "User",
+        "models.User",
+        "class",
+        "app/models.py",
+    ));
+    let r = extracted_call_with_module("User", "models");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
+            RelativeMarker::None,
+            &accept_any,
+        )
+        .expect("qname probe resolves");
+    assert_eq!(resolved.target_symbol_id, 10);
+}
+
+#[test]
+fn run_ladder_terminal_declines_local_homonym_on_anchor_miss() {
+    // Dart BindThenDecline: a prefixed (non-Imports) ref whose module misses
+    // must NOT bind to a same-named local symbol — the ladder terminates.
+    let lookup = Lookup::new()
+        .with(sym(20, "Value", "Value", "class", "src/local.dart"))
+        .with_in_file("src/local.dart", sym(20, "Value", "Value", "class", "src/local.dart"));
+    // module is set but resolves to no project file (external library prefix).
+    // TypeRef so a `class` candidate is kind-compatible — the terminal guard,
+    // not the kind table, is what must decline the local homonym.
+    let r = {
+        let mut r = extracted_call_with_module("Value", "package:drift/drift.dart");
+        r.kind = EdgeKind::TypeRef;
+        r
+    };
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "src/local.dart".to_string(),
+        language: "dart".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_all_with_profile(&crate::languages::dart::DART_PROFILE)
+            .is_none(),
+        "terminal guard declines so the external prefix isn't hijacked"
+    );
+}
+
+#[test]
+fn run_ladder_non_terminal_falls_through_on_anchor_miss() {
+    // Python is non-terminal: a module-carrying ref whose anchor misses still
+    // falls through to the regular ladder (here, same-file sibling).
+    let lookup = Lookup::new().with_in_file(
+        "app/views.py",
+        sym(30, "helper", "helper", "function", "app/views.py"),
+    );
+    // Absolute module that maps to no indexed dir → anchor miss, then fall
+    // through to same-file.
+    let r = extracted_call_with_module("helper", "unrelated_pkg");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "app/views.py".to_string(),
+        language: "python".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::python::PYTHON_PROFILE)
+        .expect("non-terminal anchor miss falls through to same-file");
+    assert_eq!(resolved.target_symbol_id, 30);
+}
+
+// ---------------------------------------------------------------------------
+// resolve_via_external_by_import — import-scoped external bind at <1.0
+// ---------------------------------------------------------------------------
+
+#[test]
+fn external_by_import_binds_gem_family_at_reduced_confidence() {
+    // `aws-sdk-s3` external symbol resolves under gem `aws` (the import root)
+    // via the `{root}-` family rule, at confidence 0.8.
+    let lookup = Lookup::new().with(sym(
+        40,
+        "Client",
+        "Aws.S3.Client",
+        "class",
+        "ext:ruby:aws-sdk-s3/lib/aws-sdk-s3/client.rb",
+    ));
+    let r = extracted_call("Client");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![import("aws", Some("aws"))], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_external_by_import(&ExternalByImport { confidence: 0.8 }, &accept_any)
+        .expect("gem-family external resolves");
+    assert_eq!(resolved.target_symbol_id, 40);
+    assert_eq!(resolved.strategy, "default_external_by_import");
+    assert_eq!(resolved.confidence, 0.8);
+}
+
+#[test]
+fn external_by_import_declines_unimported_gem() {
+    // The external's gem is not in the file's import set → no bind.
+    let lookup = Lookup::new().with(sym(
+        41,
+        "Client",
+        "Stripe.Client",
+        "class",
+        "ext:ruby:stripe/lib/stripe/client.rb",
+    ));
+    let r = extracted_call("Client");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![import("aws", Some("aws"))], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d
+        .resolve_via_external_by_import(&ExternalByImport { confidence: 0.8 }, &accept_any)
+        .is_none());
+}
+
+#[test]
+fn external_by_import_ignores_internal_symbols() {
+    // A same-named INTERNAL symbol must not be picked by the external strategy.
+    let lookup = Lookup::new().with(sym(
+        42,
+        "Client",
+        "app.Client",
+        "class",
+        "app/client.rb",
+    ));
+    let r = extracted_call("Client");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![import("app", Some("app"))], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d
+        .resolve_via_external_by_import(&ExternalByImport { confidence: 0.8 }, &accept_any)
+        .is_none());
+}
+
+// ---------------------------------------------------------------------------
+// self-keyword strip — reuses profile.self_keywords in scope / same-file
+// ---------------------------------------------------------------------------
+
+#[test]
+fn scope_visible_strips_leading_self_keyword() {
+    // `self.method` → strip `self.`, probe `{scope}.method`.
+    let lookup = Lookup::new().with(sym(
+        50,
+        "method",
+        "MyClass.method",
+        "function",
+        "app/m.py",
+    ));
+    let r = extracted_call("self.method");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec!["MyClass".to_string()]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_scope_visible(&accept_any, &["."], &["self", "cls"])
+        .expect("self.-stripped scope probe resolves");
+    assert_eq!(resolved.target_symbol_id, 50);
+}
+
+#[test]
+fn scope_visible_empty_self_keywords_does_not_strip() {
+    // With no self keywords (default), `self.method` is probed verbatim and
+    // does not match the bare `method` member — byte-identical to before.
+    let lookup = Lookup::new().with(sym(
+        51,
+        "method",
+        "MyClass.method",
+        "function",
+        "app/m.py",
+    ));
+    let r = extracted_call("self.method");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec!["MyClass".to_string()]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_scope_visible(&accept_any, &["."], &[]).is_none(),
+        "no strip with empty self_keywords"
+    );
 }

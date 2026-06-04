@@ -116,6 +116,10 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     builtin_skip: None,
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+    module_anchor_terminal: false,
+    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+    external_by_import: None,
     constructor_patterns: &[
         ConstructorPattern::TypeColonColonNew,
         ConstructorPattern::TypeColonColonBuild,

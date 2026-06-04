@@ -60,6 +60,30 @@ pub struct LanguageProfile {
     /// (Nunjucks). Only consulted when no language hook builds the file
     /// context.
     pub import_module_path: ImportModulePath,
+    /// Module-anchored binding for a ref whose extractor-set `module` is
+    /// `Some`. `Off` (the default) leaves the strategy inert; `On(bind)`
+    /// resolves the `module` to project symbols and binds `target` by the
+    /// chosen rule. See `ModuleAnchor` / `ModuleAnchorBind`.
+    pub module_anchor: ModuleAnchor,
+    /// When a NON-`Imports` ref carries `module` and the module-anchor probe
+    /// misses, terminate the ladder with `None` instead of falling through to
+    /// the bare-name strategies. Guards an external / unindexed prefix from
+    /// being hijacked by a same-named local homonym (Dart library prefixes).
+    /// `false` (the default) lets the ladder continue after an anchor miss.
+    pub module_anchor_terminal: bool,
+    /// Which `module` specifiers the anchor treats as RELATIVE (resolved via
+    /// `in_module_from`) versus ABSOLUTE (resolved via `ByNameUnderModuleDir`).
+    /// `None` (the default) makes every module relative — always run the
+    /// configured `ModuleAnchorBind`. `DotPrefix` / `DotSlashPrefix` split a
+    /// dot- / dot-slash-prefixed module to the bind rule and route everything
+    /// else through the directory-containment probe (Python `.foo` vs
+    /// `models.X`).
+    pub relative_marker: RelativeMarker,
+    /// Import-scoped binding of a bare target to an EXTERNAL symbol at reduced
+    /// confidence. `None` (the default) keeps the engine off externals below
+    /// confidence 1.0; `Some` opts a language in (Ruby gems). See
+    /// `ExternalByImport`.
+    pub external_by_import: Option<ExternalByImport>,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -146,6 +170,67 @@ pub enum ImportModulePath {
     None,
     /// Mirror the raw target into `module_path`.
     EchoTarget,
+}
+
+// ---------------------------------------------------------------------------
+// Module-anchored binding (data for resolve_via_module_anchor)
+// ---------------------------------------------------------------------------
+
+/// Whether a ref's extractor-set `module` drives a module-anchored bind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleAnchor {
+    /// No module-anchored binding. The default for every language whose
+    /// module-carrying refs resolve through the regular ladder.
+    Off,
+    /// Resolve `module` to project symbols and bind `target` by the rule.
+    On(ModuleAnchorBind),
+}
+
+/// How `resolve_via_module_anchor` picks a binding symbol once it has the
+/// module's symbols (or its directory).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleAnchorBind {
+    /// `in_module_from(file, module)` → the symbol whose simple name equals
+    /// `target` and whose kind is compatible. Python relative import, Dart
+    /// library prefix.
+    NameExactKind,
+    /// `in_module_from(file, module)` → the same-named symbol
+    /// (case-insensitive) when present, else the first symbol in the module.
+    /// Anchors a cross-file edge when the require names a file, not a member
+    /// (Ruby `require`).
+    PreferNamedElseFirst,
+    /// `by_name(target)` filtered to candidates whose `file_path` contains
+    /// `module.replace('.', "/")`, plus the `{module}.{target}` qname probe.
+    /// Maps a dotted module to a directory and accepts any kind-compatible
+    /// file under it (Python `models.TextChoices` at `.../models/enums.py`).
+    ByNameUnderModuleDir,
+}
+
+/// Which `module` specifiers the module-anchor treats as relative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelativeMarker {
+    /// Every module is relative — always run the configured `ModuleAnchorBind`
+    /// via `in_module_from` (Dart, Ruby). The module resolver itself
+    /// distinguishes `package:` / load-path / relative specifiers.
+    None,
+    /// A leading `.` marks a relative module (Python `.foo`, `..bar`);
+    /// everything else is absolute and routes to `ByNameUnderModuleDir`.
+    DotPrefix,
+    /// A leading `./` or `../` marks a relative module; everything else is
+    /// absolute and routes to `ByNameUnderModuleDir`.
+    DotSlashPrefix,
+}
+
+/// Data for `resolve_via_external_by_import`: an import-scoped bind of a bare
+/// target to an EXTERNAL symbol. The external file's `ext:<lang>:<pkg>`
+/// package segment must equal a non-relative import root from the file's
+/// imports, or start with `{root}-` (Ruby gem families: `aws-sdk-s3` under
+/// gem `aws`).
+#[derive(Debug, Clone, Copy)]
+pub struct ExternalByImport {
+    /// Confidence recorded on a hit. Below 1.0 by design — this is the only
+    /// strategy that intentionally binds to externals.
+    pub confidence: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +444,10 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     builtin_skip: None,
     import_resolution: None,
     import_module_path: ImportModulePath::None,
+    module_anchor: ModuleAnchor::Off,
+    module_anchor_terminal: false,
+    relative_marker: RelativeMarker::None,
+    external_by_import: None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

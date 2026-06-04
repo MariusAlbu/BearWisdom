@@ -20,27 +20,28 @@ use super::flow_detectors::{
     detect_python_redis_lookup, detect_python_route_decorator_emission,
     detect_python_sqlalchemy_select_call,
 };
+#[cfg(test)]
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
-use tracing::debug;
 
 pub struct PythonResolver;
 
-/// Python `ChainConfig` for the unified `resolve_via_chain`.
-///
-/// Python is the bare three-phase walk: `has_self_ref` for `self.`-rooted
-/// chains, an `Identifier` root resolved through `local_type` → static-type-name
-/// → enclosing-field type → declared type, then field/return/members_of
-/// progression. No generics (`use_generics: false`), no namespace-qualified
-/// lookups (module resolution lives in the resolver's non-chain paths), no
-/// external-qname promotion, no construction roots, no inheritance climb, and no
-/// static `::` roots. `expand_aliases` is on: a value typed as a PEP 613 /
-/// `type X = ...` alias name walks to the alias's target before member lookup.
+/// Python's chain case-space, expressed as a `ChainConfig` and exercised
+/// through `resolve_via_chain` by the differential tests in
+/// `type_checker/chain_tests`. The production chain path for Python is the
+/// profile-driven engine `ChainWalker` (see `type_checker/engine.rs`); this
+/// config pins the same bare three-phase shape the walker must reproduce:
+/// `has_self_ref` for `self.`-rooted chains, an `Identifier` root resolved
+/// through `local_type` → static-type-name → enclosing-field type → declared
+/// type, then field/return/members_of progression. No generics
+/// (`use_generics: false`), no namespace-qualified lookups, no external-qname
+/// promotion, no construction roots, no inheritance climb, and no static `::`
+/// roots. `expand_aliases` is on: a value typed as a PEP 613 / `type X = ...`
+/// alias name walks to the alias's target before member lookup.
+#[cfg(test)]
 pub(crate) static PYTHON_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
     crate::type_checker::chain::ChainConfig {
         strategy_prefix: "python",
@@ -70,337 +71,6 @@ impl PythonResolver {
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         build_file_context_inner(file, project_ctx)
-    }
-
-    pub(crate) fn resolve(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = crate::type_checker::chain::resolve_via_chain(
-                &PYTHON_CHAIN_CONFIG, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
-            ) {
-                return Some(res);
-            }
-        }
-
-        // If the ref carries a module path:
-        //
-        // (A) Import-statement refs (no chain): the module is the import source.
-        //     If we can't resolve them here, return None.
-        //
-        // (B) Call refs with a module set by the extractor post-pass
-        //     (`Person.objects.filter()` → module="posthog.models"): use
-        //     the module to locate the target before falling through.
-        if let Some(module) = &ref_ctx.extracted_ref.module {
-            if predicates::is_relative_import(module) {
-                for sym in lookup.in_file(module) {
-                    if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
-                        debug!(
-                            strategy = "python_import_file",
-                            file = %module,
-                            target = %target,
-                            "resolved"
-                        );
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "python_import_file",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-
-                let candidate = format!("{module}.{target}");
-                if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "python_import",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            } else {
-                // Module-qualified ref. Two sub-cases share the same lookup:
-                //   (B1) Chain-bearing call — `Person.objects.filter()` with
-                //        the extractor's post-pass attaching the absolute
-                //        module path.
-                //   (B2) Module-qualified Inherits / TypeRef without a chain
-                //        — `class Foo(models.TextChoices)`,
-                //        `field: models.CharField`. The ref has the module
-                //        attached but no member-chain because there's no
-                //        further dispatch beyond the type access.
-                let is_imports = ref_ctx.extracted_ref.kind == EdgeKind::Imports;
-                if is_imports {
-                    return None;
-                }
-
-                let candidate = format!("{module}.{target}");
-                if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        debug!(
-                            strategy = "python_ref_module",
-                            candidate = %candidate,
-                            "resolved"
-                        );
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "python_ref_module",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-                // Look up target by name in files whose path contains the
-                // module path. Handles `models.TextChoices` living at qname
-                // `TextChoices` in `django/db/models/enums.py` rather than
-                // at `django.db.models.TextChoices`.
-                let module_as_path = module.replace('.', "/");
-                for sym in lookup.by_name(target) {
-                    if sym.file_path.contains(&module_as_path)
-                        && predicates::kind_compatible(edge_kind, &sym.kind)
-                    {
-                        debug!(
-                            strategy = "python_ref_module_path",
-                            module_path = %module_as_path,
-                            target = %target,
-                            "resolved"
-                        );
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 0.95,
-                            strategy: "python_ref_module_path",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-                // Resolve the module against the file's import map.
-                // `class Foo(models.TextChoices)` where the file has
-                // `from django.db import models` — walk `django/db/` for
-                // a `TextChoices` symbol.
-                for import in &file_ctx.imports {
-                    if import.imported_name != *module {
-                        continue;
-                    }
-                    let Some(ref base_mod) = import.module_path else { continue };
-                    let base_dir = base_mod.replace('.', "/");
-                    for sym in lookup.by_name(target) {
-                        let norm = sym.file_path.replace('\\', "/");
-                        let combined = format!("{base_dir}/{module_as_path}");
-                        let in_dir = norm.contains(&combined)
-                            || norm.contains(&format!("{base_dir}/{module}/"))
-                            || norm.contains(&base_dir.as_str());
-                        if in_dir && predicates::kind_compatible(edge_kind, &sym.kind) {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 0.90,
-                                strategy: "python_ref_module_via_import",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
-                }
-                // Case (B) miss — fall through to scope chain walk.
-            }
-
-            // Case (A) relative import that failed, or case (B) that fell through.
-            if ref_ctx.extracted_ref.chain.is_none() {
-                return None;
-            }
-            // Case (B) falls through to scope chain walk below.
-        }
-
-        let effective_target = target.strip_prefix("self.").unwrap_or(target);
-
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    debug!(
-                        strategy = "python_scope_chain",
-                        candidate = %candidate,
-                        "resolved"
-                    );
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "python_scope_chain",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == effective_target && predicates::kind_compatible(edge_kind, &sym.kind) {
-                debug!(
-                    strategy = "python_same_file",
-                    qualified_name = %sym.qualified_name,
-                    "resolved"
-                );
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "python_same_file",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
-        // Fully qualified name (dotted target like "models.User").
-        if effective_target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "python_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-
-            // Dotted: split into module alias + symbol, look up via imports.
-            if let Some(dot) = effective_target.find('.') {
-                let alias = &effective_target[..dot];
-                let rest = &effective_target[dot + 1..];
-
-                for import in &file_ctx.imports {
-                    if import.imported_name != alias {
-                        continue;
-                    }
-                    let Some(ref mod_path) = import.module_path else {
-                        continue;
-                    };
-
-                    let candidate = format!("{mod_path}.{rest}");
-                    if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                        if predicates::kind_compatible(edge_kind, &sym.kind) {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 1.0,
-                                strategy: "python_module_qualified",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
-
-                    // Search by name within that module, including
-                    // submodules (handles __init__.py re-exports).
-                    let method_name = rest.split('.').next().unwrap_or(rest);
-                    let mod_dir = mod_path.replace('.', "/");
-                    for sym in lookup.by_name(method_name) {
-                        let norm_path = sym.file_path.replace('\\', "/");
-                        let in_mod = sym.qualified_name.starts_with(mod_path.as_str())
-                            || norm_path.contains(&format!("{mod_dir}/"))
-                            || norm_path.ends_with(&format!("/{mod_dir}.py"))
-                            || norm_path == format!("{mod_dir}.py");
-                        if in_mod && predicates::kind_compatible(edge_kind, &sym.kind) {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 0.90,
-                                strategy: "python_module_qualified_by_name",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        // Import-based resolution for simple names.
-        // `from app.models import User` → `User` resolves to `app.models.User`.
-        for import in &file_ctx.imports {
-            if import.is_wildcard {
-                if let Some(ref mod_path) = import.module_path {
-                    if !predicates::is_relative_import(mod_path) {
-                        continue;
-                    }
-                    let candidate = format!("{mod_path}.{effective_target}");
-                    if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                        if predicates::kind_compatible(edge_kind, &sym.kind) {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 0.90,
-                                strategy: "python_wildcard_import",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
-                }
-                continue;
-            }
-
-            if import.imported_name != effective_target {
-                continue;
-            }
-            let Some(ref mod_path) = import.module_path else {
-                continue;
-            };
-
-            let candidate = format!("{mod_path}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    debug!(
-                        strategy = "python_from_import",
-                        candidate = %candidate,
-                        "resolved"
-                    );
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "python_from_import",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-
-            // Search by simple name scoped to the module. Two checks:
-            // qualified name prefix (when the extractor embeds the module
-            // path) OR file path under the module directory (handles
-            // __init__.py re-exports where Person lives in
-            // posthog/models/person.py but is imported as
-            // `from posthog.models import Person`).
-            let module_dir = mod_path.replace('.', "/");
-            for sym in lookup.by_name(effective_target) {
-                let norm_path = sym.file_path.replace('\\', "/");
-                let in_module_dir = norm_path.contains(&format!("{module_dir}/"))
-                    || norm_path.ends_with(&format!("/{module_dir}.py"))
-                    || norm_path == format!("{module_dir}.py");
-                if (sym.qualified_name.starts_with(mod_path.as_str()) || in_module_dir)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.95,
-                        strategy: "python_from_import_prefix",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        None
     }
 }
 
@@ -601,24 +271,6 @@ impl LanguageEngineHooks for PythonHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(build_file_context_inner(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if let Some(res) = PythonResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        (crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

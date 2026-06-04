@@ -7,11 +7,29 @@
 // =============================================================================
 
 use super::hooks::PythonResolver;
+use super::profile::PYTHON_PROFILE;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolLookup,
+    build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex, SymbolLookup,
 };
+use crate::type_checker::core::DefaultResolver;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use std::collections::HashMap;
+
+/// Run a chain-less ref through the generic engine ladder with Python's
+/// profile — the production path now that `PythonResolver::resolve` is gone.
+fn resolve_engine(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    index: &SymbolIndex,
+) -> Option<Resolution> {
+    DefaultResolver {
+        file_ctx,
+        ref_ctx,
+        lookup: index,
+        kind_compatible: super::predicates::kind_compatible,
+    }
+    .resolve_all_with_profile(&PYTHON_PROFILE)
+}
 
 fn make_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
     ExtractedSymbol {
@@ -156,11 +174,12 @@ fn test_init_reexport_submodule_resolution() {
     );
 
     let (index, id_map) = build_index(&[&person_file, &consumer_file]);
-    let resolver = PythonResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = PythonResolver.build_file_context(&consumer_file, None);
 
-    // The Calls ref to "Person" should resolve via python_from_import_prefix
-    // (import says module=posthog.models, symbol lives under posthog/models/).
+    // The Calls ref to "Person" should resolve through the engine's file-import
+    // strategy: the import names module `posthog.models`, and the symbol lives
+    // under `posthog/models/`, so the by-name candidate matches the import's
+    // module specifier (__init__.py re-export shape).
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[1], // the Calls ref
         source_symbol: &consumer_file.symbols[0],
@@ -168,7 +187,7 @@ fn test_init_reexport_submodule_resolution() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = resolve_engine(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "Person should resolve via __init__.py re-export path"
@@ -178,8 +197,7 @@ fn test_init_reexport_submodule_resolution() {
         .get(&("posthog/models/person.py".to_string(), "Person".to_string()))
         .unwrap();
     assert_eq!(res.target_symbol_id, expected_id);
-    assert_eq!(res.strategy, "python_from_import_prefix");
-    assert!(res.confidence >= 0.95);
+    assert_eq!(res.strategy, "default_file_import");
 }
 
 /// `from myapp.models import Team` where Team lives in `myapp/models/team.py`
@@ -213,8 +231,7 @@ fn test_init_reexport_windows_path() {
     );
 
     let (index, _) = build_index(&[&team_file, &consumer_file]);
-    let resolver = PythonResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = PythonResolver.build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[1],
@@ -223,7 +240,7 @@ fn test_init_reexport_windows_path() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = resolve_engine(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "Team should resolve on Windows backslash paths"

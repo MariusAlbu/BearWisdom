@@ -24,7 +24,8 @@ use crate::indexer::resolve::engine::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::profile::language_profile::{
-    CandidateDirs, ChainQualification, ImportResolution, KindCompatibility, KindTable, StemMatch,
+    CandidateDirs, ChainQualification, ExternalByImport, ImportResolution, KindCompatibility,
+    KindTable, ModuleAnchor, ModuleAnchorBind, RelativeMarker, StemMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -45,6 +46,33 @@ pub struct DefaultResolver<'a> {
     /// is a plausible target for the ref's edge kind. Pass `|_, _| true`
     /// to accept any kind.
     pub kind_compatible: fn(EdgeKind, &str) -> bool,
+}
+
+/// The pure-data profile deltas the ladder reads beyond the kind predicate,
+/// separators, and import-resolution. Bundled so `run_ladder` keeps one
+/// argument for "everything the profile contributes to module-anchored and
+/// external binding plus the self-keyword strip". The fn-pointer `resolve_all`
+/// path passes `INERT`, leaving every delta off (byte-identical to the prior
+/// ladder).
+#[derive(Clone, Copy)]
+struct LadderProfileData<'p> {
+    module_anchor: ModuleAnchor,
+    module_anchor_terminal: bool,
+    relative_marker: RelativeMarker,
+    external_by_import: Option<&'p ExternalByImport>,
+    self_keywords: &'p [&'p str],
+}
+
+impl LadderProfileData<'static> {
+    /// All deltas off — the fn-pointer ladder and any language whose profile
+    /// opts into none of them.
+    const INERT: LadderProfileData<'static> = LadderProfileData {
+        module_anchor: ModuleAnchor::Off,
+        module_anchor_terminal: false,
+        relative_marker: RelativeMarker::None,
+        external_by_import: None,
+        self_keywords: &[],
+    };
 }
 
 impl<'a> DefaultResolver<'a> {
@@ -561,8 +589,15 @@ impl<'a> DefaultResolver<'a> {
     /// or earlier in the same file is the canonical resolution. Walk every
     /// symbol the lookup knows about in this file and accept the first
     /// kind-compatible match.
-    pub fn resolve_via_same_file(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
-        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+    pub fn resolve_via_same_file(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+        self_keywords: &[&str],
+    ) -> Option<Resolution> {
+        let target = strip_self_keyword(
+            self.ref_ctx.extracted_ref.target_name.as_str(),
+            self_keywords,
+        );
         // Yield to an explicit (non-wildcard) import that binds this name. True
         // lexical locals are already handled by resolve_via_scope_visible (which
         // runs first); a file-level sibling that isn't in the scope chain must
@@ -600,8 +635,12 @@ impl<'a> DefaultResolver<'a> {
         &self,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
         separators: &[&str],
+        self_keywords: &[&str],
     ) -> Option<Resolution> {
-        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        let target = strip_self_keyword(
+            self.ref_ctx.extracted_ref.target_name.as_str(),
+            self_keywords,
+        );
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for scope in &self.ref_ctx.scope_chain {
             for sep in separators {
@@ -874,11 +913,164 @@ impl<'a> DefaultResolver<'a> {
         None
     }
 
+    /// Strategy — module-anchored bind off the extractor-set `r.module`.
+    ///
+    /// When the ref carries a `module` (a `package:`/relative URI, a `require`
+    /// path, a `from X import` source, or a post-pass-attached module path) the
+    /// `module` is the most specific evidence for where the target lives. Bound
+    /// by the profile's `ModuleAnchorBind`:
+    ///   - `NameExactKind` — `in_module_from(file, module)` then the symbol whose
+    ///     simple name equals `target` and whose kind matches.
+    ///   - `PreferNamedElseFirst` — `in_module_from` then the same-named symbol
+    ///     (case-insensitive) when present, else the first symbol in the module.
+    ///   - `ByNameUnderModuleDir` — `by_name(target)` whose `file_path` contains
+    ///     `module.replace('.', "/")`, plus the `{module}.{target}` qname probe.
+    ///
+    /// `relative_marker` splits which modules take the `in_module_from` bind: with
+    /// a marker set, only a prefixed (relative) module runs the configured bind and
+    /// every other (absolute) module routes to `ByNameUnderModuleDir`. With
+    /// `RelativeMarker::None` every module runs the configured bind. Returns `None`
+    /// when no module is set, the anchor is `Off`, or no candidate matches.
+    pub fn resolve_via_module_anchor(
+        &self,
+        anchor: ModuleAnchor,
+        relative_marker: RelativeMarker,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let ModuleAnchor::On(bind) = anchor else {
+            return None;
+        };
+        let module = self.ref_ctx.extracted_ref.module.as_deref()?;
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+
+        let is_relative = match relative_marker {
+            RelativeMarker::None => true,
+            RelativeMarker::DotPrefix => module.starts_with('.'),
+            RelativeMarker::DotSlashPrefix => {
+                module.starts_with("./") || module.starts_with("../")
+            }
+        };
+        // A relative module takes the in_module_from bind; an absolute module
+        // (only possible when a marker is set) takes the directory-containment
+        // bind regardless of the profile's configured rule.
+        let effective_bind = if is_relative {
+            bind
+        } else {
+            ModuleAnchorBind::ByNameUnderModuleDir
+        };
+
+        match effective_bind {
+            ModuleAnchorBind::NameExactKind => {
+                for sym in self.lookup.in_module_from(&self.file_ctx.file_path, module) {
+                    if sym.name == target && kind(edge_kind, &sym.kind) {
+                        return Some(self.resolution(sym.id, "default_module_anchor"));
+                    }
+                }
+            }
+            ModuleAnchorBind::PreferNamedElseFirst => {
+                let syms = self.lookup.in_module_from(&self.file_ctx.file_path, module);
+                let pick = syms
+                    .iter()
+                    .find(|s| s.name.eq_ignore_ascii_case(target))
+                    .or_else(|| syms.first());
+                if let Some(sym) = pick {
+                    return Some(self.resolution(sym.id, "default_module_anchor"));
+                }
+            }
+            ModuleAnchorBind::ByNameUnderModuleDir => {
+                let qname = format!("{module}.{target}");
+                if let Some(sym) = self.lookup.by_qualified_name(&qname) {
+                    if kind(edge_kind, &sym.kind) {
+                        return Some(self.resolution(sym.id, "default_module_anchor"));
+                    }
+                }
+                let module_as_path = module.replace('.', "/");
+                for sym in self.lookup.by_name(target) {
+                    let norm = sym.file_path.replace('\\', "/");
+                    if norm.contains(&module_as_path) && kind(edge_kind, &sym.kind) {
+                        return Some(self.resolution(sym.id, "default_module_anchor"));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Strategy — import-scoped bind of a bare target to an EXTERNAL symbol.
+    ///
+    /// The regular ladder deliberately excludes externals below confidence 1.0
+    /// (`resolve_via_unique_internal_name` filters `is_external_file`;
+    /// `resolve_via_ranked_candidates` admits externals but only on a score
+    /// margin, ungated by the import set). This binds a bare `target` to an
+    /// external symbol whose `ext:<lang>:<pkg>` package segment matches a
+    /// non-relative import root from the file's imports — equality OR
+    /// `starts_with("{root}-")` for package families (`aws-sdk-s3` under gem
+    /// `aws`). Kind-compatible, at the profile-supplied confidence.
+    ///
+    /// Gated by `external_by_import` so non-opted-in languages never touch
+    /// externals here.
+    pub fn resolve_via_external_by_import(
+        &self,
+        cfg: &ExternalByImport,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty() || target.contains('.') || target.contains("::") {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let import_roots: Vec<&str> = self
+            .file_ctx
+            .imports
+            .iter()
+            .filter_map(|imp| {
+                let m = imp.module_path.as_deref()?;
+                if m.starts_with('.') {
+                    return None;
+                }
+                Some(m.split('/').next().unwrap_or(m))
+            })
+            .collect();
+        if import_roots.is_empty() {
+            return None;
+        }
+        for sym in self.lookup.by_name(target) {
+            if !self.lookup.is_external_file(&sym.file_path) {
+                continue;
+            }
+            if !kind(edge_kind, &sym.kind) {
+                continue;
+            }
+            let pkg_seg = external_package_segment(&sym.file_path);
+            if pkg_seg.is_empty() {
+                continue;
+            }
+            if import_roots
+                .iter()
+                .any(|root| pkg_seg == *root || pkg_seg.starts_with(&format!("{root}-")))
+            {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: cfg.confidence,
+                    strategy: "default_external_by_import",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
+            }
+        }
+        None
+    }
+
     /// Run every strategy in canonical order, returning the first hit.
     ///
-    /// Canonical order, most-specific evidence first:
-    ///   0.  import path  — template-include FILE binding (gated on
+    /// Canonical order, most-specific evidence first. The two profile-gated
+    /// strategies (module anchor, external-by-import) are off for this
+    /// fn-pointer path — `resolve_all` passes inert profile data:
+    ///   0.  import path   — template-include FILE binding (gated on
     ///       `import_resolution`; fires only for `Imports` refs)
+    ///   0b. module anchor — `r.module` bound to project symbols (gated on
+    ///       `module_anchor`); a missed terminal anchor ends the ladder
     ///   1.  scope chain  — innermost enclosing scope wins
     ///   2.  same file    — sibling symbol in the source file
     ///   3.  self keyword — `this`/`self`/`super` against the enclosing type
@@ -895,6 +1087,8 @@ impl<'a> DefaultResolver<'a> {
     ///   14. same namespace — file's declared namespace + target
     ///   15. imported namespace — candidate qname is prefixed by an import
     ///   16. ambient package — candidate lives in a declared ambient pkg
+    ///   16b. external-by-import — bare target bound to an import-scoped
+    ///        external symbol at reduced confidence (gated on `external_by_import`)
     ///   17. wildcard import — bare target under a wildcard import's namespace
     ///   18. generic param — bare target matches a declared generic parameter
     ///
@@ -913,6 +1107,7 @@ impl<'a> DefaultResolver<'a> {
             ChainQualification::None,
             &["."],
             None,
+            LadderProfileData::INERT,
         )
     }
 
@@ -938,6 +1133,13 @@ impl<'a> DefaultResolver<'a> {
             profile.chain_qualification,
             separators,
             profile.import_resolution.as_ref(),
+            LadderProfileData {
+                module_anchor: profile.module_anchor,
+                module_anchor_terminal: profile.module_anchor_terminal,
+                relative_marker: profile.relative_marker,
+                external_by_import: profile.external_by_import.as_ref(),
+                self_keywords: profile.self_keywords,
+            },
         )
     }
 
@@ -951,17 +1153,45 @@ impl<'a> DefaultResolver<'a> {
     /// FIRST — it is the most specific evidence for an `Imports` ref and the
     /// only strategy that binds a path-stem target to a file symbol; for every
     /// other ref shape it short-circuits to `None`.
+    ///
+    /// `pd` carries the pure-data profile deltas: the module-anchor bind off
+    /// `r.module` (runs just after `import_resolution`, the most specific
+    /// evidence for a module-carrying ref), its terminal guard (a missed anchor
+    /// on a non-`Imports` module-carrying ref ends the ladder so an external
+    /// prefix isn't hijacked by a same-named local), the import-scoped external
+    /// bind (near the end, around ambient), and the self-keyword strip threaded
+    /// into the scope / same-file probes.
     fn run_ladder(
         &self,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
         chain_qual: ChainQualification,
         separators: &[&str],
         import_resolution: Option<&ImportResolution>,
+        pd: LadderProfileData,
     ) -> Option<Resolution> {
-        let result = import_resolution
-            .and_then(|ir| self.resolve_via_import_path(ir))
-            .or_else(|| self.resolve_via_scope_visible(kind, separators))
-            .or_else(|| self.resolve_via_same_file(kind))
+        // Most-specific evidence: a template include or a module anchor.
+        if let Some(res) = import_resolution.and_then(|ir| self.resolve_via_import_path(ir)) {
+            return Some(res);
+        }
+        if let Some(res) =
+            self.resolve_via_module_anchor(pd.module_anchor, pd.relative_marker, kind)
+        {
+            return Some(res);
+        }
+        // Terminal guard: a non-`Imports` ref that carries a module and opted
+        // into the anchor must not fall to the bare-name strategies when the
+        // anchor missed — a same-named local would hijack an external prefix.
+        if pd.module_anchor_terminal
+            && matches!(pd.module_anchor, ModuleAnchor::On(_))
+            && self.ref_ctx.extracted_ref.module.is_some()
+            && self.ref_ctx.extracted_ref.kind != EdgeKind::Imports
+        {
+            return None;
+        }
+
+        let result = self
+            .resolve_via_scope_visible(kind, separators, pd.self_keywords)
+            .or_else(|| self.resolve_via_same_file(kind, pd.self_keywords))
             .or_else(|| self.resolve_via_self_keyword(kind))
             .or_else(|| self.resolve_via_enclosing_member(kind))
             .or_else(|| self.resolve_via_ref_module(kind))
@@ -984,6 +1214,10 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_same_namespace(kind))
             .or_else(|| self.resolve_via_imported_namespace(kind))
             .or_else(|| self.resolve_via_ambient_package(kind))
+            .or_else(|| {
+                pd.external_by_import
+                    .and_then(|cfg| self.resolve_via_external_by_import(cfg, kind))
+            })
             .or_else(|| self.resolve_via_wildcard_import(kind))
             .or_else(|| self.resolve_via_generic_param());
         if result.is_none() {
@@ -1338,6 +1572,36 @@ fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
 /// resolve inside the project and don't cross a package boundary.
 fn is_relative_specifier(spec: &str) -> bool {
     spec.starts_with("./") || spec.starts_with("../")
+}
+
+/// Strip a leading `{kw}.` from `target` when `kw` is one of `self_keywords`
+/// (Python `self.method` → `method`). Only the first matching keyword strips,
+/// and only when followed by `.`. An empty `self_keywords` slice — the default
+/// for languages with no self keyword — returns `target` unchanged.
+fn strip_self_keyword<'t>(target: &'t str, self_keywords: &[&str]) -> &'t str {
+    for kw in self_keywords {
+        if let Some(rest) = target.strip_prefix(kw) {
+            if let Some(after) = rest.strip_prefix('.') {
+                return after;
+            }
+        }
+    }
+    target
+}
+
+/// The package segment of an external file path under the
+/// `ext:<lang>:<pkg>/...` convention. For `ext:ruby:aws-sdk-s3/lib/x.rb`
+/// returns `aws-sdk-s3`; for paths that don't match the three-colon shape
+/// returns `""`. The `<pkg>` segment may itself contain `/`-separated path
+/// parts — only the first is the package name.
+fn external_package_segment(path: &str) -> &str {
+    let Some(rest) = path.strip_prefix("ext:") else {
+        return "";
+    };
+    let Some((_lang, after_lang)) = rest.split_once(':') else {
+        return "";
+    };
+    after_lang.split('/').next().unwrap_or("")
 }
 
 /// Generate the ordered candidate file paths for a template-include target.

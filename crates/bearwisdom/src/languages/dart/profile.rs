@@ -70,6 +70,16 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     builtin_skip: None,
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // Library-prefix bind: a `i0.Value` ref carries the prefix's import URI on
+    // `module`. Resolve that URI to its project file via `in_module_from` and
+    // bind the bare name there; on a miss, terminate so an external prefix is
+    // not hijacked by a same-named local symbol.
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
+    ),
+    module_anchor_terminal: true,
+    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+    external_by_import: None,
     constructor_patterns: &[
         ConstructorPattern::New,
         ConstructorPattern::CallableClass,

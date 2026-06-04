@@ -69,6 +69,20 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     builtin_skip: None,
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // `require`/`require_relative` anchor: resolve the require path to its
+    // project file and bind the same-named module/class symbol when present,
+    // else the first symbol in the file (anchors the cross-file edge).
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::PreferNamedElseFirst,
+    ),
+    module_anchor_terminal: false,
+    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+    // Gem symbols (origin='external') bind by name, gated by the file's
+    // imported-gem set, at reduced confidence — the one strategy that binds
+    // to externals below 1.0.
+    external_by_import: Some(crate::type_checker::profile::language_profile::ExternalByImport {
+        confidence: 0.8,
+    }),
     constructor_patterns: &[ConstructorPattern::ClassDotNew],
     class_builder_specs: &[],
     decorator_syntax: None,

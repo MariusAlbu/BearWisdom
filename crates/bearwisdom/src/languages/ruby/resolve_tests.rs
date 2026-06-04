@@ -1,8 +1,27 @@
 use super::hooks::RubyResolver;
-use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, FileContext, RefContext, SymbolIndex, SymbolInfo};
+use super::profile::RUBY_PROFILE;
+use crate::indexer::resolve::engine::{
+    build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
+};
+use crate::type_checker::core::DefaultResolver;
 use crate::types::*;
 use std::collections::HashMap;
+
+/// Run a chain-less ref through the generic engine ladder with Ruby's profile —
+/// the production path now that `RubyResolver::resolve` is gone.
+fn resolve_engine(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    index: &SymbolIndex,
+) -> Option<Resolution> {
+    DefaultResolver {
+        file_ctx,
+        ref_ctx,
+        lookup: index,
+        kind_compatible: super::predicates::kind_compatible,
+    }
+    .resolve_all_with_profile(&RUBY_PROFILE)
+}
 
 fn make_symbol(
     name: &str,
@@ -143,8 +162,7 @@ fn test_scope_chain_resolution() {
     );
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = RubyResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = RubyResolver.build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -153,10 +171,10 @@ fn test_scope_chain_resolution() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = resolve_engine(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "Should resolve validate! via scope chain");
     let res = result.unwrap();
-    assert_eq!(res.strategy, "ruby_scope_chain");
+    assert_eq!(res.strategy, "default_scope_visible");
     assert_eq!(
         res.target_symbol_id,
         *id_map.get(&("app/models/order.rb".to_string(), "Order.validate!".to_string())).unwrap()
@@ -182,8 +200,7 @@ fn test_same_file_resolution() {
     );
 
     let (index, id_map) = build_test_env(&[&file1, &file2]);
-    let resolver = RubyResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
+    let file_ctx = RubyResolver.build_file_context(&file2, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file2.refs[0],
@@ -192,10 +209,10 @@ fn test_same_file_resolution() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = resolve_engine(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "Should resolve UserHelper via same-file");
     let res = result.unwrap();
-    assert_eq!(res.strategy, "ruby_same_file");
+    assert_eq!(res.strategy, "default_same_file");
     assert_eq!(
         res.target_symbol_id,
         *id_map.get(&("app/services/user_service.rb".to_string(), "UserHelper".to_string())).unwrap()
@@ -216,8 +233,7 @@ fn test_same_module_resolution() {
     );
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = RubyResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = RubyResolver.build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -226,15 +242,12 @@ fn test_same_module_resolution() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = resolve_engine(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "Should resolve Formatter");
-    // May resolve via scope_chain or same_module — both correct.
+    // The `MyApp` scope is visible, so the engine binds `MyApp.Formatter`
+    // through the scope-visible probe.
     let res = result.unwrap();
-    assert!(
-        res.strategy == "ruby_scope_chain" || res.strategy == "ruby_same_module",
-        "Unexpected strategy: {}",
-        res.strategy
-    );
+    assert_eq!(res.strategy, "default_scope_visible");
     assert_eq!(
         res.target_symbol_id,
         *id_map.get(&("lib/myapp/presenter.rb".to_string(), "MyApp.Formatter".to_string())).unwrap()
@@ -250,8 +263,7 @@ fn test_falls_back_for_unknown() {
     );
 
     let (index, _) = build_test_env(&[&file]);
-    let resolver = RubyResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = RubyResolver.build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -261,7 +273,7 @@ fn test_falls_back_for_unknown() {
     };
 
     assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
+        resolve_engine(&file_ctx, &ref_ctx, &index).is_none(),
         "Unknown should fall back"
     );
 }
