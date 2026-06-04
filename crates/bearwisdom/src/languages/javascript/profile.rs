@@ -50,7 +50,6 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: JS_PRIMITIVES,
     kind_compatible_table: JS_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::New, ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

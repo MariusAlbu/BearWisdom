@@ -4,11 +4,6 @@
 // Engine-side type-system data for Rust. Registered via
 // `RustLangPlugin::profile()` so the engine builds its MembersIndex,
 // SupertypeGraph, and SymbolTypeMap from Rust extraction output.
-//
-// `engine_primary` is kept `false` for now — the legacy `RustResolver`
-// stays the primary resolver while the engine path is exercised in
-// shadow. Flipping requires ±0.1pp recapture validation across the
-// Rust baseline projects.
 // =============================================================================
 
 use crate::type_checker::core::types::PrimKind;
@@ -114,7 +109,6 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // for future use, but the legacy `RustResolver` retains the resolution
     // slot. Flip after recapture-validating ±0.1pp on representative
     // Rust baselines (bw self-host + tests).
-    engine_primary: false,
     // `Foo::new(...)`, `Foo::build(...)`, and turbofish factories. The
     // generic NamedFactory pattern catches `*::new` shapes the extractor
     // tags as Construction segments.

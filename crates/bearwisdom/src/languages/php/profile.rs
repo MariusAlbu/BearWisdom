@@ -1,8 +1,7 @@
 // =============================================================================
 // languages/php/profile.rs — LanguageProfile for PHP.
 //
-// Engine-side type-system data for PHP. Registered in shadow mode —
-// `engine_primary` stays `false` until ±0.1pp recapture validation lands.
+// Engine-side type-system data for PHP.
 // =============================================================================
 
 use crate::type_checker::core::types::PrimKind;
@@ -68,7 +67,6 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: PHP_PRIMITIVES,
     kind_compatible_table: PHP_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AttrBracket),

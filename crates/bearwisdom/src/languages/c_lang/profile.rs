@@ -44,7 +44,6 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: C_PRIMITIVES,
     kind_compatible_table: C_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -59,7 +59,6 @@ pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: FSHARP_PRIMITIVES,
     kind_compatible_table: FSHARP_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AttrBracket),

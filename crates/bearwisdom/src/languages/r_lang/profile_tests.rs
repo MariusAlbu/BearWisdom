@@ -5,7 +5,6 @@ use crate::type_checker::profile::language_profile::DispatchAxis;
 fn r_profile_identity_and_shadow_mode() {
     assert_eq!(R_PROFILE.id, "r");
     assert_eq!(R_PROFILE.qname_separator, "::");
-    assert!(!R_PROFILE.engine_primary);
 }
 
 #[test]

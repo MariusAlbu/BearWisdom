@@ -12,11 +12,6 @@ fn haskell_dispatch_axis_is_return_type() {
 }
 
 #[test]
-fn haskell_profile_engine_primary_disabled() {
-    assert!(!HASKELL_PROFILE.engine_primary);
-}
-
-#[test]
 fn haskell_async_wrappers_contain_io() {
     assert!(HASKELL_PROFILE.async_wrappers.contains(&"IO"));
 }

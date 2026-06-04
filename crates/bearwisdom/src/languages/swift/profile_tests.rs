@@ -9,11 +9,6 @@ fn swift_profile_identity() {
 }
 
 #[test]
-fn swift_profile_engine_primary_disabled() {
-    assert!(!SWIFT_PROFILE.engine_primary);
-}
-
-#[test]
 fn swift_instantiates_accepts_class_struct_enum() {
     let t = SWIFT_PROFILE.kind_compatible_table;
     assert!(KindCompatibility::check(t, EdgeKind::Instantiates, SymbolKind::Class));

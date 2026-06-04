@@ -40,7 +40,6 @@ pub const R_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: R_PRIMITIVES,
     kind_compatible_table: R_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[
         ConstructorPattern::R6DollarNew,
         ConstructorPattern::S4New,

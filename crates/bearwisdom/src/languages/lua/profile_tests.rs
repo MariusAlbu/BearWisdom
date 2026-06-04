@@ -13,11 +13,6 @@ fn lua_supertype_discovery_is_structural() {
 }
 
 #[test]
-fn lua_profile_engine_primary_disabled() {
-    assert!(!LUA_PROFILE.engine_primary);
-}
-
-#[test]
 fn lua_calls_accepts_function_method_variable() {
     use crate::types::{EdgeKind, SymbolKind};
     let t = LUA_PROFILE.kind_compatible_table;

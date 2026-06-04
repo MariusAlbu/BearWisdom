@@ -82,7 +82,6 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: GO_KIND_TABLE,
     // Validated under engine-primary at Phase 6 wave-A gate: go-
     // bubbletea rate parity 99.37% = 99.37%, no regression.
-    engine_primary: true,
     // Go has no `new` operator at the surface form the engine recognises.
     // Construction is `Foo{}` / `&Foo{}` / `make(...)` — extractor emits
     // these as Construction segments without needing a profile pattern.

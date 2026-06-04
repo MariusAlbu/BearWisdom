@@ -296,8 +296,7 @@ fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
     // The TS extractor emits a Class for `export class User {}`; engine.build
     // populates SymbolTypeMap's self-yield reverse index; engine.resolve on a
     // bare TypeAccess chain to User returns the class's sym id. Uses the
-    // real TYPESCRIPT_PROFILE (engine_primary=true) so engine.resolve runs
-    // the chain walker.
+    // real TYPESCRIPT_PROFILE so engine.resolve runs the chain walker.
     let pf = ts_parsed_file("src/u.ts", "export class User {}");
     let sym_ids = deterministic_ids(&pf);
     let lookup = EmptyLookup::from(&pf, &sym_ids);

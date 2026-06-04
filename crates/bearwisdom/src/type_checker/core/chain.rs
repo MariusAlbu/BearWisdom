@@ -464,7 +464,17 @@ impl<'a> ChainWalker<'a> {
                     }
                     m
                 }
-                None => self.qualified_member_lookup(current_ty, &seg.name, file_ctx)?,
+                None => match self.qualified_member_lookup(current_ty, &seg.name, file_ctx) {
+                    Some(m) => m,
+                    None => {
+                        // Lost the chain — resolved up to `current_ty` but its
+                        // `seg.name` member is unknown. Record the miss so the
+                        // expand stage can demand-pull the owning external dep
+                        // and a second pass resolves through it.
+                        self.record_chain_miss(current_ty, &seg.name);
+                        return None;
+                    }
+                },
             };
 
             // G1: explicit call-site type arguments (turbofish `m<User>()`) bind
@@ -534,7 +544,14 @@ impl<'a> ChainWalker<'a> {
                     // member's return type.
                     current_ty = self.arena.intern(crate::type_checker::core::types::Type::Unknown);
                 }
-                None => return None,
+                None => {
+                    // Mid-chain member resolved but its yield type is unknown,
+                    // so the remaining segments can't be walked. Same demand
+                    // signal as the member-miss above, keyed on the member just
+                    // resolved.
+                    self.record_chain_miss(current_ty, &seg.name);
+                    return None;
+                }
             }
             last_member = Some(member);
         }
@@ -680,6 +697,31 @@ impl<'a> ChainWalker<'a> {
     /// shims, embedded-region symbols, etc.). Returns the same
     /// `SymbolInfo` shape MembersIndex returns so the walker downstream
     /// can't tell which path produced the member.
+    /// Record a chain miss keyed on the type the walker resolved up to but
+    /// couldn't step past, mirroring the legacy string walker's bail-out
+    /// recording. `current_type` is the receiver type's bare qname (the
+    /// `Apply` base, stripped of generic args); `target_name` is the segment
+    /// the walker failed to resolve against it. The expand stage consults
+    /// `SymbolLocationIndex` for `(current_type, target_name)` and demand-pulls
+    /// the owning external dependency so a second resolve pass can step past it.
+    /// No-op `SymbolLookup::record_chain_miss` default keeps synthetic test
+    /// lookups free.
+    fn record_chain_miss(&self, current_ty: TypeId, target_name: &str) {
+        let current_type = match self.arena.get(current_ty) {
+            Type::Class(q) => q,
+            Type::Apply { base, .. } => match self.arena.get(base) {
+                Type::Class(q) => q,
+                _ => return,
+            },
+            _ => return,
+        };
+        self.lookup.record_chain_miss(crate::indexer::resolve::engine::ChainMiss {
+            current_type,
+            target_name: target_name.to_string(),
+            module: None,
+        });
+    }
+
     fn qualified_member_lookup(
         &self,
         current_ty: TypeId,

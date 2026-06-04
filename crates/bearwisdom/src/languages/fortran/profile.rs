@@ -38,7 +38,6 @@ pub const FORTRAN_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: FORTRAN_PRIMITIVES,
     kind_compatible_table: FORTRAN_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

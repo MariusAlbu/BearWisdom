@@ -341,7 +341,7 @@ fn ref_module_matches_qname_form() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ref_module().expect("module-qualified resolves");
+    let resolved = d.resolve_via_ref_module(&accept_any).expect("module-qualified resolves");
     assert_eq!(resolved.target_symbol_id, 7);
     assert_eq!(resolved.strategy, "default_ref_module");
     assert_eq!(resolved.confidence, 1.0);
@@ -360,7 +360,7 @@ fn ref_module_falls_back_to_file_stem() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ref_module().expect("file-stem match resolves");
+    let resolved = d.resolve_via_ref_module(&accept_any).expect("file-stem match resolves");
     assert_eq!(resolved.target_symbol_id, 11);
 }
 
@@ -377,7 +377,7 @@ fn ref_module_returns_none_without_module_field() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_ref_module().is_none());
+    assert!(d.resolve_via_ref_module(&accept_any).is_none());
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn qname_exact_resolves_dotted_target() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_qname_exact().expect("dotted target resolves");
+    let resolved = d.resolve_via_qname_exact(&accept_any).expect("dotted target resolves");
     assert_eq!(resolved.target_symbol_id, 3);
     assert_eq!(resolved.strategy, "default_qname_exact");
 }
@@ -412,7 +412,7 @@ fn qname_exact_ignores_bare_target() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_qname_exact().is_none());
+    assert!(d.resolve_via_qname_exact(&accept_any).is_none());
 }
 
 #[test]
@@ -428,7 +428,7 @@ fn file_import_matches_relative_specifier() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_file_import().expect("import resolves");
+    let resolved = d.resolve_via_file_import(&accept_any).expect("import resolves");
     assert_eq!(resolved.target_symbol_id, 9);
     assert_eq!(resolved.strategy, "default_file_import");
 }
@@ -446,7 +446,7 @@ fn file_import_uses_alias_to_find_original_name() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_file_import().expect("alias maps to original");
+    let resolved = d.resolve_via_file_import(&accept_any).expect("alias maps to original");
     assert_eq!(resolved.target_symbol_id, 12);
 }
 
@@ -473,7 +473,7 @@ fn namespace_import_expands_dotted_namespace() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_namespace_import()
+        .resolve_via_namespace_import(&accept_any)
         .expect("namespace import expands");
     assert_eq!(resolved.target_symbol_id, 15);
     assert_eq!(resolved.strategy, "default_namespace_import");
@@ -499,7 +499,7 @@ fn ambient_namespace_path_matches_qname_suffix() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_ambient_namespace_path()
+        .resolve_via_ambient_namespace_path(&accept_any)
         .expect("qname suffix matches");
     assert_eq!(resolved.target_symbol_id, 21);
     assert_eq!(resolved.strategy, "default_ambient_namespace_path");
@@ -524,7 +524,7 @@ fn same_namespace_resolves_when_file_namespace_set() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_same_namespace().expect("same namespace resolves");
+    let resolved = d.resolve_via_same_namespace(&accept_any).expect("same namespace resolves");
     assert_eq!(resolved.target_symbol_id, 30);
     assert_eq!(resolved.strategy, "default_same_namespace");
 }
@@ -548,7 +548,7 @@ fn same_namespace_boundary_check_rejects_partial_prefix() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_same_namespace().is_none());
+    assert!(d.resolve_via_same_namespace(&accept_any).is_none());
 }
 
 #[test]
@@ -574,7 +574,7 @@ fn imported_namespace_matches_qname_prefix() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_imported_namespace()
+        .resolve_via_imported_namespace(&accept_any)
         .expect("namespace prefix matches");
     assert_eq!(resolved.target_symbol_id, 40);
     assert_eq!(resolved.strategy, "default_imported_namespace");
@@ -602,7 +602,7 @@ fn chain_prefix_uses_second_to_last_segment_against_imports() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_chain_prefix().expect("chain prefix resolves");
+    let resolved = d.resolve_via_chain_prefix(&accept_any).expect("chain prefix resolves");
     assert_eq!(resolved.target_symbol_id, 50);
     assert_eq!(resolved.strategy, "default_chain_prefix");
 }
@@ -632,7 +632,7 @@ fn scope_visible_resolves_against_innermost_scope_first() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_scope_visible().expect("scope walk resolves");
+    let resolved = d.resolve_via_scope_visible(&accept_any).expect("scope walk resolves");
     assert_eq!(resolved.target_symbol_id, 61, "innermost scope wins");
     assert_eq!(resolved.strategy, "default_scope_visible");
 }
@@ -658,7 +658,7 @@ fn kind_compatible_filter_rejects_class_for_calls_when_strict() {
         kind_compatible: strict_calls,
     };
     assert!(
-        d.resolve_via_file_import().is_none(),
+        d.resolve_via_file_import(&strict_calls).is_none(),
         "strict kind filter rejects class for calls"
     );
 }
@@ -721,7 +721,7 @@ fn unique_internal_name_resolves_single_candidate() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_unique_internal_name()
+        .resolve_via_unique_internal_name(&accept_any)
         .expect("single candidate resolves");
     assert_eq!(resolved.target_symbol_id, 200);
     assert_eq!(resolved.strategy, "default_unique_internal_name");
@@ -743,7 +743,7 @@ fn unique_internal_name_refuses_when_multiple_candidates() {
         kind_compatible: accept_any,
     };
     assert!(
-        d.resolve_via_unique_internal_name().is_none(),
+        d.resolve_via_unique_internal_name(&accept_any).is_none(),
         "ambiguity must not be guessed"
     );
 }
@@ -766,7 +766,7 @@ fn unique_internal_name_ignores_external_candidates() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_unique_internal_name()
+        .resolve_via_unique_internal_name(&accept_any)
         .expect("external excluded → one internal left");
     assert_eq!(resolved.target_symbol_id, 204);
 }
@@ -785,7 +785,7 @@ fn same_file_resolves_sibling_in_same_path() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_same_file().expect("same-file sibling resolves");
+    let resolved = d.resolve_via_same_file(&accept_any).expect("same-file sibling resolves");
     assert_eq!(resolved.target_symbol_id, 110);
     assert_eq!(resolved.strategy, "default_same_file");
 }
@@ -821,7 +821,7 @@ fn reexport_chain_resolves_direct_shape() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_reexport_chain()
+        .resolve_via_reexport_chain(&accept_any)
         .expect("reexport chain resolves");
     assert_eq!(resolved.target_symbol_id, 90);
     assert_eq!(resolved.strategy, "default_reexport_chain");
@@ -858,7 +858,7 @@ fn reexport_chain_resolves_dotted_shape() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_reexport_chain()
+        .resolve_via_reexport_chain(&accept_any)
         .expect("dotted reexport resolves");
     assert_eq!(resolved.target_symbol_id, 91);
 }
@@ -876,7 +876,7 @@ fn reexport_chain_skips_relative_specifiers() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_reexport_chain().is_none());
+    assert!(d.resolve_via_reexport_chain(&accept_any).is_none());
 }
 
 #[test]
@@ -987,7 +987,7 @@ fn ambient_package_prefers_declared_ambient_paths() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_ambient_package()
+        .resolve_via_ambient_package(&accept_any)
         .expect("ambient package preferred");
     assert_eq!(resolved.target_symbol_id, 100);
     assert_eq!(resolved.strategy, "default_ambient_package");
@@ -1006,7 +1006,7 @@ fn ambient_package_returns_none_without_declared_ambient_paths() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_ambient_package().is_none());
+    assert!(d.resolve_via_ambient_package(&accept_any).is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,7 +1027,7 @@ fn self_keyword_resolves_this_to_enclosing_type() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_self_keyword()
+        .resolve_via_self_keyword(&accept_any)
         .expect("this resolves to enclosing type");
     assert_eq!(resolved.target_symbol_id, 300);
     assert_eq!(resolved.strategy, "engine_self_keyword");
@@ -1050,7 +1050,7 @@ fn self_keyword_resolves_super_to_parent() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_self_keyword()
+        .resolve_via_self_keyword(&accept_any)
         .expect("super resolves to parent class");
     assert_eq!(resolved.target_symbol_id, 311);
 }
@@ -1068,7 +1068,7 @@ fn self_keyword_none_outside_a_type() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_self_keyword().is_none());
+    assert!(d.resolve_via_self_keyword(&accept_any).is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -1096,7 +1096,7 @@ fn enclosing_member_resolves_inherited_field() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_enclosing_member()
+        .resolve_via_enclosing_member(&accept_any)
         .expect("inherited field resolves via inheritance climb");
     assert_eq!(resolved.target_symbol_id, 322);
     assert_eq!(resolved.strategy, "engine_enclosing_member");
@@ -1115,7 +1115,7 @@ fn enclosing_member_none_outside_a_type() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_enclosing_member().is_none());
+    assert!(d.resolve_via_enclosing_member(&accept_any).is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -1138,7 +1138,7 @@ fn aliased_import_resolves_via_path_alias() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_aliased_import()
+        .resolve_via_aliased_import(&accept_any)
         .expect("aliased specifier resolves after rewrite");
     assert_eq!(resolved.target_symbol_id, 330);
     assert_eq!(resolved.strategy, "engine_aliased_import");
@@ -1160,7 +1160,7 @@ fn aliased_import_none_without_rewrite() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_aliased_import().is_none());
+    assert!(d.resolve_via_aliased_import(&accept_any).is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -1285,7 +1285,7 @@ fn ranked_returns_none_for_single_candidate() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_ranked_candidates().is_none());
+    assert!(d.resolve_via_ranked_candidates(&accept_any).is_none());
 }
 
 #[test]
@@ -1305,7 +1305,7 @@ fn ranked_picks_same_workspace_package_over_external() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates().expect("ranked picks workspace match");
+    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked picks workspace match");
     assert_eq!(resolved.target_symbol_id, 11);
     assert_eq!(resolved.strategy, "default_ranked_candidate");
 }
@@ -1332,7 +1332,7 @@ fn ranked_picks_imported_package_over_random_externals() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates().expect("ranked picks imported package");
+    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked picks imported package");
     assert_eq!(resolved.target_symbol_id, 1);
 }
 
@@ -1355,7 +1355,7 @@ fn ranked_returns_none_when_top_two_tie() {
     };
     // Both candidates score the same (public +50, external same depth);
     // the margin gate blocks the strategy from guessing.
-    assert!(d.resolve_via_ranked_candidates().is_none());
+    assert!(d.resolve_via_ranked_candidates(&accept_any).is_none());
 }
 
 #[test]
@@ -1376,7 +1376,7 @@ fn ranked_prefers_ambient_path() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates().expect("ranked picks ambient");
+    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked picks ambient");
     assert_eq!(resolved.target_symbol_id, 50);
 }
 
@@ -1397,7 +1397,7 @@ fn ranked_penalises_private_external_candidates() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates().expect("ranked picks public");
+    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked picks public");
     assert_eq!(resolved.target_symbol_id, 71);
 }
 
@@ -1420,7 +1420,7 @@ fn ranked_picks_via_qname_prefix_when_import_module_matches() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates().expect("ranked follows import");
+    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked follows import");
     assert_eq!(resolved.target_symbol_id, 200);
 }
 
@@ -1446,8 +1446,8 @@ fn confidence_is_always_one_point_oh() {
             kind_compatible: accept_any,
         };
         let resolved = d
-            .resolve_via_ref_module()
-            .or_else(|| d.resolve_via_file_import())
+            .resolve_via_ref_module(&accept_any)
+            .or_else(|| d.resolve_via_file_import(&accept_any))
             .expect("one of the strategies resolves");
         assert_eq!(resolved.confidence, 1.0, "deterministic, never decayed");
     }

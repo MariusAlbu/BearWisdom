@@ -40,7 +40,6 @@ pub const PERL_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: PERL_PRIMITIVES,
     kind_compatible_table: PERL_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::ArrowNew],
     class_builder_specs: &[],
     decorator_syntax: None,

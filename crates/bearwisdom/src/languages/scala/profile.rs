@@ -1,7 +1,5 @@
 // =============================================================================
 // languages/scala/profile.rs — LanguageProfile for Scala.
-//
-// Registered in shadow mode (engine_primary off) until recapture validates.
 // =============================================================================
 
 use crate::type_checker::core::types::PrimKind;
@@ -76,7 +74,6 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: SCALA_PRIMITIVES,
     kind_compatible_table: SCALA_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[
         crate::type_checker::profile::language_profile::ConstructorPattern::New,
         crate::type_checker::profile::language_profile::ConstructorPattern::CallableClass,

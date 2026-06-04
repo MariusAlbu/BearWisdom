@@ -21,7 +21,6 @@ pub const BASH_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

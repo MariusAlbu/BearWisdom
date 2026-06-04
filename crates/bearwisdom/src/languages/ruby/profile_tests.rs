@@ -10,11 +10,6 @@ fn ruby_profile_identity() {
 }
 
 #[test]
-fn ruby_profile_engine_primary_disabled() {
-    assert!(!RUBY_PROFILE.engine_primary);
-}
-
-#[test]
 fn ruby_calls_accepts_method_function_constructor() {
     let t = RUBY_PROFILE.kind_compatible_table;
     assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Method));

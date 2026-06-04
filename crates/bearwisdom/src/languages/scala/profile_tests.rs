@@ -10,11 +10,6 @@ fn scala_profile_identity() {
 }
 
 #[test]
-fn scala_profile_engine_primary_disabled() {
-    assert!(!SCALA_PROFILE.engine_primary);
-}
-
-#[test]
 fn scala_inherits_accepts_class_and_trait() {
     let t = SCALA_PROFILE.kind_compatible_table;
     assert!(KindCompatibility::check(t, EdgeKind::Inherits, SymbolKind::Class));

@@ -1,7 +1,5 @@
 // =============================================================================
 // languages/swift/profile.rs — LanguageProfile for Swift.
-//
-// Registered in shadow mode (engine_primary off) until recapture validates.
 // =============================================================================
 
 use crate::type_checker::core::types::PrimKind;
@@ -82,7 +80,6 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("makeIterator"),
     primitive_mapping: SWIFT_PRIMITIVES,
     kind_compatible_table: SWIFT_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

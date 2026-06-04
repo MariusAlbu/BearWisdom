@@ -13,11 +13,6 @@ fn ocaml_supertype_discovery_is_structural() {
 }
 
 #[test]
-fn ocaml_profile_engine_primary_disabled() {
-    assert!(!OCAML_PROFILE.engine_primary);
-}
-
-#[test]
 fn ocaml_async_wrappers_cover_lwt_and_async() {
     assert!(OCAML_PROFILE.async_wrappers.contains(&"Lwt.t"));
     assert!(OCAML_PROFILE.async_wrappers.contains(&"Async.Deferred.t"));

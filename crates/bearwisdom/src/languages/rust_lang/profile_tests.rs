@@ -10,11 +10,6 @@ fn rust_profile_identity() {
 }
 
 #[test]
-fn rust_profile_engine_primary_disabled_until_recapture_validates() {
-    assert!(!RUST_PROFILE.engine_primary);
-}
-
-#[test]
 fn rust_calls_accepts_function_method_constructor_closure_bindings() {
     let table = RUST_PROFILE.kind_compatible_table;
     assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Function));

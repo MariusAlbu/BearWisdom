@@ -26,6 +26,15 @@ use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ParsedFile};
 
+/// Kind-check seed for the generic resolver when the engine drives it: the
+/// real gate is the profile's `kind_compatible_table`, applied via
+/// `DefaultResolver::resolve_all_with_profile`. This fn-pointer slot is only
+/// consulted by strategies the table-driven path doesn't reach (re-export
+/// following), where permissive matches the prior bare-name behavior.
+fn permissive_kind(_edge: EdgeKind, _sym_kind: &str) -> bool {
+    true
+}
+
 /// Per-workspace engine state. Built once per indexing pass; `resolve` is
 /// called per ref. The arena is shared via `Arc` with the
 /// resolver's `SymbolIndex`, so TypeIds flowing from extractor →
@@ -179,10 +188,10 @@ impl<'a> Engine<'a> {
     }
 
     /// Resolve a single ref. Chain-bearing refs route through the unified
-    /// chain walker; chain-less refs route through the bare-name resolver
-    /// (`crate::type_checker::bare::resolve_bare`). Returns `None` when
-    /// the language has no registered profile so the resolver loop falls
-    /// back to its legacy path.
+    /// chain walker; chain-less and single-segment refs route through the
+    /// generic resolver's strategy ladder (`DefaultResolver`). When the
+    /// engine path declines, falls through to the per-language hook resolver
+    /// as a residue catch.
     pub fn resolve(
         &self,
         ref_ctx: &RefContext,
@@ -194,8 +203,7 @@ impl<'a> Engine<'a> {
         let hooks = self.hooks.get(lang).copied();
 
         // Chain-bearing refs route through the unified chain walker when
-        // a profile is registered (chain walker contract — gating on
-        // engine_primary happens at the dispatcher level, not here).
+        // a profile is registered.
         if let Some(profile) = profile {
             if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
                 let mut walker = ChainWalker::new(
@@ -225,19 +233,34 @@ impl<'a> Engine<'a> {
                         flow_emit: None,
                     });
                 }
+                // A single-segment "chain" (`foo()`, `Bar`) carries no receiver
+                // type for the walker to root, so it always declines. Fall
+                // through to the scope / same-file bare resolver — the same path
+                // the chain-less arm below uses. Multi-segment chains that
+                // decline are genuine misses and must NOT be re-probed by bare
+                // name (Invariant #2: a same-name sibling could hijack `a.b.c`).
+                if chain.segments.len() == 1 {
+                    let bare = hooks
+                        .and_then(|h| h.resolve_bare_pre(ref_ctx, file_ctx, lookup))
+                        .or_else(|| self.resolve_generic(ref_ctx, file_ctx, lookup, profile))
+                        .or_else(|| {
+                            hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup))
+                        });
+                    if let Some(mut r) = bare {
+                        self.select_bare_overload_override(&mut r, ref_ctx, lookup, profile);
+                        self.fill_bare_call_yield(&mut r, ref_ctx, lookup, profile);
+                        return Some(r);
+                    }
+                }
             } else {
                 // Chain-less ref: bare-name path. Hook pre-pass, then the
-                // generic bare resolver, then the hook post-pass; fill an
-                // argument-driven generic yield on whichever succeeds so a
-                // `const x = genericFn(u)` binding types `x` precisely
-                // (INFER-8 at the bare-name site).
+                // generic resolver's full strategy ladder, then the hook
+                // post-pass; fill an argument-driven generic yield on
+                // whichever succeeds so a `const x = genericFn(u)` binding
+                // types `x` precisely (INFER-8 at the bare-name site).
                 let bare = hooks
                     .and_then(|h| h.resolve_bare_pre(ref_ctx, file_ctx, lookup))
-                    .or_else(|| {
-                        crate::type_checker::bare::resolve_bare(
-                            ref_ctx, file_ctx, lookup, profile,
-                        )
-                    })
+                    .or_else(|| self.resolve_generic(ref_ctx, file_ctx, lookup, profile))
                     .or_else(|| {
                         hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup))
                     });
@@ -249,13 +272,10 @@ impl<'a> Engine<'a> {
             }
         }
 
-        // Hook fallback. Carries the full per-language resolver (workspace
-        // packages, tsconfig alias, DefinitelyTyped, barrel re-exports,
-        // inheritance walks) for languages whose hook owns dispatch.
+        // Engine path declined. Fall through to the not-yet-deleted per-language
+        // hook resolver as the residue catch; chain-less hits still get an
+        // argument-driven yield (chain refs already yield via the walker).
         let mut resolved = hooks.and_then(|h| h.resolve_ref(file_ctx, ref_ctx, lookup))?;
-        // A chain-less call the hook resolved (e.g. a relative-imported generic
-        // factory the generic bare resolver couldn't reach) still gets an
-        // argument-driven yield; chain refs already yield via the walker.
         if ref_ctx.extracted_ref.chain.is_none() {
             if let Some(profile) = profile {
                 self.select_bare_overload_override(&mut resolved, ref_ctx, lookup, profile);
@@ -263,6 +283,25 @@ impl<'a> Engine<'a> {
             }
         }
         Some(resolved)
+    }
+
+    /// Run the generic resolver's full strategy ladder for a chain-less or
+    /// single-segment ref, gating candidate kinds against the language
+    /// profile's `kind_compatible_table`.
+    fn resolve_generic(
+        &self,
+        ref_ctx: &RefContext,
+        file_ctx: &FileContext,
+        lookup: &dyn SymbolLookup,
+        profile: &LanguageProfile,
+    ) -> Option<Resolution> {
+        crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: permissive_kind,
+        }
+        .resolve_all_with_profile(profile)
     }
 
     /// Bare-name overload disambiguation. When a chain-less call resolved to one

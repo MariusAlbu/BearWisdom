@@ -35,19 +35,6 @@ pub struct LanguageProfile {
     pub iterator_method: Option<&'static str>,
     pub primitive_mapping: &'static [(&'static str, PrimKind)],
     pub kind_compatible_table: KindTable,
-    /// Whether the engine takes the primary chain-resolution slot for this
-    /// language. When false, engine.resolve is consulted only as a fallback
-    /// after the legacy LanguageResolver returns None. When true, engine
-    /// runs first on chain-bearing refs and legacy is the fallback.
-    ///
-    /// Gate per language: a profile sets this to `true` only after the
-    /// engine has been recapture-validated within ±0.1pp of baseline on
-    /// representative projects. Languages whose engine implementation
-    /// lacks feature parity (Python MRO, Java overload resolution with
-    /// type erasure, etc.) leave this `false` so the legacy resolver
-    /// stays primary; the profile is still registered so engine.build
-    /// indexes the language's types for future use.
-    pub engine_primary: bool,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -234,7 +221,6 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

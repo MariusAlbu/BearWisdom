@@ -17,11 +17,14 @@
 // context — same inputs always produce the same output.
 // =============================================================================
 
+use std::str::FromStr;
+
 use super::reexport::follow_reexports;
 use crate::indexer::resolve::engine::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
-use crate::types::EdgeKind;
+use crate::type_checker::profile::language_profile::{KindCompatibility, KindTable};
+use crate::types::{EdgeKind, SymbolKind};
 
 /// Language-agnostic engine resolver. Composes deterministic strategies
 /// out of the data the project ships: extractor-produced imports,
@@ -52,7 +55,7 @@ impl<'a> DefaultResolver<'a> {
     ///     file stem matches the module name.
     ///
     /// Returns None when no module is set or no candidate matches.
-    pub fn resolve_via_ref_module(&self) -> Option<Resolution> {
+    pub fn resolve_via_ref_module(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let module = self.ref_ctx.extracted_ref.module.as_deref()?;
@@ -60,7 +63,7 @@ impl<'a> DefaultResolver<'a> {
         for sep in [".", "::", "/", ":"] {
             let qname = format!("{module}{sep}{target}");
             if let Some(sym) = self.lookup.by_qualified_name(&qname) {
-                if (self.kind_compatible)(edge_kind, &sym.kind) {
+                if kind(edge_kind, &sym.kind) {
                     return Some(self.resolution(sym.id, "default_ref_module"));
                 }
             }
@@ -69,7 +72,7 @@ impl<'a> DefaultResolver<'a> {
         let module_lower = module.to_lowercase();
         let last_seg_lower = module.rsplit('.').next().unwrap_or(module).to_lowercase();
         for sym in self.lookup.by_name(target) {
-            if !(self.kind_compatible)(edge_kind, &sym.kind) {
+            if !kind(edge_kind, &sym.kind) {
                 continue;
             }
             let file_lower = sym.file_path.to_lowercase();
@@ -89,14 +92,14 @@ impl<'a> DefaultResolver<'a> {
     /// → look it up directly. The extractor produced the dotted form
     /// because that's the syntactic shape of the call — if it matches a
     /// symbol's qname exactly, that's the answer.
-    pub fn resolve_via_qname_exact(&self) -> Option<Resolution> {
+    pub fn resolve_via_qname_exact(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         if !target.contains('.') && !target.contains("::") && !target.contains('/') {
             return None;
         }
         let sym = self.lookup.by_qualified_name(target)?;
-        if !(self.kind_compatible)(edge_kind, &sym.kind) {
+        if !kind(edge_kind, &sym.kind) {
             return None;
         }
         Some(self.resolution(sym.id, "default_qname_exact"))
@@ -107,7 +110,7 @@ impl<'a> DefaultResolver<'a> {
     /// `import { Foo } from './foo'` then `Foo(...)`: the import brings
     /// `Foo` into local scope. Find a `target`-named symbol in any file
     /// whose path matches the import's module specifier.
-    pub fn resolve_via_file_import(&self) -> Option<Resolution> {
+    pub fn resolve_via_file_import(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
 
@@ -125,7 +128,7 @@ impl<'a> DefaultResolver<'a> {
             let module_path = import.module_path.as_deref().unwrap_or("");
 
             for sym in self.lookup.by_name(lookup_name) {
-                if !(self.kind_compatible)(edge_kind, &sym.kind) {
+                if !kind(edge_kind, &sym.kind) {
                     continue;
                 }
                 if file_path_matches_module(&sym.file_path, module_path) {
@@ -141,7 +144,7 @@ impl<'a> DefaultResolver<'a> {
     /// C# `using eShop.Catalog.API.Model;` then `CatalogItem`: the import
     /// brings the WHOLE namespace into scope, not the type. Form
     /// `{ns}.{target}` for each dotted import and look it up.
-    pub fn resolve_via_namespace_import(&self) -> Option<Resolution> {
+    pub fn resolve_via_namespace_import(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
 
@@ -152,7 +155,7 @@ impl<'a> DefaultResolver<'a> {
                 }
                 let qname = format!("{prefix}.{target}");
                 if let Some(sym) = self.lookup.by_qualified_name(&qname) {
-                    if (self.kind_compatible)(edge_kind, &sym.kind) {
+                    if kind(edge_kind, &sym.kind) {
                         return Some(self.resolution(sym.id, "default_namespace_import"));
                     }
                 }
@@ -170,7 +173,7 @@ impl<'a> DefaultResolver<'a> {
     /// package prefix. Look up the leaf via by_name and accept any
     /// candidate whose qname ENDS WITH `.{target}` — the package prefix
     /// is absorbed.
-    pub fn resolve_via_ambient_namespace_path(&self) -> Option<Resolution> {
+    pub fn resolve_via_ambient_namespace_path(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         if !target.contains('.') {
@@ -182,7 +185,7 @@ impl<'a> DefaultResolver<'a> {
         let best = candidates
             .iter()
             .filter(|sym| sym.qualified_name.ends_with(&suffix))
-            .filter(|sym| (self.kind_compatible)(edge_kind, &sym.kind))
+            .filter(|sym| kind(edge_kind, &sym.kind))
             .min_by_key(|sym| sym.file_path.matches('/').count())?;
         Some(self.resolution(best.id, "default_ambient_namespace_path"))
     }
@@ -192,7 +195,7 @@ impl<'a> DefaultResolver<'a> {
     /// In C#, types in the same namespace are visible without a `using`.
     /// If the source file declares namespace X, candidates whose qname is
     /// `X.target` are in scope.
-    pub fn resolve_via_same_namespace(&self) -> Option<Resolution> {
+    pub fn resolve_via_same_namespace(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let ns = self.file_ctx.file_namespace.as_deref()?;
@@ -201,7 +204,7 @@ impl<'a> DefaultResolver<'a> {
         }
         let expected = format!("{ns}.{target}");
         for sym in self.lookup.by_name(target) {
-            if sym.qualified_name == expected && (self.kind_compatible)(edge_kind, &sym.kind) {
+            if sym.qualified_name == expected && kind(edge_kind, &sym.kind) {
                 return Some(self.resolution(sym.id, "default_same_namespace"));
             }
         }
@@ -215,11 +218,11 @@ impl<'a> DefaultResolver<'a> {
     /// with the imported namespace. Boundary check ensures
     /// `FamilyBudget.Api.Entities` doesn't accidentally match
     /// `FamilyBudget.Api.EntitiesOther`.
-    pub fn resolve_via_imported_namespace(&self) -> Option<Resolution> {
+    pub fn resolve_via_imported_namespace(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for sym in self.lookup.by_name(target) {
-            if !(self.kind_compatible)(edge_kind, &sym.kind) {
+            if !kind(edge_kind, &sym.kind) {
                 continue;
             }
             for import in &self.file_ctx.imports {
@@ -245,7 +248,7 @@ impl<'a> DefaultResolver<'a> {
     /// `resolve::resolve_and_write()` with `use crate::indexer::resolve`:
     /// the chain prefix `resolve` matches the import; the import's
     /// module path tells us which directory the target lives in.
-    pub fn resolve_via_chain_prefix(&self) -> Option<Resolution> {
+    pub fn resolve_via_chain_prefix(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let chain = self.ref_ctx.extracted_ref.chain.as_ref()?;
@@ -264,7 +267,7 @@ impl<'a> DefaultResolver<'a> {
         let candidates = self.lookup.by_name(target);
 
         for sym in candidates {
-            if !(self.kind_compatible)(edge_kind, &sym.kind) {
+            if !kind(edge_kind, &sym.kind) {
                 continue;
             }
             if file_path_matches_module(&sym.file_path, module_path) {
@@ -273,7 +276,7 @@ impl<'a> DefaultResolver<'a> {
         }
 
         for sym in candidates {
-            if !(self.kind_compatible)(edge_kind, &sym.kind) {
+            if !kind(edge_kind, &sym.kind) {
                 continue;
             }
             if sym.file_path.split('/').any(|seg| seg == prefix) {
@@ -297,7 +300,7 @@ impl<'a> DefaultResolver<'a> {
     ///   (b) Dotted: `import { Ns } from 'pkg-a'` and target is `Ns.Inner`
     ///       — first segment is the import alias, last segment is the
     ///       symbol to resolve.
-    pub fn resolve_via_reexport_chain(&self) -> Option<Resolution> {
+    pub fn resolve_via_reexport_chain(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
 
@@ -314,7 +317,7 @@ impl<'a> DefaultResolver<'a> {
                         self.lookup.resolve_external_reexport(target, target, module)
                     {
                         return self
-                            .candidate_with_compatible_kind(target, id, edge_kind)
+                            .candidate_with_compatible_kind(target, id, edge_kind, kind)
                             .map(|sid| self.resolution(sid, "default_reexport_chain"));
                     }
                 }
@@ -340,7 +343,7 @@ impl<'a> DefaultResolver<'a> {
                                 .resolve_external_reexport(suffix, prefix, module)
                             {
                                 return self
-                                    .candidate_with_compatible_kind(suffix, id, edge_kind)
+                                    .candidate_with_compatible_kind(suffix, id, edge_kind, kind)
                                     .map(|sid| {
                                         self.resolution(sid, "default_reexport_chain")
                                     });
@@ -413,14 +416,14 @@ impl<'a> DefaultResolver<'a> {
     /// `globals.d.ts`). The project opted into those packages as ambient
     /// providers, so an unimported reference to one of their members is
     /// the intended target — not an ambiguous bare-name guess.
-    pub fn resolve_via_ambient_package(&self) -> Option<Resolution> {
+    pub fn resolve_via_ambient_package(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let candidates = self.lookup.by_name(target);
         let ambient: Vec<&SymbolInfo> = candidates
             .iter()
             .filter(|sym| self.lookup.is_ambient_path(&sym.file_path))
-            .filter(|sym| (self.kind_compatible)(edge_kind, &sym.kind))
+            .filter(|sym| kind(edge_kind, &sym.kind))
             .collect();
         let best = ambient
             .iter()
@@ -437,13 +440,14 @@ impl<'a> DefaultResolver<'a> {
         name: &str,
         id: i64,
         edge_kind: EdgeKind,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
     ) -> Option<i64> {
         let candidate = self
             .lookup
             .by_name(name)
             .iter()
             .find(|sym| sym.id == id)?;
-        if (self.kind_compatible)(edge_kind, &candidate.kind) {
+        if kind(edge_kind, &candidate.kind) {
             Some(id)
         } else {
             None
@@ -463,7 +467,7 @@ impl<'a> DefaultResolver<'a> {
     /// (`scope_visible`, `same_file`, `file_import`, `ref_module`) catch
     /// the explicit-evidence cases first; this is the residual that
     /// catches "the project has one `foo` and the caller didn't qualify".
-    pub fn resolve_via_unique_internal_name(&self) -> Option<Resolution> {
+    pub fn resolve_via_unique_internal_name(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         if target.contains('.') || target.contains("::") || target.contains('/') {
@@ -473,7 +477,7 @@ impl<'a> DefaultResolver<'a> {
         let mut compatible: Vec<&SymbolInfo> = candidates
             .iter()
             .filter(|sym| !self.lookup.is_external_file(&sym.file_path))
-            .filter(|sym| (self.kind_compatible)(edge_kind, &sym.kind))
+            .filter(|sym| kind(edge_kind, &sym.kind))
             .collect();
         // Dedup on (qualified_name, kind): the same logical symbol indexed
         // twice (header + impl, pnpm-monorepo duplicates) is one candidate
@@ -499,7 +503,7 @@ impl<'a> DefaultResolver<'a> {
     /// or earlier in the same file is the canonical resolution. Walk every
     /// symbol the lookup knows about in this file and accept the first
     /// kind-compatible match.
-    pub fn resolve_via_same_file(&self) -> Option<Resolution> {
+    pub fn resolve_via_same_file(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         // Yield to an explicit (non-wildcard) import that binds this name. True
         // lexical locals are already handled by resolve_via_scope_visible (which
@@ -515,7 +519,7 @@ impl<'a> DefaultResolver<'a> {
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for sym in self.lookup.in_file(&self.file_ctx.file_path) {
-            if sym.name == target && (self.kind_compatible)(edge_kind, &sym.kind) {
+            if sym.name == target && kind(edge_kind, &sym.kind) {
                 return Some(self.resolution(sym.id, "default_same_file"));
             }
         }
@@ -528,13 +532,13 @@ impl<'a> DefaultResolver<'a> {
     /// (innermost first). Catches local symbols defined in the source
     /// symbol's own enclosing type / namespace / module before we widen
     /// to file or project scope.
-    pub fn resolve_via_scope_visible(&self) -> Option<Resolution> {
+    pub fn resolve_via_scope_visible(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for scope in &self.ref_ctx.scope_chain {
             let qname = format!("{scope}.{target}");
             if let Some(sym) = self.lookup.by_qualified_name(&qname) {
-                if (self.kind_compatible)(edge_kind, &sym.kind) {
+                if kind(edge_kind, &sym.kind) {
                     return Some(self.resolution(sym.id, "default_scope_visible"));
                 }
             }
@@ -652,17 +656,17 @@ impl<'a> DefaultResolver<'a> {
     /// resolve to its direct parent via `parent_class_qname`. Catches
     /// `super(...)` constructor delegation and bare-keyword refs that carry
     /// no member chain for the chain walker to follow.
-    pub fn resolve_via_self_keyword(&self) -> Option<Resolution> {
+    pub fn resolve_via_self_keyword(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let enclosing = self.enclosing_type()?;
         match target {
-            "this" | "self" | "Self" => (self.kind_compatible)(edge_kind, &enclosing.kind)
+            "this" | "self" | "Self" => kind(edge_kind, &enclosing.kind)
                 .then(|| self.resolution(enclosing.id, "engine_self_keyword")),
             "super" | "base" => {
                 let parent_qname = self.lookup.parent_class_qname(&enclosing.qualified_name)?;
                 let parent = self.lookup.by_qualified_name(parent_qname)?;
-                (self.kind_compatible)(edge_kind, &parent.kind)
+                kind(edge_kind, &parent.kind)
                     .then(|| self.resolution(parent.id, "engine_self_keyword"))
             }
             _ => None,
@@ -676,7 +680,7 @@ impl<'a> DefaultResolver<'a> {
     /// chain with `parent_class_qname` and accepts a member whose simple name
     /// matches — reaching inherited fields/methods declared on a base class.
     /// Climb is bounded at `MAX_INHERITANCE_DEPTH`.
-    pub fn resolve_via_enclosing_member(&self) -> Option<Resolution> {
+    pub fn resolve_via_enclosing_member(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() || target.contains('.') || target.contains("::") {
             return None;
@@ -685,7 +689,7 @@ impl<'a> DefaultResolver<'a> {
         let mut current = self.enclosing_type()?.qualified_name.clone();
         for _ in 0..MAX_INHERITANCE_DEPTH {
             for member in self.lookup.members_of(&current) {
-                if member.name == target && (self.kind_compatible)(edge_kind, &member.kind) {
+                if member.name == target && kind(edge_kind, &member.kind) {
                     return Some(self.resolution(member.id, "engine_enclosing_member"));
                 }
             }
@@ -704,7 +708,7 @@ impl<'a> DefaultResolver<'a> {
     /// aliases (`@/utils`, `$lib/...`) which must first be rewritten to a
     /// real path. Fires only when the rewrite changes the specifier — the
     /// raw-path case already ran in `resolve_via_file_import`.
-    pub fn resolve_via_aliased_import(&self) -> Option<Resolution> {
+    pub fn resolve_via_aliased_import(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for import in &self.file_ctx.imports {
@@ -729,7 +733,7 @@ impl<'a> DefaultResolver<'a> {
                 target
             };
             for sym in self.lookup.by_name(lookup_name) {
-                if (self.kind_compatible)(edge_kind, &sym.kind)
+                if kind(edge_kind, &sym.kind)
                     && file_path_matches_module(&sym.file_path, &rewritten)
                 {
                     return Some(self.resolution(sym.id, "engine_aliased_import"));
@@ -770,23 +774,42 @@ impl<'a> DefaultResolver<'a> {
     /// Language hooks that want a different order or additional language-
     /// specific strategies call individual methods themselves.
     pub fn resolve_all(&self) -> Option<Resolution> {
-        let result = self.resolve_via_scope_visible()
-            .or_else(|| self.resolve_via_same_file())
-            .or_else(|| self.resolve_via_self_keyword())
-            .or_else(|| self.resolve_via_enclosing_member())
-            .or_else(|| self.resolve_via_ref_module())
-            .or_else(|| self.resolve_via_qname_exact())
-            .or_else(|| self.resolve_via_chain_prefix())
-            .or_else(|| self.resolve_via_reexport_chain())
-            .or_else(|| self.resolve_via_file_import())
+        let kind = self.kind_compatible;
+        self.run_ladder(&move |edge, sym_kind| kind(edge, sym_kind))
+    }
+
+    /// Engine entry: run the same ladder but gate candidate kinds against a
+    /// `LanguageProfile`'s `kind_compatible_table` rather than a fn-pointer.
+    /// The engine cannot build a fn-pointer that closes over the profile's
+    /// table, so it threads a table-driven closure through the shared ladder.
+    pub fn resolve_all_with_profile(
+        &self,
+        profile: &crate::type_checker::profile::language_profile::LanguageProfile,
+    ) -> Option<Resolution> {
+        let table = profile.kind_compatible_table;
+        self.run_ladder(&move |edge, sym_kind| kind_ok_table(table, edge, sym_kind))
+    }
+
+    /// The strategy ladder, parameterised on the kind-compatibility predicate.
+    /// Canonical order, most-specific evidence first (see the per-method docs).
+    fn run_ladder(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+        let result = self.resolve_via_scope_visible(kind)
+            .or_else(|| self.resolve_via_same_file(kind))
+            .or_else(|| self.resolve_via_self_keyword(kind))
+            .or_else(|| self.resolve_via_enclosing_member(kind))
+            .or_else(|| self.resolve_via_ref_module(kind))
+            .or_else(|| self.resolve_via_qname_exact(kind))
+            .or_else(|| self.resolve_via_chain_prefix(kind))
+            .or_else(|| self.resolve_via_reexport_chain(kind))
+            .or_else(|| self.resolve_via_file_import(kind))
             .or_else(|| self.resolve_via_reexport_following())
-            .or_else(|| self.resolve_via_aliased_import())
-            .or_else(|| self.resolve_via_namespace_import())
-            .or_else(|| self.resolve_via_ambient_namespace_path())
-            .or_else(|| self.resolve_via_same_namespace())
-            .or_else(|| self.resolve_via_imported_namespace())
-            .or_else(|| self.resolve_via_ambient_package())
-            .or_else(|| self.resolve_via_wildcard_import())
+            .or_else(|| self.resolve_via_aliased_import(kind))
+            .or_else(|| self.resolve_via_namespace_import(kind))
+            .or_else(|| self.resolve_via_ambient_namespace_path(kind))
+            .or_else(|| self.resolve_via_same_namespace(kind))
+            .or_else(|| self.resolve_via_imported_namespace(kind))
+            .or_else(|| self.resolve_via_ambient_package(kind))
+            .or_else(|| self.resolve_via_wildcard_import(kind))
             .or_else(|| self.resolve_via_generic_param());
         if result.is_none() {
             self.record_bare_name_chain_miss();
@@ -839,7 +862,7 @@ impl<'a> DefaultResolver<'a> {
     /// qualified name lives directly under any wildcard import's
     /// module_path, resolve to it. Returns None when no wildcard import
     /// matches OR when multiple candidates from different wildcards tie.
-    pub fn resolve_via_wildcard_import(&self) -> Option<Resolution> {
+    pub fn resolve_via_wildcard_import(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() || target.contains('.') || target.contains("::") {
             return None;
@@ -858,7 +881,7 @@ impl<'a> DefaultResolver<'a> {
         }
         let mut hits: Vec<&SymbolInfo> = Vec::new();
         for sym in self.lookup.by_name(target) {
-            if !(self.kind_compatible)(edge_kind, &sym.kind) {
+            if !kind(edge_kind, &sym.kind) {
                 continue;
             }
             for ns in &wildcards {
@@ -890,7 +913,7 @@ impl<'a> DefaultResolver<'a> {
     /// in N external packages (e.g. `description` declared in hundreds of
     /// ARM templates, `expect` declared in every `@types/jest` variant) but
     /// the older strict path bailed on ambiguity.
-    pub fn resolve_via_ranked_candidates(&self) -> Option<Resolution> {
+    pub fn resolve_via_ranked_candidates(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() || target.contains('.') || target.contains("::") || target.contains('/') {
             return None;
@@ -900,7 +923,7 @@ impl<'a> DefaultResolver<'a> {
             .lookup
             .by_name(target)
             .iter()
-            .filter(|sym| (self.kind_compatible)(edge_kind, &sym.kind))
+            .filter(|sym| kind(edge_kind, &sym.kind))
             .collect();
         if candidates.len() < 2 {
             // Zero — nothing to resolve to. Exactly one — the earlier strict
@@ -1001,6 +1024,16 @@ impl<'a> DefaultResolver<'a> {
             resolved_yield_type: None,
             flow_emit: None,
         }
+    }
+}
+
+/// Profile-table-driven kind compatibility check. Unrecognised symbol-kind
+/// strings default to permissive so an extractor typo doesn't silently hide a
+/// real symbol. Mirrors `core::members::kind_matches` / the bare-name check.
+fn kind_ok_table(table: KindTable, edge: EdgeKind, sym_kind: &str) -> bool {
+    match SymbolKind::from_str(sym_kind) {
+        Ok(parsed) => KindCompatibility::check(table, edge, parsed),
+        Err(_) => true,
     }
 }
 

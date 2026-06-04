@@ -49,7 +49,6 @@ pub const GROOVY_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: GROOVY_PRIMITIVES,
     kind_compatible_table: GROOVY_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

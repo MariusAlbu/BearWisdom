@@ -1,7 +1,5 @@
 // =============================================================================
 // languages/dart/profile.rs — LanguageProfile for Dart.
-//
-// Registered in shadow mode (engine_primary off) until recapture validates.
 // =============================================================================
 
 use crate::type_checker::core::types::PrimKind;
@@ -68,7 +66,6 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: DART_PRIMITIVES,
     kind_compatible_table: DART_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[
         ConstructorPattern::New,
         ConstructorPattern::CallableClass,

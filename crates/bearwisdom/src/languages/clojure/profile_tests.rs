@@ -11,8 +11,3 @@ fn clojure_profile_identity() {
 fn clojure_dispatch_axis_is_multi_arg() {
     assert_eq!(CLOJURE_PROFILE.dispatch_axis, DispatchAxis::MultiArg);
 }
-
-#[test]
-fn clojure_profile_engine_primary_disabled() {
-    assert!(!CLOJURE_PROFILE.engine_primary);
-}

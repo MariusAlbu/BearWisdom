@@ -35,7 +35,6 @@ pub const HARE_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: HARE_PRIMITIVES,
     kind_compatible_table: HARE_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

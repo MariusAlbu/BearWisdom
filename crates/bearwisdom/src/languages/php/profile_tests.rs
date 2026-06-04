@@ -17,11 +17,6 @@ fn php_profile_self_keywords_cover_receiver_forms() {
 }
 
 #[test]
-fn php_profile_engine_primary_disabled() {
-    assert!(!PHP_PROFILE.engine_primary);
-}
-
-#[test]
 fn php_calls_accepts_function_method_constructor() {
     let t = PHP_PROFILE.kind_compatible_table;
     assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Function));

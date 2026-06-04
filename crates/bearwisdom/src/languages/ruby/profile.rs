@@ -1,8 +1,7 @@
 // =============================================================================
 // languages/ruby/profile.rs — LanguageProfile for Ruby.
 //
-// Engine-side type-system data for Ruby. Registered in shadow mode —
-// `engine_primary` stays `false` until ±0.1pp recapture validation lands.
+// Engine-side type-system data for Ruby.
 // =============================================================================
 
 use crate::type_checker::core::types::PrimKind;
@@ -66,7 +65,6 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("each"),
     primitive_mapping: RUBY_PRIMITIVES,
     kind_compatible_table: RUBY_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::ClassDotNew],
     class_builder_specs: &[],
     decorator_syntax: None,

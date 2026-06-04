@@ -94,7 +94,6 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     // tests/data/cases/ test corpus (intentionally weird Python that
     // black formats) — most unresolvable by design. Baseline updated to
     // reflect new extraction; engine-primary safe.
-    engine_primary: true,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

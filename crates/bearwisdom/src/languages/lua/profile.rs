@@ -1,9 +1,8 @@
 // =============================================================================
 // languages/lua/profile.rs — LanguageProfile for Lua.
 //
-// Registered in shadow mode (engine_primary off). Lua's metatable-based OO
-// means real engine takeover needs hooks for `setmetatable(t, M)` and the
-// `__index` chain — those land alongside the engine_primary flip.
+// Lua's metatable-based OO means full member resolution needs hooks for
+// `setmetatable(t, M)` and the `__index` chain.
 // =============================================================================
 
 use crate::type_checker::core::types::PrimKind;
@@ -58,7 +57,6 @@ pub const LUA_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: LUA_PRIMITIVES,
     kind_compatible_table: LUA_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::LuaColonNew],
     class_builder_specs: &[],
     decorator_syntax: None,

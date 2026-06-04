@@ -1,7 +1,5 @@
 // =============================================================================
 // languages/kotlin/profile.rs — LanguageProfile for Kotlin.
-//
-// Registered in shadow mode (engine_primary off) until recapture validates.
 // =============================================================================
 
 use crate::type_checker::core::types::PrimKind;
@@ -75,7 +73,6 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: Some("iterator"),
     primitive_mapping: KOTLIN_PRIMITIVES,
     kind_compatible_table: KOTLIN_KIND_TABLE,
-    engine_primary: false,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),
