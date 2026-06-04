@@ -1,10 +1,21 @@
 use super::*;
-use crate::type_checker::profile::language_profile::{DispatchAxis, SupertypeDiscovery};
+use crate::type_checker::profile::language_profile::{
+    ChainQualification, DispatchAxis, SupertypeDiscovery,
+};
 use crate::types::SymbolKind;
 
 #[test]
 fn id_matches() {
     assert_eq!(CSHARP_PROFILE.id, "csharp");
+}
+
+#[test]
+fn chain_qualification_is_same_package_and_imports() {
+    // Same-namespace + using-directive qualification through the engine walker.
+    assert_eq!(
+        CSHARP_PROFILE.chain_qualification,
+        ChainQualification::SamePackageAndImports
+    );
 }
 
 #[test]

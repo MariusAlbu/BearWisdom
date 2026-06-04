@@ -1,243 +1,24 @@
 // =============================================================================
-// languages/csharp/hooks.rs — CSharpHooks impl plus the concrete
-// CSharpResolver (chain via CSharpChecker, `this.` stripping + scope-chain
-// walk, same-namespace, wildcard using-directive, fully-qualified-name,
-// field-type chain resolution that consults `lookup.field_type_str` for
-// `db.SelectFrom`-style refs and tries both bare-type-name and using-
-// directive-prefixed candidates, inheritance-via-implicit-`this`) plus
+// languages/csharp/hooks.rs — CSharpHooks impl of LanguageEngineHooks. Carries
 // 11 flow detectors (Hangfire BG, HotChocolate GraphQL, SignalR Hub,
 // SmtpClient/MailKit/SendGrid mailer, EF Core LINQ + Dapper SQL parsing
 // DB queries, HttpClient + RestSharp HTTP chains, Refit attributes,
 // IntegrationEvent / IIntegrationEventHandler eShop event-bus pair,
-// .NET DI registration `AddScoped`/`AddTransient`/`AddSingleton`) plus
-// classify_external with workspace-project carve-out and longest-prefix
-// wildcard using match plus build_file_context with global usings
-// injection.
+// .NET DI registration `AddScoped`/`AddTransient`/`AddSingleton`), the
+// external classifier with workspace-project carve-out and longest-prefix
+// wildcard using match, and build_file_context with global-usings injection.
+// Resolution runs through the generic engine; the chain walker qualifies bare
+// receivers per `ChainQualification::SamePackageAndImports`.
 // =============================================================================
 
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
-use crate::type_checker::core::DefaultResolver;
-use crate::type_checker::inheritance;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
-
-pub struct CSharpResolver;
-
-/// C# `ChainConfig` for the unified `resolve_via_chain`.
-///
-/// C# carries three deltas as `ChainExtensions` data: inheritance climbing on a
-/// member miss, the extension-method last resort (`receiver.Method()` →
-/// `static R Method(this Receiver x, ...)`), and namespace-qualified lookups
-/// through wildcard `using` directives (`NamespaceLookup::WildcardWithGenerics`).
-/// It has no type aliases, no external-qname promotion, no `new X().m()`
-/// construction roots, and no ambient-globals root fallback. `enclosing_type_kinds`
-/// admits `record`; `static_type_kinds` admits `delegate` — both C#-specific.
-pub(crate) static CSHARP_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
-    crate::type_checker::chain::ChainConfig {
-        strategy_prefix: "csharp",
-        normalize_type: crate::type_checker::chain::identity_normalize,
-        has_self_ref: true,
-        enclosing_type_kinds: &["class", "struct", "interface", "record"],
-        static_type_kinds: &["class", "struct", "interface", "enum", "delegate"],
-        use_generics: true,
-        namespace_lookup: crate::type_checker::chain::NamespaceLookup::WildcardWithGenerics,
-        kind_compatible: predicates::kind_compatible,
-        extensions: crate::type_checker::chain::ChainExtensions {
-            expand_aliases: false,
-            walk_inheritance: true,
-            promote_external_qname: false,
-            root_construction: false,
-            extension_method_fallback: true,
-            root_fallback: None,
-            root_type_access: false,
-            qualify_via_imports: false,
-        },
-    };
-
-impl CSharpResolver {
-    pub(crate) fn build_file_context(
-        &self,
-        file: &ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> FileContext {
-        build_file_context_inner(file, project_ctx)
-    }
-
-    pub(crate) fn resolve(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = crate::type_checker::chain::resolve_via_chain(
-                &CSHARP_CHAIN_CONFIG, chain_ref, edge_kind, Some(file_ctx), ref_ctx, lookup,
-            ) {
-                return Some(res);
-            }
-        }
-
-        let effective_target = target.strip_prefix("this.").unwrap_or(target);
-
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "csharp_scope_chain",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        if let Some(ns) = &file_ctx.file_namespace {
-            let candidate = format!("{ns}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "csharp_same_namespace",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        for import in &file_ctx.imports {
-            if import.is_wildcard {
-                if let Some(module) = &import.module_path {
-                    let candidate = format!("{module}.{effective_target}");
-                    if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                        if self.is_visible(file_ctx, ref_ctx, sym)
-                            && predicates::kind_compatible(edge_kind, &sym.kind)
-                        {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 1.0,
-                                strategy: "csharp_using_directive",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        if effective_target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "csharp_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        // Field-type chain. `db.SelectFrom` (after `this.` strip) follows
-        // the field's type annotation.
-        if effective_target.contains('.') {
-            if let Some(dot) = effective_target.find('.') {
-                let field_name = &effective_target[..dot];
-                let rest = &effective_target[dot + 1..];
-
-                for scope in &ref_ctx.scope_chain {
-                    let field_qname = format!("{scope}.{field_name}");
-                    if let Some(type_name) = lookup.field_type_str(&field_qname) {
-                        let candidate = format!("{type_name}.{rest}");
-                        if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                            if predicates::kind_compatible(edge_kind, &sym.kind) {
-                                return Some(Resolution {
-                                    target_symbol_id: sym.id,
-                                    confidence: 0.95,
-                                    strategy: "csharp_field_type_chain",
-                                    resolved_yield_type: None,
-                                    flow_emit: None,
-                                });
-                            }
-                        }
-                        // Try using directives: {namespace}.{TypeName}.{rest}
-                        for import in &file_ctx.imports {
-                            if import.is_wildcard {
-                                if let Some(module) = &import.module_path {
-                                    let candidate = format!("{module}.{type_name}.{rest}");
-                                    if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                                        if predicates::kind_compatible(edge_kind, &sym.kind) {
-                                            return Some(Resolution {
-                                                target_symbol_id: sym.id,
-                                                confidence: 0.90,
-                                                strategy: "csharp_field_type_chain",
-                                                resolved_yield_type: None,
-                                                flow_emit: None,
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Inheritance walk for implicit `this` calls.
-        if edge_kind == EdgeKind::Calls && !effective_target.contains('.') {
-            if let Some(calling_class) =
-                inheritance::enclosing_class_from_scope(&ref_ctx.source_symbol.qualified_name, lookup)
-            {
-                if let Some(res) = inheritance::resolve_via_inheritance(
-                    calling_class,
-                    effective_target,
-                    edge_kind,
-                    file_ctx,
-                    ref_ctx,
-                    lookup,
-                    predicates::kind_compatible,
-                    |fc, rc, sym| self.is_visible(fc, rc, sym),
-                    "csharp_inherited_method",
-                ) {
-                    return Some(res);
-                }
-            }
-        }
-
-        None
-    }
-
-    pub(crate) fn is_visible(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _target: &SymbolInfo,
-    ) -> bool {
-        // Navigation tool: visibility never gates resolution, so go-to-definition
-        // reaches private members. Deliberate divergence from compiler behavior.
-        true
-    }
-}
 
 // Hangfire: `BackgroundJob.Enqueue(...)`, `RecurringJob.AddOrUpdate(...)`.
 pub(crate) fn detect_csharp_hangfire_bg_emission(
@@ -854,24 +635,6 @@ impl LanguageEngineHooks for CSharpHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(build_file_context_inner(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if let Some(res) = CSharpResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

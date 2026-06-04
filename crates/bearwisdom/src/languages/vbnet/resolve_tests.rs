@@ -1,5 +1,5 @@
-// VB.NET shares the CSharpResolver (mod.rs::resolver). These tests verify
-// the C# flow-emission detectors fire on VB.NET-shaped refs.
+// VB.NET reuses the C# flow-emission detectors. These tests verify they fire
+// on VB.NET-shaped refs.
 
 use crate::languages::csharp::hooks::{
     detect_csharp_db_query_emission, detect_csharp_http_chain_emission,

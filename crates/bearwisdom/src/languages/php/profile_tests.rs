@@ -1,11 +1,20 @@
 use super::PHP_PROFILE;
-use crate::type_checker::profile::language_profile::KindCompatibility;
+use crate::type_checker::profile::language_profile::{ChainQualification, KindCompatibility};
 use crate::types::{EdgeKind, SymbolKind};
 
 #[test]
 fn php_profile_identity() {
     assert_eq!(PHP_PROFILE.id, "php");
     assert_eq!(PHP_PROFILE.qname_separator, "\\");
+}
+
+#[test]
+fn php_chain_qualification_is_same_package_and_imports() {
+    // Same-namespace + `use`-statement qualification through the engine walker.
+    assert_eq!(
+        PHP_PROFILE.chain_qualification,
+        ChainQualification::SamePackageAndImports
+    );
 }
 
 #[test]

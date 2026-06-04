@@ -18,7 +18,6 @@ pub mod hooks;
 mod predicates;
 pub mod profile;
 pub use hooks::CSHARP_HOOKS;
-pub use hooks::CSharpResolver;
 pub use profile::CSHARP_PROFILE;
 
 #[cfg(test)]

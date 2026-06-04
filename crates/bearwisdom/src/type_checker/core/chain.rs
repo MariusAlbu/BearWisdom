@@ -799,6 +799,35 @@ impl<'a> ChainWalker<'a> {
         prev_owner: Option<&str>,
         file_ctx: &FileContext,
     ) -> TypeId {
+        // Package-short-name qualification (Go): a chain rooted on an import's
+        // alias (`import mygin "…/gin"; mygin.Default()`) carries the alias as
+        // its bare receiver. The package's members are keyed under the path's
+        // last segment (`gin.Default`), so rewrite the alias to that short
+        // name. When the import is unaliased the receiver already IS the short
+        // name and `qualified_member_lookup`'s direct probe handles it.
+        if self.profile.chain_qualification == ChainQualification::PackageShortName {
+            let Some(base_qname) = self.class_qname(current_ty) else {
+                return current_ty;
+            };
+            if base_qname.contains('.') {
+                return current_ty;
+            }
+            for import in &file_ctx.imports {
+                let matches = import.imported_name == base_qname
+                    || import.alias.as_deref() == Some(base_qname.as_str());
+                if !matches {
+                    continue;
+                }
+                let Some(module) = import.module_path.as_deref() else {
+                    continue;
+                };
+                let short = module.rsplit('/').next().unwrap_or(module);
+                if short != base_qname && self.keys_a_type_or_member(short) {
+                    return self.arena.class(short);
+                }
+            }
+            return current_ty;
+        }
         if self.profile.chain_qualification != ChainQualification::SamePackageAndImports {
             return current_ty;
         }

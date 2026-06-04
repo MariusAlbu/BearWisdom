@@ -87,8 +87,16 @@ pub enum ChainQualification {
     /// root, the file's own package; (2) the file's explicit non-wildcard
     /// imports (`import com.foo.Bar` makes a receiver typed `Bar` resolve under
     /// `com.foo.Bar`). Only promotes to a qname that owns a type or keys a
-    /// member, so it can only widen resolution. Java / Groovy.
+    /// member, so it can only widen resolution. Java / Groovy / C# / PHP.
     SamePackageAndImports,
+    /// An import names a PACKAGE, not a type, and members are keyed under the
+    /// import's short name (`import "github.com/gin-gonic/gin"` brings short
+    /// name `gin`; the function lands as `gin.NewRouter`). A bare member ref
+    /// whose qualifier the extractor dropped resolves under
+    /// `{import.imported_name}.{target}` — or, for an aliased import, under
+    /// `{last_path_segment}.{target}`. Distinct from `SamePackageAndImports`,
+    /// where the import names the class itself. Go.
+    PackageShortName,
 }
 
 /// Edge-kind × symbol-kind compatibility entries. An empty table means "any

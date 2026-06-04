@@ -22,7 +22,6 @@ pub mod profile;
 pub mod connectors;
 
 pub use hooks::GO_HOOKS;
-pub use hooks::GoResolver;
 pub use profile::GO_PROFILE;
 
 #[cfg(test)]

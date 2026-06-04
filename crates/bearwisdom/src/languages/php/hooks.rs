@@ -1,16 +1,13 @@
 // =============================================================================
-// languages/php/hooks.rs — PhpHooks impl plus the concrete PhpResolver (chain
-// via PhpChecker, `$this->` / `this.` stripping with PHP-namespace
-// normalization, scope-chain walk, same-namespace, use-statement resolution,
-// fully-qualified-name with `\\` ↔ `.` normalization, global bare-name
-// lookup for `route()` / `trans()` / `auth()` / `view()` / `config()`,
-// inheritance-via-`$this` walk with depth-10 cycle guard) plus 7 flow
+// languages/php/hooks.rs — PhpHooks impl of LanguageEngineHooks. Carries 7 flow
 // detectors (Eloquent static + Doctrine entity-manager DB queries, Laravel
 // Mail / Notification facade, Laravel Bus / Queue / MessageBus dispatch,
-// Ratchet WS interfaces, Symfony #[Route] attribute Consumer) plus external
+// Ratchet WS interfaces, Symfony #[Route] attribute Consumer), the external
 // classifier with composer.json package match (vendor + package segments) and
-// namespace-negative structural fallback plus build_file_context with
-// backslash normalization.
+// namespace-negative structural fallback, and build_file_context with
+// backslash normalization. Resolution runs through the generic engine; the
+// chain walker qualifies bare receivers per
+// `ChainQualification::SamePackageAndImports`.
 // =============================================================================
 
 pub(crate) use super::predicates::normalize_php_ns;
@@ -19,225 +16,10 @@ use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
-
-pub struct PhpResolver;
-
-/// PHP `ChainConfig` for the unified `resolve_via_chain`.
-///
-/// PHP carries four deltas as `ChainExtensions`/`ChainConfig` data:
-/// `root_type_access` for `ClassName::method()` static-call roots,
-/// `NamespaceLookup::AllImports` for resolving members through `use` statements
-/// (intermediate + final segments), `promote_external_qname` for short receiver
-/// types that key their members under a package-prefixed qname, and
-/// `walk_inheritance` for the Eloquent-style `__callStatic` forwarding climb.
-/// No generics, no type aliases, no construction roots, no extension methods,
-/// and no ambient-globals root fallback.
-pub(crate) static PHP_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
-    crate::type_checker::chain::ChainConfig {
-        strategy_prefix: "php",
-        normalize_type: crate::type_checker::chain::identity_normalize,
-        has_self_ref: true,
-        enclosing_type_kinds: &["class", "interface"],
-        static_type_kinds: &["class", "interface", "enum", "type_alias"],
-        use_generics: false,
-        namespace_lookup: crate::type_checker::chain::NamespaceLookup::AllImports,
-        kind_compatible: predicates::kind_compatible,
-        extensions: crate::type_checker::chain::ChainExtensions {
-            expand_aliases: false,
-            walk_inheritance: true,
-            promote_external_qname: true,
-            root_construction: false,
-            extension_method_fallback: false,
-            root_fallback: None,
-            root_type_access: true,
-            qualify_via_imports: false,
-        },
-    };
-
-impl PhpResolver {
-    pub(crate) fn build_file_context(
-        &self,
-        file: &ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> FileContext {
-        build_file_context_inner(file, project_ctx)
-    }
-
-    pub(crate) fn resolve(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-
-        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = crate::type_checker::chain::resolve_via_chain(
-                &PHP_CHAIN_CONFIG, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
-            ) {
-                return Some(res);
-            }
-        }
-
-        let effective_target = target
-            .strip_prefix("$this->")
-            .or_else(|| target.strip_prefix("this."))
-            .unwrap_or(target);
-
-        let normalized_target = predicates::normalize_php_ns(effective_target);
-        let effective_target = normalized_target.as_str();
-
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "php_scope_chain",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        if let Some(ns) = &file_ctx.file_namespace {
-            let candidate = format!("{ns}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "php_same_namespace",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        for import in &file_ctx.imports {
-            if import.imported_name == effective_target {
-                if let Some(module) = &import.module_path {
-                    if let Some(sym) = lookup.by_qualified_name(module) {
-                        if predicates::kind_compatible(edge_kind, &sym.kind) {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 1.0,
-                                strategy: "php_use_statement",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        if effective_target.contains('.') || effective_target.contains('\\') {
-            if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if predicates::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "php_qualified_name",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        // Global bare-name lookup for PHP helper functions like `route()`,
-        // `trans()`, `auth()`, `view()`, `config()` — declared at global
-        // scope, indexed from vendor/laravel/framework/.../helpers.php.
-        if edge_kind == EdgeKind::Calls && !effective_target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if sym.kind == "function" {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.9,
-                        strategy: "php_global_function",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
-
-        // Inheritance-chain walk for `$this->method()` calls.
-        let is_this_call = {
-            use crate::types::SegmentKind;
-            let via_chain = ref_ctx
-                .extracted_ref
-                .chain
-                .as_ref()
-                .and_then(|c| c.segments.first())
-                .map(|s| s.kind == SegmentKind::SelfRef)
-                .unwrap_or(false);
-            via_chain || target.starts_with("$this->") || target.starts_with("this.")
-        };
-        if edge_kind == EdgeKind::Calls
-            && is_this_call
-            && !effective_target.contains('.')
-        {
-            let calling_class = ref_ctx
-                .scope_chain
-                .first()
-                .map(|s| s.as_str());
-
-            if let Some(mut class_qname) = calling_class {
-                // Depth-10 cycle guard for malformed source.
-                for _ in 0..10 {
-                    match lookup.parent_class_qname(class_qname) {
-                        None => break,
-                        Some(parent_qname) => {
-                            let candidate = format!("{parent_qname}.{effective_target}");
-                            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                                if self.is_visible(file_ctx, ref_ctx, sym)
-                                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                                {
-                                    return Some(Resolution {
-                                        target_symbol_id: sym.id,
-                                        confidence: 0.85,
-                                        strategy: "php_inherited_method",
-                                        resolved_yield_type: None,
-                                        flow_emit: None,
-                                    });
-                                }
-                            }
-                            class_qname = parent_qname;
-                        }
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    pub(crate) fn is_visible(
-        &self,
-        _file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        _target: &SymbolInfo,
-    ) -> bool {
-        // Navigation tool: visibility never gates resolution, so go-to-definition
-        // reaches private members. Deliberate divergence from compiler behavior.
-        true
-    }
-}
 
 // composer-manifest match + hardcoded `is_external_php_namespace` set +
 // structural fallback via `lookup.has_in_namespace` for PHP runtime classes
@@ -674,24 +456,6 @@ impl LanguageEngineHooks for PhpHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(build_file_context_inner(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if let Some(res) = PhpResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
-        }
-        (crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
     }
 }
 

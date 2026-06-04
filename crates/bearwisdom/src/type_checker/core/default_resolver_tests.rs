@@ -1452,3 +1452,81 @@ fn confidence_is_always_one_point_oh() {
         assert_eq!(resolved.confidence, 1.0, "deterministic, never decayed");
     }
 }
+
+#[test]
+fn package_short_name_resolves_under_import_short_name() {
+    // Go-shaped: `import "github.com/gin-gonic/gin"` brings short name `gin`,
+    // and the member is keyed `gin.NewRouter`. A bare `NewRouter` ref whose
+    // qualifier the extractor dropped resolves under `{imported_name}.{target}`.
+    let lookup =
+        Lookup::new().with(sym(5, "NewRouter", "gin.NewRouter", "function", "ext:go:gin/gin.go"));
+    let r = extracted_call("NewRouter");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![import("gin", Some("github.com/gin-gonic/gin"))],
+        Some("main"),
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_package_short_name(&accept_any)
+        .expect("resolves under the import short name");
+    assert_eq!(resolved.target_symbol_id, 5);
+    assert_eq!(resolved.strategy, "default_package_short_name");
+}
+
+#[test]
+fn package_short_name_resolves_aliased_import_via_last_segment() {
+    // `import mygin "github.com/gin-gonic/gin"; mygin.Default()` — the symbol
+    // stays keyed under the path's last segment (`gin.Default`), not the alias.
+    let lookup =
+        Lookup::new().with(sym(6, "Default", "gin.Default", "function", "ext:go:gin/gin.go"));
+    let r = extracted_call("Default");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![aliased_import("mygin", "mygin", Some("github.com/gin-gonic/gin"))],
+        Some("main"),
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_package_short_name(&accept_any)
+        .expect("resolves via the path's last segment");
+    assert_eq!(resolved.target_symbol_id, 6);
+}
+
+#[test]
+fn package_short_name_off_under_default_ladder() {
+    // The strategy is gated by ChainQualification::PackageShortName in the
+    // ladder. The fn-pointer `resolve_all` path passes None, so the same fixture
+    // does NOT resolve `gin.NewRouter` from a bare `NewRouter` through it.
+    let lookup =
+        Lookup::new().with(sym(5, "NewRouter", "gin.NewRouter", "function", "ext:go:gin/gin.go"));
+    let r = extracted_call("NewRouter");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![import("gin", Some("github.com/gin-gonic/gin"))],
+        Some("main"),
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_all().is_none(),
+        "default ladder (ChainQualification::None) must not reach package-short-name"
+    );
+}

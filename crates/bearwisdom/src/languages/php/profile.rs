@@ -67,7 +67,9 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: PHP_PRIMITIVES,
     kind_compatible_table: PHP_KIND_TABLE,
-    chain_qualification: ChainQualification::None,
+    // Same-namespace + `use`-statement qualification of a bare receiver type
+    // via the structured walker's `qualify_current_ty`.
+    chain_qualification: ChainQualification::SamePackageAndImports,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AttrBracket),

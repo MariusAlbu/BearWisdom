@@ -23,7 +23,7 @@ use super::reexport::follow_reexports;
 use crate::indexer::resolve::engine::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
-use crate::type_checker::profile::language_profile::{KindCompatibility, KindTable};
+use crate::type_checker::profile::language_profile::{ChainQualification, KindCompatibility, KindTable};
 use crate::types::{EdgeKind, SymbolKind};
 
 /// Language-agnostic engine resolver. Composes deterministic strategies
@@ -157,6 +157,46 @@ impl<'a> DefaultResolver<'a> {
                 if let Some(sym) = self.lookup.by_qualified_name(&qname) {
                     if kind(edge_kind, &sym.kind) {
                         return Some(self.resolution(sym.id, "default_namespace_import"));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Strategy — bare member keyed under an import's package short name.
+    ///
+    /// An import that names a package (`import "github.com/gin-gonic/gin"`)
+    /// brings the short name `gin` into scope; the package's members are keyed
+    /// `gin.{Name}`. When the extractor dropped the qualifier off a member ref,
+    /// the bare `target` is `NewRouter` and resolves under
+    /// `{import.imported_name}.{target}`. For an aliased import
+    /// (`import mygin "github.com/gin-gonic/gin"`) the symbol stays keyed under
+    /// the path's last segment, so try `{last_path_segment}.{target}` too.
+    ///
+    /// Probes both forms by exact qname, dotless prefixes included (the
+    /// dotted-prefix guard in `resolve_via_namespace_import` skips exactly these
+    /// short names). Gated by `ChainQualification::PackageShortName` in the
+    /// ladder so languages whose imports name the type itself stay untouched.
+    pub fn resolve_via_package_short_name(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty() || target.contains('.') || target.contains("::") || target.contains('/') {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        for import in &self.file_ctx.imports {
+            let Some(module) = import.module_path.as_deref() else {
+                continue;
+            };
+            let last_seg = module.rsplit('/').next().unwrap_or(module);
+            for prefix in [import.imported_name.as_str(), last_seg] {
+                if prefix.is_empty() {
+                    continue;
+                }
+                let qname = format!("{prefix}.{target}");
+                if let Some(sym) = self.lookup.by_qualified_name(&qname) {
+                    if kind(edge_kind, &sym.kind) {
+                        return Some(self.resolution(sym.id, "default_package_short_name"));
                     }
                 }
             }
@@ -775,7 +815,7 @@ impl<'a> DefaultResolver<'a> {
     /// specific strategies call individual methods themselves.
     pub fn resolve_all(&self) -> Option<Resolution> {
         let kind = self.kind_compatible;
-        self.run_ladder(&move |edge, sym_kind| kind(edge, sym_kind))
+        self.run_ladder(&move |edge, sym_kind| kind(edge, sym_kind), ChainQualification::None)
     }
 
     /// Engine entry: run the same ladder but gate candidate kinds against a
@@ -787,12 +827,21 @@ impl<'a> DefaultResolver<'a> {
         profile: &crate::type_checker::profile::language_profile::LanguageProfile,
     ) -> Option<Resolution> {
         let table = profile.kind_compatible_table;
-        self.run_ladder(&move |edge, sym_kind| kind_ok_table(table, edge, sym_kind))
+        self.run_ladder(
+            &move |edge, sym_kind| kind_ok_table(table, edge, sym_kind),
+            profile.chain_qualification,
+        )
     }
 
     /// The strategy ladder, parameterised on the kind-compatibility predicate.
     /// Canonical order, most-specific evidence first (see the per-method docs).
-    fn run_ladder(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    /// `chain_qual` gates the profile-specific import-shape strategies; the
+    /// fn-pointer `resolve_all` path passes `None` so those stay off.
+    fn run_ladder(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+        chain_qual: ChainQualification,
+    ) -> Option<Resolution> {
         let result = self.resolve_via_scope_visible(kind)
             .or_else(|| self.resolve_via_same_file(kind))
             .or_else(|| self.resolve_via_self_keyword(kind))
@@ -805,6 +854,11 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_reexport_following())
             .or_else(|| self.resolve_via_aliased_import(kind))
             .or_else(|| self.resolve_via_namespace_import(kind))
+            .or_else(|| {
+                (chain_qual == ChainQualification::PackageShortName)
+                    .then(|| self.resolve_via_package_short_name(kind))
+                    .flatten()
+            })
             .or_else(|| self.resolve_via_ambient_namespace_path(kind))
             .or_else(|| self.resolve_via_same_namespace(kind))
             .or_else(|| self.resolve_via_imported_namespace(kind))

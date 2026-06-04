@@ -1,9 +1,20 @@
 use super::*;
-use crate::type_checker::profile::language_profile::{DispatchAxis, SupertypeDiscovery};
+use crate::type_checker::profile::language_profile::{
+    ChainQualification, DispatchAxis, SupertypeDiscovery,
+};
 
 #[test]
 fn id_matches() {
     assert_eq!(GO_PROFILE.id, "go");
+}
+
+#[test]
+fn chain_qualification_is_package_short_name() {
+    // Members keyed under the import's package short name (`gin.NewRouter`).
+    assert_eq!(
+        GO_PROFILE.chain_qualification,
+        ChainQualification::PackageShortName
+    );
 }
 
 #[test]

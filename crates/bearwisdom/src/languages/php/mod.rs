@@ -15,7 +15,6 @@ pub(crate) mod profile;
 pub mod connectors;
 
 pub use hooks::PHP_HOOKS;
-pub use hooks::PhpResolver;
 pub use profile::PHP_PROFILE;
 
 #[cfg(test)]

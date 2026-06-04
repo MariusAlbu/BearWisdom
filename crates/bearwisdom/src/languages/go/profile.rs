@@ -80,9 +80,10 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: GO_PRIMITIVES,
     kind_compatible_table: GO_KIND_TABLE,
-    chain_qualification: ChainQualification::None,
-    // Validated under engine-primary at Phase 6 wave-A gate: go-
-    // bubbletea rate parity 99.37% = 99.37%, no regression.
+    // An import names a package; members are keyed under its short name
+    // (`gin.NewRouter`). A bare member ref whose qualifier the extractor
+    // dropped resolves under `{import short name}.{target}`.
+    chain_qualification: ChainQualification::PackageShortName,
     // Go has no `new` operator at the surface form the engine recognises.
     // Construction is `Foo{}` / `&Foo{}` / `make(...)` — extractor emits
     // these as Construction segments without needing a profile pattern.
