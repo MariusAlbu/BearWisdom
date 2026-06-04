@@ -83,6 +83,7 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor_terminal: true,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
+    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     constructor_patterns: &[
         ConstructorPattern::New,
         ConstructorPattern::CallableClass,

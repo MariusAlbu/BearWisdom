@@ -51,6 +51,7 @@ pub const PERL_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
+    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     constructor_patterns: &[ConstructorPattern::ArrowNew],
     class_builder_specs: &[],
     decorator_syntax: None,

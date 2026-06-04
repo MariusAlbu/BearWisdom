@@ -6,6 +6,7 @@ use super::*;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
+use crate::type_checker::profile::language_profile::{NameNormalization, NormSpec};
 use crate::types::{
     ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
     SymbolKind, Visibility,
@@ -635,7 +636,7 @@ fn scope_visible_resolves_against_innermost_scope_first() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_scope_visible(&accept_any, &["."], &[])
+        .resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::None)
         .expect("scope walk resolves");
     assert_eq!(resolved.target_symbol_id, 61, "innermost scope wins");
     assert_eq!(resolved.strategy, "default_scope_visible");
@@ -662,11 +663,12 @@ fn scope_visible_resolves_with_profile_separator() {
         kind_compatible: accept_any,
     };
     assert!(
-        d.resolve_via_scope_visible(&accept_any, &["."], &[]).is_none(),
+        d.resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::None)
+            .is_none(),
         "the `.` join cannot match a `::`-keyed qname"
     );
     let resolved = d
-        .resolve_via_scope_visible(&accept_any, &[".", "::"], &[])
+        .resolve_via_scope_visible(&accept_any, &[".", "::"], &[], NameNormalization::None)
         .expect("the `::` separator resolves the scope member");
     assert_eq!(resolved.target_symbol_id, 90);
     assert_eq!(resolved.strategy, "default_scope_visible");
@@ -694,11 +696,11 @@ fn scope_visible_dot_separator_is_unaffected_by_extra_separators() {
         kind_compatible: accept_any,
     };
     let with_extra = d
-        .resolve_via_scope_visible(&accept_any, &[".", "::"], &[])
+        .resolve_via_scope_visible(&accept_any, &[".", "::"], &[], NameNormalization::None)
         .expect("`.`-keyed member still resolves with an extra separator present");
     assert_eq!(with_extra.target_symbol_id, 91);
     let dot_only = d
-        .resolve_via_scope_visible(&accept_any, &["."], &[])
+        .resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::None)
         .expect("`.`-keyed member resolves with `.` alone");
     assert_eq!(dot_only.target_symbol_id, 91);
 }
@@ -851,7 +853,9 @@ fn same_file_resolves_sibling_in_same_path() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_same_file(&accept_any, &[]).expect("same-file sibling resolves");
+    let resolved = d
+        .resolve_via_same_file(&accept_any, &[], NameNormalization::None)
+        .expect("same-file sibling resolves");
     assert_eq!(resolved.target_symbol_id, 110);
     assert_eq!(resolved.strategy, "default_same_file");
 }
@@ -2340,7 +2344,7 @@ fn scope_visible_strips_leading_self_keyword() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_scope_visible(&accept_any, &["."], &["self", "cls"])
+        .resolve_via_scope_visible(&accept_any, &["."], &["self", "cls"], NameNormalization::None)
         .expect("self.-stripped scope probe resolves");
     assert_eq!(resolved.target_symbol_id, 50);
 }
@@ -2367,7 +2371,8 @@ fn scope_visible_empty_self_keywords_does_not_strip() {
         kind_compatible: accept_any,
     };
     assert!(
-        d.resolve_via_scope_visible(&accept_any, &["."], &[]).is_none(),
+        d.resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::None)
+            .is_none(),
         "no strip with empty self_keywords"
     );
 }
@@ -2476,4 +2481,218 @@ fn module_skip_none_is_inert() {
     let bound = resolve_module_sibling(&DEFAULT_PROFILE, "rgba", "__css_fn__")
         .expect("module_skip None resolves the sibling for any module");
     assert_eq!(bound.target_symbol_id, 1);
+}
+
+// ---------------------------------------------------------------------------
+// name_normalization — normalize_name transform + bare-name comparison
+// ---------------------------------------------------------------------------
+
+const CASE_FOLD_SPEC: NormSpec = NormSpec {
+    case_insensitive: true,
+    strip_chars: &[],
+    strip_prefixes: &[],
+    strip_sigils: &[],
+};
+
+#[test]
+fn normalize_name_none_is_identity_and_borrowed() {
+    // The default transform must not change a single byte and must not
+    // allocate — it returns the input borrowed verbatim.
+    let out = normalize_name(NameNormalization::None, "MixedCaseName");
+    assert_eq!(out, "MixedCaseName");
+    assert!(
+        matches!(out, std::borrow::Cow::Borrowed(_)),
+        "None must borrow, never allocate"
+    );
+}
+
+#[test]
+fn normalize_name_empty_spec_is_identity_and_borrowed() {
+    // A spec whose every delta is off reduces to identity — also borrowed.
+    let spec = NormSpec {
+        case_insensitive: false,
+        strip_chars: &[],
+        strip_prefixes: &[],
+        strip_sigils: &[],
+    };
+    let out = normalize_name(NameNormalization::Spec(spec), "MixedCaseName");
+    assert_eq!(out, "MixedCaseName");
+    assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+}
+
+#[test]
+fn normalize_name_case_insensitive_folds() {
+    let out = normalize_name(NameNormalization::Spec(CASE_FOLD_SPEC), "MyProc");
+    assert_eq!(out, "myproc");
+    assert!(matches!(out, std::borrow::Cow::Owned(_)));
+}
+
+#[test]
+fn normalize_name_strips_sigil_pair_then_prefix_then_chars() {
+    // A spec exercising every delta in its fixed order: a `${...}` sigil
+    // wrapper, a leading `@` prefix, removed `_` chars, then case fold.
+    let spec = NormSpec {
+        case_insensitive: true,
+        strip_chars: &['_'],
+        strip_prefixes: &["@"],
+        strip_sigils: &[("${", "}")],
+    };
+    // `${@My_Var}` → strip sigil → `@My_Var` → strip `@` → `My_Var`
+    //   → strip `_` → `MyVar` → fold → `myvar`.
+    let out = normalize_name(NameNormalization::Spec(spec), "${@My_Var}");
+    assert_eq!(out, "myvar");
+}
+
+#[test]
+fn normalize_name_bare_sigil_prefix_strips() {
+    // A `(prefix, "")` pair strips a bare leading sigil with no closing form.
+    let spec = NormSpec {
+        case_insensitive: false,
+        strip_chars: &[],
+        strip_prefixes: &[],
+        strip_sigils: &[("$", "")],
+    };
+    let out = normalize_name(NameNormalization::Spec(spec), "$count");
+    assert_eq!(out, "count");
+}
+
+#[test]
+fn same_file_none_normalization_is_byte_identical() {
+    // The byte-identity guarantee: with NameNormalization::None a sibling whose
+    // name differs only by case does NOT bind — the comparison is byte-for-byte,
+    // exactly the pre-axis behavior for every case-sensitive language.
+    let sibling = sym(120, "Helper", "Helper", "function", "src/main.ts");
+    let lookup = Lookup::new().with_in_file("src/main.ts", sibling);
+    let r = extracted_call("helper"); // lower-case ref, capitalized sibling
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_same_file(&accept_any, &[], NameNormalization::None)
+            .is_none(),
+        "a non-case-fold lookup must not bind a different-case sibling"
+    );
+}
+
+#[test]
+fn same_file_case_insensitive_binds_different_case_sibling() {
+    // The opt-in case: a case-insensitive spec binds the same different-case
+    // sibling the None lookup left unresolved.
+    let sibling = sym(121, "Helper", "Helper", "function", "src/main.ts");
+    let lookup = Lookup::new().with_in_file("src/main.ts", sibling);
+    let r = extracted_call("helper");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_same_file(&accept_any, &[], NameNormalization::Spec(CASE_FOLD_SPEC))
+        .expect("case-insensitive spec binds the different-case sibling");
+    assert_eq!(resolved.target_symbol_id, 121);
+    assert_eq!(resolved.strategy, "default_same_file");
+}
+
+#[test]
+fn scope_visible_none_normalization_is_byte_identical() {
+    // The exact qname probe is the whole strategy under None: a `{scope}.{target}`
+    // built from a lower-case target cannot match a `Scope.Helper`-keyed member,
+    // and no normalized fallback runs — byte-identical to before the axis.
+    let lookup = Lookup::new().with(sym(
+        130,
+        "Helper",
+        "Scope.Helper",
+        "function",
+        "src/main.rs",
+    ));
+    let r = extracted_call("helper");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec!["Scope".to_string()]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::None)
+            .is_none(),
+        "the exact qname probe cannot fold case; None runs no fallback"
+    );
+}
+
+#[test]
+fn scope_visible_case_insensitive_binds_scope_member_via_fallback() {
+    // With a case-insensitive spec the exact qname probe still misses (the index
+    // is case-sensitive) but the normalized members_of fallback binds the member.
+    let member = sym(131, "Helper", "Scope.Helper", "function", "src/main.rs");
+    let lookup = Lookup::new()
+        .with(member.clone())
+        .with_member("Scope", member);
+    let r = extracted_call("helper");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec!["Scope".to_string()]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::Spec(CASE_FOLD_SPEC))
+        .expect("case-insensitive spec binds the scope member via the fallback");
+    assert_eq!(resolved.target_symbol_id, 131);
+    assert_eq!(resolved.strategy, "default_scope_visible");
+}
+
+#[test]
+fn scope_visible_exact_qname_probe_still_runs_under_spec() {
+    // A spec must not regress the exact-qname path: when the target's surface
+    // form already matches the keyed qname, the byte-exact probe binds it before
+    // the fallback, at the same id.
+    let lookup = Lookup::new().with(sym(
+        132,
+        "helper",
+        "Scope.helper",
+        "function",
+        "src/main.rs",
+    ));
+    let r = extracted_call("helper");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec!["Scope".to_string()]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::Spec(CASE_FOLD_SPEC))
+        .expect("exact qname probe binds even under a spec");
+    assert_eq!(resolved.target_symbol_id, 132);
+}
+
+#[test]
+fn is_identity_spec_recognizes_all_default_fields() {
+    let identity = NormSpec {
+        case_insensitive: false,
+        strip_chars: &[],
+        strip_prefixes: &[],
+        strip_sigils: &[],
+    };
+    assert!(is_identity_spec(&identity));
+    assert!(!is_identity_spec(&CASE_FOLD_SPEC));
 }

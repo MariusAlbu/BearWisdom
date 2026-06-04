@@ -112,6 +112,15 @@ pub struct LanguageProfile {
     /// confidence 1.0; `Some` opts a language in (Ruby gems). See
     /// `ExternalByImport`.
     pub external_by_import: Option<ExternalByImport>,
+    /// How a candidate symbol's name is normalized before it is compared
+    /// against a ref's target in the bare-name binding strategies (same-file
+    /// sibling, scope-visible). `None` (the default) is the identity transform
+    /// — a candidate binds only on a byte-for-byte name match, so every
+    /// case-sensitive language is unaffected. `Spec` folds case and/or strips
+    /// sigils, prefixes, and characters before comparing, so a case-insensitive
+    /// language (Pascal, SQL, Fortran, VB) or a sigil-carrying one binds a
+    /// reference written in a different surface form. See `NameNormalization`.
+    pub name_normalization: NameNormalization,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -273,6 +282,41 @@ pub struct ExternalByImport {
     /// Confidence recorded on a hit. Below 1.0 by design — this is the only
     /// strategy that intentionally binds to externals.
     pub confidence: f64,
+}
+
+// ---------------------------------------------------------------------------
+// Name normalization (data for normalize_name in the bare-name strategies)
+// ---------------------------------------------------------------------------
+
+/// How a name is normalized before the bare-name binding strategies compare a
+/// candidate symbol's name against a ref's target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameNormalization {
+    /// Identity. The comparison is byte-for-byte — a candidate binds only on
+    /// an exact name match. The default for every case-sensitive language.
+    None,
+    /// Apply the `NormSpec` transform to both sides of the comparison.
+    Spec(NormSpec),
+}
+
+/// The per-language name-normalization transform, applied identically to the
+/// candidate's name and the ref's target before they are compared. Every field
+/// is a delta off the identity transform; an all-default spec (`case_insensitive
+/// = false` and empty slices) reduces to identity, so only the configured deltas
+/// take effect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NormSpec {
+    /// Fold ASCII case before comparing (Pascal, SQL, Fortran, VB).
+    pub case_insensitive: bool,
+    /// Characters removed anywhere in the name before comparing.
+    pub strip_chars: &'static [char],
+    /// Leading substrings removed (longest-match-first is the caller's job;
+    /// the first that matches as a prefix is stripped).
+    pub strip_prefixes: &'static [&'static str],
+    /// `(prefix, suffix)` sigil pairs: when the name both starts with `prefix`
+    /// and ends with `suffix`, both are stripped (e.g. an interpolation sigil
+    /// wrapper). A pair with an empty suffix strips a bare leading sigil.
+    pub strip_sigils: &'static [(&'static str, &'static str)],
 }
 
 // ---------------------------------------------------------------------------
@@ -493,6 +537,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor_terminal: false,
     relative_marker: RelativeMarker::None,
     external_by_import: None,
+    name_normalization: NameNormalization::None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

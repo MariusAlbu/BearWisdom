@@ -86,6 +86,7 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     external_by_import: Some(crate::type_checker::profile::language_profile::ExternalByImport {
         confidence: 0.8,
     }),
+    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     constructor_patterns: &[ConstructorPattern::ClassDotNew],
     class_builder_specs: &[],
     decorator_syntax: None,

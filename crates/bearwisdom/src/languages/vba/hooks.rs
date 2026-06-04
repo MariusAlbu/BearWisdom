@@ -1,11 +1,7 @@
 // VBA language hooks. Absorbed from the deleted `vba/resolve.rs`.
 
-use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
-};
-use crate::type_checker::core::DefaultResolver;
+use crate::indexer::resolve::engine::{self as engine, FileContext, ImportEntry};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -35,43 +31,6 @@ impl LanguageEngineHooks for VbaHooks {
             imports,
             file_namespace: None,
         })
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-        if let Some(r) =
-            (DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: predicates::kind_compatible,
-        })
-        .resolve_all()
-        {
-            return Some(r);
-        }
-        // VBA identifiers are case-insensitive — case-folded same-file scan.
-        let target_upper = target.to_uppercase();
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name.to_uppercase() == target_upper
-                && predicates::kind_compatible(edge_kind, &sym.kind)
-            {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.95,
-                    strategy: "vba_case_insensitive",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-        None
     }
 }
 

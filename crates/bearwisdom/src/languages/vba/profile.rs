@@ -1,5 +1,6 @@
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, LanguageProfile, NameNormalization, NormSpec,
+    SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
 };
 
 pub const VBA_PROFILE: LanguageProfile = LanguageProfile {
@@ -28,6 +29,14 @@ pub const VBA_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
+    // VBA identifiers are case-insensitive — a reference written in any casing
+    // binds to a same-name candidate in the bare-name strategies.
+    name_normalization: NameNormalization::Spec(NormSpec {
+        case_insensitive: true,
+        strip_chars: &[],
+        strip_prefixes: &[],
+        strip_sigils: &[],
+    }),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

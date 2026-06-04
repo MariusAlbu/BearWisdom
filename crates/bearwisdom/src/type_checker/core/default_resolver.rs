@@ -17,6 +17,7 @@
 // context — same inputs always produce the same output.
 // =============================================================================
 
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use super::reexport::follow_reexports;
@@ -25,7 +26,8 @@ use crate::indexer::resolve::engine::{
 };
 use crate::type_checker::profile::language_profile::{
     CandidateDirs, ChainQualification, ExternalByImport, ImportResolution, KindCompatibility,
-    KindTable, ModuleAnchor, ModuleAnchorBind, RelativeMarker, StemMatch,
+    KindTable, ModuleAnchor, ModuleAnchorBind, NameNormalization, NormSpec, RelativeMarker,
+    StemMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -63,6 +65,7 @@ struct LadderProfileData<'p> {
     external_by_import: Option<&'p ExternalByImport>,
     self_keywords: &'p [&'p str],
     ambient_namespace_prefixes: &'p [&'p str],
+    name_normalization: NameNormalization,
 }
 
 impl LadderProfileData<'static> {
@@ -76,6 +79,7 @@ impl LadderProfileData<'static> {
         external_by_import: None,
         self_keywords: &[],
         ambient_namespace_prefixes: &[],
+        name_normalization: NameNormalization::None,
     };
 }
 
@@ -608,6 +612,7 @@ impl<'a> DefaultResolver<'a> {
         &self,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
         self_keywords: &[&str],
+        norm: NameNormalization,
     ) -> Option<Resolution> {
         let target = strip_self_keyword(
             self.ref_ctx.extracted_ref.target_name.as_str(),
@@ -626,8 +631,9 @@ impl<'a> DefaultResolver<'a> {
             return None;
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let target_norm = normalize_name(norm, target);
         for sym in self.lookup.in_file(&self.file_ctx.file_path) {
-            if sym.name == target && kind(edge_kind, &sym.kind) {
+            if normalize_name(norm, &sym.name) == target_norm && kind(edge_kind, &sym.kind) {
                 return Some(self.resolution(sym.id, "default_same_file"));
             }
         }
@@ -651,18 +657,36 @@ impl<'a> DefaultResolver<'a> {
         kind: &dyn Fn(EdgeKind, &str) -> bool,
         separators: &[&str],
         self_keywords: &[&str],
+        norm: NameNormalization,
     ) -> Option<Resolution> {
         let target = strip_self_keyword(
             self.ref_ctx.extracted_ref.target_name.as_str(),
             self_keywords,
         );
         let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let target_norm = normalize_name(norm, target);
         for scope in &self.ref_ctx.scope_chain {
+            // Exact qname probe — byte-identical under every separator. With
+            // `NameNormalization::None` this is the whole strategy, so a
+            // case-sensitive language is unaffected.
             for sep in separators {
                 let qname = format!("{scope}{sep}{target}");
                 if let Some(sym) = self.lookup.by_qualified_name(&qname) {
                     if kind(edge_kind, &sym.kind) {
                         return Some(self.resolution(sym.id, "default_scope_visible"));
+                    }
+                }
+            }
+            // Normalized-name fallback: only when the language folds names, and
+            // only after the exact probe missed. Compares the scope's members
+            // by normalized name so a reference written in a different surface
+            // form (case-folded, sigil-stripped) binds to the scope member.
+            if !matches!(norm, NameNormalization::None) {
+                for member in self.lookup.members_of(scope) {
+                    if normalize_name(norm, &member.name) == target_norm
+                        && kind(edge_kind, &member.kind)
+                    {
+                        return Some(self.resolution(member.id, "default_scope_visible"));
                     }
                 }
             }
@@ -1156,6 +1180,7 @@ impl<'a> DefaultResolver<'a> {
                 external_by_import: profile.external_by_import.as_ref(),
                 self_keywords: profile.self_keywords,
                 ambient_namespace_prefixes: profile.ambient_namespace_prefixes,
+                name_normalization: profile.name_normalization,
             },
         )
     }
@@ -1179,7 +1204,8 @@ impl<'a> DefaultResolver<'a> {
     /// (a missed anchor on a non-`Imports` module-carrying ref ends the ladder so
     /// an external prefix isn't hijacked by a same-named local), the import-scoped
     /// external bind (near the end, around ambient), and the self-keyword strip
-    /// threaded into the scope / same-file probes.
+    /// plus name normalization threaded into the scope / same-file probes (both
+    /// identity by default, so a case-sensitive language is byte-identical).
     fn run_ladder(
         &self,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
@@ -1220,8 +1246,10 @@ impl<'a> DefaultResolver<'a> {
         }
 
         let result = self
-            .resolve_via_scope_visible(kind, separators, pd.self_keywords)
-            .or_else(|| self.resolve_via_same_file(kind, pd.self_keywords))
+            .resolve_via_scope_visible(kind, separators, pd.self_keywords, pd.name_normalization)
+            .or_else(|| {
+                self.resolve_via_same_file(kind, pd.self_keywords, pd.name_normalization)
+            })
             .or_else(|| self.resolve_via_self_keyword(kind))
             .or_else(|| self.resolve_via_enclosing_member(kind))
             .or_else(|| self.resolve_via_ref_module(kind))
@@ -1612,6 +1640,77 @@ fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
 /// resolve inside the project and don't cross a package boundary.
 fn is_relative_specifier(spec: &str) -> bool {
     spec.starts_with("./") || spec.starts_with("../")
+}
+
+/// Normalize a name for the bare-name binding comparison. Applied identically
+/// to a candidate's name and the ref's target before they are compared in
+/// `resolve_via_same_file` / `resolve_via_scope_visible`.
+///
+/// `NameNormalization::None` is the identity transform and returns the input
+/// borrowed unchanged — no allocation, byte-for-byte. A `Spec` whose deltas are
+/// all off (no sigils, no prefixes, no chars, case-sensitive) is also identity
+/// and borrows. Otherwise the transform runs in a fixed order so the same input
+/// always normalizes the same way: strip a wrapping sigil pair, strip the first
+/// matching leading prefix, remove the configured characters anywhere, then fold
+/// ASCII case.
+fn normalize_name(norm: NameNormalization, s: &str) -> Cow<'_, str> {
+    let spec = match norm {
+        NameNormalization::None => return Cow::Borrowed(s),
+        NameNormalization::Spec(spec) => spec,
+    };
+    if is_identity_spec(&spec) {
+        return Cow::Borrowed(s);
+    }
+
+    let mut cur = s;
+
+    // 1. Sigil wrapper: when the name both starts with `prefix` and ends with
+    //    `suffix`, drop both. The first matching pair wins.
+    for (prefix, suffix) in spec.strip_sigils {
+        if let Some(inner) = cur.strip_prefix(*prefix) {
+            if let Some(inner) = inner.strip_suffix(*suffix) {
+                cur = inner;
+                break;
+            }
+        }
+    }
+
+    // 2. Leading prefix: drop the first declared prefix that matches.
+    for prefix in spec.strip_prefixes {
+        if let Some(rest) = cur.strip_prefix(*prefix) {
+            cur = rest;
+            break;
+        }
+    }
+
+    // 3 & 4. Remove the configured characters anywhere and fold case. Both need
+    //        an owned buffer; build it once.
+    let needs_char_strip = !spec.strip_chars.is_empty();
+    if !needs_char_strip && !spec.case_insensitive {
+        return Cow::Borrowed(cur);
+    }
+    let mut out = String::with_capacity(cur.len());
+    for ch in cur.chars() {
+        if needs_char_strip && spec.strip_chars.contains(&ch) {
+            continue;
+        }
+        if spec.case_insensitive {
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// A `NormSpec` whose every field is the default (no sigils, no prefixes, no
+/// chars, case-sensitive) is the identity transform — `normalize_name` borrows
+/// rather than allocating for it.
+fn is_identity_spec(spec: &NormSpec) -> bool {
+    !spec.case_insensitive
+        && spec.strip_chars.is_empty()
+        && spec.strip_prefixes.is_empty()
+        && spec.strip_sigils.is_empty()
 }
 
 /// Strip a leading `{kw}.` from `target` when `kw` is one of `self_keywords`

@@ -6,12 +6,15 @@
 pub mod extract;
 
 mod keywords;
-mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 
 pub use hooks::VBA_HOOKS;
 pub use profile::VBA_PROFILE;
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
