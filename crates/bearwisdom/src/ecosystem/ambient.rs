@@ -55,6 +55,12 @@ pub const FRAMEWORK_AMBIENT_MARKERS: &[AmbientPathMarker] = &[
     // Bazel built-in rules and the `ctx` / `env` API namespaces, available in
     // BUILD/.bzl files without an explicit `load()`.
     AmbientPathMarker { contains: "ext:bazel-builtins:", ends_with: ".bzl" },
+    // Rust prelude: every module gets `std::prelude::v1` (`Vec`, `Box`, `Some`,
+    // `Result`, `Default`, `From`, …) without a `use`. The stdlib walker keys
+    // these under the sysroot source tree `…/rustlib/src/rust/library/<crate>/…`.
+    // Scoped to that subtree so cargo-registry crates (also `ext:rust:`, but
+    // under `/registry/src/`) stay non-ambient — they need an explicit `use`.
+    AmbientPathMarker { contains: "/rustlib/src/rust/library/", ends_with: ".rs" },
 ];
 
 /// True when `normalized_lower_path` (pre-lowercased, `/`-normalised) matches

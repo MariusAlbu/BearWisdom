@@ -1,11 +1,13 @@
 use super::RUST_PROFILE;
-use crate::type_checker::profile::language_profile::{KindCompatibility, SupertypeDiscovery};
+use crate::type_checker::profile::language_profile::{
+    KindCompatibility, ModuleAnchor, ModuleAnchorBind, SupertypeDiscovery,
+};
 use crate::types::{EdgeKind, SymbolKind};
 
 #[test]
 fn rust_profile_identity() {
     assert_eq!(RUST_PROFILE.id, "rust");
-    assert_eq!(RUST_PROFILE.qname_separator, ".");
+    assert_eq!(RUST_PROFILE.qname_separator, "::");
     assert_eq!(RUST_PROFILE.self_keywords, &["self", "Self"]);
 }
 
@@ -17,6 +19,18 @@ fn rust_calls_accepts_function_method_constructor_closure_bindings() {
     assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Constructor));
     assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Variable));
     assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Parameter));
+    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Test));
+}
+
+#[test]
+fn rust_calls_accepts_enum_member_for_variant_construction() {
+    // `Some(x)` / `Ok(y)` are tuple-variant constructions written with call
+    // syntax — the bare prelude variant binds to its `enum_member` symbol on a
+    // Calls edge, so the ambient-package strategy can resolve it.
+    let table = RUST_PROFILE.kind_compatible_table;
+    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::EnumMember));
+    assert!(KindCompatibility::check(table, EdgeKind::Instantiates, SymbolKind::EnumMember));
+    assert!(KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::EnumMember));
 }
 
 #[test]
@@ -44,4 +58,15 @@ fn rust_supertype_discovery_is_explicit() {
 #[test]
 fn rust_async_wrappers_contain_future() {
     assert!(RUST_PROFILE.async_wrappers.contains(&"Future"));
+}
+
+#[test]
+fn rust_module_anchor_binds_by_name_under_module_dir() {
+    assert!(matches!(
+        RUST_PROFILE.module_anchor,
+        ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir)
+    ));
+    // Non-terminal: a missed anchor falls through to the scope / import / qname
+    // binders rather than ending the ladder.
+    assert!(!RUST_PROFILE.module_anchor_terminal);
 }

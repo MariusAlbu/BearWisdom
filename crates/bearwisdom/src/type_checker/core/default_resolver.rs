@@ -993,6 +993,7 @@ impl<'a> DefaultResolver<'a> {
         anchor: ModuleAnchor,
         relative_marker: RelativeMarker,
         norm: NameNormalization,
+        sep: &str,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
     ) -> Option<Resolution> {
         let ModuleAnchor::On(bind) = anchor else {
@@ -1037,16 +1038,35 @@ impl<'a> DefaultResolver<'a> {
                 }
             }
             ModuleAnchorBind::ByNameUnderModuleDir => {
-                let qname = format!("{module}.{target}");
-                if let Some(sym) = self.lookup.by_qualified_name(&qname) {
-                    if kind(edge_kind, &sym.kind) {
-                        return Some(self.resolution(sym.id, "default_module_anchor"));
+                // qname probe: `{module}{sep}{target}` under the universal `.`
+                // join and, when the profile separator differs, that separator
+                // too — a `::`-keyed module (`crate::db`) probes both `crate::db.new`
+                // (index join) and `crate::db::new`.
+                for s in module_anchor_separators(sep) {
+                    let qname = format!("{module}{s}{target}");
+                    if let Some(sym) = self.lookup.by_qualified_name(&qname) {
+                        if kind(edge_kind, &sym.kind) {
+                            return Some(self.resolution(sym.id, "default_module_anchor"));
+                        }
                     }
                 }
-                let module_as_path = module.replace('.', "/");
+                // Directory-containment probe: turn the module into a path
+                // fragment by mapping every separator (`.` and the profile's,
+                // e.g. `::`) to `/`. A multi-segment crate-rooted module
+                // (`crate::db`) rarely matches the full fragment (`crate/db`),
+                // so fall back to the module's trailing segment — the file-like
+                // leaf (`db` → `db.rs`).
+                let module_as_path = separators_to_slash(module, sep);
+                let leaf = module_leaf(module, sep).to_lowercase();
                 for sym in self.lookup.by_name(target) {
+                    if !kind(edge_kind, &sym.kind) {
+                        continue;
+                    }
                     let path = sym.file_path.replace('\\', "/");
-                    if path.contains(&module_as_path) && kind(edge_kind, &sym.kind) {
+                    if path.contains(&module_as_path) {
+                        return Some(self.resolution(sym.id, "default_module_anchor"));
+                    }
+                    if leaf != module_as_path && path_stem_matches(&path.to_lowercase(), &leaf) {
                         return Some(self.resolution(sym.id, "default_module_anchor"));
                     }
                 }
@@ -1571,6 +1591,7 @@ impl<'a> DefaultResolver<'a> {
             pd.module_anchor,
             pd.relative_marker,
             pd.name_normalization,
+            separators.last().copied().unwrap_or("."),
             kind,
         ) {
             return Some(res);
@@ -2027,6 +2048,37 @@ fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
         seg == module_lower
             || seg.split(':').next_back().map_or(false, |tail| tail == module_lower)
     })
+}
+
+/// The qname-probe separators a module anchor tries: always the universal `.`
+/// index join, plus the profile separator when it differs. So a `::`-keyed
+/// module probes both `crate::db.new` and `crate::db::new`; a `.`-keyed one
+/// probes `.` exactly once.
+fn module_anchor_separators(sep: &str) -> impl Iterator<Item = &str> {
+    [".", sep].into_iter().take(if sep == "." { 1 } else { 2 })
+}
+
+/// Map every module-path separator (the universal `.` and the profile's, e.g.
+/// Rust's `::`) to a forward slash so the result can be matched against a file
+/// path. `crate::db` → `crate/db`, `a.b.c` → `a/b/c`.
+fn separators_to_slash(module: &str, sep: &str) -> String {
+    let dotted = if sep == "." {
+        module.to_string()
+    } else {
+        module.replace(sep, ".")
+    };
+    dotted.replace('.', "/")
+}
+
+/// The trailing path-segment of a module under either separator — the file-like
+/// leaf used as a containment fallback. `crate::db` → `db`, `a.b.c` → `c`.
+fn module_leaf<'a>(module: &'a str, sep: &str) -> &'a str {
+    let after_profile = if sep != "." {
+        module.rsplit(sep).next().unwrap_or(module)
+    } else {
+        module
+    };
+    after_profile.rsplit('.').next().unwrap_or(after_profile)
 }
 
 /// `path_stem_matches` extended with the include-file underscore-prefix probe.

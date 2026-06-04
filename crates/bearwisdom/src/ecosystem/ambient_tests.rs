@@ -66,6 +66,31 @@ fn matches_bazel_builtins_path() {
 }
 
 #[test]
+fn matches_rust_stdlib_prelude_sources() {
+    // The sysroot source tree the rust-stdlib walker keys prelude symbols under.
+    for p in [
+        "ext:rust:C:/Users/x/.rustup/toolchains/stable/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs",
+        "ext:rust:/home/u/.rustup/.../lib/rustlib/src/rust/library/core/src/option.rs",
+        "ext:rust:/home/u/.rustup/.../lib/rustlib/src/rust/library/std/src/lib.rs",
+    ] {
+        assert!(is_framework_ambient_path(&norm(p)), "stdlib prelude source should match: {p}");
+    }
+}
+
+#[test]
+fn rejects_cargo_registry_crates() {
+    // Third-party cargo deps are `ext:rust:` too but live under `/registry/src/`
+    // (or a bare `<crate>/…` reachability path) — they require an explicit `use`
+    // and must NOT be ambient.
+    for p in [
+        "ext:rust:C:/Users/x/.cargo/registry/src/index.crates.io-abc/serde-1.0.0/src/lib.rs",
+        "ext:rust:serde/src/de/mod.rs",
+    ] {
+        assert!(!is_framework_ambient_path(&norm(p)), "cargo dep should NOT be ambient: {p}");
+    }
+}
+
+#[test]
 fn rejects_ordinary_files() {
     for p in [
         "src/app.ts",

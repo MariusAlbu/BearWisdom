@@ -18,7 +18,6 @@ mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 pub use hooks::RUST_HOOKS;
-pub use hooks::RustResolver;
 pub use profile::RUST_PROFILE;
 
 #[cfg(test)]

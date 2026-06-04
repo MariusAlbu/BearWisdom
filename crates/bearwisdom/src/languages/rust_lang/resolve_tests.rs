@@ -1,5 +1,4 @@
-use super::predicates;
-use super::hooks::RustResolver;
+use super::hooks::build_file_context_inner;
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, RefContext};
@@ -102,8 +101,7 @@ fn bare_anyhow_path_attributed_to_anyhow_not_std() {
         vec![make_ref(0, "anyhow::anyhow", EdgeKind::Calls, 5)],
     );
 
-    let resolver = RustResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context_inner(&file, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
@@ -133,8 +131,7 @@ fn bare_hyphenated_crate_normalized_to_underscore() {
         vec![make_ref(0, "serde_json::json", EdgeKind::Calls, 5)],
     );
 
-    let resolver = RustResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context_inner(&file, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
@@ -162,8 +159,7 @@ fn bare_stdlib_path_still_routes_to_std() {
         vec![make_ref(0, "std::collections::HashMap", EdgeKind::TypeRef, 5)],
     );
 
-    let resolver = RustResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context_inner(&file, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
@@ -191,8 +187,7 @@ fn bare_crate_path_internal_not_attributed_external() {
         vec![make_ref(0, "crate::models::User", EdgeKind::TypeRef, 5)],
     );
 
-    let resolver = RustResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context_inner(&file, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
@@ -223,8 +218,7 @@ fn unknown_bare_path_not_attributed_when_not_in_manifest() {
         vec![make_ref(0, "anyhow::anyhow", EdgeKind::Calls, 5)],
     );
 
-    let resolver = RustResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context_inner(&file, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
@@ -925,30 +919,41 @@ mod prelude {
         SymbolIndex::build(files, &id_map)
     }
 
+    /// Drive a chain-less bare-name ref through the generic engine ladder
+    /// against a real `SymbolIndex` (the production lookup whose
+    /// `is_ambient_path` recognizes the `rust-stdlib` source subtree). A bare
+    /// prelude name binds via the ladder's ambient-package strategy —
+    /// `default_ambient_package` — exactly as it does in the resolve loop.
     fn run_resolve(
-        resolver: &RustResolver,
         ctx: &ProjectContext,
         caller_idx: usize,
         files: &[ParsedFile],
     ) -> Option<crate::indexer::resolve::engine::Resolution> {
+        use crate::type_checker::core::DefaultResolver;
         let caller = &files[caller_idx];
         let index = build_index(files);
-        let file_ctx = resolver.build_file_context(caller, Some(ctx));
+        let file_ctx = build_file_context_inner(caller, Some(ctx));
         let ref_ctx = RefContext {
             extracted_ref: &caller.refs[0],
             source_symbol: &caller.symbols[0],
             scope_chain: build_scope_chain(caller.symbols[0].scope_path.as_deref()),
             file_package_id: None,
         };
-        resolver.resolve(&file_ctx, &ref_ctx, &index)
+        DefaultResolver {
+            file_ctx: &file_ctx,
+            ref_ctx: &ref_ctx,
+            lookup: &index,
+            kind_compatible: |_, _| true,
+        }
+        .resolve_all_with_profile(&super::super::profile::RUST_PROFILE)
     }
 
     #[test]
-    fn prelude_bare_vec_typeref_resolves_via_prelude() {
-        // A bare `Vec` TypeRef with no internal collision binds through the Rust
-        // prelude path. The old by-name typeref fallback that used to catch the
-        // single-candidate case was removed — prelude is the scope-directed home
-        // for prelude names on a stdlib path.
+    fn prelude_bare_vec_typeref_resolves_via_ambient_package() {
+        // A bare `Vec` TypeRef with no internal collision binds through the
+        // generic ambient-package strategy: the stdlib source subtree is an
+        // ambient path (`ecosystem/ambient.rs`), so the lone kind-compatible
+        // ambient candidate is the answer.
         let files = vec![
             external_file(
                 &stdlib_path("alloc/src/vec/mod.rs"),
@@ -960,15 +965,17 @@ mod prelude {
                 vec![make_ref(0, "Vec", EdgeKind::TypeRef, 5)],
             ),
         ];
-        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files)
+        let res = run_resolve(&cargo_ctx_with(&[]), 1, &files)
             .expect("Vec must resolve");
-        assert_eq!(res.strategy, "rust_prelude");
+        assert_eq!(res.strategy, "default_ambient_package");
     }
 
     #[test]
     fn prelude_vec_prefers_stdlib_over_internal_enum_variant() {
         let files = vec![
             // Internal collision: `<Enum>.Vec` variant shares the bare name.
+            // It is NOT on an ambient path, so the ambient-package strategy
+            // filters it out and binds the stdlib struct.
             make_file(
                 "src/percentile.rs",
                 vec![
@@ -999,13 +1006,17 @@ mod prelude {
                 vec![make_ref(0, "Vec", EdgeKind::TypeRef, 5)],
             ),
         ];
-        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 2, &files)
+        let res = run_resolve(&cargo_ctx_with(&[]), 2, &files)
             .expect("Vec should still resolve, preferring stdlib");
-        assert_eq!(res.strategy, "rust_prelude");
+        assert_eq!(res.strategy, "default_ambient_package");
     }
 
     #[test]
     fn prelude_some_resolves_to_option_variant() {
+        // `Some(x)` is a Calls ref against the `Option.Some` enum_member on the
+        // ambient stdlib path. The profile's kind table accepts EnumMember for a
+        // Calls edge (tuple-variant construction), so the ambient-package
+        // strategy binds it.
         let files = vec![
             external_file(
                 &stdlib_path("core/src/option.rs"),
@@ -1026,13 +1037,18 @@ mod prelude {
                 vec![make_ref(0, "Some", EdgeKind::Calls, 5)],
             ),
         ];
-        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files)
+        let res = run_resolve(&cargo_ctx_with(&[]), 1, &files)
             .expect("Some should resolve to Option.Some");
-        assert_eq!(res.strategy, "rust_prelude");
+        assert_eq!(res.strategy, "default_ambient_package");
+        assert_eq!(res.target_symbol_id, 2);
     }
 
     #[test]
-    fn prelude_does_not_fire_for_non_prelude_name() {
+    fn ambient_package_resolves_any_stdlib_symbol_not_a_prelude_list() {
+        // No hardcoded prelude name list gates the bind: ANY kind-compatible
+        // symbol on the stdlib ambient path binds by bare name. `MyType` is not
+        // a prelude name yet still resolves — the gate is the ambient PATH, not a
+        // hand-maintained name set.
         let files = vec![
             external_file(
                 &stdlib_path("alloc/src/vec/mod.rs"),
@@ -1044,14 +1060,17 @@ mod prelude {
                 vec![make_ref(0, "MyType", EdgeKind::TypeRef, 5)],
             ),
         ];
-        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files);
-        if let Some(r) = res {
-            assert_ne!(r.strategy, "rust_prelude");
-        }
+        let res = run_resolve(&cargo_ctx_with(&[]), 1, &files)
+            .expect("an ambient stdlib symbol binds by bare name");
+        assert_eq!(res.strategy, "default_ambient_package");
     }
 
     #[test]
-    fn prelude_ignores_third_party_crate_with_same_name() {
+    fn third_party_crate_with_same_name_is_not_ambient() {
+        // A cargo-registry crate sharing a prelude name lives under
+        // `/registry/src/`, NOT the ambient stdlib subtree, so the
+        // ambient-package strategy declines and (with no import) the bare name
+        // stays unbound for the engine — to be branded external afterward.
         let files = vec![
             external_file(
                 "ext:idx:C:/Users/Reaper/.cargo/registry/src/index.crates.io-x/bumpalo-3.20.2/src/collections/vec.rs",
@@ -1063,9 +1082,9 @@ mod prelude {
                 vec![make_ref(0, "Vec", EdgeKind::TypeRef, 5)],
             ),
         ];
-        let res = run_resolve(&RustResolver, &cargo_ctx_with(&[]), 1, &files);
+        let res = run_resolve(&cargo_ctx_with(&[]), 1, &files);
         if let Some(r) = res {
-            assert_ne!(r.strategy, "rust_prelude");
+            assert_ne!(r.strategy, "default_ambient_package");
         }
     }
 }

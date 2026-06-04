@@ -450,11 +450,11 @@ fn make_typeref(source_symbol_index: usize, name: String, line: u32, byte_offset
 
 /// Emit a TypeRef from a possibly-scoped name. If `name` contains `::`, the
 /// rightmost segment becomes `target_name` and the remaining prefix lands in
-/// `module`. Crucial for `Self::Variant` patterns (`match self { Self::Foo
-/// => … }`) — without splitting, the resolver sees `Self::Foo` as a single
-/// opaque target and can't route to the enclosing type's `Foo` member. Also
-/// stops `prefix::Leaf` paths in patterns (`std::io::Error => …`) from
-/// orphaning the leaf reference.
+/// `module`. A `Self::Variant` pattern (`match self { Self::Foo => … }`)
+/// instead carries a 2-segment SelfRef→Property chain so the chain walker
+/// roots on the enclosing type and resolves the `Foo` member — `Self` never
+/// names a real module. Other `prefix::Leaf` paths (`std::io::Error => …`)
+/// keep the `module`/leaf split so the leaf reference isn't orphaned.
 fn make_scoped_typeref(source_symbol_index: usize, full: String, line: u32, byte_offset: u32) -> ExtractedRef {
     let (module, target) = match full.rsplit_once("::") {
         Some((prefix, leaf)) if !prefix.is_empty() && !leaf.is_empty() => {
@@ -462,16 +462,21 @@ fn make_scoped_typeref(source_symbol_index: usize, full: String, line: u32, byte
         }
         _ => (None, full),
     };
+    let chain = if module.as_deref() == Some("Self") {
+        Some(super::calls::self_member_chain(&target, byte_offset))
+    } else {
+        None
+    };
     ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::TypeRef,
         line,
         col: 0,
-        module,
+        module: if chain.is_some() { None } else { module },
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-        chain: None,
+        chain,
         byte_offset,
     }
 }

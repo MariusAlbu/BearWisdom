@@ -718,7 +718,7 @@ pub(super) fn extract_type_refs_from_type_node(
     match node.kind() {
         "type_identifier" => {
             let name = node_text(node, source);
-            if !name.is_empty() && !is_rust_primitive(&name) {
+            if !name.is_empty() && !is_rust_primitive(&name) && !is_generic_param_noise(&name) {
                 refs.push(make_type_ref(sym_index, name, node.start_position().row as u32, node.start_byte() as u32));
             }
         }
@@ -735,7 +735,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     let text = node_text(node, source);
                     text.rsplit("::").next().unwrap_or(&text).to_string()
                 });
-            if !leaf.is_empty() && !is_rust_primitive(&leaf) {
+            if !leaf.is_empty() && !is_rust_primitive(&leaf) && !is_generic_param_noise(&leaf) {
                 let full = node_text(node, source);
                 let module = full
                     .rsplit_once("::")
@@ -863,6 +863,25 @@ fn make_type_ref(sym_index: usize, name: String, line: u32, byte_offset: u32) ->
         call_args: Vec::new(),
         chain: None,
         byte_offset,
+    }
+}
+
+/// True for a TypeRef target name that is a generic type parameter, never an
+/// indexable type:
+///   - a single uppercase letter (`L`, `M`, `F`, `W`),
+///   - one uppercase letter followed by one digit (`P1`, `T2`).
+/// A declared generic parameter that DOES name a scope param still resolves
+/// through the engine's generic-param strategy; this guard only stops the
+/// extractor from emitting the shape as a standalone TypeRef target, which
+/// would otherwise seed a bogus chain miss or bind a same-named symbol.
+/// (The turbofish-fragment shape — a `<…>`-prefixed callee — is filtered at
+/// the call-target emission site, which is the only place it appears.)
+pub(super) fn is_generic_param_noise(name: &str) -> bool {
+    let mut chars = name.chars();
+    match (chars.next(), chars.next(), chars.next()) {
+        (Some(a), None, _) => a.is_ascii_uppercase(),
+        (Some(a), Some(b), None) => a.is_ascii_uppercase() && b.is_ascii_digit(),
+        _ => false,
     }
 }
 

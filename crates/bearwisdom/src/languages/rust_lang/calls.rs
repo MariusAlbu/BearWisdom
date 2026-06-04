@@ -687,7 +687,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         }
                     }
 
-                    if !target_name.is_empty() {
+                    // A `<…>`-prefixed callee text is a type-argument fragment the
+                    // chain builder couldn't flatten (`<Vec<_>>::method`), not a
+                    // real call target — drop it at the source so it never seeds a
+                    // chain miss or binds a same-named symbol. Only the leading-`<`
+                    // shape is noise on a Calls edge; a single-letter callee is a
+                    // legitimate (if rare) function name, so it is NOT dropped here.
+                    if !target_name.is_empty() && !target_name.starts_with('<') {
                         let call_args = extract_call_args(&child, source);
                         refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
@@ -726,7 +732,10 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // Emit TypeRef for the type name.
             "type_identifier" => {
                 let name = node_text(&child, source);
-                if !name.is_empty() && !is_rust_primitive(&name) {
+                if !name.is_empty()
+                    && !is_rust_primitive(&name)
+                    && !super::symbols::is_generic_param_noise(&name)
+                {
                     refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name: name,
@@ -746,17 +755,21 @@ pub(super) fn extract_calls_from_body_with_symbols(
             "scoped_type_identifier" => {
                 let full_name = node_text(&child, source);
                 if !full_name.is_empty() {
-                    // Split `prefix::leaf` so the resolver sees the prefix in
-                    // `module` and the leaf in `target_name`. Crucial for
-                    // `Self::Variant` patterns (`match self { Self::Foo => … }`)
-                    // — without splitting, the resolver sees a target of
-                    // `Self::Foo` and can't route to the enclosing type's
-                    // Foo member.
                     let (module, target) = match full_name.rsplit_once("::") {
                         Some((prefix, leaf)) if !prefix.is_empty() && !leaf.is_empty() => {
                             (Some(prefix.to_string()), leaf.to_string())
                         }
-                        _ => (None, full_name),
+                        _ => (None, full_name.clone()),
+                    };
+                    // `Self::Variant` (`match self { Self::Foo => … }`): emit a
+                    // 2-segment SelfRef→Property chain instead of `module="Self"`
+                    // so the chain walker roots on the enclosing struct/enum/
+                    // trait and resolves the member. `module="Self"` never names
+                    // a real module, so the qname/anchor binders can't see it.
+                    let chain = if module.as_deref() == Some("Self") {
+                        Some(self_member_chain(&target, child.start_byte() as u32))
+                    } else {
+                        None
                     };
                     refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
@@ -764,8 +777,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
                         col: 0,
-                        module,
-                        chain: None,
+                        module: if chain.is_some() { None } else { module },
+                        chain,
                         byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
@@ -847,6 +860,41 @@ fn make_closure_variable(name: String, node: &Node, parent_index: usize) -> Extr
         param_types: Vec::new(),
         generic_params: Vec::new(),
 }
+}
+
+/// A 2-segment `Self`-rooted member chain `[SelfRef("Self"), Property(member)]`.
+/// Used for `Self::X` references so the chain walker resolves the enclosing
+/// type's member `X` via the `SelfRef` root (the profile's `has_self_ref` +
+/// `enclosing_type_kinds`) rather than treating `Self` as a module.
+pub(super) fn self_member_chain(member: &str, byte_offset: u32) -> MemberChain {
+    MemberChain {
+        segments: vec![
+            ChainSegment {
+                name: "Self".to_string(),
+                node_kind: "scoped_type_identifier".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                type_args: Vec::new(),
+                optional_chaining: false,
+                byte_offset,
+                declared_type_id: None,
+                is_call: false,
+                type_arg_ids: Vec::new(),
+            },
+            ChainSegment {
+                name: member.to_string(),
+                node_kind: "scoped_type_identifier".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                type_args: Vec::new(),
+                optional_chaining: false,
+                byte_offset,
+                declared_type_id: None,
+                is_call: false,
+                type_arg_ids: Vec::new(),
+            },
+        ],
+    }
 }
 
 /// Build a structured member-access chain from a Rust call expression's function node.

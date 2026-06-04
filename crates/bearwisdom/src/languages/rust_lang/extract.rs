@@ -115,6 +115,12 @@ pub fn extract(source: &str) -> ExtractionResult {
                     if chain.segments.len() >= 2 {
                         let first = &chain.segments[0].name;
                         if let Some(module) = import_map.get(first) {
+                            // Copy the importing module path verbatim — the
+                            // `::`-separated, crate-rooted form the `use` carried
+                            // (`crate::db`, `lemmy_db_schema::source::person`).
+                            // The engine's `ByNameUnderModuleDir` anchor maps the
+                            // separators to a path fragment and falls back to the
+                            // module leaf to locate the defining file.
                             r.module = Some(module.clone());
                         }
                     }
@@ -131,10 +137,36 @@ pub fn extract(source: &str) -> ExtractionResult {
     // `Result<Vec<_>>>`, multi-line snippets land with embedded newlines.
     // None of these can ever resolve to a real symbol; keeping them just
     // pollutes the unresolved-refs table.
-    refs.retain(|r| is_valid_rust_target_name(&r.target_name));
+    refs.retain(|r| is_valid_rust_target_name(&r.target_name) && !is_generic_param_noise(r));
 
     let has_errors = tree.root_node().has_error();
     ExtractionResult::new(syms, refs, has_errors)
+}
+
+/// True when a ref's target is a declared generic parameter rather than a real
+/// symbol — type-argument noise the type-identifier scan and call fallback
+/// occasionally capture. Two shapes, both never indexable:
+///   - a single uppercase letter (`L`, `M`, `F`, `W`) in TypeRef position —
+///     the convention for an unconstrained generic parameter; and
+///   - `<Uppercase><digit>` (`P1`, `T2`) in any position — numbered generics.
+/// Turbofish `<…>` targets are already dropped by `is_valid_rust_target_name`
+/// (the angle brackets fail its identifier check), so they need no arm here.
+fn is_generic_param_noise(r: &ExtractedRef) -> bool {
+    let target = &r.target_name;
+    if r.kind == EdgeKind::TypeRef {
+        let bare = target.trim_start_matches("::");
+        if bare.len() == 1 && bare.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+            return true;
+        }
+    }
+    if target.len() == 2 {
+        let mut chars = target.chars();
+        let (a, b) = (chars.next().unwrap(), chars.next().unwrap());
+        if a.is_ascii_uppercase() && b.is_ascii_digit() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Whether `name` could be a Rust identifier or path. Allows alphanumerics,

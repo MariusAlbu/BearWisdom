@@ -18,7 +18,6 @@ use crate::indexer::resolve::engine::{
 use crate::languages::c_lang::hooks::C_LANG_CHAIN_CONFIG;
 use crate::languages::python::hooks::PYTHON_CHAIN_CONFIG;
 use crate::languages::ruby::hooks::RUBY_CHAIN_CONFIG;
-use crate::languages::rust_lang::hooks::RUST_CHAIN_CONFIG;
 use crate::languages::typescript::hooks::TS_CHAIN_CONFIG;
 use crate::types::{
     AliasTarget, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
@@ -120,24 +119,6 @@ impl FakeLookup {
             signature: Some(signature.to_string()),
         };
         self.by_name_store.push((name, vec![sym]));
-        self
-    }
-    /// Register a direct child symbol under `parent_qname` so `members_of`
-    /// returns it.
-    fn member(mut self, parent_qname: &str, id: i64, qname: &str, kind: &str) -> Self {
-        let name = qname.rsplit('.').next().unwrap().to_string();
-        let sym = SymbolInfo {
-            id,
-            name,
-            qualified_name: qname.to_string(),
-            kind: kind.to_string(),
-            visibility: Some("public".to_string()),
-            file_path: Arc::from("ext:fixture/__bw_synthetic__.cs"),
-            scope_path: None,
-            package_id: None,
-            signature: None,
-        };
-        self.members_store.push((parent_qname.to_string(), vec![sym]));
         self
     }
 }
@@ -1176,230 +1157,6 @@ fn c_chain_typedef_via_alias_expansion() {
 }
 
 // ---------------------------------------------------------------------------
-// Rust differential tests (QUAL-2b-rust).
-//
-// Anchor the RUST_CHAIN_CONFIG case-space the deleted walk_rust_lang_chain
-// covered, now through the generic engine: SelfRef enclosing-type root
-// (`Self::method()` rooting on the enclosing struct/enum/trait), `::`→`.`
-// type-name normalization on a qualified root, local-typed roots, field-type
-// progression, method return-type yield, static-type roots, the
-// by_qualified_name final hit (1.0), the members_of final fallback (0.95), and
-// the trait-inheritance climb on the final segment (`walk_inheritance` →
-// `rust_chain_inheritance`). A NONE-gate guard proves the inheritance climb
-// requires the flag. Rust is `use_generics: false`.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn rust_chain_self_ref_root() {
-    // `Self::save()` inside `crate.User` — SelfRef resolves the enclosing
-    // struct from the scope chain, then `save` resolves under it at 1.0.
-    let lookup = FakeLookup::default()
-        .sym(1, "crate.User", "struct")
-        .sym(2, "crate.User.save", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("Self", SegmentKind::SelfRef, false),
-            seg("save", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&RUST_CHAIN_CONFIG, &r, &fc, vec!["crate.User".to_string()], &lookup)
-        .expect("Self::save() resolves via SelfRef enclosing struct");
-    assert_eq!(res.target_symbol_id, 2);
-    assert_eq!(res.confidence, 1.0);
-    assert_eq!(res.strategy, "rust_chain_resolution");
-}
-
-#[test]
-fn rust_chain_local_type_member_access() {
-    // `u.save()` where `u` is a local typed `User`, `save` a method on `User`.
-    let lookup = FakeLookup::default()
-        .local("u", "User")
-        .sym(1, "User", "struct")
-        .sym(2, "User.save", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("u", SegmentKind::Identifier, false),
-            seg("save", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
-}
-
-#[test]
-fn rust_chain_path_separator_normalization_root() {
-    // `p.query()` where `p` is a local typed with a `::`-qualified path
-    // `crate::db::Pool`; normalize_path rewrites it to `crate.db.Pool` so the
-    // member keys correctly against the index's `.`-separated qnames.
-    let lookup = FakeLookup::default()
-        .local("p", "crate::db::Pool")
-        .sym(1, "crate.db.Pool", "struct")
-        .sym(2, "crate.db.Pool.query", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("p", SegmentKind::Identifier, false),
-            seg("query", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
-}
-
-#[test]
-fn rust_chain_field_type_progression() {
-    // `s.repo.find()` — s: Server, Server.repo: Repository, Repository.find a method.
-    let lookup = FakeLookup::default()
-        .local("s", "Server")
-        .sym(1, "Server", "struct")
-        .field("Server.repo", "Repository")
-        .sym(2, "Repository", "struct")
-        .sym(3, "Repository.find", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("s", SegmentKind::Identifier, false),
-            seg("repo", SegmentKind::Property, false),
-            seg("find", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    assert_eq!(
-        run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup),
-        Some(3),
-        "s.repo.find() walks the field type to Repository"
-    );
-}
-
-#[test]
-fn rust_chain_method_return_type_yield() {
-    // `c.db().begin()` — c: Client, Client.db() returns Conn, Conn.begin a method.
-    let lookup = FakeLookup::default()
-        .local("c", "Client")
-        .sym(1, "Client", "struct")
-        .ret("Client.db", "Conn")
-        .sym(2, "Conn", "struct")
-        .sym(3, "Conn.begin", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("c", SegmentKind::Identifier, false),
-            seg("db", SegmentKind::Property, true),
-            seg("begin", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    assert_eq!(
-        run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup),
-        Some(3),
-        "c.db().begin() walks the return type to Conn"
-    );
-}
-
-#[test]
-fn rust_chain_static_type_root_by_qname_final() {
-    // `DbPool::new()` where `DbPool` is itself a struct name (no local, no
-    // field). The static-type root resolves to the type, then `new` resolves
-    // via by_qualified_name at confidence 1.0.
-    let lookup = FakeLookup::default()
-        .sym(1, "DbPool", "struct")
-        .sym(2, "DbPool.new", "function");
-    let r = ref_with_chain(
-        vec![
-            seg("DbPool", SegmentKind::Identifier, false),
-            seg("new", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&RUST_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
-        .expect("DbPool::new() resolves via static-type root");
-    assert_eq!(res.target_symbol_id, 2);
-    assert_eq!(res.confidence, 1.0);
-    assert_eq!(res.strategy, "rust_chain_resolution");
-}
-
-#[test]
-fn rust_chain_members_of_final_fallback() {
-    // `svc.handle()` where `svc: Service` and `handle` is a member of `Service`
-    // reachable only via members_of (no by_qualified_name hit). The 0.95
-    // members_of-final fallback fires (gated by walk_inheritance).
-    let lookup = FakeLookup::default()
-        .local("svc", "Service")
-        .member("Service", 1, "Service.handle", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("svc", SegmentKind::Identifier, false),
-            seg("handle", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&RUST_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
-        .expect("svc.handle() resolves via members_of fallback");
-    assert_eq!(res.target_symbol_id, 1);
-    assert_eq!(res.confidence, 0.95);
-}
-
-#[test]
-fn rust_chain_trait_inheritance_final_segment() {
-    // `r.into_response()` where `r: MyResponse` implements/extends `IntoResponse`
-    // (inherits_map → parent_class_qname) and `into_response` is a trait-default
-    // method on the parent. walk_inheritance climbs to the trait and binds it.
-    let lookup = FakeLookup::default()
-        .local("r", "MyResponse")
-        .sym(1, "MyResponse", "struct")
-        .parent("MyResponse", "IntoResponse")
-        .sym(2, "IntoResponse.into_response", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("r", SegmentKind::Identifier, false),
-            seg("into_response", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&RUST_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
-        .expect("r.into_response() resolves via trait-inheritance climb");
-    assert_eq!(res.target_symbol_id, 2);
-    assert_eq!(res.strategy, "rust_chain_inheritance");
-}
-
-#[test]
-fn rust_chain_inheritance_gated_by_none() {
-    // The trait-inheritance fixture under ChainExtensions::NONE: the climb is
-    // gated off, so the inherited `into_response` never binds — proves the
-    // trait-default coverage is the walk_inheritance flag, not the base walk.
-    let lookup = FakeLookup::default()
-        .local("r", "MyResponse")
-        .sym(1, "MyResponse", "struct")
-        .parent("MyResponse", "IntoResponse")
-        .sym(2, "IntoResponse.into_response", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("r", SegmentKind::Identifier, false),
-            seg("into_response", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    assert_eq!(run(&none_config(), &r, &fc, &lookup), None);
-}
-
-#[test]
-fn rust_chain_empty_chain_returns_none() {
-    // A single-segment chain (len < 2) is not a member walk — both the deleted
-    // walker and resolve_via_chain return None.
-    let lookup = FakeLookup::default().sym(1, "Foo", "struct");
-    let r = ref_with_chain(vec![seg("Foo", SegmentKind::Identifier, false)], EdgeKind::Calls);
-    let fc = file_ctx_with_imports(vec![]);
-    assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), None);
-}
-
-// ---------------------------------------------------------------------------
 // Generic type-alias expansion across the languages that carry type aliases
 // AND a populated `alias_target` (INFER-10). Each flips `expand_aliases: true`
 // on its `<LANG>_CHAIN_CONFIG`; a value typed as an alias name walks to the
@@ -1410,32 +1167,6 @@ fn rust_chain_empty_chain_returns_none() {
 // flag on, a value typed as a class still resolves its member against the
 // class, not a guessed target.
 // ---------------------------------------------------------------------------
-
-#[test]
-fn rust_chain_type_alias_via_alias_expansion() {
-    // `repo.get()` where `repo: Repo` and `type Repo = HashMapStore`. The alias
-    // is members-less; expansion walks `Repo` → `HashMapStore` where `get` lives.
-    let lookup = FakeLookup::default()
-        .local("repo", "Repo")
-        .sym(1, "Repo", "type_alias")
-        .alias(
-            "Repo",
-            AliasTarget::Application {
-                root: "HashMapStore".to_string(),
-                args: Vec::new(),
-            },
-        )
-        .sym(2, "HashMapStore.get", "method");
-    let r = ref_with_chain(
-        vec![
-            seg("repo", SegmentKind::Identifier, false),
-            seg("get", SegmentKind::Property, true),
-        ],
-        EdgeKind::Calls,
-    );
-    let fc = file_ctx_with_imports(vec![]);
-    assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
-}
 
 #[test]
 fn python_chain_type_alias_via_alias_expansion() {
@@ -1529,10 +1260,10 @@ fn alias_expansion_noop_on_non_alias_type() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![]);
-    // RUST_CHAIN_CONFIG now carries expand_aliases: true. The non-alias receiver
-    // still binds `User.save` (id 2) — the bare member walk, unchanged. No alias
-    // entry for "User" means expand_alias returns None and current_type stays.
-    assert_eq!(run(&RUST_CHAIN_CONFIG, &r, &fc, &lookup), Some(2));
+    // The config carries expand_aliases: true. The non-alias receiver still binds
+    // `User.save` (id 2) — the bare member walk, unchanged. No alias entry for
+    // "User" means expand_alias returns None and current_type stays.
+    assert_eq!(run(&scala_alias_config(), &r, &fc, &lookup), Some(2));
 }
 
 // ---------------------------------------------------------------------------

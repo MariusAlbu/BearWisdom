@@ -1985,6 +1985,7 @@ fn module_anchor_name_exact_kind_binds_via_in_module_from() {
             ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
             RelativeMarker::DotSlashPrefix,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .expect("name-exact anchor resolves");
@@ -2013,6 +2014,7 @@ fn module_anchor_off_is_inert() {
             ModuleAnchor::Off,
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .is_none(),
@@ -2038,6 +2040,7 @@ fn module_anchor_returns_none_without_module() {
             ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .is_none());
@@ -2076,6 +2079,7 @@ fn module_anchor_prefer_named_else_first_picks_same_named() {
             ModuleAnchor::On(ModuleAnchorBind::PreferNamedElseFirst),
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .expect("require anchor resolves");
@@ -2110,6 +2114,7 @@ fn module_anchor_prefer_named_else_first_falls_back_to_first() {
             ModuleAnchor::On(ModuleAnchorBind::PreferNamedElseFirst),
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .expect("first-symbol anchor resolves");
@@ -2143,6 +2148,7 @@ fn module_anchor_by_name_under_module_dir_for_absolute_python() {
             ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
             RelativeMarker::DotPrefix,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .expect("dir-containment anchor resolves the absolute module");
@@ -2174,10 +2180,70 @@ fn module_anchor_by_name_under_module_dir_qname_probe() {
             ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .expect("qname probe resolves");
     assert_eq!(resolved.target_symbol_id, 10);
+}
+
+#[test]
+fn module_anchor_by_name_under_module_dir_colon_module_leaf_fallback() {
+    // Rust `use crate::db::DbPool; DbPool::new()` — the call ref carries the
+    // verbatim `::` module `crate::db`. The full path fragment `crate/db`
+    // doesn't match `src/db.rs`, so the bind falls back to the module leaf
+    // `db`, whose stem matches the file basename.
+    let lookup = Lookup::new().with(sym(11, "new", "DbPool.new", "method", "src/db.rs"));
+    let r = extracted_call_with_module("new", "crate::db");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
+            RelativeMarker::None,
+            NameNormalization::None,
+            "::",
+            &accept_any,
+        )
+        .expect("`::` module leaf fallback resolves");
+    assert_eq!(resolved.target_symbol_id, 11);
+    assert_eq!(resolved.strategy, "default_module_anchor");
+}
+
+#[test]
+fn module_anchor_by_name_under_module_dir_colon_qname_probe() {
+    // When a `::`-keyed qname IS in the index (`{module}::{target}`), the probe
+    // matches it directly — the `::` separator is tried alongside the universal
+    // `.` join.
+    let lookup =
+        Lookup::new().with(sym(12, "read", "lemmy::source::read", "function", "ext/lemmy.rs"));
+    let r = extracted_call_with_module("read", "lemmy::source");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = file_ctx(vec![], None);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_module_anchor(
+            ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
+            RelativeMarker::None,
+            NameNormalization::None,
+            "::",
+            &accept_any,
+        )
+        .expect("`::` qname probe resolves");
+    assert_eq!(resolved.target_symbol_id, 12);
 }
 
 #[test]
@@ -2202,6 +2268,7 @@ fn module_anchor_by_file_stem_binds_on_basename_stem() {
             }),
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .expect("file-stem anchor resolves on basename stem");
@@ -2231,6 +2298,7 @@ fn module_anchor_by_file_stem_strips_dotted_module_head() {
             }),
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .expect("dotted-module leaf drives the stem match");
@@ -2258,6 +2326,7 @@ fn module_anchor_by_file_stem_matches_dir_segment() {
             }),
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .expect("dir-segment match resolves");
@@ -2285,6 +2354,7 @@ fn module_anchor_by_file_stem_declines_unrelated_file() {
             }),
             RelativeMarker::None,
             NameNormalization::None,
+            ".",
             &accept_any,
         )
         .is_none());
@@ -2320,6 +2390,7 @@ fn module_anchor_member_of_module_type_folds_case() {
             ModuleAnchor::On(ModuleAnchorBind::MemberOfModuleType),
             RelativeMarker::None,
             norm,
+            ".",
             &accept_any,
         )
         .expect("case-insensitive member of module type resolves");
@@ -2355,6 +2426,7 @@ fn module_anchor_member_of_module_type_declines_unknown_member() {
             ModuleAnchor::On(ModuleAnchorBind::MemberOfModuleType),
             RelativeMarker::None,
             norm,
+            ".",
             &accept_any,
         )
         .is_none());

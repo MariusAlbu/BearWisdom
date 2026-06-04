@@ -875,14 +875,15 @@ impl Color {
     }
 
     // -----------------------------------------------------------------------
-    // Self::Variant in TypeRef position — extractor still emits target=leaf,
-    // module="Self"; the resolver translates module="Self" against the
-    // enclosing type. Test confirms the extractor captures the prefix so
-    // the resolver has something to route on.
+    // Self::Variant in TypeRef position (both match-pattern LHS and expression
+    // RHS) — the extractor emits target=leaf with a 2-segment SelfRef→Property
+    // chain and NO `module`, so the chain walker roots on the enclosing type
+    // and resolves the variant. `module="Self"` is never emitted: it doesn't
+    // name a real module and the qname / anchor binders can't see it.
     // -----------------------------------------------------------------------
 
     #[test]
-    fn self_scoped_typeref_captures_module_prefix() {
+    fn self_scoped_typeref_emits_selfref_chain() {
         let source = r#"enum Tree { Leaf, Node(Box<Tree>) }
 
 impl Tree {
@@ -894,22 +895,30 @@ impl Tree {
     }
 }"#;
         let r = extract::extract(source);
-        // At least one TypeRef with target=Leaf and module=Some("Self") must exist.
-        let leaf_typeref = r
+        let leaf_typerefs: Vec<_> = r
             .refs
             .iter()
-            .find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Leaf");
+            .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Leaf")
+            .collect();
         assert!(
-            leaf_typeref.is_some(),
-            "expected TypeRef for 'Leaf' from Self::Leaf pattern"
+            !leaf_typerefs.is_empty(),
+            "expected TypeRef(s) for 'Leaf' from Self::Leaf"
         );
-        assert_eq!(
-            leaf_typeref.unwrap().module.as_deref(),
-            Some("Self"),
-            "Self::Leaf TypeRef must capture module='Self' so the resolver \
-             can route via the enclosing type, got module={:?}",
-            leaf_typeref.unwrap().module,
-        );
+        for rf in &leaf_typerefs {
+            assert_eq!(
+                rf.module, None,
+                "Self::Leaf TypeRef must not carry module='Self', got {:?}",
+                rf.module,
+            );
+            let chain = rf
+                .chain
+                .as_ref()
+                .expect("Self::Leaf TypeRef must carry a SelfRef chain");
+            assert_eq!(chain.segments.len(), 2, "chain should be [Self, Leaf]");
+            assert_eq!(chain.segments[0].kind, SegmentKind::SelfRef);
+            assert_eq!(chain.segments[0].name, "Self");
+            assert_eq!(chain.segments[1].name, "Leaf");
+        }
     }
 
     #[test]
@@ -948,6 +957,92 @@ impl Tree {
         assert!(
             !find("Other").is_reexport,
             "private `use` must keep is_reexport=false"
+        );
+    }
+
+    #[test]
+    fn qualified_call_module_keeps_colon_path_verbatim() {
+        // `use crate::db::DbPool` then `DbPool::new()`: the import-map post-pass
+        // copies the importing module onto the call ref verbatim in `::` form
+        // (`crate::db`). The engine's ByNameUnderModuleDir anchor maps separators
+        // to a path fragment and falls back to the module leaf (`db` → `db.rs`).
+        let source = r#"use crate::db::DbPool;
+
+fn make() {
+    let p = DbPool::new(config);
+}"#;
+        let r = extract::extract(source);
+        let call = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "new")
+            .expect("expected Calls ref for DbPool::new");
+        assert_eq!(
+            call.module.as_deref(),
+            Some("crate::db"),
+            "qualified-call module must keep its `::` path verbatim, got {:?}",
+            call.module,
+        );
+    }
+
+    #[test]
+    fn external_crate_call_module_keeps_crate_root() {
+        // A non-`crate` root (an external dep) is also kept verbatim:
+        // `serde::Serializer` imported, `Serializer::do_thing(...)` → module
+        // stays `serde`.
+        let source = r#"use serde::Serializer;
+
+fn run() {
+    let x = Serializer::do_thing(a);
+}"#;
+        let r = extract::extract(source);
+        let call = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "do_thing")
+            .expect("expected Calls ref for Serializer::do_thing");
+        assert_eq!(
+            call.module.as_deref(),
+            Some("serde"),
+            "external-crate module root must be preserved, got {:?}",
+            call.module,
+        );
+    }
+
+    #[test]
+    fn generic_param_typerefs_are_dropped() {
+        // Single-uppercase-letter TypeRefs and `<Upper><digit>` generics are
+        // declared type parameters, not indexable symbols — the extractor drops
+        // them so they never pollute the unresolved-refs table. Real struct
+        // names are kept.
+        let source = r#"struct Wrapper<T> {
+    inner: T,
+}
+
+fn convert<P1>(value: P1) -> Real {
+    Real::build(value)
+}
+
+struct Real;
+"#;
+        let r = extract::extract(source);
+        let typeref_targets: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(
+            !typeref_targets.contains(&"T"),
+            "single-uppercase generic param 'T' must be dropped, got {typeref_targets:?}"
+        );
+        assert!(
+            !typeref_targets.contains(&"P1"),
+            "numbered generic param 'P1' must be dropped, got {typeref_targets:?}"
+        );
+        assert!(
+            typeref_targets.contains(&"Real"),
+            "real type 'Real' must be kept, got {typeref_targets:?}"
         );
     }
 

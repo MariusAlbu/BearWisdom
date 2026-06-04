@@ -18,13 +18,16 @@ use crate::types::{EdgeKind, SymbolKind, Visibility};
 ///   - Calls: function (free fn), method (impl block), constructor
 ///     (`Foo::new` and ergonomic factories the extractor tags), variable
 ///     (callable closures bound to lets), parameter (closures via
-///     `impl Fn(...)` param types).
+///     `impl Fn(...)` param types), test (a `#[test]` fn called by another
+///     test), enum_member (tuple/unit-variant construction via call syntax —
+///     `Some(x)`, `Ok(y)`, a `Status::Active` unit variant called as a fn
+///     pointer).
 ///   - Inherits: trait (Rust has trait subtyping; structs themselves don't
 ///     extend other structs).
 ///   - Implements: trait (only valid impl target).
-///   - TypeRef: struct / enum / trait / type_alias.
-///   - Instantiates: struct / enum (enum-variant construction via the
-///     extractor's Construction tag).
+///   - TypeRef: struct / enum / trait / type_alias / enum_member (a
+///     `Self::Variant` member-walk lands the variant on a TypeRef edge).
+///   - Instantiates: struct / enum / enum_member (enum-variant construction).
 const RUST_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
@@ -34,6 +37,8 @@ const RUST_KIND_TABLE: KindTable = &[
             SymbolKind::Constructor,
             SymbolKind::Variable,
             SymbolKind::Parameter,
+            SymbolKind::Test,
+            SymbolKind::EnumMember,
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Trait]),
@@ -45,11 +50,12 @@ const RUST_KIND_TABLE: KindTable = &[
             SymbolKind::Enum,
             SymbolKind::Trait,
             SymbolKind::TypeAlias,
+            SymbolKind::EnumMember,
         ],
     ),
     (
         EdgeKind::Instantiates,
-        &[SymbolKind::Struct, SymbolKind::Enum],
+        &[SymbolKind::Struct, SymbolKind::Enum, SymbolKind::EnumMember],
     ),
 ];
 
@@ -79,7 +85,12 @@ const RUST_PRIMITIVES: &[(&str, PrimKind)] = &[
 /// Rust profile.
 pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     id: "rust",
-    qname_separator: ".",
+    // Rust's source separator is `::`. The symbol-index qname join is the
+    // universal `.` (`helpers::qualify` builds `Bar.foo`), so the scope /
+    // module-anchor probes run both joins — `.` matches the dotted index and
+    // `::` matches the `::`-form a ref's `module` and chain prefixes carry
+    // (`crate::db`). The probe set is deduped to the two joins by the engine.
+    qname_separator: "::",
     // `self`, `Self`, and `&self` / `&mut self` — the chain extractor
     // collapses receivers to a single `self` token; engine treats it
     // uniformly. `super::` is a module-path qualifier handled by the
@@ -106,13 +117,9 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: RUST_PRIMITIVES,
     kind_compatible_table: RUST_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    // Shadow mode: engine builds its indexes from Rust extraction output
-    // for future use, but the legacy `RustResolver` retains the resolution
-    // slot. Flip after recapture-validating ±0.1pp on representative
-    // Rust baselines (bw self-host + tests).
-    // `Foo::new(...)`, `Foo::build(...)`, and turbofish factories. The
-    // generic NamedFactory pattern catches `*::new` shapes the extractor
-    // tags as Construction segments.
+    // No target-name decline list: Rust has no bare runtime-global identifiers
+    // the binder must skip — the prelude resolves through the stdlib ambient
+    // path, and the generic-param / turbofish noise is dropped at extraction.
     builtin_skip: None,
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
@@ -120,8 +127,19 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+    // A qualified call (`DbPool::new()`) carries the importing module path on
+    // `r.module` in its verbatim `::` form (`crate::db`). `ByNameUnderModuleDir`
+    // maps the path separators to `/`, probes the `{module}{sep}{target}` qname
+    // under both joins, and falls back to the module leaf (`db`) against the
+    // file stems of `by_name(new)` candidates. Non-terminal: a miss falls
+    // through to the scope / import / qname binders.
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::ByNameUnderModuleDir,
+    ),
     module_anchor_terminal: false,
+    // `None`: a Rust ref's `module` is a crate-rooted `::` path with no
+    // relative/absolute split at this layer, so every module runs the
+    // configured `ByNameUnderModuleDir` bind.
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
