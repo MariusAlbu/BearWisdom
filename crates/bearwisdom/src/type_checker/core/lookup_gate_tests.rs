@@ -170,8 +170,15 @@ export class User {
         &sym_ids,
         &mut arena,
     );
-    let graph =
-        SupertypeGraph::build(std::slice::from_ref(&pf), &mut arena, &DEFAULT_PROFILE, &members, &lookup);
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        std::slice::from_ref(&pf),
+        &mut arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let user_ty = arena.class("User");
     let greet = members
@@ -203,11 +210,13 @@ export class Admin extends User {
         &sym_ids,
         &mut arena,
     );
+    let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
         &mut arena,
         &DEFAULT_PROFILE,
         &members,
+        &symbol_types,
         &lookup,
     );
 
@@ -238,11 +247,13 @@ export class HelloGreeter implements Greeter {
         &sym_ids,
         &mut arena,
     );
+    let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
         &mut arena,
         &DEFAULT_PROFILE,
         &members,
+        &symbol_types,
         &lookup,
     );
 
@@ -361,11 +372,16 @@ export function makeFoo(): Foo { return new Foo(); }
 }
 
 #[test]
-fn structural_typing_finds_interface_member_on_implementing_struct_from_real_go() {
-    // Go's structural typing: a struct satisfies an interface implicitly
-    // when its method set is a superset. The supertype builder must
-    // discover that relationship without any explicit `implements` ref
-    // in the parsed file.
+fn structural_typing_gates_real_go_satisfaction_on_method_type_data() {
+    // Go's structural typing: a struct satisfies an interface implicitly when
+    // its method set is a superset AND the matched method signatures are
+    // type-compatible. The supertype builder runs the sound INFER-5 check, so
+    // a structural edge forms ONLY when both matched methods carry recorded
+    // param/return TypeIds. The Go extractor records the method signature as a
+    // string but does not yet intern param/return TypeIds onto the
+    // ExtractedSymbol, so the sound check stays Unknown and no structural edge
+    // forms here. The live member-resolution direction (calling `Write` on the
+    // struct, resolved on the struct's own body) is unaffected.
     use crate::languages::go::extract;
 
     let source = r#"
@@ -422,6 +438,13 @@ func (f *FileBuffer) Close() error {
         &mut arena,
     );
 
+    let symbol_types = SymbolTypeMap::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+        &DEFAULT_PROFILE,
+    );
+
     let go_structural_profile = LanguageProfile {
         supertype_discovery: SupertypeDiscovery::Structural,
         ..DEFAULT_PROFILE
@@ -431,6 +454,7 @@ func (f *FileBuffer) Close() error {
         &mut arena,
         &go_structural_profile,
         &members,
+        &symbol_types,
         &lookup,
     );
 
@@ -452,15 +476,19 @@ func (f *FileBuffer) Close() error {
     let writer_ty = arena.class(&writer_qname);
     let buf_ty = arena.class(&buf_qname);
 
+    // No structural edge: the Go extractor records no param/return TypeIds on
+    // the Write methods, so the sound INFER-5 check returns Unknown. When the
+    // extractor interns method param/return types this edge re-forms — the
+    // soundness gate is on type-data hydration, not the structural algorithm.
     assert!(
-        graph.parents_of(buf_ty).contains(&writer_ty),
-        "FileBuffer must structurally satisfy Writer (parents = {:?})",
+        !graph.parents_of(buf_ty).contains(&writer_ty),
+        "FileBuffer must NOT gain a structural edge while Write carries no recorded type data (parents = {:?})",
         graph.parents_of(buf_ty)
     );
 
-    // And the chain walker's path also works: lookup on FileBuffer for the
-    // Write method must succeed by walking up to Writer (where the method
-    // is also declared) or by hitting the FileBuffer's own Write.
+    // The live member-resolution direction is preserved: a call to `Write` on
+    // FileBuffer resolves on FileBuffer's own Write body, independent of the
+    // structural edge.
     let write_member = members
         .lookup(
             buf_ty,
@@ -489,11 +517,13 @@ export class User { name: string; }
         &sym_ids,
         &mut arena,
     );
+    let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
         &mut arena,
         &DEFAULT_PROFILE,
         &members,
+        &symbol_types,
         &lookup,
     );
 

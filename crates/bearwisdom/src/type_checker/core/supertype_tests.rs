@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::indexer::resolve::engine::SymbolInfo;
+use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{
     AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility,
@@ -239,8 +240,9 @@ fn build_explicit_creates_edges_from_inherits_refs() {
     )];
 
     let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &lookup);
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
 
     let admin_id = arena.class("myapp.Admin");
     let user_id = arena.class("myapp.User");
@@ -259,8 +261,9 @@ fn build_explicit_falls_back_to_target_name_when_lookup_misses() {
     )];
 
     let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &lookup);
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
 
     let admin_id = arena.class("Admin");
     let external_id = arena.class("ExternalBase");
@@ -295,8 +298,9 @@ fn build_explicit_includes_pulled_external_base_edges() {
     ];
 
     let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &lookup);
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
 
     // The external base's OWN supertype edge is now in the graph.
     let repo_id = arena.class("pkg.Repository");
@@ -333,8 +337,9 @@ fn build_explicit_handles_multi_inherit_and_implements() {
     )];
 
     let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &lookup);
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
 
     let admin = arena.class("Admin");
     let parents: Vec<String> = graph
@@ -374,8 +379,9 @@ fn build_explicit_ignores_non_inheritance_refs() {
     )];
 
     let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &lookup);
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
 
     let admin = arena.class("Admin");
     assert!(graph.parents_of(admin).is_empty());
@@ -547,6 +553,23 @@ fn find_on_chain_picks_different_override_under_c3_vs_bfs() {
     assert_eq!(c3_hit.id, 10, "C3 resolves m on A (id 10)");
 }
 
+/// SymbolTypeData for a method, registered into `types` under `id`: `params`
+/// positional parameter TypeIds, `ret` the return TypeId. Lets a structural
+/// fixture carry the param/return shapes INFER-5 compares — the synthetic
+/// `method()` helper leaves these absent, which under the sound structural
+/// check yields Unknown (no edge).
+fn record_method_types(types: &mut SymbolTypeMap, id: i64, params: Vec<TypeId>, ret: TypeId) {
+    types.insert(
+        id,
+        SymbolTypeData {
+            declared_type: None,
+            return_type: Some(ret),
+            param_types: params,
+            generic_params: Vec::new(),
+        },
+    );
+}
+
 #[test]
 fn build_structural_links_class_whose_members_superset_interface() {
     let mut arena = TypeArena::new();
@@ -554,18 +577,27 @@ fn build_structural_links_class_whose_members_superset_interface() {
     let file = arena.class("File");
     let socket = arena.class("Socket");
 
+    let byte_slice = arena.class("ByteSlice");
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+
     let mut members = MembersIndex::new();
     members.add_direct(writer, method(1, "Write", "Writer"));
     members.add_direct(file, method(2, "Write", "File"));
     members.add_direct(file, method(3, "Close", "File"));
     members.add_direct(socket, method(4, "Close", "Socket"));
 
+    // Writer.Write and File.Write share the same param/return shape, so the
+    // sound structural check accepts File. Socket has no Write member at all.
+    let mut symbol_types = SymbolTypeMap::new();
+    record_method_types(&mut symbol_types, 1, vec![byte_slice], int_ty);
+    record_method_types(&mut symbol_types, 2, vec![byte_slice], int_ty);
+
     let lookup = TypeLookup::new();
     let profile = crate::type_checker::profile::language_profile::LanguageProfile {
         supertype_discovery: SupertypeDiscovery::Structural,
         ..crate::type_checker::profile::language_profile::DEFAULT_PROFILE
     };
-    let graph = SupertypeGraph::build(&[], &mut arena, &profile, &members, &lookup);
+    let graph = SupertypeGraph::build(&[], &mut arena, &profile, &members, &symbol_types, &lookup);
 
     assert!(
         graph.parents_of(file).contains(&writer),
@@ -574,6 +606,52 @@ fn build_structural_links_class_whose_members_superset_interface() {
     assert!(
         !graph.parents_of(socket).contains(&writer),
         "Socket missing Write must not satisfy Writer"
+    );
+}
+
+#[test]
+fn build_structural_rejects_incompatible_signature_via_infer5() {
+    // The soundness upgrade: two structs declare a `Write` method with the
+    // SAME name+kind as the interface's, but different param/return types.
+    // Under the old name+kind matcher both linked; under the sound INFER-5
+    // check only the type-compatible struct gets the edge — the incompatible
+    // one yields Unknown (no edge).
+    let mut arena = TypeArena::new();
+    let writer = arena.class("Writer");
+    let good_file = arena.class("GoodFile");
+    let bad_write = arena.class("BadWrite");
+
+    let byte_slice = arena.class("ByteSlice");
+    let string_ty = arena.class("String");
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(writer, method(1, "Write", "Writer"));
+    members.add_direct(good_file, method(2, "Write", "GoodFile"));
+    members.add_direct(bad_write, method(3, "Write", "BadWrite"));
+
+    // Writer.Write: (ByteSlice) -> Int.
+    // GoodFile.Write: (ByteSlice) -> Int  — type-compatible.
+    // BadWrite.Write: (String) -> String  — same name+kind, incompatible types.
+    let mut symbol_types = SymbolTypeMap::new();
+    record_method_types(&mut symbol_types, 1, vec![byte_slice], int_ty);
+    record_method_types(&mut symbol_types, 2, vec![byte_slice], int_ty);
+    record_method_types(&mut symbol_types, 3, vec![string_ty], string_ty);
+
+    let lookup = TypeLookup::new();
+    let profile = crate::type_checker::profile::language_profile::LanguageProfile {
+        supertype_discovery: SupertypeDiscovery::Structural,
+        ..crate::type_checker::profile::language_profile::DEFAULT_PROFILE
+    };
+    let graph = SupertypeGraph::build(&[], &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    assert!(
+        graph.parents_of(good_file).contains(&writer),
+        "GoodFile's type-compatible Write must satisfy Writer"
+    );
+    assert!(
+        !graph.parents_of(bad_write).contains(&writer),
+        "BadWrite's incompatible-signature Write must NOT satisfy Writer (sound check)"
     );
 }
 
@@ -589,6 +667,14 @@ fn build_both_combines_explicit_and_structural() {
     members.add_direct(writer, method(1, "Write", "myapp.Writer"));
     members.add_direct(file, method(2, "Write", "myapp.File"));
 
+    // Both Write methods share the same shape so the structural half links
+    // File → Writer under the sound INFER-5 check.
+    let byte_slice = arena.class("ByteSlice");
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+    let mut symbol_types = SymbolTypeMap::new();
+    record_method_types(&mut symbol_types, 1, vec![byte_slice], int_ty);
+    record_method_types(&mut symbol_types, 2, vec![byte_slice], int_ty);
+
     let parsed = vec![parsed_with_refs(
         "y.ts",
         vec![class_sym("Admin", "myapp.Admin")],
@@ -599,7 +685,7 @@ fn build_both_combines_explicit_and_structural() {
         supertype_discovery: SupertypeDiscovery::Both,
         ..crate::type_checker::profile::language_profile::DEFAULT_PROFILE
     };
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &lookup);
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
 
     let admin_id = arena.class("myapp.Admin");
     assert!(graph.parents_of(admin_id).contains(&writer));

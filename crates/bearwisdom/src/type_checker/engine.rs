@@ -153,6 +153,7 @@ impl<'a> Engine<'a> {
             &arena,
             default_profile,
             &members,
+            &symbol_types,
             lookup,
         );
 

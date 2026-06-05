@@ -12,13 +12,15 @@
 //       research/architecture/04-implementation-phases.html § Phase 3
 // =============================================================================
 
-use super::types::{GenericParamId, TypeArena, TypeId};
+use super::types::{GenericParamId, PrimKind, TypeArena, TypeId};
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 use crate::type_checker::core::generics::{substitute, GenericEnv};
 use crate::type_checker::core::members::MembersIndex;
+use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::profile::language_profile::{
     AncestorOrder, LanguageProfile, SupertypeDiscovery,
 };
+use crate::type_checker::subtype::{is_assignable_to_typed_with, SubtypeResult};
 use crate::types::{EdgeKind, ParsedFile};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
@@ -254,16 +256,23 @@ impl SupertypeGraph {
     /// Dispatches on `profile.supertype_discovery`:
     /// - `Explicit` — reads `Inherits` and `Implements` refs from every
     ///   parsed file. The vast majority of nominal-typed languages.
-    /// - `Structural` — for each declared interface, marks every class
-    ///   whose direct member set superset-matches the interface's
-    ///   member set as a structural subtype. Go.
+    /// - `Structural` — for each declared interface, adds a `candidate →
+    ///   interface` edge for every class whose direct member set
+    ///   structurally satisfies the interface under the sound INFER-5
+    ///   assignability check (member name + kind + assignable param/return
+    ///   types). Go.
     /// - `Both` — runs explicit then structural; idempotent inserts mean
     ///   the two passes coexist without duplication. TypeScript.
+    ///
+    /// `symbol_types` backs the structural arm's member-type comparison; the
+    /// profile's `primitive_mapping` lets it recognize nominal primitive names
+    /// as disjoint. Both are inert for `Explicit`.
     pub fn build(
         parsed: &[ParsedFile],
         arena: &TypeArena,
         profile: &LanguageProfile,
         members: &MembersIndex,
+        symbol_types: &SymbolTypeMap,
         lookup: &dyn SymbolLookup,
     ) -> Self {
         let mut graph = SupertypeGraph::new();
@@ -272,11 +281,11 @@ impl SupertypeGraph {
                 build_explicit(&mut graph, parsed, arena, lookup);
             }
             SupertypeDiscovery::Structural => {
-                build_structural(&mut graph, arena, members);
+                build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping);
             }
             SupertypeDiscovery::Both => {
                 build_explicit(&mut graph, parsed, arena, lookup);
-                build_structural(&mut graph, arena, members);
+                build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping);
             }
         }
         graph
@@ -449,16 +458,31 @@ fn child_param_map(
         .collect()
 }
 
-/// For each `Interface` symbol, mark every class whose direct member set is a
-/// superset of the interface's member set as a structural subtype. Go and
+/// For each interface-like type, add a `candidate → interface` edge for every
+/// class whose direct member set structurally satisfies the interface. Go and
 /// Crystal-style structural typing.
 ///
-/// The check is on member names + kind only (not parameter shapes) — that
-/// matches what the engine can recover from extraction without re-running
-/// signature parsing. False positives are extremely rare in practice
-/// because interface names tend to be intentional API boundaries with
-/// few methods.
-fn build_structural(graph: &mut SupertypeGraph, arena: &TypeArena, members: &MembersIndex) {
+/// Satisfaction is the sound INFER-5 check ([`is_assignable_to_typed_with`]):
+/// the candidate must carry every interface member with a matching name, a
+/// matching kind, AND a member type assignable in the correct variance (method
+/// returns covariant, params contravariant, fields covariant). The edge is
+/// added ONLY on `SubtypeResult::Yes`. A matched member whose param/return
+/// TypeIds the extractor didn't record leaves the check at `Unknown`, so no
+/// edge forms — declaring satisfaction on name+kind alone (ignoring signatures)
+/// would falsely link two structs whose same-named method has incompatible
+/// types, which this check exists to avoid.
+///
+/// Internal-only falls out for free: `MembersIndex` skips `ext:` files, so an
+/// external interface enumerates to an empty member set → `Unknown` → no edge.
+/// External structural satisfaction stays gated on member hydration.
+fn build_structural(
+    graph: &mut SupertypeGraph,
+    arena: &TypeArena,
+    members: &MembersIndex,
+    symbol_types: &SymbolTypeMap,
+    lookup: &dyn SymbolLookup,
+    prims: &[(&str, PrimKind)],
+) {
     // Collect every type that has direct members. We need O(types) work
     // here, and the loop is bounded by the workspace's type count.
     let typed_ids: Vec<TypeId> = collect_typed_ids(arena, members);
@@ -471,23 +495,28 @@ fn build_structural(graph: &mut SupertypeGraph, arena: &TypeArena, members: &Mem
         if !is_interface_like(iface_members) {
             continue;
         }
-        let required: Vec<(&str, &str)> = iface_members
-            .iter()
-            .map(|m| (m.name.as_str(), m.kind.as_str()))
-            .collect();
 
         for candidate in &typed_ids {
             if candidate == iface {
                 continue;
             }
-            let candidate_members = members.direct_of(*candidate);
-            if candidate_members.is_empty() {
+            if members.direct_of(*candidate).is_empty() {
                 continue;
             }
-            if !candidate_satisfies(candidate_members, &required) {
-                continue;
+            // candidate is the source, iface the target: candidate satisfies
+            // iface when it's assignable to iface's shape.
+            if is_assignable_to_typed_with(
+                *candidate,
+                *iface,
+                arena,
+                lookup,
+                members,
+                symbol_types,
+                prims,
+            ) == SubtypeResult::Yes
+            {
+                graph.add_edge(*candidate, *iface);
             }
-            graph.add_edge(*candidate, *iface);
         }
     }
 }
@@ -498,14 +527,6 @@ fn build_structural(graph: &mut SupertypeGraph, arena: &TypeArena, members: &Mem
 fn is_interface_like(syms: &[SymbolInfo]) -> bool {
     syms.iter()
         .all(|s| matches!(s.kind.as_str(), "method" | "function"))
-}
-
-fn candidate_satisfies(candidate_members: &[SymbolInfo], required: &[(&str, &str)]) -> bool {
-    required.iter().all(|(name, kind)| {
-        candidate_members
-            .iter()
-            .any(|m| m.name == *name && m.kind == *kind)
-    })
 }
 
 /// Candidate space for structural matching: every TypeId with at least one
