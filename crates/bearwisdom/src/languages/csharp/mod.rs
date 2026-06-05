@@ -83,7 +83,7 @@ impl LanguagePlugin for CSharpPlugin {
         symbols: &[ExtractedSymbol],
         refs: &[ExtractedRef],
     ) -> Synthesized {
-        source_gen::synthesize_record_members(source, symbols, refs)
+        source_gen::synthesize_symbols(source, symbols, refs)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

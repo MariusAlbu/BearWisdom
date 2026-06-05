@@ -41,6 +41,19 @@ pub(super) fn extract_base_types(
             let mut first_concrete = true;
             let mut cursor = child.walk();
             for base in child.children(&mut cursor) {
+                // A record/primary-constructor base carries its ctor arguments:
+                // `: Base(X)` parses as `primary_constructor_base_type` whose
+                // `type` field is the base name. Unwrap to the name node so the
+                // `Inherits` edge forms the same as a bare `: Base`.
+                let base = match base.kind() {
+                    "primary_constructor_base_type" => {
+                        match base.child_by_field_name("type") {
+                            Some(t) => t,
+                            None => continue,
+                        }
+                    }
+                    _ => base,
+                };
                 match base.kind() {
                     "identifier" | "generic_name" | "qualified_name" => {
                         let name = simple_type_name(base, src);
