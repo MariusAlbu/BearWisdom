@@ -175,6 +175,25 @@ fn implements_ref(source_idx: usize, target: &str) -> ExtractedRef {
     }
 }
 
+/// The self-`TypeRef` an impl-container emits to its implementing type,
+/// mirroring `extract_impl` (`languages/rust_lang/calls.rs`). `target_name` is
+/// the raw implementing-type node text (`C` or `C<T>`), the structural carrier
+/// the supertype builder reads to reroute the inheritance edge to `C`.
+fn impl_typeref(source_idx: usize, impl_type: &str) -> ExtractedRef {
+    ExtractedRef { is_import_binding: false, is_reexport: false,
+        source_symbol_index: source_idx,
+        target_name: impl_type.to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+    }
+}
+
 #[test]
 fn add_edge_is_idempotent() {
     let mut arena = TypeArena::new();
@@ -385,6 +404,167 @@ fn build_explicit_ignores_non_inheritance_refs() {
 
     let admin = arena.class("Admin");
     assert!(graph.parents_of(admin).is_empty());
+}
+
+/// A Rust `impl Trait for Type` container symbol, mirroring `extract_impl`:
+/// a `Namespace`-kind symbol whose name/qname carry the `<impl Type@line>`
+/// marker (suffixed to avoid colliding with `Type`'s real definition). The
+/// implementing type is carried structurally by a sibling `TypeRef` edge
+/// (`impl_typeref`), exactly as the extractor emits it.
+fn impl_container_sym(impl_type: &str, line: u32) -> ExtractedSymbol {
+    let short = format!("<impl {impl_type}@{line}>");
+    ExtractedSymbol {
+        name: short.clone(),
+        qualified_name: short,
+        kind: SymbolKind::Namespace,
+        visibility: Some(Visibility::Public),
+        start_line: line,
+        end_line: line,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: Some(format!("impl {impl_type}")),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+#[test]
+fn build_explicit_reroutes_impl_container_edge_to_implementing_type() {
+    // Case B: `trait Greet { fn hello(&self){} }  struct Dog;  impl Greet for Dog {}`.
+    // The Implements edge's source symbol is the `<impl Dog@N>` impl-container
+    // (a Namespace), not `Dog` itself. The supertype edge must attach to the
+    // IMPLEMENTING type `Dog`, so `Dog`'s ancestor walk reaches `Greet` and a
+    // default method filed under `Greet` becomes reachable from `Dog`.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type("Dog", "Dog")
+        .with_type("Greet", "Greet");
+
+    let parsed = vec![parsed_with_refs(
+        "x.rs",
+        vec![impl_container_sym("Dog", 3)],
+        vec![implements_ref(0, "Greet"), impl_typeref(0, "Dog")],
+    )];
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    let greet = arena.class("Greet");
+    let impl_container = arena.class("<impl Dog@3>");
+
+    assert!(
+        graph.parents_of(dog).contains(&greet),
+        "the C->Trait edge must attach to the implementing type Dog"
+    );
+    assert!(
+        graph.parents_of(impl_container).is_empty(),
+        "no dead edge keyed on the impl-container namespace"
+    );
+}
+
+#[test]
+fn impl_container_reroute_makes_trait_default_method_reachable() {
+    // End-to-end Case B: the trait default method `hello` is filed under
+    // `class("Greet")` (its scope is the trait body). After the impl-container
+    // edge reroutes `Dog -> Greet`, `MembersIndex::lookup` from the concrete
+    // receiver `Dog` walks the ancestor `Greet` and resolves `hello`.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type("Dog", "Dog")
+        .with_type("Greet", "Greet");
+
+    let parsed = vec![parsed_with_refs(
+        "x.rs",
+        vec![impl_container_sym("Dog", 3)],
+        vec![implements_ref(0, "Greet"), impl_typeref(0, "Dog")],
+    )];
+
+    // `hello` is a direct member of the trait Greet (default method body).
+    let mut members = MembersIndex::new();
+    let greet = arena.class("Greet");
+    members.add_direct(greet, method(42, "hello", "Greet"));
+
+    let symbol_types = SymbolTypeMap::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    let hit = members
+        .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &profile)
+        .expect("dog.hello() resolves to the trait default method through the rerouted edge");
+    assert_eq!(hit.id, 42, "resolved symbol is the trait's default `hello`");
+}
+
+#[test]
+fn build_explicit_reroutes_generic_impl_container_to_base_type() {
+    // `impl<T: Display> Foo for Wrapper<T>`-style container: the self-TypeRef
+    // carries the full implementing-type node text `Wrapper<T>`; the rerouted
+    // child must be the bare base `Wrapper`. A bound in the impl param list
+    // (`<T: Display>`) is irrelevant here because the implementing type is read
+    // from the TypeRef target, not by scanning the impl signature — the prior
+    // angle-bracket-string scan mishandled exactly this bounded-generic shape.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type("Wrapper", "Wrapper")
+        .with_type("Display", "Display");
+
+    let mut container = impl_container_sym("Wrapper", 7);
+    container.name = "<impl Wrapper<T>@7>".to_string();
+    container.qualified_name = "<impl Wrapper<T>@7>".to_string();
+    container.signature = Some("impl<T: Display> Wrapper<T>".to_string());
+
+    let parsed = vec![parsed_with_refs(
+        "x.rs",
+        vec![container],
+        vec![implements_ref(0, "Display"), impl_typeref(0, "Wrapper<T>")],
+    )];
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let wrapper = arena.class("Wrapper");
+    let display = arena.class("Display");
+    assert!(
+        graph.parents_of(wrapper).contains(&display),
+        "generic impl container must reroute to the bare base type Wrapper"
+    );
+}
+
+#[test]
+fn build_explicit_keeps_non_namespace_source_unchanged() {
+    // Regression guard: a normal class `Inherits` edge (source is a real type,
+    // not an impl-container Namespace) still keys the child on the source's
+    // own qualified_name — the reroute must not touch it. This mirrors
+    // `build_explicit_creates_edges_from_inherits_refs` but asserts the
+    // impl-container path is inert for ordinary inheritance.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new().with_type("User", "myapp.User");
+
+    let parsed = vec![parsed_with_refs(
+        "x.rs",
+        vec![class_sym("Admin", "myapp.Admin")],
+        vec![inherits_ref(0, "User")],
+    )];
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let admin = arena.class("myapp.Admin");
+    let user = arena.class("myapp.User");
+    assert_eq!(graph.parents_of(admin), &[user]);
 }
 
 fn method(id: i64, name: &str, scope: &str) -> SymbolInfo {

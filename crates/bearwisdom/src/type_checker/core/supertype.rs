@@ -21,7 +21,7 @@ use crate::type_checker::profile::language_profile::{
     AncestorOrder, LanguageProfile, SupertypeDiscovery,
 };
 use crate::type_checker::subtype::{is_assignable_to_typed_with, SubtypeResult};
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
 
@@ -336,7 +336,22 @@ fn build_explicit(
             let Some(source_sym) = pf.symbols.get(r.source_symbol_index) else {
                 continue;
             };
-            let child = arena.class(&source_sym.qualified_name);
+            // An inheritance edge whose source symbol is an impl-container
+            // (`impl Trait for C` emits a Namespace symbol, not C itself) must
+            // attach to the IMPLEMENTING type C, not the container — otherwise
+            // the edge keys on a dead node nothing is ever typed to and C never
+            // gains the supertype. A Namespace can't be a subtype, so any
+            // inheritance edge from one is structurally an impl/extension
+            // container whose real child is the type it implements FOR. That
+            // type is carried structurally by the container's self-`TypeRef`
+            // edge (the implementing-type node text), read here without parsing
+            // any language's `impl` syntax. Absent the marker, key on the
+            // source's own qname (every other language's classes/traits land
+            // here unchanged).
+            let child_qname =
+                impl_container_child_qname(source_sym, r.source_symbol_index, &pf.refs, arena, lookup)
+                    .unwrap_or_else(|| source_sym.qualified_name.clone());
+            let child = arena.class(&child_qname);
             // Decompose a generic parent (`Repository<User>`) into its base
             // class + arguments so the args can bind the parent's params on
             // an inherited generic method. A bare parent decodes to `Class`
@@ -360,7 +375,7 @@ fn build_explicit(
             let parent_args = if parent_args.is_empty() {
                 parent_args
             } else {
-                let child_params = child_param_map(&source_sym.qualified_name, arena, lookup);
+                let child_params = child_param_map(&child_qname, arena, lookup);
                 if child_params.is_empty() {
                     parent_args
                 } else {
@@ -377,7 +392,7 @@ fn build_explicit(
             // Record the child's declared params so `walk_up_with_args` can
             // compose this edge's args through the child's binding at deeper
             // hops.
-            if let Some(ids) = lookup.generic_param_type_ids(&source_sym.qualified_name) {
+            if let Some(ids) = lookup.generic_param_type_ids(&child_qname) {
                 let params: Vec<GenericParamId> = ids
                     .iter()
                     .filter_map(|&id| match arena.get(id) {
@@ -426,6 +441,61 @@ fn c3_merge(mut seqs: Vec<Vec<TypeId>>, _bfs_order: &[TypeId]) -> Vec<TypeId> {
         for seq in &mut seqs {
             seq.retain(|&t| t != head);
         }
+    }
+}
+
+/// The resolved qname of the type an impl-container implements/inherits FOR,
+/// or `None` when `sym` is not an impl-container with a recorded implementing
+/// type.
+///
+/// `impl Trait for C` is extracted as a `Namespace` symbol that ALSO emits a
+/// `TypeRef` edge from itself to the implementing type (`C`, or `C<T>` when the
+/// impl block declares its own params). A Namespace can't itself be a subtype,
+/// so an inheritance edge sourced from one is structurally an impl/extension
+/// container — its real child is that implementing type, carried by the
+/// self-`TypeRef`'s `target_name`, not the container's own `<impl C@N>` qname.
+/// The implementing type's base is decomposed through the arena (the same
+/// `Apply { base, args }` decode the parent type uses), so a parameterized
+/// `C<T>` — including bounded-generic forms — yields the bare base `C` with no
+/// `impl`-syntax string parsing here. The base is resolved through
+/// `types_by_name` so the edge attaches to C's canonical class node.
+fn impl_container_child_qname(
+    sym: &ExtractedSymbol,
+    source_index: usize,
+    refs: &[ExtractedRef],
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    if sym.kind != SymbolKind::Namespace {
+        return None;
+    }
+    // The container's self-`TypeRef` (same source symbol as this inheritance
+    // edge) names the implementing type. Match by source index so a file with
+    // several impl blocks attaches each edge to its own implementing type.
+    let impl_type = refs.iter().find(|r| {
+        matches!(r.kind, EdgeKind::TypeRef) && r.source_symbol_index == source_index
+    })?;
+    let base = type_base_qname(&impl_type.target_name, arena);
+    if base.is_empty() {
+        return None;
+    }
+    Some(resolve_target_qname(&base, lookup))
+}
+
+/// Decompose a type node's text into its base type name, dropping any generic
+/// argument list. `C<T>` → `C`, `path::C<T, U>` → `path::C`; a bare `C` is
+/// returned unchanged. Uses the arena's `Apply { base, args }` decode so the
+/// generic-argument split is the same structural one the parent type uses —
+/// no manual angle-bracket scanning that would mishandle nested generics.
+fn type_base_qname(text: &str, arena: &TypeArena) -> String {
+    let raw = arena.intern_type_str(text);
+    match arena.get(raw) {
+        crate::type_checker::core::types::Type::Apply { base, .. } => match arena.get(base) {
+            crate::type_checker::core::types::Type::Class(q) => q,
+            _ => text.to_string(),
+        },
+        crate::type_checker::core::types::Type::Class(q) => q,
+        _ => text.to_string(),
     }
 }
 
