@@ -17,12 +17,17 @@ pub mod extract;
 pub mod hooks;
 mod predicates;
 pub mod profile;
+mod source_gen;
 pub use hooks::CSHARP_HOOKS;
 pub use profile::CSHARP_PROFILE;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
 mod extract_tests;
+
+#[cfg(test)]
+#[path = "source_gen_tests.rs"]
+mod source_gen_tests;
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
@@ -36,8 +41,8 @@ mod coverage_tests;
 #[path = "calls_tests.rs"]
 mod calls_tests;
 
-use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
+use crate::languages::{LanguagePlugin, Synthesized};
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 pub struct CSharpPlugin;
@@ -70,6 +75,15 @@ impl LanguagePlugin for CSharpPlugin {
         _lang_id: &str,
     ) -> Vec<EmbeddedRegion> {
         embedded::detect_regions(source)
+    }
+
+    fn synthesize_symbols(
+        &self,
+        source: &str,
+        symbols: &[ExtractedSymbol],
+        refs: &[ExtractedRef],
+    ) -> Synthesized {
+        source_gen::synthesize_record_members(source, symbols, refs)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
