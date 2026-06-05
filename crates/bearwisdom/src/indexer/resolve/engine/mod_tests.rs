@@ -732,6 +732,65 @@ fn signature_derived_return_type_jvm_descriptor() {
 }
 
 #[test]
+fn c_external_struct_return_hydrates() {
+    // A C external function returning an aggregate type carries a leading-form
+    // signature whose first depth-0 token is the `struct` keyword. The return
+    // type is the elaborated-type-specifier's next token; it hydrates via the
+    // positional rung after the colon/arrow parse declines.
+    let pf = ParsedFile {
+        path: "ext:c:curl/curl.h".to_string(),
+        language: "c".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![ExtractedSymbol {
+            name: "curl_slist_append".to_string(),
+            qualified_name: "curl_slist_append".to_string(),
+            kind: SymbolKind::Function,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: Some(
+                "struct curl_slist curl_slist_append(struct curl_slist list, char string)"
+                    .to_string(),
+            ),
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("ext:c:curl/curl.h".to_string(), "curl_slist_append".to_string()), 1);
+
+    let index = SymbolIndex::build(&[pf], &id_map);
+
+    assert_eq!(index.return_type_name("curl_slist_append"), Some("curl_slist"));
+}
+
+#[test]
 fn set_inferred_return_gap_fills_only_when_return_absent() {
     // INFER-3: `makeUser` has no declared/signature return; `Svc.GetUser` has a
     // signature-derived one. set_inferred_return must fill the gap on the first

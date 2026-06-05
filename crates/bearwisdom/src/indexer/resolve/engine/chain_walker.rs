@@ -776,25 +776,22 @@ pub(crate) fn is_plain_type_name(t: &str) -> bool {
 /// languages never reach it.
 pub(crate) fn parse_return_type_positional(sig: &str) -> Option<String> {
     let trimmed = sig.trim_start();
-    let bytes = trimmed.as_bytes();
-    // First depth-0 whitespace ends the return-type token; brackets keep a
-    // generic application (`Map<String, Integer>`) together as one token.
-    let mut depth: i32 = 0;
-    let mut end = trimmed.len();
-    for (i, &b) in bytes.iter().enumerate() {
-        match b {
-            b'<' | b'[' | b'(' | b'{' => depth += 1,
-            b'>' | b']' | b')' | b'}' => depth -= 1,
-            b' ' | b'\t' if depth == 0 => {
-                end = i;
-                break;
-            }
-            _ => {}
-        }
-    }
-    let head = trimmed[..end].trim();
+    let head = first_token(trimmed);
     if head.is_empty() || head.contains('(') || head.contains(')') {
         return None;
+    }
+    // A C elaborated-type-specifier return (`struct Foo name(...)`) leads with an
+    // aggregate keyword; the real type is the next depth-0 token. Peel the keyword
+    // and read that token. A bare keyword with no following type token (a
+    // forward-decl signature with no declarator) yields None.
+    if is_c_aggregate_keyword(head) {
+        let rest = trimmed[head.len()..].trim_start();
+        let next = first_token(rest);
+        return (!next.is_empty()
+            && !next.contains('(')
+            && !next.contains(')')
+            && !is_c_aggregate_keyword(next))
+        .then(|| next.to_string());
     }
     // `void` is the absence of a return value, not a chainable type — leave the
     // return type unset (a void method's `setName()` carries no return).
@@ -805,6 +802,34 @@ pub(crate) fn parse_return_type_positional(sig: &str) -> Option<String> {
         return None;
     }
     Some(head.to_string())
+}
+
+/// The first depth-0 whitespace-delimited token of `s`, with surrounding
+/// whitespace stripped. Brackets keep a generic application
+/// (`Map<String, Integer>`) together as one token. `s` must already be
+/// `trim_start`-ed for `s[token.len()..]` to address the remainder.
+fn first_token(s: &str) -> &str {
+    let mut depth: i32 = 0;
+    let mut end = s.len();
+    for (i, &b) in s.as_bytes().iter().enumerate() {
+        match b {
+            b'<' | b'[' | b'(' | b'{' => depth += 1,
+            b'>' | b']' | b')' | b'}' => depth -= 1,
+            b' ' | b'\t' if depth == 0 => {
+                end = i;
+                break;
+            }
+            _ => {}
+        }
+    }
+    s[..end].trim()
+}
+
+/// A C/C++ aggregate keyword that prefixes an elaborated-type-specifier in a
+/// leading-form return (`struct Foo`, `enum Bar`, `union Baz`). The keyword is
+/// peeled and the following token is the actual return type.
+fn is_c_aggregate_keyword(t: &str) -> bool {
+    matches!(t, "struct" | "enum" | "union")
 }
 
 /// A first-token value that means the signature is NOT a clean leading-return

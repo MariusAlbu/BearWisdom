@@ -316,6 +316,34 @@ fn positional_rejects_void() {
     assert_eq!(parse_return_type_positional("void setName(String n)"), None);
 }
 
+#[test]
+fn positional_c_aggregate_return_peels_keyword() {
+    // C elaborated-type-specifier returns: the leading `struct`/`enum`/`union`
+    // keyword is the prefix of the return type, not a decl keyword — the real
+    // type is the next token.
+    assert_eq!(
+        parse_return_type_positional("struct curl_slist curl_slist_append()"),
+        Some("curl_slist".to_string())
+    );
+    assert_eq!(
+        parse_return_type_positional("enum CURLcode curl_easy_perform()"),
+        Some("CURLcode".to_string())
+    );
+    assert_eq!(
+        parse_return_type_positional("union U f()"),
+        Some("U".to_string())
+    );
+}
+
+#[test]
+fn positional_bare_aggregate_keyword_rejects() {
+    // A bare aggregate keyword with no following type token (a forward-decl
+    // signature with no function declarator) must not mint a phantom return.
+    assert_eq!(parse_return_type_positional("struct"), None);
+    assert_eq!(parse_return_type_positional("enum"), None);
+    assert_eq!(parse_return_type_positional("union"), None);
+}
+
 // --- parse_return_type_from_jvm_descriptor: JVM bytecode descriptors ---
 
 #[test]
