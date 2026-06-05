@@ -1736,6 +1736,67 @@ fn opaque_existential_root_resolves_protocol_extension_default() {
 }
 
 #[test]
+fn parameter_typed_receiver_resolves_protocol_extension_default() {
+    // The real Swift path for an opaque/existential parameter receiver:
+    // `func use(g: some Greet) { g.hello() }`. The extractor emits `g` as a
+    // Parameter scoped under `use` whose declared type is captured (keyword
+    // already peeled to `Greet`), so the chain root resolves through
+    // `field_type("use.g") = "Greet"` (scope-chain walk in the root resolver),
+    // not through a segment-level `declared_type`. `hello` is filed under
+    // `Greet` (the part-(b) protocol-extension default). This is the seam the
+    // segment-injected opaque test could not exercise.
+    let mut arena = TypeArena::new();
+    let greet_ty = arena.class("Greet");
+
+    let symbol_types = SymbolTypeMap::new();
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        greet_ty,
+        sym_info(7, "hello", "Greet.hello", "method", Some("Greet")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // The parameter `g` files under `use.g`; its captured declared type is the
+    // peeled constraint `Greet`. No segment-level declared_type is set.
+    let lookup = EmptyLookup::new().with_field_type("use.g", "Greet");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("g", SegmentKind::Identifier),
+            seg("hello", SegmentKind::Property),
+        ],
+    };
+    // The source symbol is the enclosing function `use`; its qname seeds the
+    // scope chain the root resolver walks for `{scope}.g`.
+    let source = dummy_source_symbol("use", None);
+    let r = dummy_extracted_ref("hello");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: vec!["use".to_string()],
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("hello resolves on the parameter-typed `some Greet` receiver");
+    assert_eq!(
+        result.target_symbol_id, 7,
+        "parameter `g: some Greet` dispatches `hello` through Greet"
+    );
+}
+
+#[test]
 fn generic_arg_substitutes_through_inheritance() {
     // class Repository<T> { find_one(): T }
     // class UserRepo: Repository<User> {}

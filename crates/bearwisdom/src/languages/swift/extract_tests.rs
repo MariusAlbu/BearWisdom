@@ -338,3 +338,93 @@ extension Array {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Function-parameter symbol + declared-type capture (LANG-SWIFT-1).
+    //
+    // A function parameter is emitted as a `Parameter` symbol scoped under the
+    // enclosing function, with a `TypeRef` to its declared type. The recursive
+    // type scan peels the opaque/existential keyword, so `g: some Greet` /
+    // `e: any Greet` capture `Greet`, rooting `g.hello()` on the protocol's
+    // extension default.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn function_parameter_emitted_as_scoped_symbol_with_type_ref() {
+        let src = r#"
+protocol Greet { func hello() }
+func use(g: some Greet, label e: any Greet, _ x: Plain) {}
+"#;
+        let r = super::extract::extract(src);
+
+        let use_idx = r
+            .symbols
+            .iter()
+            .position(|s| s.name == "use" && s.kind == SymbolKind::Function)
+            .expect("function 'use'");
+        let use_qname = r.symbols[use_idx].qualified_name.clone();
+
+        for (pname, tname) in [("g", "Greet"), ("e", "Greet"), ("x", "Plain")] {
+            let p = r
+                .symbols
+                .iter()
+                .find(|s| s.name == pname && s.kind == SymbolKind::Parameter)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "parameter '{pname}' must be a Parameter symbol; symbols: {:?}",
+                        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+                    )
+                });
+            assert_eq!(
+                p.scope_path.as_deref(),
+                Some(use_qname.as_str()),
+                "parameter '{pname}' must scope under the function qname"
+            );
+            assert_eq!(
+                p.qualified_name,
+                format!("{use_qname}.{pname}"),
+                "parameter '{pname}' qname must be function-qualified"
+            );
+            let p_idx = r
+                .symbols
+                .iter()
+                .position(|s| std::ptr::eq(s, p))
+                .unwrap();
+            // The parameter's FIRST TypeRef is its declared type (keyword peeled).
+            let first_type = r
+                .refs
+                .iter()
+                .find(|rf| {
+                    rf.source_symbol_index == p_idx && rf.kind == EdgeKind::TypeRef
+                })
+                .map(|rf| rf.target_name.as_str());
+            assert_eq!(
+                first_type,
+                Some(tname),
+                "parameter '{pname}' must carry a TypeRef to '{tname}'; refs from {p_idx}: {:?}",
+                r.refs
+                    .iter()
+                    .filter(|rf| rf.source_symbol_index == p_idx)
+                    .map(|rf| (&rf.target_name, rf.kind))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn opaque_parameter_does_not_emit_keyword_type() {
+        // The `some`/`any` keyword is never emitted as a type name — only the
+        // peeled constraint. Guards against a `some Greet` literal target.
+        let src = r#"
+protocol Greet { func hello() }
+func use(g: some Greet) {}
+"#;
+        let r = super::extract::extract(src);
+        assert!(
+            !r.refs.iter().any(|rf| {
+                rf.kind == EdgeKind::TypeRef
+                    && (rf.target_name == "some" || rf.target_name.starts_with("some "))
+            }),
+            "the opaque keyword must not leak into a TypeRef target"
+        );
+    }
+

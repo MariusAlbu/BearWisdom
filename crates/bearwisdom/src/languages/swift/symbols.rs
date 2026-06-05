@@ -122,6 +122,7 @@ pub(super) fn recurse_enum_body(
                     if let Some(sym_idx) = idx {
                         super::decorators::extract_decorators(&item, src, sym_idx, refs);
                         super::extract::extract_function_type_refs(&item, src, sym_idx, refs);
+                        push_parameters(&item, src, sym_idx, symbols, refs);
                         let body = item.child_by_field_name("body")
                             .or_else(|| find_child_by_kind(&item, "code_block"));
                         if let Some(b) = body {
@@ -319,6 +320,121 @@ pub(super) fn push_function_decl(
     generic_params: Vec::new(),
 });
     Some(idx)
+}
+
+/// Emit a `Parameter` symbol for each parameter of a function / method /
+/// protocol-function declaration, scoped under the declaration's qname, plus a
+/// `TypeRef` to the parameter's declared type.
+///
+/// Filing each parameter as `{func_qname}.{name}` with `scope_path =
+/// Some(func_qname)` is what lets a parameter-typed chain root resolve: the
+/// generic root resolver walks the scope chain for `{scope}.{name}` and reads
+/// the parameter's `field_type`, which the index builds from the parameter
+/// symbol's first `TypeRef`. The opaque/existential keyword (`some P` / `any
+/// P`) is peeled by the recursive type scan, so the captured type is the bare
+/// constraint `P`.
+///
+/// In tree-sitter-swift a `parameter` carries the binding identifier and the
+/// type both under the `name` field: the `simple_identifier` `name` is the
+/// internal binding name, and the type-shaped `name` (or the `type` field /
+/// nested `type_annotation`) is the declared type. The `external_name` field
+/// (the call-site label) is not the binding and is ignored.
+pub(super) fn push_parameters(
+    func_node: &Node,
+    src: &[u8],
+    func_idx: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let func_qname = match symbols.get(func_idx) {
+        Some(f) => f.qualified_name.clone(),
+        None => return,
+    };
+
+    let mut cursor = func_node.walk();
+    for child in func_node.children(&mut cursor) {
+        if child.kind() != "parameter" {
+            continue;
+        }
+        push_one_parameter(&child, src, &func_qname, func_idx, symbols, refs);
+    }
+}
+
+fn push_one_parameter(
+    param: &Node,
+    src: &[u8],
+    func_qname: &str,
+    func_idx: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // The binding identifier is the `simple_identifier`-kinded `name` child.
+    // The type is the non-identifier `name` child (`user_type` /
+    // `opaque_type` / `existential_type` / `optional_type` / …), with the
+    // `type` field and a nested `type_annotation` as grammar fallbacks.
+    let mut name: Option<String> = None;
+    let mut type_node: Option<Node> = None;
+
+    let mut nc = param.walk();
+    for field_child in param.children_by_field_name("name", &mut nc) {
+        match field_child.kind() {
+            "simple_identifier" | "identifier" if name.is_none() => {
+                name = Some(node_text(field_child, src));
+            }
+            _ => {
+                if type_node.is_none() {
+                    type_node = Some(field_child);
+                }
+            }
+        }
+    }
+
+    let name = match name {
+        Some(n) if !n.is_empty() && n != "_" => n,
+        _ => return,
+    };
+
+    let type_node = type_node
+        .or_else(|| param.child_by_field_name("type"))
+        .or_else(|| {
+            find_child_by_kind(param, "type_annotation")
+                .and_then(|ta| ta.child_by_field_name("type").or_else(|| ta.named_child(0)))
+        });
+
+    let qualified_name = format!("{func_qname}.{name}");
+
+    let param_idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::Parameter,
+        visibility: None,
+        start_line: param.start_position().row as u32,
+        end_line: param.end_position().row as u32,
+        start_col: param.start_position().column as u32,
+        end_col: param.end_position().column as u32,
+        signature: None,
+        doc_comment: None,
+        scope_path: Some(func_qname.to_string()),
+        parent_index: Some(func_idx),
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
+
+    if let Some(tn) = type_node {
+        // `extract_type_ref_from_swift_type` emits the bare type name first
+        // (the recursive scan peels `some`/`any` and any wrapper), so the
+        // parameter's FIRST TypeRef — which the index reads as its
+        // `field_type` — is the constraint type.
+        if tn.kind() == "protocol_composition_type" {
+            super::calls::extract_protocol_composition_refs(&tn, src, param_idx, refs);
+        } else {
+            super::calls::extract_type_ref_from_swift_type(&tn, src, param_idx, refs);
+        }
+    }
 }
 
 pub(super) fn push_init(

@@ -12,8 +12,8 @@ use super::decorators::{
 use super::helpers::find_child_by_kind;
 use super::symbols::{
     extract_type_inheritance, handle_class_declaration, push_associatedtype, push_deinit,
-    push_extension, push_function_decl, push_import, push_init, push_property, push_subscript,
-    push_type_decl, push_typealias, recurse_into_body,
+    push_extension, push_function_decl, push_import, push_init, push_parameters, push_property,
+    push_subscript, push_type_decl, push_typealias, recurse_into_body,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -140,6 +140,7 @@ pub(super) fn extract_node<'a>(
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_function_type_refs(&child, src, sym_idx, refs);
+                    push_parameters(&child, src, sym_idx, symbols, refs);
                     let body = child.child_by_field_name("body")
                         .or_else(|| find_child_by_kind(&child, "code_block"));
                     if let Some(b) = body {
@@ -157,6 +158,7 @@ pub(super) fn extract_node<'a>(
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_function_type_refs(&child, src, sym_idx, refs);
+                    push_parameters(&child, src, sym_idx, symbols, refs);
                 }
             }
 
