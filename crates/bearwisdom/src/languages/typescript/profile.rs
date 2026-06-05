@@ -183,6 +183,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: true,
     // Declaration merging: interface + variable under one qname.
     overload_pick_all: true,
+    argument_dependent_lookup: false,
     // jest/vitest globals, jQuery `$`, DOM constructors, core-lib utility types.
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
         npm_confidence: 0.85,

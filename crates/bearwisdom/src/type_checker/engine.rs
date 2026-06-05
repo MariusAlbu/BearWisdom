@@ -15,7 +15,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::alias::{build_alias_index, AliasIndex};
 use crate::type_checker::core::chain::{
@@ -253,6 +253,7 @@ impl<'a> Engine<'a> {
                     let bare = hooks
                         .and_then(|h| h.resolve_bare_pre(ref_ctx, file_ctx, lookup))
                         .or_else(|| self.resolve_generic(ref_ctx, file_ctx, lookup, profile))
+                        .or_else(|| self.resolve_via_adl(ref_ctx, lookup, profile))
                         .or_else(|| {
                             hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup))
                         });
@@ -271,6 +272,7 @@ impl<'a> Engine<'a> {
                 let bare = hooks
                     .and_then(|h| h.resolve_bare_pre(ref_ctx, file_ctx, lookup))
                     .or_else(|| self.resolve_generic(ref_ctx, file_ctx, lookup, profile))
+                    .or_else(|| self.resolve_via_adl(ref_ctx, lookup, profile))
                     .or_else(|| {
                         hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup))
                     });
@@ -354,6 +356,117 @@ impl<'a> Engine<'a> {
             kind_compatible: permissive_kind,
         }
         .resolve_all_with_profile(profile)
+    }
+
+    /// Argument-dependent lookup (ADL). A strict fallback for a bare call the
+    /// regular ladder declined: resolve `swap(a, b)` to a free function `swap`
+    /// declared in the namespace of one of its argument types, even though no
+    /// import / scope / using brought `swap` into scope.
+    ///
+    /// Runs only when the profile opts in (`argument_dependent_lookup`), the ref
+    /// is a `Calls`/`Instantiates` call carrying arguments, and the target is
+    /// bare (no `.`/`::`/`/` qualifier). For each argument typed as a `Class`
+    /// (or `Apply` over one) with a dotted qname, the declaring-namespace prefix
+    /// (`rsplit_once('.')`) supplies a candidate `{namespace}.{target}`. A single
+    /// unique candidate qname binds directly; several hand off to BIND-4's
+    /// arity/type assignability filter and bind only the unique survivor — zero
+    /// or multiple survivors decline (never guess).
+    fn resolve_via_adl(
+        &self,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+        profile: &LanguageProfile,
+    ) -> Option<Resolution> {
+        if !profile.argument_dependent_lookup {
+            return None;
+        }
+        let er = ref_ctx.extracted_ref;
+        if !matches!(er.kind, EdgeKind::Calls | EdgeKind::Instantiates) || er.call_args.is_empty() {
+            return None;
+        }
+        let target = er.target_name.as_str();
+        if target.contains('.') || target.contains("::") || target.contains('/') {
+            return None;
+        }
+
+        // Type each argument, then collect the declaring namespace of every
+        // argument typed as a nominal class (looking through one `Apply` layer).
+        let arg_type_ids =
+            crate::type_checker::core::dispatch::resolve_arg_types(
+                &er.call_args,
+                &self.arena,
+                lookup,
+                profile,
+            );
+        let mut candidates: Vec<SymbolInfo> = Vec::new();
+        for &ty in &arg_type_ids {
+            let Some(ns) = self.declaring_namespace_of(ty) else {
+                continue;
+            };
+            let qname = format!("{ns}.{target}");
+            for cand in lookup.all_by_qualified_name(&qname) {
+                if !matches!(cand.kind.as_str(), "function" | "method" | "constructor") {
+                    continue;
+                }
+                if candidates.iter().any(|c| c.id == cand.id) {
+                    continue;
+                }
+                candidates.push(cand.clone());
+            }
+        }
+
+        let chosen = match candidates.len() {
+            0 => return None,
+            // A single namespace-mate IS the structural answer — its namespace
+            // owns the function. Arity isn't even consulted (a free function and
+            // a same-named overload would both surface as candidates; one means
+            // no ambiguity to resolve).
+            1 => candidates.into_iter().next().unwrap(),
+            // Several namespaces contributed same-name callables — reuse BIND-4's
+            // sound arity/type filter and bind only when exactly one survives.
+            _ => {
+                let matches = crate::type_checker::core::dispatch::arg_assignable_candidates(
+                    candidates,
+                    &arg_type_ids,
+                    &self.members,
+                    &self.symbol_types,
+                    &self.arena,
+                    lookup,
+                    profile,
+                );
+                if matches.len() != 1 {
+                    return None;
+                }
+                matches.into_iter().next().unwrap()
+            }
+        };
+
+        Some(Resolution {
+            target_symbol_id: chosen.id,
+            confidence: 1.0,
+            strategy: "engine_adl",
+            resolved_yield_type: None,
+            flow_emit: None,
+        })
+    }
+
+    /// The declaring-namespace prefix of a nominal type: for `Class(qname)` (or
+    /// an `Apply` whose base is a `Class`), the segment before the qname's final
+    /// `.`. Returns `None` for an unqualified qname (no namespace to probe) or a
+    /// non-nominal type. Qnames are `.`-joined by the scope-tree qualifier for
+    /// every language, so the split is uniform.
+    fn declaring_namespace_of(&self, ty: TypeId) -> Option<String> {
+        let qname = match self.arena.get(ty) {
+            crate::type_checker::core::types::Type::Class(q) => q,
+            crate::type_checker::core::types::Type::Apply { base, .. } => {
+                match self.arena.get(base) {
+                    crate::type_checker::core::types::Type::Class(q) => q,
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+        qname.rsplit_once('.').map(|(ns, _)| ns.to_string())
     }
 
     /// Bare-name overload disambiguation. When a chain-less call resolved to one

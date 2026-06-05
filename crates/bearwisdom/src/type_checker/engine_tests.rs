@@ -1071,3 +1071,203 @@ fn import_prefix_decline_gates_on_leading_segment_vs_imports() {
     .expect("a qualified target whose head is not imported must still resolve");
     assert_eq!(bound.target_symbol_id, 1);
 }
+
+// =============================================================================
+// LANG-CPP-1 — argument-dependent lookup (ADL).
+// =============================================================================
+
+/// Lookup double for the ADL test. A free function `swap` is keyed ONLY under
+/// the qname `mylib.swap` (reachable via `by_qualified_name`); `by_name("swap")`
+/// is empty so the regular bare-name ladder declines. Two call arguments `a`/`b`
+/// both have local type `mylib.Widget`, so their declaring namespace `mylib`
+/// supplies the `swap` candidate.
+struct AdlLookup {
+    swap: Vec<SymbolInfo>,
+    empty: Vec<SymbolInfo>,
+    empty_reexports: Vec<(String, String)>,
+}
+
+impl AdlLookup {
+    fn new() -> Self {
+        let file_path: Arc<str> = Arc::from("src/lib.cpp");
+        Self {
+            swap: vec![SymbolInfo {
+                id: 7,
+                name: "swap".to_string(),
+                qualified_name: "mylib.swap".to_string(),
+                kind: "function".to_string(),
+                visibility: Some("public".to_string()),
+                file_path,
+                scope_path: Some("mylib".to_string()),
+                package_id: None,
+                signature: None,
+            }],
+            empty: Vec::new(),
+            empty_reexports: Vec::new(),
+        }
+    }
+}
+
+impl SymbolLookup for AdlLookup {
+    // `swap` is NOT in bare-name scope — the regular ladder finds nothing and
+    // declines, so ADL is strictly the fallback.
+    fn by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    // The argument's declaring namespace supplies the candidate by qname.
+    fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
+        if qname == "mylib.swap" {
+            self.swap.first()
+        } else {
+            None
+        }
+    }
+    fn members_of(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+        Vec::new()
+    }
+    fn has_in_namespace(&self, _: &str) -> bool {
+        false
+    }
+    fn in_file(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn field_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn alias_target(&self, _: &str) -> Option<&AliasTarget> {
+        None
+    }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] {
+        &self.empty_reexports
+    }
+    fn is_external_name(&self, _: &str, _: &str) -> bool {
+        false
+    }
+    // The arguments' declared type — the source of the ADL namespace.
+    fn local_type(&self, name: &str) -> Option<String> {
+        match name {
+            "a" | "b" => Some("mylib.Widget".to_string()),
+            _ => None,
+        }
+    }
+}
+
+/// A bare `Calls` ref `swap(a, b)` whose two arguments are identifiers `a`/`b`.
+fn adl_swap_ref() -> ExtractedRef {
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "swap".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: vec![
+            crate::types::CallArg::Ident("a".to_string()),
+            crate::types::CallArg::Ident("b".to_string()),
+        ],
+    }
+}
+
+/// Build an engine over the ADL lookup under `language`/`profile` and resolve
+/// the bare `swap(a, b)` ref.
+fn resolve_adl_swap(
+    language: &'static str,
+    profile: &'static LanguageProfile,
+) -> Option<Resolution> {
+    let arena = Arc::new(TypeArena::new());
+    // No ParsedFile symbols are needed — the `swap` target lives only in the
+    // lookup double, reachable by qname. An empty parsed file gives the engine
+    // a registered profile under `language`.
+    let pf = ParsedFile {
+        path: "src/lib.cpp".to_string(),
+        language: language.to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: Vec::new(),
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let sym_ids = SymbolIdMap::default();
+    let lookup = AdlLookup::new();
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert(language, profile);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let r = adl_swap_ref();
+    let rc = ref_ctx_for(&r, &source);
+    let fc = FileContext {
+        file_path: "src/lib.cpp".to_string(),
+        language: language.to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    };
+    engine.resolve(&rc, &fc, &lookup)
+}
+
+#[test]
+fn adl_resolves_bare_call_via_argument_namespace() {
+    // C++ profile opts into ADL: a bare `swap(a, b)` the ladder declined
+    // resolves to `mylib.swap` because argument `a`'s type `mylib.Widget`
+    // declares the namespace `mylib`, which owns `swap`.
+    let resolution = resolve_adl_swap("c", &crate::languages::c_lang::C_LANG_PROFILE)
+        .expect("ADL binds swap via the argument's declaring namespace");
+    assert_eq!(
+        resolution.target_symbol_id, 7,
+        "ADL must bind the namespace-mate `mylib.swap`"
+    );
+    assert_eq!(resolution.strategy, "engine_adl");
+}
+
+#[test]
+fn adl_gated_off_declines_same_ref() {
+    // Same scenario, but under a profile with `argument_dependent_lookup`
+    // false (TypeScript): the probe never runs, so the ref stays unresolved —
+    // proving ADL is gated by the profile axis, not unconditional.
+    assert!(
+        resolve_adl_swap("typescript", &TYPESCRIPT_PROFILE).is_none(),
+        "ADL must not fire for a profile that hasn't opted in"
+    );
+}

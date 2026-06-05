@@ -223,6 +223,17 @@ pub struct LanguageProfile {
     /// to reach the callable variable. Generic correctness fix, scoped by the
     /// flag so first-wins languages are byte-identical.
     pub overload_pick_all: bool,
+    /// Argument-dependent lookup. `false` (the default) leaves the probe inert.
+    /// `true` opts a language in (C++): when the regular bare-name ladder
+    /// declines a bare `Calls`/`Instantiates` ref, the engine resolves each
+    /// call argument's type to a qname, takes its declaring-namespace prefix,
+    /// and probes `{namespace}.{target}` for a kind-compatible callable — binding
+    /// the unique survivor (after the BIND-4 arity/type filter when several
+    /// namespaces contribute candidates). A bare call to a free function declared
+    /// in the namespace of one of its argument types resolves even though no
+    /// import / scope / using brings the function into scope. Strictly a fallback
+    /// after the structural ladder, so scope/import evidence always wins.
+    pub argument_dependent_lookup: bool,
     /// Ambient npm/test-framework/core-lib globals probed for a bare
     /// single-identifier call/typeref/instantiation that no import binds.
     /// `Off` (the default) leaves the probe inert. `On` checks the synthetic
@@ -947,6 +958,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     module_prefix_rewrites: ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
+    argument_dependent_lookup: false,
     ambient_globals: AmbientGlobals::Off,
     namespaceless_global_type_lookup: false,
     self_receiver_discovery: SelfReceiverDiscovery::ScopePathThenDefault,

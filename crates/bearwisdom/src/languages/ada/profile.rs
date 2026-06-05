@@ -72,6 +72,7 @@ pub const ADA_PROFILE: LanguageProfile = LanguageProfile {
     module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
+    argument_dependent_lookup: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
