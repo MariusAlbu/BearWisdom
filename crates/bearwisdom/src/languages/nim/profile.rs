@@ -46,6 +46,7 @@ pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: false,
     async_wrappers: &["Future"],
+    container_accessors: &[],
     iterator_method: None,
     primitive_mapping: NIM_PRIMITIVES,
     kind_compatible_table: NIM_KIND_TABLE,

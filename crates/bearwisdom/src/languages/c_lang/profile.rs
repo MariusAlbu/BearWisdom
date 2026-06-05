@@ -42,6 +42,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: false,
     literal_narrowing: false,
     async_wrappers: &[],
+    container_accessors: &[],
     iterator_method: None,
     primitive_mapping: C_PRIMITIVES,
     kind_compatible_table: C_KIND_TABLE,

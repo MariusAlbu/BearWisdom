@@ -26,6 +26,7 @@ pub const GRAPHQL_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: false,
     async_wrappers: &[],
+    container_accessors: &[],
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: GRAPHQL_KIND_TABLE,

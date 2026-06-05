@@ -64,6 +64,7 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: false,
     async_wrappers: &[],
+    container_accessors: &[],
     iterator_method: None,
     primitive_mapping: PHP_PRIMITIVES,
     kind_compatible_table: PHP_KIND_TABLE,

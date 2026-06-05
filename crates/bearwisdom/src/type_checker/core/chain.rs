@@ -36,7 +36,8 @@ use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
 use crate::type_checker::core::generics::{substitute, unify_into, GenericEnv};
 use rustc_hash::{FxHashMap, FxHashSet};
 use crate::type_checker::core::dispatch::{
-    arg_assignable_candidates, resolve_arg_types, select_method, DispatchQuery,
+    arg_assignable_candidates, index_into, project_container_slot, resolve_arg_types, select_method,
+    DispatchQuery,
 };
 use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
@@ -474,6 +475,37 @@ impl<'a> ChainWalker<'a> {
                 current_ty = self.expand_aliases(self.arena.intern_type_str(dt));
                 self.bind_apply_args(current_ty, &mut env);
                 continue;
+            }
+
+            // Container element/value projection (INFER-6). Two forms type
+            // THROUGH a built-in container to the value its accessor yields,
+            // projected from the receiver's `Apply` args structurally:
+            //   - a subscript `arr[i]` (`ComputedAccess`) → `index_into` —
+            //     `Array<T>[_]→T`, `Map<K,V>[_]→V`, tuple-by-int, class-by-key;
+            //   - a built-in accessor call `arr.pop()` / `m.get()` whose name +
+            //     receiver shape match a `container_accessors` entry → that
+            //     entry's slot.
+            // The container head (`Array`/`Map`/`Set`) is a synthetic builtin
+            // with no project members, so projecting before member lookup never
+            // shadows a real member; an empty axis projects nothing and the
+            // chain falls through to ordinary member lookup unchanged.
+            if seg.kind == SegmentKind::ComputedAccess {
+                let index = CallArg::Literal(seg.name.clone());
+                current_ty = index_into(current_ty, &index, self.arena, self.lookup);
+                self.bind_apply_args(current_ty, &mut env);
+                continue;
+            }
+            if let Some(&(_, shape, slot)) = self
+                .profile
+                .container_accessors
+                .iter()
+                .find(|(m, _, _)| *m == seg.name)
+            {
+                if let Some(elem) = project_container_slot(current_ty, shape, slot, self.arena) {
+                    current_ty = self.expand_aliases(elem);
+                    self.bind_apply_args(current_ty, &mut env);
+                    continue;
+                }
             }
 
             let kind_filter = if i == last_idx {

@@ -47,6 +47,10 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: false,
     async_wrappers: &["Promise"],
+    // JS carries no type annotations, so a value rarely acquires an `Apply`
+    // element type for the projection to read — left empty pending inference
+    // that types JS containers structurally.
+    container_accessors: &[],
     iterator_method: None,
     primitive_mapping: JS_PRIMITIVES,
     kind_compatible_table: JS_KIND_TABLE,

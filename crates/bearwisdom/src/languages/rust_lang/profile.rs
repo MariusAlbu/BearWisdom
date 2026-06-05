@@ -113,6 +113,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     // Async fn returns impl Future<Output = T>; await unwraps to T.
     async_wrappers: &["Future", "Pin"],
+    container_accessors: &[],
     iterator_method: Some("next"),
     primitive_mapping: RUST_PRIMITIVES,
     kind_compatible_table: RUST_KIND_TABLE,

@@ -42,6 +42,7 @@ pub const MATLAB_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: false,
     literal_narrowing: false,
     async_wrappers: &[],
+    container_accessors: &[],
     iterator_method: None,
     primitive_mapping: MATLAB_PRIMITIVES,
     kind_compatible_table: MATLAB_KIND_TABLE,

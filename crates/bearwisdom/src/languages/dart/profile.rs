@@ -63,6 +63,7 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: false,
     async_wrappers: &["Future", "Stream"],
+    container_accessors: &[],
     iterator_method: Some("iterator"),
     primitive_mapping: DART_PRIMITIVES,
     kind_compatible_table: DART_KIND_TABLE,

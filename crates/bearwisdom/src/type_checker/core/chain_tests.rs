@@ -3925,3 +3925,279 @@ fn cfg_union_narrowing_drops_when_member_missing_on_a_branch() {
     // doesn't lose the explicit construction.
     let _ = Type::Union(vec![]);
 }
+
+// ----------------------------------------------------------------------------
+// INFER-6 — built-in container generic semantics
+//
+// A chain past a container accessor (`arr.pop()`, `m.get()`) or a subscript
+// (`arr[i]`) types THROUGH the container's element/value, so a following
+// member resolves on the element. The element comes from the receiver's
+// `Apply` args structurally; which accessor projects which slot is profile
+// data (`container_accessors`), not a hardcoded method→element map.
+// ----------------------------------------------------------------------------
+
+use crate::type_checker::profile::language_profile::{
+    AccessorSlot, ContainerShape,
+};
+
+/// A profile carrying the three built-in container accessors under test.
+/// All other axes are DEFAULT_PROFILE's conservative values.
+const CONTAINER_PROFILE: LanguageProfile = LanguageProfile {
+    has_generics: true,
+    container_accessors: &[
+        ("pop", ContainerShape::Sequence, AccessorSlot::Element),
+        ("get", ContainerShape::Map, AccessorSlot::Value),
+    ],
+    ..DEFAULT_PROFILE
+};
+
+// `Apply<Array,[User]>` root; `arr.pop()` must yield User so `.name` binds.
+fn array_of_user(arena: &TypeArena) -> TypeId {
+    let array_base = arena.class("Array");
+    let user_ty = arena.class("User");
+    arena.intern(Type::Apply {
+        base: array_base,
+        args: vec![user_ty],
+    })
+}
+
+struct FixedTyRoot {
+    ty: TypeId,
+}
+impl RootResolver for FixedTyRoot {
+    fn resolve(
+        &self,
+        _seg: &ChainSegment,
+        _ref_ctx: &RefContext,
+        _file_ctx: &FileContext,
+        _arena: &TypeArena,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<TypeId> {
+        Some(self.ty)
+    }
+}
+
+#[test]
+fn array_pop_types_through_element() {
+    // const arr: Array<User>;  arr.pop().name  → User.name. `Array` has no
+    // project symbol `pop`; the container_accessors axis projects the Sequence
+    // element (args[0] = User) and `.name` resolves on it.
+    let mut arena = TypeArena::new();
+    let arr_ty = array_of_user(&arena);
+    let user_ty = arena.class("User");
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        user_ty,
+        sym_info(7, "name", "User.name", "property", Some("User")),
+    );
+
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &CONTAINER_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("arr", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("pop", SegmentKind::Property)
+            },
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedTyRoot { ty: arr_ty })
+        .expect("arr.pop() types through to the element so .name resolves");
+    assert_eq!(result.target_symbol_id, 7);
+}
+
+#[test]
+fn map_get_types_through_value() {
+    // const m: Map<string, User>;  m.get(k).name  → User.name. The Map shape's
+    // Value slot is args[1] = User.
+    use crate::type_checker::core::types::Type;
+    let mut arena = TypeArena::new();
+    let map_base = arena.class("Map");
+    let string_ty = arena.class("string");
+    let user_ty = arena.class("User");
+    let map_ty = arena.intern(Type::Apply {
+        base: map_base,
+        args: vec![string_ty, user_ty],
+    });
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        user_ty,
+        sym_info(8, "name", "User.name", "property", Some("User")),
+    );
+
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &CONTAINER_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("m", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("get", SegmentKind::Property)
+            },
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedTyRoot { ty: map_ty })
+        .expect("m.get() types through to the Map value so .name resolves");
+    assert_eq!(result.target_symbol_id, 8);
+}
+
+#[test]
+fn computed_access_types_through_element() {
+    // const arr: Array<User>;  arr[i].name  → User.name. The subscript
+    // projects the Sequence element structurally (index value irrelevant for
+    // Array). No container_accessors entry is needed for the subscript form.
+    let mut arena = TypeArena::new();
+    let arr_ty = array_of_user(&arena);
+    let user_ty = arena.class("User");
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        user_ty,
+        sym_info(9, "name", "User.name", "property", Some("User")),
+    );
+
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &CONTAINER_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("arr", SegmentKind::Identifier),
+            seg("i", SegmentKind::ComputedAccess),
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedTyRoot { ty: arr_ty })
+        .expect("arr[i] types through the element so .name resolves");
+    assert_eq!(result.target_symbol_id, 9);
+}
+
+#[test]
+fn empty_container_accessors_axis_leaves_chain_unchanged() {
+    // With DEFAULT_PROFILE (empty container_accessors), `arr.pop().name` finds
+    // no `pop` member on `Array` and projects nothing — the chain misses,
+    // byte-identical to pre-INFER-6 behavior. Locks the axis as the only thing
+    // that turns the projection on.
+    let mut arena = TypeArena::new();
+    let arr_ty = array_of_user(&arena);
+    let user_ty = arena.class("User");
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        user_ty,
+        sym_info(10, "name", "User.name", "property", Some("User")),
+    );
+
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("arr", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("pop", SegmentKind::Property)
+            },
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &FixedTyRoot { ty: arr_ty })
+            .is_none(),
+        "no container_accessors entry → `pop` does not project → chain misses"
+    );
+}

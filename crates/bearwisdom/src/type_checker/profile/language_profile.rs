@@ -32,6 +32,17 @@ pub struct LanguageProfile {
     pub look_through_optional: bool,
     pub literal_narrowing: bool,
     pub async_wrappers: &'static [&'static str],
+    /// Built-in container accessor methods that type THROUGH the container's
+    /// element/value. Each entry is `(method, shape, slot)`: the method name
+    /// (`pop`, `get`), the container shape it applies to (`Sequence` / `Map`),
+    /// and which structural slot the call yields (`Element`, `Key`, `Value`).
+    /// The yielded type is projected from the receiver's `Apply` ARGS — a
+    /// `Sequence` element is `args[0]`, a `Map` value is `args[1]` — so the
+    /// element comes from structure, never from a hardcoded method→type table.
+    /// `&[]` (the default) leaves container accessors as ordinary member
+    /// lookups: with no entry they don't project, so a chain past one misses
+    /// unless a real member of that name exists.
+    pub container_accessors: &'static [(&'static str, ContainerShape, AccessorSlot)],
     pub iterator_method: Option<&'static str>,
     pub primitive_mapping: &'static [(&'static str, PrimKind)],
     pub kind_compatible_table: KindTable,
@@ -681,6 +692,30 @@ pub enum DispatchAxis {
     ReturnType,
 }
 
+/// The structural shape of a built-in container, naming where its element data
+/// lives in the receiver's `Apply` args. A `container_accessors` entry binds a
+/// method name to one of these so the engine projects the right slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContainerShape {
+    /// A linear collection — `Array<T>` / `ReadonlyArray<T>` / `Set<T>` — whose
+    /// element is `args[0]`.
+    Sequence,
+    /// An associative collection — `Map<K, V>` — whose key is `args[0]` and
+    /// value is `args[1]`.
+    Map,
+}
+
+/// Which structural slot of a container a `container_accessors` method yields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessorSlot {
+    /// `Sequence` element / the single iterated type — `args[0]`.
+    Element,
+    /// `Map` key — `args[0]`.
+    Key,
+    /// `Map` value — `args[1]`.
+    Value,
+}
+
 /// How a bare (unqualified) receiver type encountered mid-chain is promoted to
 /// its package-qualified qname before member lookup. Members are keyed under
 /// the fully package-qualified qname (`com.foo.Repository.findOne`), while a
@@ -861,6 +896,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: false,
     async_wrappers: &[],
+    container_accessors: &[],
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,

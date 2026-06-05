@@ -62,6 +62,7 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: false,
     async_wrappers: &[],
+    container_accessors: &[],
     iterator_method: Some("each"),
     primitive_mapping: RUBY_PRIMITIVES,
     kind_compatible_table: RUBY_KIND_TABLE,

@@ -34,7 +34,9 @@ use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::symbol_view::SymbolView;
-use crate::type_checker::profile::language_profile::{DispatchAxis, LanguageProfile};
+use crate::type_checker::profile::language_profile::{
+    AccessorSlot, ContainerShape, DispatchAxis, LanguageProfile,
+};
 use crate::type_checker::subtype::{args_assignable, is_assignable_to_typed_with, SubtypeResult};
 use crate::types::{CallArg, EdgeKind};
 
@@ -462,7 +464,7 @@ fn resolve_index_access(
 /// `Array<T>[_] → T`, `Map<K,V>[_] → V`, a tuple indexed by an integer literal
 /// → that element, a class indexed by a string-literal key → that field's
 /// declared type. Every other shape is Unknown.
-fn index_into(
+pub(crate) fn index_into(
     cont_ty: TypeId,
     index: &CallArg,
     arena: &TypeArena,
@@ -497,6 +499,41 @@ fn index_into(
         },
         _ => unknown,
     }
+}
+
+/// Project a container's element/key/value type from its `Apply` args, given
+/// the declared shape and slot of a built-in accessor. `Sequence` matches an
+/// `Apply` whose base is `Array` / `ReadonlyArray` / `Set` (element = `args[0]`);
+/// `Map` matches an `Apply` whose base is `Map` (key = `args[0]`, value =
+/// `args[1]`). Returns `None` when the receiver is not an `Apply` of the
+/// declared shape or lacks the indexed arg — the element comes from the
+/// receiver's structure, never from a method→type table.
+pub(crate) fn project_container_slot(
+    cont_ty: TypeId,
+    shape: ContainerShape,
+    slot: AccessorSlot,
+    arena: &TypeArena,
+) -> Option<TypeId> {
+    let Type::Apply { base, args } = arena.get(cont_ty) else {
+        return None;
+    };
+    let Type::Class(base_name) = arena.get(base) else {
+        return None;
+    };
+    let shape_matches = match shape {
+        ContainerShape::Sequence => {
+            matches!(base_name.as_str(), "Array" | "ReadonlyArray" | "Set")
+        }
+        ContainerShape::Map => base_name == "Map",
+    };
+    if !shape_matches {
+        return None;
+    }
+    let idx = match slot {
+        AccessorSlot::Element | AccessorSlot::Key => 0,
+        AccessorSlot::Value => 1,
+    };
+    args.get(idx).copied()
 }
 
 /// Integer value of an index expression when it is a plain integer literal.

@@ -84,6 +84,7 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     // Both stdlib (coroutines via `async def`) and asyncio.Future wrap
     // values for `await`.
     async_wrappers: &["Coroutine", "Awaitable", "Future", "Task"],
+    container_accessors: &[],
     iterator_method: Some("__iter__"),
     primitive_mapping: PY_PRIMITIVES,
     kind_compatible_table: PY_KIND_TABLE,

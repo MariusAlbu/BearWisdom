@@ -75,6 +75,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // Go has goroutines + channels, not value-wrapping futures. No async
     // wrapper types the engine should peel.
     async_wrappers: &[],
+    container_accessors: &[],
     // Range loops use the type-side `range` keyword, not a method call.
     // Engine iteration peeling stays off.
     iterator_method: None,

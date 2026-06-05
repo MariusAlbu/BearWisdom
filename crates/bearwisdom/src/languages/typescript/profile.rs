@@ -10,8 +10,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
-    SupertypeDiscovery,
+    AccessorSlot, ChainQualification, ConstructorPattern, ContainerShape, DecoratorSyntax,
+    DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -120,6 +120,16 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // `await someAsync()` unwraps Promise<T> -> T. Engine handles via
     // AsyncWrapper / unwrap_await + this axis declaring the wrapper class.
     async_wrappers: &["Promise"],
+    // Built-in container accessors that type through the element/value. The
+    // yield is projected from the receiver `Apply` args structurally — Array's
+    // element-returning methods yield `args[0]`, `Map.get` yields `args[1]`.
+    container_accessors: &[
+        ("pop", ContainerShape::Sequence, AccessorSlot::Element),
+        ("shift", ContainerShape::Sequence, AccessorSlot::Element),
+        ("at", ContainerShape::Sequence, AccessorSlot::Element),
+        ("find", ContainerShape::Sequence, AccessorSlot::Element),
+        ("get", ContainerShape::Map, AccessorSlot::Value),
+    ],
     // TS iteration protocols (Iterable<T>, IterableIterator<T>) are
     // expressed via the `[Symbol.iterator]` method; the engine doesn't
     // unwrap on a single method name — let the chain walker peel via

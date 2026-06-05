@@ -15,6 +15,7 @@ static TS_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: true,
     async_wrappers: &["Promise", "PromiseLike", "Thenable"],
+    container_accessors: &[],
     iterator_method: Some("[Symbol.iterator]"),
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,

@@ -70,6 +70,7 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     look_through_optional: true,
     literal_narrowing: false,
     async_wrappers: &["Deferred", "Flow"],
+    container_accessors: &[],
     iterator_method: Some("iterator"),
     primitive_mapping: KOTLIN_PRIMITIVES,
     kind_compatible_table: KOTLIN_KIND_TABLE,
