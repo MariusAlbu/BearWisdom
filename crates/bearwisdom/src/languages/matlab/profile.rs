@@ -60,7 +60,7 @@ pub const MATLAB_PROFILE: LanguageProfile = LanguageProfile {
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    package_by_directory: false,
+    package_by_directory: true,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
@@ -73,7 +73,7 @@ pub const MATLAB_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    namespaceless_global_type_lookup: true,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,
