@@ -69,6 +69,9 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     // Python uses explicit inheritance (`class Admin(User):`). The engine's
     // Explicit discovery reads Inherits refs straight from the extractor.
     supertype_discovery: SupertypeDiscovery::Explicit,
+    // Multiple inheritance resolves by C3 (Python's MRO), so an asymmetric
+    // diamond picks the same override the interpreter would.
+    ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::C3,
     // pip site-packages / typeshed contribute external types.
     members_can_be_external: true,
     dispatch_axis: DispatchAxis::Receiver,

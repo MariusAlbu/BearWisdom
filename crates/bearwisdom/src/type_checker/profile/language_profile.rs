@@ -25,6 +25,12 @@ pub struct LanguageProfile {
 
     // === Type system (engine) ===
     pub supertype_discovery: SupertypeDiscovery,
+    /// Order the arg-carrying member walk (`find_on_chain`) visits ancestors.
+    /// `Bfs` (the default) keeps the breadth-first walk every language used
+    /// before this axis; `C3` opts a multiple-inheritance language (Python)
+    /// into C3 linearization so an asymmetric diamond resolves the same
+    /// override the runtime would.
+    pub ancestor_order: AncestorOrder,
     pub members_can_be_external: bool,
     pub dispatch_axis: DispatchAxis,
     pub has_generics: bool,
@@ -682,6 +688,24 @@ pub enum SupertypeDiscovery {
     Both,
 }
 
+/// Order in which the arg-carrying member walk visits a type's ancestors.
+/// The order decides which override wins when the same member is declared on
+/// more than one ancestor: member lookup returns the FIRST kind-compatible
+/// match, so an asymmetric multiple-inheritance diamond resolves differently
+/// under each order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AncestorOrder {
+    /// Breadth-first over the supertype graph. The default — direct parents
+    /// before grandparents, left-to-right within a level. Correct for
+    /// single-inheritance and linear hierarchies.
+    Bfs,
+    /// C3 linearization (Python's MRO). A monotonic merge of each parent's own
+    /// C3 order with the local parent list, so a parent's full ancestor chain
+    /// precedes the next sibling. Diverges from BFS only on asymmetric
+    /// multiple-inheritance diamonds.
+    C3,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchAxis {
     /// Single dispatch on the receiver.
@@ -889,6 +913,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     qname_separator: ".",
     self_keywords: &[],
     supertype_discovery: SupertypeDiscovery::Explicit,
+    ancestor_order: AncestorOrder::Bfs,
     members_can_be_external: false,
     dispatch_axis: DispatchAxis::Receiver,
     has_generics: false,

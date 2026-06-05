@@ -11,6 +11,7 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     // reference binds to the same-file `X` Variable / `local` attribute.
     self_keywords: &["var", "local"],
     supertype_discovery: SupertypeDiscovery::Explicit,
+    ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: false,
     dispatch_axis: DispatchAxis::Receiver,
     has_generics: false,

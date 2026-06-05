@@ -65,6 +65,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     self_keywords: &[],
     // The hallmark of Go: structural interface satisfaction.
     supertype_discovery: SupertypeDiscovery::Structural,
+    ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: true,
     dispatch_axis: DispatchAxis::Receiver,
     // Go generics arrived in 1.18.

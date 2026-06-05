@@ -16,7 +16,9 @@ use super::types::{GenericParamId, TypeArena, TypeId};
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 use crate::type_checker::core::generics::{substitute, GenericEnv};
 use crate::type_checker::core::members::MembersIndex;
-use crate::type_checker::profile::language_profile::{LanguageProfile, SupertypeDiscovery};
+use crate::type_checker::profile::language_profile::{
+    AncestorOrder, LanguageProfile, SupertypeDiscovery,
+};
 use crate::types::{EdgeKind, ParsedFile};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
@@ -125,6 +127,102 @@ impl SupertypeGraph {
             out.push((node, node_args));
         }
         out
+    }
+
+    /// Arg-carrying ancestor walk under a chosen `order`. The `Bfs` arm is the
+    /// existing `walk_up_with_args` verbatim — every breadth-first / default
+    /// language is byte-identical. The `C3` arm yields the SAME
+    /// `(TypeId, args)` pairs (same node set, same composed args) reordered
+    /// into C3 linearization (Python's MRO), so an asymmetric diamond resolves
+    /// the override the runtime would.
+    ///
+    /// The walk stays TOTAL under either order: `C3` yields exactly the node
+    /// set `Bfs` reaches. When the C3 merge cannot select a head (an
+    /// inconsistent hierarchy), the unresolvable remainder is appended in BFS
+    /// order rather than dropped — the safe degrade-to-BFS. A parent present
+    /// as an edge target but absent as a graph node (an external / unindexed
+    /// base) participates as a leaf, matching BFS reachability.
+    pub fn linearize_with_args(
+        &self,
+        start: TypeId,
+        arena: &TypeArena,
+        order: AncestorOrder,
+    ) -> Vec<(TypeId, Vec<TypeId>)> {
+        let bfs = self.walk_up_with_args(start, arena);
+        match order {
+            AncestorOrder::Bfs => bfs,
+            AncestorOrder::C3 => {
+                // Composed args per node come from the BFS pass (first-arrival),
+                // so C3 changes only the visit ORDER, never how generic args
+                // compose across hops.
+                let mut args_of: FxHashMap<TypeId, Vec<TypeId>> = FxHashMap::default();
+                for (node, args) in &bfs {
+                    args_of.entry(*node).or_insert_with(|| args.clone());
+                }
+                let order = self.c3_order(start, &bfs);
+                order
+                    .into_iter()
+                    .map(|node| {
+                        let args = args_of.remove(&node).unwrap_or_default();
+                        (node, args)
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    /// C3 linearization order over the nodes `bfs` reached. `bfs` fixes the
+    /// total node set (so the result is total) and supplies the BFS-order
+    /// fallback for any node the C3 merge can't place. Direct parents are read
+    /// from `parents_of` in declaration (`add_edge` push) order — exactly the
+    /// local precedence list C3 merges against.
+    fn c3_order(&self, start: TypeId, bfs: &[(TypeId, Vec<TypeId>)]) -> Vec<TypeId> {
+        let bfs_order: Vec<TypeId> = bfs.iter().map(|(n, _)| *n).collect();
+        let mut memo: FxHashMap<TypeId, Vec<TypeId>> = FxHashMap::default();
+        let mut on_stack = FxHashSet::default();
+        let lin = self.c3_linearize(start, &bfs_order, &mut memo, &mut on_stack);
+        // Totality guard: append any BFS-reachable node the merge dropped
+        // (only possible on an inconsistent hierarchy) in BFS order.
+        let mut seen: FxHashSet<TypeId> = lin.iter().copied().collect();
+        let mut out = lin;
+        for n in bfs_order {
+            if seen.insert(n) {
+                out.push(n);
+            }
+        }
+        out
+    }
+
+    /// L(node) = node :: merge(L(p1), …, L(pk), [p1, …, pk]). `bfs_order` is the
+    /// fallback when the merge stalls; `on_stack` breaks cycles (a node already
+    /// being linearized contributes only itself, matching `walk_up`'s
+    /// cycle-suppression).
+    fn c3_linearize(
+        &self,
+        node: TypeId,
+        bfs_order: &[TypeId],
+        memo: &mut FxHashMap<TypeId, Vec<TypeId>>,
+        on_stack: &mut FxHashSet<TypeId>,
+    ) -> Vec<TypeId> {
+        if let Some(cached) = memo.get(&node) {
+            return cached.clone();
+        }
+        if !on_stack.insert(node) {
+            return vec![node];
+        }
+        let parents = self.parents_of(node);
+        let mut seqs: Vec<Vec<TypeId>> = parents
+            .iter()
+            .map(|p| self.c3_linearize(*p, bfs_order, memo, on_stack))
+            .collect();
+        if !parents.is_empty() {
+            seqs.push(parents.to_vec());
+        }
+        let mut result = vec![node];
+        result.extend(c3_merge(seqs, bfs_order));
+        on_stack.remove(&node);
+        memo.insert(node, result.clone());
+        result
     }
 
     /// Direct parents of `ty`. Empty slice when none recorded.
@@ -280,6 +378,44 @@ fn build_explicit(
                     .collect();
                 graph.record_node_params(child, params);
             }
+        }
+    }
+}
+
+/// The C3 merge: repeatedly take the head of the first sequence that does NOT
+/// appear in the tail (any non-head position) of any sequence, remove it from
+/// every sequence, and append it. `_bfs_order` is unused once a good head
+/// exists; it documents that an inconsistent merge degrades to BFS order
+/// upstream. Returns the merged prefix and stops at the first stall — the
+/// caller appends the unmerged remainder in BFS order, keeping the walk total.
+fn c3_merge(mut seqs: Vec<Vec<TypeId>>, _bfs_order: &[TypeId]) -> Vec<TypeId> {
+    let mut out = Vec::new();
+    loop {
+        seqs.retain(|s| !s.is_empty());
+        if seqs.is_empty() {
+            return out;
+        }
+        // A valid head is the front of some sequence that is not in the tail
+        // (index > 0) of any sequence.
+        let head = seqs.iter().find_map(|seq| {
+            let candidate = seq[0];
+            let in_some_tail = seqs
+                .iter()
+                .any(|other| other.iter().skip(1).any(|&t| t == candidate));
+            if in_some_tail {
+                None
+            } else {
+                Some(candidate)
+            }
+        });
+        let Some(head) = head else {
+            // Inconsistent hierarchy — no candidate is a valid head. Stop;
+            // the caller appends the remainder in BFS order.
+            return out;
+        };
+        out.push(head);
+        for seq in &mut seqs {
+            seq.retain(|&t| t != head);
         }
     }
 }

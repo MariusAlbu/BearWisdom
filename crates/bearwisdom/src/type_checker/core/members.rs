@@ -333,7 +333,7 @@ impl MembersIndex {
         arg_count: Option<usize>,
         types: Option<ArgTypes>,
     ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
-        for (ancestor, args) in supertypes.walk_up_with_args(ty, arena) {
+        for (ancestor, args) in supertypes.linearize_with_args(ty, arena, profile.ancestor_order) {
             let mut first: Option<&SymbolInfo> = None;
             let mut arity_hit: Option<&SymbolInfo> = None;
             let mut type_hit: Option<&SymbolInfo> = None;

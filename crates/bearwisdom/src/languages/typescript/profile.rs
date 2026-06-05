@@ -105,6 +105,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // satisfies"), classes are nominal (must `extends`). Engine treats
     // both as supertype edges so member lookup is uniform.
     supertype_discovery: SupertypeDiscovery::Both,
+    ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     // Externals: `@types/*` declaration files contribute methods that
     // appear on user types via declaration merging — `Array.prototype.foo`
     // declared in user code participates in resolution alongside lib.dom.

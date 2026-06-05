@@ -99,6 +99,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // Rust's supertyping is via trait bounds, not struct extension —
     // explicit trait edges (Implements / trait `: Bound` clauses).
     supertype_discovery: SupertypeDiscovery::Explicit,
+    ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     // Trait default methods on external crates are reachable via member
     // lookup on user types that implement those traits.
     members_can_be_external: true,

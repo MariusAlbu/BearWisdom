@@ -49,6 +49,7 @@ pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     qname_separator: ".",
     self_keywords: &["this"],
     supertype_discovery: SupertypeDiscovery::Explicit,
+    ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: true,
     dispatch_axis: DispatchAxis::Receiver,
     has_generics: true,

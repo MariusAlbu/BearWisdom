@@ -395,6 +395,158 @@ fn method(id: i64, name: &str, scope: &str) -> SymbolInfo {
     }
 }
 
+// ---------------------------------------------------------------------------
+// LANG-PY-1: ancestor-order axis (BFS vs C3 linearization).
+//
+// Asymmetric diamond where the two orders diverge:
+//   O ; A(O) ; B(A) ; C(O) ; D(B, C)
+// BFS(D)  = D, B, C, A, O   — C reached at depth 1 before A (A is B's parent)
+// C3(D)   = D, B, A, C, O   — A precedes C: B's full linearization (B,A,O)
+//                             contributes A ahead of C in the merge.
+// A member overridden on BOTH A and C is therefore resolved on C under BFS
+// and on A under C3 — order decides the winning override.
+// ---------------------------------------------------------------------------
+
+fn diamond_graph(arena: &mut TypeArena) -> (SupertypeGraph, [TypeId; 5]) {
+    let o = arena.class("O");
+    let a = arena.class("A");
+    let b = arena.class("B");
+    let c = arena.class("C");
+    let d = arena.class("D");
+    let mut g = SupertypeGraph::new();
+    g.add_edge(a, o);
+    g.add_edge(b, a);
+    g.add_edge(c, o);
+    g.add_edge(d, b);
+    g.add_edge(d, c);
+    (g, [o, a, b, c, d])
+}
+
+#[test]
+fn linearize_bfs_matches_walk_up_with_args() {
+    let mut arena = TypeArena::new();
+    let (g, [_o, _a, _b, _c, d]) = diamond_graph(&mut arena);
+
+    let bfs = g.linearize_with_args(d, &arena, AncestorOrder::Bfs);
+    let walk = g.walk_up_with_args(d, &arena);
+    assert_eq!(
+        bfs, walk,
+        "Bfs arm must be byte-identical to walk_up_with_args"
+    );
+}
+
+#[test]
+fn linearize_c3_orders_diamond_differently_than_bfs() {
+    let mut arena = TypeArena::new();
+    let (g, [o, a, b, c, d]) = diamond_graph(&mut arena);
+
+    let bfs: Vec<TypeId> = g
+        .linearize_with_args(d, &arena, AncestorOrder::Bfs)
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect();
+    let c3: Vec<TypeId> = g
+        .linearize_with_args(d, &arena, AncestorOrder::C3)
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect();
+
+    assert_eq!(bfs, vec![d, b, c, a, o], "BFS order");
+    assert_eq!(c3, vec![d, b, a, c, o], "C3 MRO order");
+    assert_ne!(bfs, c3, "the two orders must diverge on this diamond");
+}
+
+#[test]
+fn linearize_c3_is_total_same_node_set_as_bfs() {
+    let mut arena = TypeArena::new();
+    let (g, _) = diamond_graph(&mut arena);
+    let d = arena.class("D");
+
+    let mut bfs_set: Vec<TypeId> = g
+        .linearize_with_args(d, &arena, AncestorOrder::Bfs)
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect();
+    let mut c3_set: Vec<TypeId> = g
+        .linearize_with_args(d, &arena, AncestorOrder::C3)
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect();
+    bfs_set.sort();
+    c3_set.sort();
+    assert_eq!(bfs_set, c3_set, "C3 must yield the same node SET as BFS");
+}
+
+#[test]
+fn linearize_c3_composes_generic_args_across_hops() {
+    // A: B<X> ; B<T>: C<T>. Under both orders C must be reached with the
+    // concrete [X], not the unbound parameter — C3 reuses the same
+    // node_params / edge_args composition the BFS arm performs.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let a = arena.class("A");
+    let b = arena.class("B");
+    let c = arena.class("C");
+    let x = arena.class("X");
+
+    // B<T>'s declared param.
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let t_ty = arena.intern(Type::Generic { param: t_param });
+
+    let mut g = SupertypeGraph::new();
+    g.record_node_params(b, vec![t_param]);
+    g.add_edge_generic(a, b, vec![x]); // A: B<X>
+    g.add_edge_generic(b, c, vec![t_ty]); // B<T>: C<T>
+
+    let c3 = g.linearize_with_args(a, &arena, AncestorOrder::C3);
+    let (_, c_args) = c3
+        .iter()
+        .find(|(node, _)| *node == c)
+        .expect("C reachable under C3");
+    assert_eq!(
+        c_args.as_slice(),
+        &[x],
+        "C3 must compose B's binding T->X so C carries [X]"
+    );
+}
+
+#[test]
+fn find_on_chain_picks_different_override_under_c3_vs_bfs() {
+    use crate::type_checker::profile::language_profile::{AncestorOrder, DEFAULT_PROFILE};
+
+    let mut arena = TypeArena::new();
+    let (g, [_o, a, _b, c, d]) = diamond_graph(&mut arena);
+
+    // `m` overridden on both A and C. BFS reaches C first, C3 reaches A first.
+    let mut members = MembersIndex::new();
+    members.add_direct(a, method(10, "m", "A"));
+    members.add_direct(c, method(20, "m", "C"));
+
+    let bfs_profile = LanguageProfile {
+        ancestor_order: AncestorOrder::Bfs,
+        ..DEFAULT_PROFILE
+    };
+    let c3_profile = LanguageProfile {
+        ancestor_order: AncestorOrder::C3,
+        ..DEFAULT_PROFILE
+    };
+
+    let bfs_hit = members
+        .lookup(d, "m", EdgeKind::Calls, &g, &arena, &bfs_profile)
+        .expect("m resolves under BFS");
+    let c3_hit = members
+        .lookup(d, "m", EdgeKind::Calls, &g, &arena, &c3_profile)
+        .expect("m resolves under C3");
+
+    assert_eq!(bfs_hit.id, 20, "BFS resolves m on C (id 20)");
+    assert_eq!(c3_hit.id, 10, "C3 resolves m on A (id 10)");
+}
+
 #[test]
 fn build_structural_links_class_whose_members_superset_interface() {
     let mut arena = TypeArena::new();
