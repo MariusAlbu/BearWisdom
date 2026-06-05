@@ -817,6 +817,359 @@ fn scope_less_extension_ignored_for_non_opted_in_language() {
     );
 }
 
+/// A `ParsedFile` carrying the given symbols and refs, defaulting the rest.
+fn parsed(path: &str, language: &str, symbols: Vec<crate::types::ExtractedSymbol>, refs: Vec<crate::types::ExtractedRef>) -> crate::types::ParsedFile {
+    crate::types::ParsedFile {
+        path: path.to_string(),
+        language: language.to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+fn ex_sym(name: &str, qname: &str, kind: crate::types::SymbolKind, scope: Option<&str>) -> crate::types::ExtractedSymbol {
+    crate::types::ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: qname.to_string(),
+        kind,
+        visibility: Some(crate::types::Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: scope.map(|s| s.to_string()),
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+fn ex_ref(source_idx: usize, target: &str, kind: EdgeKind) -> crate::types::ExtractedRef {
+    crate::types::ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: source_idx,
+        target_name: target.to_string(),
+        kind,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+    }
+}
+
+#[test]
+fn external_trait_default_method_is_reachable_from_implementing_type() {
+    // A project type `Dog` implements an EXTERNAL trait `Greet` that declares a
+    // default method `hello` with a body. The trait + its default method live in
+    // an `ext:` ParsedFile (the dep crate walked as plain Rust source). The
+    // C->Greet supertype edge forms via the impl-container reroute, but until the
+    // ext: skip is kind-gated, `hello`'s body symbol is dropped at build time so
+    // the chain walk finds no member. After the gate it is reachable.
+    use crate::types::SymbolKind;
+
+    // ext: dep file — Greet trait (idx 0) + its default method hello (idx 1).
+    let ext_file = parsed(
+        "ext:rust:greet/lib.rs",
+        "rust",
+        vec![
+            ex_sym("Greet", "Greet", SymbolKind::Trait, None),
+            ex_sym("hello", "Greet.hello", SymbolKind::Function, Some("Greet")),
+        ],
+        Vec::new(),
+    );
+
+    // Internal file — impl-container Namespace (idx 0) implementing Greet for Dog,
+    // plus the Dog struct (idx 1). The container emits an Implements ref to Greet
+    // and a self-TypeRef naming the implementing type Dog (mirrors extract_impl).
+    let app_file = parsed(
+        "app.rs",
+        "rust",
+        vec![
+            ex_sym("<impl Dog@1>", "<impl Dog@1>", SymbolKind::Namespace, None),
+            ex_sym("Dog", "Dog", SymbolKind::Struct, None),
+        ],
+        vec![
+            ex_ref(0, "Greet", EdgeKind::Implements),
+            ex_ref(0, "Dog", EdgeKind::TypeRef),
+        ],
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:rust:greet/lib.rs".to_string(), 0), 100); // Greet
+    sym_ids.insert(("ext:rust:greet/lib.rs".to_string(), 1), 101); // hello
+    sym_ids.insert(("app.rs".to_string(), 0), 200); // impl container
+    sym_ids.insert(("app.rs".to_string(), 1), 201); // Dog
+
+    let arena = TypeArena::new();
+    let slice = vec![ext_file, app_file];
+    let members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+
+    let lookup = NullLookup::new();
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(&slice, &arena, &DEFAULT_PROFILE, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    let found = members
+        .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .expect("external trait default method must be reachable from the implementing type");
+    assert_eq!(found.id, 101, "resolves to the trait's default-method body symbol");
+}
+
+#[test]
+fn external_non_trait_member_still_skipped() {
+    // The write-storm guard: an external Class `Curl` with a Method `perform`
+    // (the common case — a non-trait external type with body methods) must NOT
+    // be admitted. Only trait/interface-owned external members ride the relaxed
+    // skip; everything else stays lookup-only via SymbolIndex.
+    use crate::types::SymbolKind;
+
+    let ext_file = parsed(
+        "ext:rust:curl/lib.rs",
+        "rust",
+        vec![
+            ex_sym("Curl", "Curl", SymbolKind::Class, None),
+            ex_sym("perform", "Curl.perform", SymbolKind::Method, Some("Curl")),
+        ],
+        Vec::new(),
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:rust:curl/lib.rs".to_string(), 0), 300);
+    sym_ids.insert(("ext:rust:curl/lib.rs".to_string(), 1), 301);
+
+    let arena = TypeArena::new();
+    let members = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&ext_file),
+        &sym_ids,
+        &arena,
+    );
+
+    let curl = arena.class("Curl");
+    assert!(
+        members.direct_of(curl).is_empty(),
+        "non-trait external member must stay skipped (write-storm guard)"
+    );
+}
+
+/// A `SymbolLookup` whose `types_by_name` returns a fixed candidate pool, so a
+/// test can drive `resolve_target_qname`'s ambiguity tightening end-to-end
+/// through `SupertypeGraph::build`. Everything else mirrors `NullLookup`.
+struct TypePoolLookup {
+    empty: Vec<SymbolInfo>,
+    empty_reexports: Vec<(String, String)>,
+    by_short: FxHashMap<String, Vec<SymbolInfo>>,
+}
+
+impl TypePoolLookup {
+    fn new(pool: Vec<SymbolInfo>) -> Self {
+        let mut by_short: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        for s in pool {
+            by_short.entry(s.name.clone()).or_default().push(s);
+        }
+        Self {
+            empty: Vec::new(),
+            empty_reexports: Vec::new(),
+            by_short,
+        }
+    }
+}
+
+impl SymbolLookup for TypePoolLookup {
+    fn by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+        None
+    }
+    fn members_of(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
+        self.by_short.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
+    }
+    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+        Vec::new()
+    }
+    fn has_in_namespace(&self, _: &str) -> bool {
+        false
+    }
+    fn in_file(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn field_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn alias_target(&self, _: &str) -> Option<&AliasTarget> {
+        None
+    }
+    fn parent_class_qname(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] {
+        &self.empty_reexports
+    }
+    fn is_external_name(&self, _: &str, _: &str) -> bool {
+        false
+    }
+}
+
+#[test]
+fn external_trait_default_method_reachable_when_short_name_collides_with_struct() {
+    // Sub-case (a) of fork #4 — qname alignment. The external trait's qname is
+    // MODULE-PREFIXED (`mycrate.Greet`) and its default-method body keys under
+    // that prefixed scope. The impl site writes the bare name `Greet`. A decoy
+    // struct also named `Greet` lives in the type pool, so the impl-site name
+    // resolves to TWO type-like candidates. Without kind-aware tightening
+    // `resolve_target_qname` falls back to the bare `Greet`, the supertype edge
+    // keys `class("Greet")`, and the walk misses the member keyed under
+    // `class("mycrate.Greet")`. The Implements edge wants a Trait/Interface
+    // parent, so the unique trait among the pool must win.
+    use crate::types::SymbolKind;
+
+    let ext_file = parsed(
+        "ext:rust:mycrate/lib.rs",
+        "rust",
+        vec![
+            ex_sym("Greet", "mycrate.Greet", SymbolKind::Trait, None),
+            ex_sym("hello", "mycrate.Greet.hello", SymbolKind::Function, Some("mycrate.Greet")),
+        ],
+        Vec::new(),
+    );
+
+    let app_file = parsed(
+        "app.rs",
+        "rust",
+        vec![
+            ex_sym("<impl Dog@1>", "<impl Dog@1>", SymbolKind::Namespace, None),
+            ex_sym("Dog", "Dog", SymbolKind::Struct, None),
+        ],
+        vec![
+            ex_ref(0, "Greet", EdgeKind::Implements),
+            ex_ref(0, "Dog", EdgeKind::TypeRef),
+        ],
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:rust:mycrate/lib.rs".to_string(), 0), 100); // Greet trait
+    sym_ids.insert(("ext:rust:mycrate/lib.rs".to_string(), 1), 101); // hello
+    sym_ids.insert(("app.rs".to_string(), 0), 200); // impl container
+    sym_ids.insert(("app.rs".to_string(), 1), 201); // Dog
+
+    let arena = TypeArena::new();
+    let slice = vec![ext_file, app_file];
+    let members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+
+    // The type pool has the prefixed trait AND a same-short-named decoy struct,
+    // so the bare impl-site name `Greet` is ambiguous by short name.
+    let lookup = TypePoolLookup::new(vec![
+        sym(100, "Greet", "mycrate.Greet", "trait", None),
+        sym(999, "Greet", "other.Greet", "struct", None),
+    ]);
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(&slice, &arena, &DEFAULT_PROFILE, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    let found = members
+        .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .expect("Implements edge must resolve to the unique trait despite the same-named struct");
+    assert_eq!(found.id, 101, "resolves to the trait's default-method body symbol");
+}
+
+#[test]
+fn external_trait_short_name_collides_with_another_trait_declines() {
+    // Soundness boundary for sub-case (a): when the bare impl-site name maps to
+    // TWO same-short-named TRAITS (two deps each declaring a `Greet` trait), the
+    // kind preference can't disambiguate which one the impl meant — that needs
+    // import-scope (BIND-2), not member keying. The edge falls back to the bare
+    // name, so the member keyed under the prefixed trait qname is NOT reached:
+    // a decline to None, never a coincidental bind to the wrong trait's default.
+    use crate::types::SymbolKind;
+
+    let ext_file = parsed(
+        "ext:rust:mycrate/lib.rs",
+        "rust",
+        vec![
+            ex_sym("Greet", "mycrate.Greet", SymbolKind::Trait, None),
+            ex_sym("hello", "mycrate.Greet.hello", SymbolKind::Function, Some("mycrate.Greet")),
+        ],
+        Vec::new(),
+    );
+
+    let app_file = parsed(
+        "app.rs",
+        "rust",
+        vec![
+            ex_sym("<impl Dog@1>", "<impl Dog@1>", SymbolKind::Namespace, None),
+            ex_sym("Dog", "Dog", SymbolKind::Struct, None),
+        ],
+        vec![
+            ex_ref(0, "Greet", EdgeKind::Implements),
+            ex_ref(0, "Dog", EdgeKind::TypeRef),
+        ],
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:rust:mycrate/lib.rs".to_string(), 0), 100);
+    sym_ids.insert(("ext:rust:mycrate/lib.rs".to_string(), 1), 101);
+    sym_ids.insert(("app.rs".to_string(), 0), 200);
+    sym_ids.insert(("app.rs".to_string(), 1), 201);
+
+    let arena = TypeArena::new();
+    let slice = vec![ext_file, app_file];
+    let members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+
+    // Two distinct traits share the short name `Greet` — irreducibly ambiguous.
+    let lookup = TypePoolLookup::new(vec![
+        sym(100, "Greet", "mycrate.Greet", "trait", None),
+        sym(998, "Greet", "other.Greet", "trait", None),
+    ]);
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(&slice, &arena, &DEFAULT_PROFILE, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    assert!(
+        members
+            .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+            .is_none(),
+        "two same-named traits are ambiguous — decline, do not bind a wrong trait's default"
+    );
+}
+
 #[test]
 fn this_extension_target_recognises_simple_signature() {
     assert_eq!(

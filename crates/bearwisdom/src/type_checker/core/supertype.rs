@@ -24,6 +24,7 @@ use crate::type_checker::subtype::{is_assignable_to_typed_with, SubtypeResult};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
+use std::str::FromStr;
 
 /// Direct-supertype edges keyed by source TypeId. Each entry holds *direct*
 /// parents only; transitive ancestors fall out of repeated lookups during
@@ -385,7 +386,8 @@ fn build_explicit(
                         .collect()
                 }
             };
-            let parent_qname = resolve_target_qname(&parent_base_qname, lookup);
+            let parent_qname =
+                resolve_target_qname(&parent_base_qname, lookup, KindPreference::for_supertype(r.kind));
             let parent = arena.class(parent_qname.as_str());
             graph.add_edge_generic(child, parent, parent_args);
 
@@ -479,7 +481,10 @@ fn impl_container_child_qname(
     if base.is_empty() {
         return None;
     }
-    Some(resolve_target_qname(&base, lookup))
+    // The implementing type is always a concrete type (class/struct/enum),
+    // never the interface/trait it implements — prefer that kind-class if the
+    // bare name collides with a same-named interface in the pool.
+    Some(resolve_target_qname(&base, lookup, KindPreference::ConcreteType))
 }
 
 /// Decompose a type node's text into its base type name, dropping any generic
@@ -499,15 +504,79 @@ fn type_base_qname(text: &str, arena: &TypeArena) -> String {
     }
 }
 
+/// Which kind-class a `resolve_target_qname` site expects, used to break a
+/// bare-name tie among same-short-named type-like candidates. `Supertype`
+/// resolves an inheritance edge's parent (an `Implements` parent is a
+/// trait/interface; an `Inherits` parent is a base class/struct);
+/// `ConcreteType` resolves the implementing type of an impl-container (never an
+/// interface). `Any` keeps the prior tie-blind behavior.
+#[derive(Clone, Copy)]
+enum KindPreference {
+    Any,
+    Supertype(EdgeKind),
+    ConcreteType,
+}
+
+impl KindPreference {
+    fn for_supertype(edge: EdgeKind) -> Self {
+        KindPreference::Supertype(edge)
+    }
+
+    /// True when `sym_kind` (a snake_case `SymbolKind`) is the kind-class this
+    /// preference selects. `Any` admits every candidate (no tie-break).
+    fn matches(self, sym_kind: &str) -> bool {
+        let Ok(kind) = SymbolKind::from_str(sym_kind) else {
+            return true;
+        };
+        match self {
+            KindPreference::Any => true,
+            // `class C: Base` (Inherits) → base is a class/struct; `class C: I`
+            // / `impl Trait for C` (Implements) → parent is an interface/trait.
+            // Rust supertraits (`trait Sub: Super`) extract as Inherits between
+            // traits, so a trait is admitted under Inherits too.
+            KindPreference::Supertype(EdgeKind::Implements) => {
+                matches!(kind, SymbolKind::Interface | SymbolKind::Trait)
+            }
+            KindPreference::Supertype(_) => matches!(
+                kind,
+                SymbolKind::Class | SymbolKind::Struct | SymbolKind::Interface | SymbolKind::Trait
+            ),
+            KindPreference::ConcreteType => matches!(
+                kind,
+                SymbolKind::Class | SymbolKind::Struct | SymbolKind::Enum
+            ),
+        }
+    }
+}
+
 /// Resolve a ref's `target_name` to the qualified name of an indexed type
-/// when possible. Returns `target_name` unchanged when no unique type symbol
-/// exists for it — the chain walker / resolve loop will treat the unmatched
-/// edge as an external supertype, which is the same fallback the legacy
-/// `inherits_map` builder used.
-fn resolve_target_qname(target_name: &str, lookup: &dyn SymbolLookup) -> String {
+/// when possible. Returns `target_name` unchanged when no type symbol resolves
+/// it — the chain walker / resolve loop treats the unmatched edge as an
+/// external supertype, the same fallback the legacy `inherits_map` builder used.
+///
+/// A unique candidate wins outright. When several type-like symbols share the
+/// bare short name (a trait and a same-named struct, the common cross-dep
+/// shape), `prefer` narrows to the kind-class the edge expects; a unique
+/// survivor of that narrowing wins. This keys the supertype edge under the
+/// SAME canonical qname the trait's default-method body is filed under, so the
+/// member walk aligns. Still ambiguous after narrowing → the bare-name
+/// fallback (declines to a structural hit, never a coincidental bind).
+fn resolve_target_qname(
+    target_name: &str,
+    lookup: &dyn SymbolLookup,
+    prefer: KindPreference,
+) -> String {
     let candidates = lookup.types_by_name(target_name);
     if candidates.len() == 1 {
         return candidates[0].qualified_name.clone();
+    }
+    if candidates.len() > 1 {
+        let mut preferred = candidates.iter().filter(|c| prefer.matches(&c.kind));
+        if let Some(first) = preferred.next() {
+            if preferred.next().is_none() {
+                return first.qualified_name.clone();
+            }
+        }
     }
     target_name.to_string()
 }

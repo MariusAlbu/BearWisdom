@@ -22,7 +22,7 @@ use crate::type_checker::profile::language_profile::{
     KindCompatibility, LanguageProfile,
 };
 use crate::types::{EdgeKind, ParsedFile, SymbolKind};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -77,13 +77,34 @@ impl MembersIndex {
             // External files (ext: prefix) carry thousands of symbols per
             // dep — for ts-nextjs that's ~1M symbols. Engine chain walks
             // resolve *into* internal types; external symbols stay
-            // lookup-only via SymbolIndex. Skipping them at build time
-            // turns a huge arena.class write storm into nothing.
-            if pf.path.starts_with("ext:") {
-                continue;
-            }
+            // lookup-only via SymbolIndex. Admitting all of them as direct
+            // members is a huge arena.class write storm, so externals are
+            // skipped wholesale EXCEPT one narrow set: a default-method body
+            // declared inside an external Trait/Interface. A project type that
+            // implements such a trait gains a real supertype edge (build_explicit
+            // + the impl-container reroute), so the inherited default IS callable
+            // on it — but its body symbol lives here in the ext: file. Admitting
+            // only members whose owner is an external trait/interface keeps the
+            // write set bounded to that tiny reachability-bounded slice; every
+            // other external member (a Class/Struct method, the type-defining
+            // symbols themselves) stays skipped.
+            let is_external = pf.path.starts_with("ext:");
+            let ext_trait_scopes = is_external.then(|| trait_interface_qnames(pf));
             let file_path: Arc<str> = Arc::from(pf.path.as_str());
             for (idx, sym) in pf.symbols.iter().enumerate() {
+                if let Some(scopes) = &ext_trait_scopes {
+                    // External admission gate: the symbol's owner (scope_path)
+                    // must name a Trait/Interface declared in THIS ext: file.
+                    // Members with no scope (the trait symbol itself, free
+                    // functions) and members owned by a non-trait external type
+                    // fall out here, before any arena write — including the
+                    // csharp/kotlin extension-signature path below, so external
+                    // `this T` extensions stay skipped too.
+                    match &sym.scope_path {
+                        Some(scope) if scopes.contains(scope.as_str()) => {}
+                        _ => continue,
+                    }
+                }
                 let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
                     continue;
                 };
@@ -392,6 +413,19 @@ fn kind_matches(profile: &LanguageProfile, edge: EdgeKind, sym_kind: &str) -> bo
         return true;
     };
     KindCompatibility::check(profile.kind_compatible_table, edge, parsed)
+}
+
+/// Qualified names of every Trait / Interface symbol declared in `pf`. A
+/// member's `scope_path` is matched against this set to admit an external
+/// trait/interface default-method body into the direct-member map; nothing
+/// else from an external file is admitted. A non-trait external type's methods
+/// produce no entry here, so they stay skipped (the write-storm guard).
+fn trait_interface_qnames(pf: &ParsedFile) -> FxHashSet<&str> {
+    pf.symbols
+        .iter()
+        .filter(|s| matches!(s.kind, SymbolKind::Trait | SymbolKind::Interface))
+        .map(|s| s.qualified_name.as_str())
+        .collect()
 }
 
 /// True when the language declares an extension function with the receiver
