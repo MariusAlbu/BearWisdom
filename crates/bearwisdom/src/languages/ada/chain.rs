@@ -10,21 +10,6 @@ use super::predicates;
 use crate::indexer::resolve::engine::{Resolution, SymbolLookup};
 use crate::types::EdgeKind;
 
-/// True iff the name is one of Ada's language-defined modular-type
-/// primitives (RM 13.7). These are implicitly visible wherever a
-/// modular type is in scope, and BW resolves them generously to
-/// `Interfaces.<name>` when an `Interfaces` symbol of that name exists.
-pub(super) fn is_ada_modular_primitive(name: &str) -> bool {
-    matches!(
-        name,
-        "Shift_Right"
-            | "Shift_Left"
-            | "Rotate_Right"
-            | "Rotate_Left"
-            | "Shift_Right_Arithmetic"
-    )
-}
-
 /// Walk a dotted qname looking for any prefix that corresponds to a
 /// generic-instantiation symbol (`signature = "instantiates X"`). When
 /// found, replace that prefix with the generic's qname so the suffix

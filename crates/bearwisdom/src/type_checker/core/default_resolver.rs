@@ -159,6 +159,7 @@ impl<'a> DefaultResolver<'a> {
         &self,
         overload_pick_all: bool,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
+        norm: NameNormalization,
     ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
@@ -176,11 +177,29 @@ impl<'a> DefaultResolver<'a> {
             }
             return None;
         }
-        let sym = self.lookup.by_qualified_name(target)?;
-        if !kind(edge_kind, &sym.kind) {
-            return None;
+        if let Some(sym) = self.lookup.by_qualified_name(target) {
+            if kind(edge_kind, &sym.kind) {
+                return Some(self.resolution(sym.id, "default_qname_exact"));
+            }
         }
-        Some(self.resolution(sym.id, "default_qname_exact"))
+        // Case-folding fallback: a folding language whose call site differs only
+        // in surface case from the keyed qname misses the byte-exact probe
+        // above. Scan the leaf's `by_name` candidates and accept one whose whole
+        // qname folds equal to the target. `NameNormalization::None` borrows
+        // identically on both sides, so this never fires for a case-sensitive
+        // language (the exact probe is the whole strategy).
+        if !matches!(norm, NameNormalization::None) {
+            let leaf = target.rsplit(['.', ':', '/']).next().unwrap_or(target);
+            let target_norm = normalize_name(norm, target);
+            for sym in self.lookup.by_name(leaf) {
+                if normalize_name(norm, &sym.qualified_name) == target_norm
+                    && kind(edge_kind, &sym.kind)
+                {
+                    return Some(self.resolution(sym.id, "default_qname_exact"));
+                }
+            }
+        }
+        None
     }
 
     /// Strategy 3 — bare target matches a name in the file's import list.
@@ -222,7 +241,11 @@ impl<'a> DefaultResolver<'a> {
     /// C# `using eShop.Catalog.API.Model;` then `CatalogItem`: the import
     /// brings the WHOLE namespace into scope, not the type. Form
     /// `{ns}.{target}` for each dotted import and look it up.
-    pub fn resolve_via_namespace_import(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_namespace_import(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+        norm: NameNormalization,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
 
@@ -235,6 +258,20 @@ impl<'a> DefaultResolver<'a> {
                 if let Some(sym) = self.lookup.by_qualified_name(&qname) {
                     if kind(edge_kind, &sym.kind) {
                         return Some(self.resolution(sym.id, "default_namespace_import"));
+                    }
+                }
+                // Case-folding fallback: the `{prefix}.{target}` form may differ
+                // in case from the keyed qname (folding language). Scan the
+                // prefix's members and accept one whose qname folds equal. Gated
+                // on a non-identity spec — case-sensitive languages skip it.
+                if !matches!(norm, NameNormalization::None) {
+                    let expected_norm = normalize_name(norm, &qname);
+                    for sym in self.lookup.in_namespace(prefix) {
+                        if normalize_name(norm, &sym.qualified_name) == expected_norm
+                            && kind(edge_kind, &sym.kind)
+                        {
+                            return Some(self.resolution(sym.id, "default_namespace_import"));
+                        }
                     }
                 }
             }
@@ -329,7 +366,11 @@ impl<'a> DefaultResolver<'a> {
     /// In C#, types in the same namespace are visible without a `using`.
     /// If the source file declares namespace X, candidates whose qname is
     /// `X.target` are in scope.
-    pub fn resolve_via_same_namespace(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_same_namespace(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+        norm: NameNormalization,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let ns = self.file_ctx.file_namespace.as_deref()?;
@@ -342,6 +383,21 @@ impl<'a> DefaultResolver<'a> {
                 return Some(self.resolution(sym.id, "default_same_namespace"));
             }
         }
+        // Case-folding fallback: a folding language whose call site differs in
+        // case from the declared member name misses the byte-exact probe above
+        // (`by_name` is case-sensitive). Scan the namespace's members and accept
+        // one whose qname folds equal to `{ns}.{target}`. Gated on a non-identity
+        // spec, so this never runs for a case-sensitive language.
+        if !matches!(norm, NameNormalization::None) {
+            let expected_norm = normalize_name(norm, &expected);
+            for sym in self.lookup.in_namespace(ns) {
+                if normalize_name(norm, &sym.qualified_name) == expected_norm
+                    && kind(edge_kind, &sym.kind)
+                {
+                    return Some(self.resolution(sym.id, "default_same_namespace"));
+                }
+            }
+        }
         None
     }
 
@@ -352,7 +408,11 @@ impl<'a> DefaultResolver<'a> {
     /// with the imported namespace. Boundary check ensures
     /// `FamilyBudget.Api.Entities` doesn't accidentally match
     /// `FamilyBudget.Api.EntitiesOther`.
-    pub fn resolve_via_imported_namespace(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_imported_namespace(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+        norm: NameNormalization,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for sym in self.lookup.by_name(target) {
@@ -371,6 +431,27 @@ impl<'a> DefaultResolver<'a> {
                 }
                 if file_path_matches_module(&sym.file_path, module) {
                     return Some(self.resolution(sym.id, "default_imported_namespace"));
+                }
+            }
+        }
+        // Case-folding fallback: under a folding spec the candidate's declared
+        // leaf may differ in case from `target`, so `by_name(target)` above
+        // misses. For each imported module, scan its members and accept one
+        // whose qname folds equal to `{module}.{target}`. Gated on a non-identity
+        // spec — a case-sensitive language never reaches this scan.
+        if !matches!(norm, NameNormalization::None) {
+            for import in &self.file_ctx.imports {
+                let Some(module) = &import.module_path else {
+                    continue;
+                };
+                let expected = format!("{module}.{target}");
+                let expected_norm = normalize_name(norm, &expected);
+                for sym in self.lookup.in_namespace(module) {
+                    if normalize_name(norm, &sym.qualified_name) == expected_norm
+                        && kind(edge_kind, &sym.kind)
+                    {
+                        return Some(self.resolution(sym.id, "default_imported_namespace"));
+                    }
                 }
             }
         }
@@ -1958,7 +2039,9 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_self_keyword(kind))
             .or_else(|| self.resolve_via_enclosing_member(kind))
             .or_else(|| self.resolve_via_ref_module(kind))
-            .or_else(|| self.resolve_via_qname_exact(pd.overload_pick_all, kind))
+            .or_else(|| {
+                self.resolve_via_qname_exact(pd.overload_pick_all, kind, pd.name_normalization)
+            })
             .or_else(|| self.resolve_via_head_alias(pd.head_alias, kind))
             .or_else(|| self.resolve_via_alias_module_qname(pd.alias_module_qname, kind))
             .or_else(|| self.resolve_via_chain_prefix(kind))
@@ -1966,7 +2049,7 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_file_import(kind))
             .or_else(|| self.resolve_via_reexport_following())
             .or_else(|| self.resolve_via_aliased_import(kind))
-            .or_else(|| self.resolve_via_namespace_import(kind))
+            .or_else(|| self.resolve_via_namespace_import(kind, pd.name_normalization))
             .or_else(|| {
                 (chain_qual == ChainQualification::PackageShortName)
                     .then(|| {
@@ -1976,8 +2059,8 @@ impl<'a> DefaultResolver<'a> {
                     .flatten()
             })
             .or_else(|| self.resolve_via_ambient_namespace_path(kind))
-            .or_else(|| self.resolve_via_same_namespace(kind))
-            .or_else(|| self.resolve_via_imported_namespace(kind))
+            .or_else(|| self.resolve_via_same_namespace(kind, pd.name_normalization))
+            .or_else(|| self.resolve_via_imported_namespace(kind, pd.name_normalization))
             .or_else(|| self.resolve_via_ambient_package(kind))
             .or_else(|| {
                 // A target under a profile-declared namespace alias

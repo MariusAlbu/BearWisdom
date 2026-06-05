@@ -682,6 +682,103 @@ fn used_package_variable_type_dispatch_resolves_dotted_call() {
 }
 
 // ---------------------------------------------------------------------------
+// CI dotted resolution drains to the generic ladder, not the Ada hook
+//
+// Once ADA_PROFILE folds case, a mixed-case qualified Ada call binds through
+// the profiled `default_qname_exact` rung — the Ada hook no longer fires for
+// it. We drive `resolve_all_with_profile(&ADA_PROFILE)` directly to prove the
+// strategy is a `default_*`, not an `ada_*`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ada_dotted_ci_resolves_through_generic_ladder() {
+    use crate::type_checker::core::DefaultResolver;
+    use std::sync::Arc as A;
+
+    // Fixture supporting by_name + by_qualified_name (CI scan needs by_name).
+    struct WithByName {
+        by_name_map: HashMap<String, Vec<SymbolInfo>>,
+        by_qname_map: HashMap<String, SymbolInfo>,
+        empty: Vec<SymbolInfo>,
+        empty_reexports: Vec<(String, String)>,
+    }
+    impl SymbolLookup for WithByName {
+        fn by_name(&self, name: &str) -> &[SymbolInfo] {
+            self.by_name_map.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        }
+        fn by_qualified_name(&self, q: &str) -> Option<&SymbolInfo> {
+            self.by_qname_map.get(q)
+        }
+        fn members_of(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
+        fn has_in_namespace(&self, _: &str) -> bool { false }
+        fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+        fn field_type_name(&self, _: &str) -> Option<&str> { None }
+        fn return_type_name(&self, _: &str) -> Option<&str> { None }
+        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
+        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
+        fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
+        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+    }
+
+    let do_thing = SymbolInfo {
+        id: 200,
+        name: "Do_Thing".to_string(),
+        qualified_name: "Pkg.Sub.Do_Thing".to_string(),
+        kind: "function".to_string(),
+        visibility: Some("public".to_string()),
+        file_path: A::from("src/pkg-sub.adb"),
+        scope_path: None,
+        package_id: None,
+        signature: None,
+    };
+    let mut by_name_map: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
+    by_name_map.insert("Do_Thing".to_string(), vec![do_thing.clone()]);
+    let mut by_qname_map: HashMap<String, SymbolInfo> = HashMap::new();
+    by_qname_map.insert("Pkg.Sub.Do_Thing".to_string(), do_thing);
+
+    let fix = WithByName {
+        by_name_map,
+        by_qname_map,
+        empty: Vec::new(),
+        empty_reexports: Vec::new(),
+    };
+
+    let file_ctx = FileContext {
+        file_path: "src/main.adb".to_string(),
+        language: "ada".to_string(),
+        imports: Vec::new(),
+        file_namespace: Some("Main".to_string()),
+    };
+    let source_sym = make_extracted_sym("Run", "Main.Run");
+    // Lowercased PREFIX (declared leaf case) — only a case-folding qname_exact
+    // rung binds it; the byte-exact `by_qualified_name` probe misses.
+    let extracted = make_extracted_ref("pkg.sub.Do_Thing");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+
+    let res = (DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &fix,
+        kind_compatible: super::predicates::kind_compatible,
+    })
+    .resolve_all_with_profile(&super::profile::ADA_PROFILE)
+    .expect("CI dotted call binds through the generic ladder");
+    assert!(
+        res.strategy.starts_with("default_"),
+        "expected a default_* strategy, got {}",
+        res.strategy
+    );
+    assert_eq!(res.target_symbol_id, 200);
+}
+
+// ---------------------------------------------------------------------------
 // Goal 40 — Ada flow emission (SQL via GNATCOLL.SQL / AdaSQL)
 // ---------------------------------------------------------------------------
 

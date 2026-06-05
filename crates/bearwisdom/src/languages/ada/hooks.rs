@@ -1,7 +1,8 @@
 // =============================================================================
-// languages/ada/hooks.rs — AdaHooks impl plus the concrete AdaResolver
-// (case-insensitive same-file, language-defined modular primitives via
-// Interfaces.* prefix, bare-name across every imported package (with or use
+// languages/ada/hooks.rs — AdaHooks impl plus the concrete AdaResolver.
+//
+// AdaResolver handles the Ada-specific resolution shapes the generic ladder
+// cannot express: bare-name across every imported package (with or use,
 // distinguishing `ada_with_primitive` from `ada_use_clause`), own-package +
 // ancestor-package visibility with rename-clause expansion, three alias-
 // substitution paths (file-local rename, cross-file rename through use,
@@ -10,15 +11,19 @@
 // field walk + generic instantiation chase + subtype-alias package-method
 // fallback, qualified-name ci walk + chase-instantiation, fully-qualified
 // variable-at-package-scope chains, fully-qualified variable field chains,
-// partial qualification expansion, last-segment import shorthand,
-// engine::resolve_common final fallback) plus GNATCOLL.SQL.Exec /
-// Execute_Query DB query SQL-parser flow detector plus build_file_context
-// with both `with` and `use` producing wildcard imports.
+// partial qualification expansion, last-segment import shorthand, then the
+// generic DefaultResolver ladder as the final fallback. Also a GNATCOLL.SQL.Exec
+// / Execute_Query DB-query SQL-parser flow detector and build_file_context with
+// both `with` and `use` producing wildcard imports.
+//
+// Case-insensitive same-file and dotted-qname resolution are NOT here: those
+// fold via the profile's `name_normalization` spec in the generic ladder, which
+// runs ahead of this residue resolver. Modular-type primitives (RM 13.7) are
+// classified by `classify_external`.
 // =============================================================================
 
 use super::chain::{
-    chase_instantiation, is_ada_modular_primitive, probe_dotted_qname,
-    probe_package_of_type, walk_field_chain,
+    chase_instantiation, probe_dotted_qname, probe_package_of_type, walk_field_chain,
 };
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
@@ -73,42 +78,6 @@ impl AdaResolver {
         let target_lower = target.to_lowercase();
         let simple = target.split('.').last().unwrap_or(target);
         let simple_lower = simple.to_lowercase();
-
-        // Ada identifiers are case-insensitive. Common resolver paths use
-        // exact matching, so we check same-file with case folding first.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name.to_lowercase() == simple_lower
-                && predicates::kind_compatible(edge_kind, &sym.kind)
-            {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "ada_same_file_ci",
-                    resolved_yield_type: None,
-                    flow_emit: None,
-                });
-            }
-        }
-
-        // Ada language-defined primitives on modular types
-        // (Shift_Right, Shift_Left, Rotate_Left, Rotate_Right,
-        // Shift_Right_Arithmetic) are implicitly visible wherever a modular
-        // type is in scope. The list is fixed by Ada RM 13.7.
-        if !target.contains('.') && is_ada_modular_primitive(simple) {
-            for sym in lookup.by_name(simple) {
-                if sym.qualified_name.starts_with("Interfaces.")
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.85,
-                        strategy: "ada_modular_primitive",
-                        resolved_yield_type: None,
-                        flow_emit: None,
-                    });
-                }
-            }
-        }
 
         // Bare-name lookup against EVERY imported package (with or use).
         // `use Ada.Text_IO;` brings exports into bare scope (wildcard case).
@@ -802,6 +771,23 @@ impl LanguageEngineHooks for AdaHooks {
 
         if matches!(root, "Ada" | "System" | "Interfaces" | "GNAT" | "Standard") {
             return Some(root.to_string());
+        }
+
+        // Language-defined modular-type primitives (RM 13.7) are implicitly
+        // visible bare wherever a modular type is in scope. They are operations
+        // declared in `Interfaces`, so classify them there when no project
+        // symbol shadows the name.
+        if !target.contains('.')
+            && matches!(
+                root,
+                "Shift_Left"
+                    | "Shift_Right"
+                    | "Shift_Right_Arithmetic"
+                    | "Rotate_Left"
+                    | "Rotate_Right"
+            )
+        {
+            return Some("Interfaces".to_string());
         }
 
         if !target.contains('.')

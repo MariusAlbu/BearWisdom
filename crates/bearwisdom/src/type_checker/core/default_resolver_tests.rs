@@ -168,8 +168,12 @@ impl SymbolLookup for Lookup {
     fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
         &self.empty
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
-        Vec::new()
+    fn in_namespace(&self, namespace: &str) -> Vec<&SymbolInfo> {
+        let prefix = format!("{namespace}.");
+        self.by_qname
+            .values()
+            .filter(|s| s.qualified_name.starts_with(&prefix))
+            .collect()
     }
     fn has_in_namespace(&self, _: &str) -> bool {
         false
@@ -468,7 +472,7 @@ fn qname_exact_resolves_dotted_target() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_qname_exact(false, &accept_any)
+        .resolve_via_qname_exact(false, &accept_any, NameNormalization::None)
         .expect("dotted target resolves");
     assert_eq!(resolved.target_symbol_id, 3);
     assert_eq!(resolved.strategy, "default_qname_exact");
@@ -487,7 +491,9 @@ fn qname_exact_ignores_bare_target() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_qname_exact(false, &accept_any).is_none());
+    assert!(d
+        .resolve_via_qname_exact(false, &accept_any, NameNormalization::None)
+        .is_none());
 }
 
 #[test]
@@ -548,7 +554,7 @@ fn namespace_import_expands_dotted_namespace() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_namespace_import(&accept_any)
+        .resolve_via_namespace_import(&accept_any, NameNormalization::None)
         .expect("namespace import expands");
     assert_eq!(resolved.target_symbol_id, 15);
     assert_eq!(resolved.strategy, "default_namespace_import");
@@ -599,7 +605,9 @@ fn same_namespace_resolves_when_file_namespace_set() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_same_namespace(&accept_any).expect("same namespace resolves");
+    let resolved = d
+        .resolve_via_same_namespace(&accept_any, NameNormalization::None)
+        .expect("same namespace resolves");
     assert_eq!(resolved.target_symbol_id, 30);
     assert_eq!(resolved.strategy, "default_same_namespace");
 }
@@ -623,7 +631,9 @@ fn same_namespace_boundary_check_rejects_partial_prefix() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_same_namespace(&accept_any).is_none());
+    assert!(d
+        .resolve_via_same_namespace(&accept_any, NameNormalization::None)
+        .is_none());
 }
 
 #[test]
@@ -649,7 +659,7 @@ fn imported_namespace_matches_qname_prefix() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_imported_namespace(&accept_any)
+        .resolve_via_imported_namespace(&accept_any, NameNormalization::None)
         .expect("namespace prefix matches");
     assert_eq!(resolved.target_symbol_id, 40);
     assert_eq!(resolved.strategy, "default_imported_namespace");
@@ -3291,6 +3301,135 @@ fn is_identity_spec_recognizes_all_default_fields() {
     };
     assert!(is_identity_spec(&identity));
     assert!(!is_identity_spec(&CASE_FOLD_SPEC));
+}
+
+// ---------------------------------------------------------------------------
+// name_normalization threaded into the dotted/qname rungs (qname_exact,
+// same_namespace, imported_namespace, namespace_import)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn qname_exact_folds_case_when_normspec_ci() {
+    // A dotted target whose PREFIX case differs from the keyed qname binds under
+    // a case-insensitive spec and declines under None. The leaf (`by_name` key)
+    // keeps its declared case; the prefix segments fold.
+    let lookup = Lookup::new().with(sym(
+        140,
+        "Do_Thing",
+        "Pkg.Sub.Do_Thing",
+        "function",
+        "src/pkg-sub.adb",
+    ));
+    let r = extracted_call("pkg.sub.Do_Thing"); // lowercased prefix, declared leaf case
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_qname_exact(false, &accept_any, NameNormalization::Spec(CASE_FOLD_SPEC))
+        .expect("case-insensitive spec binds the different-case dotted qname");
+    assert_eq!(resolved.target_symbol_id, 140);
+    assert_eq!(resolved.strategy, "default_qname_exact");
+
+    // Byte-identity guard: None must NOT bind the differently-cased qname.
+    assert!(
+        d.resolve_via_qname_exact(false, &accept_any, NameNormalization::None)
+            .is_none(),
+        "None keeps qname_exact byte-exact for case-sensitive languages"
+    );
+}
+
+#[test]
+fn same_namespace_and_imported_namespace_fold_case_when_ci() {
+    // `Alr.Commands.Run` keyed; the file's namespace is `Alr.Commands`; the ref
+    // target `run` (lowercase) resolves via same_namespace under the CI spec and
+    // declines under None.
+    let member = sym(141, "Run", "Alr.Commands.Run", "function", "src/alr-commands.adb");
+    let lookup = Lookup::new().with(member);
+    let r = extracted_call("run"); // lowercase, member is `Run`
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], Some("Alr.Commands"));
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_same_namespace(&accept_any, NameNormalization::Spec(CASE_FOLD_SPEC))
+        .expect("case-insensitive spec binds the different-case same-namespace member");
+    assert_eq!(resolved.target_symbol_id, 141);
+    assert_eq!(resolved.strategy, "default_same_namespace");
+
+    assert!(
+        d.resolve_via_same_namespace(&accept_any, NameNormalization::None)
+            .is_none(),
+        "None keeps same_namespace byte-exact"
+    );
+
+    // imported_namespace: same candidate reached through an import of the
+    // enclosing package rather than the file's own namespace.
+    let imp_fc = file_ctx(vec![import("Alr.Commands", Some("Alr.Commands"))], None);
+    let imp_rc = ref_ctx(&r, &s, vec![]);
+    let imp_d = DefaultResolver {
+        file_ctx: &imp_fc,
+        ref_ctx: &imp_rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let imp_resolved = imp_d
+        .resolve_via_imported_namespace(&accept_any, NameNormalization::Spec(CASE_FOLD_SPEC))
+        .expect("case-insensitive spec binds the different-case imported-namespace member");
+    assert_eq!(imp_resolved.target_symbol_id, 141);
+    assert_eq!(imp_resolved.strategy, "default_imported_namespace");
+
+    assert!(
+        imp_d
+            .resolve_via_imported_namespace(&accept_any, NameNormalization::None)
+            .is_none(),
+        "None keeps imported_namespace byte-exact"
+    );
+}
+
+#[test]
+fn namespace_import_folds_case_when_ci() {
+    // `using Alr.Commands;` then `Run` — the dotted-prefix import forms
+    // `Alr.Commands.run` for a lowercase target and must fold to the keyed
+    // `Alr.Commands.Run` under a CI spec, declining under None.
+    let lookup = Lookup::new().with(sym(
+        142,
+        "Run",
+        "Alr.Commands.Run",
+        "function",
+        "src/alr-commands.adb",
+    ));
+    let r = extracted_call("run");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Alr.Commands", Some("Alr.Commands"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_namespace_import(&accept_any, NameNormalization::Spec(CASE_FOLD_SPEC))
+        .expect("case-insensitive spec binds the different-case namespace-import member");
+    assert_eq!(resolved.target_symbol_id, 142);
+    assert_eq!(resolved.strategy, "default_namespace_import");
+
+    assert!(
+        d.resolve_via_namespace_import(&accept_any, NameNormalization::None)
+            .is_none(),
+        "None keeps namespace_import byte-exact"
+    );
 }
 
 // ---------------------------------------------------------------------------
