@@ -172,6 +172,53 @@ pub struct LanguageProfile {
     /// `On { wildcard_only }` opts a language in, optionally restricting the
     /// scan to wildcard imports. See `FileScopedImports`.
     pub file_scoped_imports: FileScopedImports,
+    /// Alternate module-prefix candidates the `ByNameUnderModuleDir` anchor
+    /// tries against a BARE specifier before the directory-containment probe.
+    /// `Off` (the default) leaves the anchor's bare-specifier handling on the
+    /// literal `{module}.{target}` qname plus directory containment. `On` runs
+    /// a deterministic prefix-rewrite generator (DefinitelyTyped `@types/`
+    /// rewrites + deep-import `/seg` peels) and, when set, declines the
+    /// directory-containment fallback for bare specifiers so a bare package
+    /// name (`react`) never directory-matches a same-named project file. See
+    /// `ModulePrefixRewrites`.
+    pub module_prefix_rewrites: ModulePrefixRewrites,
+    /// Whether a bare import specifier that names a sibling WORKSPACE package
+    /// scopes the bare target to that package's symbol set. `false` (the
+    /// default) leaves the strategy inert. `true` opts a language in (TS/JS
+    /// monorepos): the engine reads `SymbolLookup::workspace_package_id` /
+    /// `symbols_in_package` / `is_workspace_declared_name` to bind the target —
+    /// including deep imports (`@org/utils/sub/mod`) — at confidence 1.0.
+    pub workspace_packages: bool,
+    /// Whether the `ByNameUnderModuleDir` qname probe and `resolve_via_qname_exact`
+    /// scan ALL same-qname overloads for the first kind-compatible one rather
+    /// than taking `by_qualified_name`'s first-wins winner. `false` (the
+    /// default) keeps first-wins. `true` opts a language in for declaration
+    /// merging — TS exposes interface + variable under one qname
+    /// (`@angular/core.Injectable`), and a `Calls` ref must skip the interface
+    /// to reach the callable variable. Generic correctness fix, scoped by the
+    /// flag so first-wins languages are byte-identical.
+    pub overload_pick_all: bool,
+    /// Ambient npm/test-framework/core-lib globals probed for a bare
+    /// single-identifier call/typeref/instantiation that no import binds.
+    /// `Off` (the default) leaves the probe inert. `On` checks the synthetic
+    /// `__npm_globals__.<name>` namespace and the bare qname when the defining
+    /// file is an ambient-global lib file (jest `describe`, jQuery `$`, DOM
+    /// constructors). See `AmbientGlobals`.
+    pub ambient_globals: AmbientGlobals,
+    /// How the chain walker's root resolver discovers the type a bare `self`/
+    /// `this` receiver refers to. `ScopePathThenDefault` (the default) is the
+    /// engine's `DefaultRootResolver` behavior — the source symbol's
+    /// `scope_path`, then the file's single top-level type. `CanonicalMembers`
+    /// is reserved for frameworks whose `this` has an implicit declared type.
+    /// See `SelfReceiverDiscovery`.
+    pub self_receiver_discovery: SelfReceiverDiscovery,
+    /// Component-selector resolution for template refs. `None` (the default)
+    /// leaves it inert. `Some` binds a `Calls` ref whose target names a
+    /// component/directive selector to the decorated class via
+    /// `SymbolLookup::selector_qname`, applying the configured name transforms
+    /// (e.g. `PascalToKebab` for `<app-user-card>` → `app-user-card`). See
+    /// `SelectorResolution`.
+    pub selector_resolution: Option<SelectorResolution>,
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -251,13 +298,20 @@ pub enum StemMatch {
 }
 
 /// How the generic `build_file_context` default fills an `ImportEntry`'s
-/// `module_path` from an `Imports` ref's target.
+/// `module_path` from a ref's target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportModulePath {
-    /// Leave `module_path` empty.
+    /// Leave `module_path` empty. Collects only `EdgeKind::Imports` refs.
     None,
-    /// Mirror the raw target into `module_path`.
+    /// Mirror the raw target into `module_path`. Collects only `Imports` refs.
     EchoTarget,
+    /// Harvest every ref that carries a `module` field — regardless of edge
+    /// kind — into an `ImportEntry { imported_name: target, module_path:
+    /// module }`. The TS/JS extractor emits one `TypeRef`-with-module ref per
+    /// imported binding (`import { useState } from 'react'`), and the post-pass
+    /// attaches a `module` to call refs (`UserService.findOne()` →
+    /// `module="./user.service"`); both shapes are the file's import table.
+    FromModuleField,
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +512,97 @@ pub struct AliasDecode {
     pub type_confidence: f64,
     /// Confidence for a fallback bind.
     pub fallback_confidence: f64,
+}
+
+/// Module-prefix-rewrite generator for the `ByNameUnderModuleDir` anchor's
+/// bare-specifier path. Each delta is pure data; the engine derives the
+/// ordered candidate prefixes deterministically from the bare module string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModulePrefixRewrites {
+    /// No rewrites — the literal `{module}` is the only prefix tried, and the
+    /// directory-containment fallback runs as usual. The default.
+    Off,
+    /// Generate alternate prefixes for a bare specifier and retry the qname
+    /// probe under each, in order: `{module}` first, then the
+    /// DefinitelyTyped rewrites, then the deep-import peels.
+    On {
+        /// Try the `@types/` DefinitelyTyped form of the specifier:
+        /// `@scope/pkg` → `@types/scope__pkg`, `pkg` → `@types/pkg`. Skipped
+        /// when the specifier already starts with `@types/`.
+        definitely_typed: bool,
+        /// Peel trailing `/seg` segments off a `/`-bearing specifier
+        /// (`rxjs/operators` → `rxjs`), retrying the qname probe at each
+        /// shorter prefix. Stops before a bare `@scope` (a scoped package
+        /// always keeps its package segment: `@angular/core/testing` peels to
+        /// `@angular/core`, never `@angular`).
+        deep_import_peel: bool,
+        /// Decline the directory-containment fallback for a bare specifier.
+        /// `true` for TS/JS — a bare package name (`react`) must resolve
+        /// through the qname rewrites or stay unresolved, never directory-match
+        /// a same-named project file.
+        decline_bare_directory_match: bool,
+    },
+}
+
+/// Ambient-global probe for a bare single-identifier call that no import binds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AmbientGlobals {
+    /// No ambient-global probe. The default.
+    Off,
+    /// Probe the synthetic `__npm_globals__.<name>` namespace and, on a miss,
+    /// the bare qname when the candidate's defining file is an ambient-global
+    /// lib file.
+    On {
+        /// Confidence recorded on an `__npm_globals__` hit.
+        npm_confidence: f64,
+        /// Confidence recorded on an ambient-lib-file bare-qname hit.
+        lib_confidence: f64,
+        /// Accept an ambient-lib `variable` candidate for an `Instantiates`
+        /// ref. The core lib encodes constructors as `declare var X: { new():
+        /// Y }` — recorded as a `variable` but constructible via `new X()`.
+        instantiate_accepts_variable: bool,
+    },
+}
+
+/// How the chain walker's root resolver types a bare `self`/`this` receiver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelfReceiverDiscovery {
+    /// The engine's `DefaultRootResolver` behavior: the source symbol's
+    /// `scope_path` names the enclosing type, falling back to the file's
+    /// single top-level type (SFC / page-class convention). The default for
+    /// every language.
+    ScopePathThenDefault,
+    /// Reserved for frameworks whose `this` has an implicit, framework-declared
+    /// type the extractor can't capture as a `scope_path` — seed a canonical
+    /// member set and discover the receiver type by its members. Not consumed
+    /// today; the variant reserves the axis so a framework can opt in without a
+    /// per-language root-resolver hook.
+    CanonicalMembers {
+        seed: &'static str,
+        siblings: &'static [&'static str],
+    },
+}
+
+/// Component-selector resolution data for template refs (Angular). The engine
+/// applies each `name_transform` to the ref target in turn, probes
+/// `SymbolLookup::selector_qname` for a matching decorated class, and binds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectorResolution {
+    /// Edge kinds whose targets are candidate selectors.
+    pub edge_kinds: &'static [EdgeKind],
+    /// Name transforms applied to the target, in order, each yielding one
+    /// selector-key candidate. The raw target is always tried first.
+    pub name_transforms: &'static [NameTransform],
+}
+
+/// A deterministic surface-form transform applied to a ref target to derive a
+/// selector-key candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameTransform {
+    /// `AppUserCard` → `app-user-card`: insert `-` at each interior uppercase
+    /// boundary and lowercase. A single-segment lowercase/camelCase input with
+    /// no interior uppercase returns unchanged.
+    PascalToKebab,
 }
 
 // ---------------------------------------------------------------------------
@@ -720,6 +865,12 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     ext_match: ExtMatch::PkgSegment,
     head_alias: HeadAliasBind::Off,
     file_scoped_imports: FileScopedImports::Off,
+    module_prefix_rewrites: ModulePrefixRewrites::Off,
+    workspace_packages: false,
+    overload_pick_all: false,
+    ambient_globals: AmbientGlobals::Off,
+    self_receiver_discovery: SelfReceiverDiscovery::ScopePathThenDefault,
+    selector_resolution: None,
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -75,6 +75,13 @@ pub const LUA_PROFILE: LanguageProfile = LanguageProfile {
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    workspace_packages: false,
+    overload_pick_all: false,
+    ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
+    self_receiver_discovery:
+        crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
+    selector_resolution: None,
     constructor_patterns: &[ConstructorPattern::LuaColonNew],
     class_builder_specs: &[],
     decorator_syntax: None,

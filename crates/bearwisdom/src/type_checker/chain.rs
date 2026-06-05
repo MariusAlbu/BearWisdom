@@ -351,6 +351,7 @@ pub fn resolve_via_chain(
                 lookup,
                 env.as_mut(),
                 true,
+                &current_type,
             );
             current_type = resolved;
             continue;
@@ -378,6 +379,7 @@ pub fn resolve_via_chain(
                 lookup,
                 env.as_mut(),
                 false,
+                &current_type,
             );
             current_type = resolved;
             continue;
@@ -411,6 +413,7 @@ pub fn resolve_via_chain(
                     lookup,
                     env.as_mut(),
                     true,
+                    &current_type,
                 );
                 current_type = resolved;
                 found = true;
@@ -424,6 +427,7 @@ pub fn resolve_via_chain(
                     lookup,
                     env.as_mut(),
                     false,
+                    &current_type,
                 );
                 current_type = resolved;
                 found = true;
@@ -442,13 +446,13 @@ pub fn resolve_via_chain(
                 let ext_member = format!("{ext_qname}.{}", seg.name);
                 if let Some(ft) = lookup.field_type_str(&ext_member) {
                     current_type = resolve_and_enter_generics(
-                        &ft, &ext_member, config, lookup, env.as_mut(), true,
+                        &ft, &ext_member, config, lookup, env.as_mut(), true, &ext_qname,
                     );
                     continue;
                 }
                 if let Some(rt) = lookup.return_type_str(&ext_member) {
                     current_type = resolve_and_enter_generics(
-                        &rt, &ext_member, config, lookup, env.as_mut(), false,
+                        &rt, &ext_member, config, lookup, env.as_mut(), false, &ext_qname,
                     );
                     continue;
                 }
@@ -1019,8 +1023,11 @@ fn walk_inheritance_for_member(
             return Some(resolved);
         }
         if let Some(next) = lookup.return_type_str(&parent_member) {
+            // An inherited `: this` method called through a subclass receiver
+            // binds back to the subclass (`current_type`), not the declaring
+            // parent — the expected polymorphic-self semantics.
             let resolved = resolve_and_enter_generics(
-                &next, &parent_member, config, lookup, env.as_deref_mut(), false,
+                &next, &parent_member, config, lookup, env.as_deref_mut(), false, current_type,
             );
             return Some(resolved);
         }
@@ -1030,12 +1037,12 @@ fn walk_inheritance_for_member(
             }
             if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
                 return Some(resolve_and_enter_generics(
-                    &ft, &sym.qualified_name, config, lookup, env.as_deref_mut(), true,
+                    &ft, &sym.qualified_name, config, lookup, env.as_deref_mut(), true, current_type,
                 ));
             }
             if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
                 return Some(resolve_and_enter_generics(
-                    &rt, &sym.qualified_name, config, lookup, env.as_deref_mut(), false,
+                    &rt, &sym.qualified_name, config, lookup, env.as_deref_mut(), false, current_type,
                 ));
             }
         }
@@ -1079,6 +1086,14 @@ fn resolve_and_enter_generics_args(
 /// `field_type_args`; a method-return yield reads from `return_type_args` —
 /// distinct slots, so a same-named field+method (legal in Java) can't clobber
 /// one with the other.
+/// A polymorphic-self return keyword — a method declared to return `this` /
+/// `self` / `Self` yields the receiver's own type, not a type literally named
+/// `this`. No language declares a real type under these names, so recognizing
+/// them generically is inert for any chain whose return type is a real name.
+fn is_self_return_keyword(raw: &str) -> bool {
+    matches!(raw, "this" | "self" | "Self")
+}
+
 fn resolve_and_enter_generics(
     raw_type: &str,
     member_qname: &str,
@@ -1086,7 +1101,16 @@ fn resolve_and_enter_generics(
     lookup: &dyn SymbolLookup,
     env: Option<&mut TypeEnvironment>,
     is_field: bool,
+    receiver: &str,
 ) -> String {
+    // Polymorphic-self return: a `: this` (TS) / `-> Self` (Rust) method keeps
+    // the receiver binding through the fluent chain. Without this the walker
+    // would advance `current_type` to the literal keyword and miss every later
+    // segment. A field is never a self-keyword, so the guard only matters for
+    // the return-type callsites.
+    if !is_field && is_self_return_keyword(raw_type) {
+        return receiver.to_string();
+    }
     let normalized = (config.normalize_type)(raw_type);
     if let Some(env) = env {
         let resolved = env.resolve(&normalized);

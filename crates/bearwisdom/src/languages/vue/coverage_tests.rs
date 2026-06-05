@@ -173,8 +173,8 @@ fn cov_nested_pascal_component_in_template_body_produces_calls() {
     );
 }
 
-// `this.X` resolution in SFC methods is owned by `VueRootResolver`
-// (`languages/vue/root_resolver.rs`) — it discovers the framework's
-// component-instance type structurally from walked d.ts symbols and
-// hands the chain walker the right root type without any extractor
-// involvement. No SFC-emitted inheritance ref to assert here.
+// `this.X` resolution in SFC methods is owned by the profile-driven
+// `ProfileRootResolver` reading `VUE_PROFILE.self_receiver_discovery` — it
+// discovers the framework's component-instance type structurally from walked
+// d.ts symbols and hands the chain walker the right root type without any
+// extractor involvement. No SFC-emitted inheritance ref to assert here.

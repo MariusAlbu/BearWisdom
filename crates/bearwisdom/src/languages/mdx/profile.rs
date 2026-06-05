@@ -1,5 +1,23 @@
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    CandidateDirs, ChainQualification, DispatchAxis, ImportResolution, LanguageProfile, StemMatch,
+    SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+};
+
+/// Relative-link resolution for MDX `Imports` refs — the markdown-link half of
+/// MDX's ref handling. A bare path target (`api/overview`) binds to the
+/// file-stem `class` host symbol of the linked `.md`/`.mdx` file. Mirrors the
+/// markdown profile's link rule; JSX component refs (every non-`Imports` ref)
+/// flow through the TypeScript-shaped strategies the rest of the profile drives.
+const MDX_IMPORTS: ImportResolution = ImportResolution {
+    extensions: &["md", "markdown", "mdown", "mkd", "mkdn", "mdx"],
+    candidate_dirs: CandidateDirs::SelfDir,
+    index_files: &["index", "README", "readme", "Readme"],
+    underscore_variant: false,
+    kebab_variant: false,
+    decline_leading_slash: false,
+    stem_match: StemMatch::StemExact,
+    bind_kind: "class",
+    strategy_tag: "markdown_relative_link",
 };
 
 pub const MDX_PROFILE: LanguageProfile = LanguageProfile {
@@ -23,11 +41,13 @@ pub const MDX_PROFILE: LanguageProfile = LanguageProfile {
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
-    import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+    import_resolution: Some(MDX_IMPORTS),
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
+    ),
     module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     package_by_directory: false,
@@ -35,6 +55,21 @@ pub const MDX_PROFILE: LanguageProfile = LanguageProfile {
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+        definitely_typed: true,
+        deep_import_peel: true,
+        decline_bare_directory_match: true,
+    },
+    workspace_packages: true,
+    overload_pick_all: true,
+    ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
+        npm_confidence: 0.85,
+        lib_confidence: 0.85,
+        instantiate_accepts_variable: true,
+    },
+    self_receiver_discovery:
+        crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
+    selector_resolution: None,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

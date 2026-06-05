@@ -18,7 +18,9 @@ pub mod symbol_types;
 pub(crate) mod symbol_view;
 pub mod types;
 
-pub use chain::{ChainResolution, ChainWalker, DefaultRootResolver, RootResolver};
+pub use chain::{
+    ChainResolution, ChainWalker, DefaultRootResolver, ProfileRootResolver, RootResolver,
+};
 pub use default_resolver::DefaultResolver;
 pub use dispatch::{select_method, DispatchQuery};
 pub use generics::{substitute, GenericEnv};

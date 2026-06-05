@@ -1,10 +1,12 @@
-// Angular language hooks. Absorbed from the deleted `angular/resolve.rs`.
+// Angular language hooks. Component/directive selector resolution is generic
+// engine code driven by `ANGULAR_PROFILE.selector_resolution` (`resolve_via_selector_map`);
+// the hook keeps only the external classifier (template-selector → imported
+// bare-specifier fallback) and the import-table builder.
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, RefContext, Resolution, SymbolLookup,
+    FileContext, RefContext, SymbolLookup,
 };
-use crate::languages::typescript::hooks::TypeScriptResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -78,70 +80,10 @@ impl LanguageEngineHooks for AngularHooks {
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
-        Some(TypeScriptResolver.build_file_context(file, project_ctx))
+        Some(crate::languages::typescript::hooks::build_file_context_inner(
+            file, project_ctx,
+        ))
     }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if ref_ctx.extracted_ref.kind == EdgeKind::Calls {
-            let target = &ref_ctx.extracted_ref.target_name;
-            // The angular_selector map is keyed on the literal string from
-            // @Component({selector:'...'}) / @Directive({selector:'...'}).
-            // Two shapes need to match:
-            //   * kebab-case component tags — `<app-user-card>` becomes
-            //     target_name="AppUserCard" in the extractor; the map key
-            //     is "app-user-card". Try the kebab-derived form.
-            //   * camelCase attribute directives — `[appHighlight]` keeps
-            //     target_name="appHighlight"; the map key is "appHighlight"
-            //     (or its bracketed form, but the directive registry
-            //     unbrackets it). Try the literal target first.
-            let kebab = pascal_to_kebab(target);
-            for candidate in [target.as_str(), kebab.as_str()] {
-                if let Some(class_qname) = lookup.angular_selector(candidate) {
-                    if let Some(sym) = lookup.by_qualified_name(class_qname) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "angular_selector_map",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                    let short = class_qname.rsplit('.').next().unwrap_or(class_qname);
-                    for sym in lookup.by_name(short) {
-                        if sym.qualified_name == class_qname {
-                            return Some(Resolution {
-                                target_symbol_id: sym.id,
-                                confidence: 1.0,
-                                strategy: "angular_selector_map",
-                                resolved_yield_type: None,
-                                flow_emit: None,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
-    }
-}
-
-/// "AppAvatar" -> "app-avatar". Splits on every uppercase boundary and
-/// lowercases segments. Single-segment inputs (already lowercase or
-/// camelCase with no uppercase boundary) return unchanged.
-fn pascal_to_kebab(name: &str) -> String {
-    let mut out = String::with_capacity(name.len() + 4);
-    for (i, ch) in name.chars().enumerate() {
-        if ch.is_ascii_uppercase() && i > 0 {
-            out.push('-');
-        }
-        out.extend(ch.to_lowercase());
-    }
-    out
 }
 
 pub static ANGULAR_HOOKS: AngularHooks = AngularHooks;

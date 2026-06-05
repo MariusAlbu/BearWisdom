@@ -39,7 +39,6 @@ mod aliases;
 pub(crate) mod flow_detectors;
 
 pub use hooks::TYPESCRIPT_HOOKS;
-pub use hooks::TypeScriptResolver;
 pub use profile::TYPESCRIPT_PROFILE;
 
 #[cfg(test)]

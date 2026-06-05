@@ -34,6 +34,14 @@ struct Lookup {
     reexports_map: FxHashMap<String, Vec<(String, String)>>,
     /// module_spec → resolved file_path
     module_files: FxHashMap<String, String>,
+    /// qname → every overload stored under it (declaration-merging)
+    by_qname_all: FxHashMap<String, Vec<SymbolInfo>>,
+    /// raw selector → class qname
+    selectors: FxHashMap<String, String>,
+    /// workspace declared_name → package_id
+    workspace_pkgs: FxHashMap<String, i64>,
+    /// package_id → symbols
+    pkg_symbols: FxHashMap<i64, Vec<SymbolInfo>>,
 }
 
 impl Lookup {
@@ -52,7 +60,34 @@ impl Lookup {
             generics: Default::default(),
             reexports_map: Default::default(),
             module_files: Default::default(),
+            by_qname_all: Default::default(),
+            selectors: Default::default(),
+            workspace_pkgs: Default::default(),
+            pkg_symbols: Default::default(),
         }
+    }
+    /// Register an additional overload under an existing qname (declaration
+    /// merging). The first `with` already seeded `by_qname`; this appends the
+    /// overload to the all-overloads slice.
+    fn with_overload(mut self, sym: SymbolInfo) -> Self {
+        self.by_qname_all
+            .entry(sym.qualified_name.clone())
+            .or_default()
+            .push(sym.clone());
+        self.by_name.entry(sym.name.clone()).or_default().push(sym);
+        self
+    }
+    fn with_selector(mut self, raw: &str, class_qname: &str) -> Self {
+        self.selectors.insert(raw.to_string(), class_qname.to_string());
+        self
+    }
+    fn with_workspace_pkg(mut self, declared: &str, id: i64) -> Self {
+        self.workspace_pkgs.insert(declared.to_string(), id);
+        self
+    }
+    fn with_pkg_symbol(mut self, id: i64, sym: SymbolInfo) -> Self {
+        self.pkg_symbols.entry(id).or_default().push(sym);
+        self
     }
     fn with_reexport_entry(mut self, file: &str, name: &str, source: &str) -> Self {
         self.reexports_map
@@ -197,6 +232,41 @@ impl SymbolLookup for Lookup {
     }
     fn resolve_path_alias(&self, _: Option<i64>, specifier: &str) -> Option<String> {
         self.path_aliases.get(specifier).cloned()
+    }
+    fn all_by_qualified_name(&self, qname: &str) -> &[SymbolInfo] {
+        if let Some(all) = self.by_qname_all.get(qname) {
+            return all.as_slice();
+        }
+        std::slice::from_ref(match self.by_qname.get(qname) {
+            Some(s) => s,
+            None => return &self.empty,
+        })
+    }
+    fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
+        self.selectors.get(raw_selector).map(|s| s.as_str())
+    }
+    fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
+        if let Some(id) = self.workspace_pkgs.get(specifier) {
+            return Some(*id);
+        }
+        // Deep-import prefix walk.
+        let mut path = specifier;
+        while let Some(slash) = path.rfind('/') {
+            path = &path[..slash];
+            if let Some(id) = self.workspace_pkgs.get(path) {
+                return Some(*id);
+            }
+        }
+        None
+    }
+    fn is_workspace_declared_name(&self, name: &str) -> bool {
+        self.workspace_pkgs.contains_key(name)
+    }
+    fn symbols_in_package(&self, package_id: i64) -> &[SymbolInfo] {
+        self.pkg_symbols
+            .get(&package_id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty)
     }
 }
 
@@ -397,7 +467,9 @@ fn qname_exact_resolves_dotted_target() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_qname_exact(&accept_any).expect("dotted target resolves");
+    let resolved = d
+        .resolve_via_qname_exact(false, &accept_any)
+        .expect("dotted target resolves");
     assert_eq!(resolved.target_symbol_id, 3);
     assert_eq!(resolved.strategy, "default_qname_exact");
 }
@@ -415,7 +487,7 @@ fn qname_exact_ignores_bare_target() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_qname_exact(&accept_any).is_none());
+    assert!(d.resolve_via_qname_exact(false, &accept_any).is_none());
 }
 
 #[test]
@@ -1957,7 +2029,8 @@ fn import_path_no_candidate_returns_none() {
 // ---------------------------------------------------------------------------
 
 use crate::type_checker::profile::language_profile::{
-    ExtMatch, ExternalByImport, ModuleAnchor, ModuleAnchorBind, RelativeMarker, StemSource,
+    ExtMatch, ExternalByImport, ModuleAnchor, ModuleAnchorBind, ModulePrefixRewrites,
+    RelativeMarker, StemSource,
 };
 
 #[test]
@@ -1986,6 +2059,8 @@ fn module_anchor_name_exact_kind_binds_via_in_module_from() {
             RelativeMarker::DotSlashPrefix,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("name-exact anchor resolves");
@@ -2015,6 +2090,8 @@ fn module_anchor_off_is_inert() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .is_none(),
@@ -2041,6 +2118,8 @@ fn module_anchor_returns_none_without_module() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .is_none());
@@ -2080,6 +2159,8 @@ fn module_anchor_prefer_named_else_first_picks_same_named() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("require anchor resolves");
@@ -2115,6 +2196,8 @@ fn module_anchor_prefer_named_else_first_falls_back_to_first() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("first-symbol anchor resolves");
@@ -2149,6 +2232,8 @@ fn module_anchor_by_name_under_module_dir_for_absolute_python() {
             RelativeMarker::DotPrefix,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("dir-containment anchor resolves the absolute module");
@@ -2181,6 +2266,8 @@ fn module_anchor_by_name_under_module_dir_qname_probe() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("qname probe resolves");
@@ -2210,6 +2297,8 @@ fn module_anchor_by_name_under_module_dir_colon_module_leaf_fallback() {
             RelativeMarker::None,
             NameNormalization::None,
             "::",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("`::` module leaf fallback resolves");
@@ -2240,6 +2329,8 @@ fn module_anchor_by_name_under_module_dir_colon_qname_probe() {
             RelativeMarker::None,
             NameNormalization::None,
             "::",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("`::` qname probe resolves");
@@ -2269,6 +2360,8 @@ fn module_anchor_by_file_stem_binds_on_basename_stem() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("file-stem anchor resolves on basename stem");
@@ -2299,6 +2392,8 @@ fn module_anchor_by_file_stem_strips_dotted_module_head() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("dotted-module leaf drives the stem match");
@@ -2327,6 +2422,8 @@ fn module_anchor_by_file_stem_matches_dir_segment() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("dir-segment match resolves");
@@ -2355,6 +2452,8 @@ fn module_anchor_by_file_stem_declines_unrelated_file() {
             RelativeMarker::None,
             NameNormalization::None,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .is_none());
@@ -2391,6 +2490,8 @@ fn module_anchor_member_of_module_type_folds_case() {
             RelativeMarker::None,
             norm,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .expect("case-insensitive member of module type resolves");
@@ -2427,6 +2528,8 @@ fn module_anchor_member_of_module_type_declines_unknown_member() {
             RelativeMarker::None,
             norm,
             ".",
+            ModulePrefixRewrites::Off,
+            false,
             &accept_any,
         )
         .is_none());

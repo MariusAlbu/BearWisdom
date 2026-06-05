@@ -3,7 +3,7 @@
 // — same approach as Vue/Svelte SFCs.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::ParsedFile;
 
@@ -23,28 +23,18 @@ impl LanguageEngineHooks for AstroHooks {
     }
 
     /// Build the per-file import table for a `.astro` file. The frontmatter
-    /// (sub-extracted as TypeScript) holds the component imports; delegate to
-    /// the TS resolver so they populate `FileContext.imports`. Without this the
-    /// engine's bare-name path has no imports for `.astro` files and every
-    /// `<Component>` template ref is unresolved (astro sat at 0%).
+    /// (sub-extracted as TypeScript) holds the component imports; build the
+    /// table through the shared TS file-context builder so they populate
+    /// `FileContext.imports`. Without imports the engine's bare-name path can't
+    /// bind a `<Component>` template ref.
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
-        Some(
-            crate::languages::typescript::hooks::TypeScriptResolver
-                .build_file_context(file, project_ctx),
-        )
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        crate::languages::typescript::hooks::TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
+        Some(crate::languages::typescript::hooks::build_file_context_inner(
+            file, project_ctx,
+        ))
     }
 }
 

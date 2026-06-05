@@ -1,10 +1,30 @@
 use super::hooks::MdxHooks;
+use super::profile::MDX_PROFILE;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, RefContext, SymbolIndex,
+    build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex, SymbolLookup,
 };
 use crate::types::*;
 use std::collections::HashMap;
+
+/// Drive an MDX ref through the generic engine exactly as the resolve loop does
+/// for a profile-only language: a chain-bearing ref through the structured
+/// walker, everything else through the `DefaultResolver` ladder gated on
+/// `MDX_PROFILE` (so `Imports` refs hit `resolve_via_import_path` and JSX refs
+/// hit the TypeScript-shaped strategies).
+fn run_resolve(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext<'_>,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    crate::type_checker::core::DefaultResolver {
+        file_ctx,
+        ref_ctx,
+        lookup,
+        kind_compatible: |_, _| true,
+    }
+    .resolve_all_with_profile(&MDX_PROFILE)
+}
 
 fn make_symbol(
     name: &str,
@@ -138,8 +158,8 @@ fn jsx_calls_dispatched_to_ts_resolver_for_same_file_export() {
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    let res = MdxHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
-        .expect("JSX Calls ref must dispatch to TS resolver and bind same-file Button");
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
+        .expect("JSX Calls ref must bind same-file Button via the engine ladder");
     assert_eq!(
         res.target_symbol_id,
         *id_map
@@ -151,8 +171,8 @@ fn jsx_calls_dispatched_to_ts_resolver_for_same_file_export() {
 #[test]
 fn markdown_link_imports_route_through_markdown_resolver() {
     // The MDX host extractor emits link Imports refs identical in shape to
-    // Markdown's; the dispatcher must route those through the path-based
-    // MarkdownResolver, not TypeScriptResolver.
+    // Markdown's; `import_resolution` (`resolve_via_import_path`) must bind
+    // those by file path, not the TypeScript-shaped strategies.
     let target = make_file(
         "docs/api/overview.md",
         "markdown",
@@ -179,8 +199,8 @@ fn markdown_link_imports_route_through_markdown_resolver() {
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
-    let res = MdxHooks.resolve_ref(&file_ctx, &ref_ctx, &index)
-        .expect("relative .md link should resolve via MarkdownResolver");
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
+        .expect("relative .md link should resolve via import_resolution");
     assert_eq!(res.strategy, "markdown_relative_link");
     assert_eq!(
         res.target_symbol_id,
@@ -209,7 +229,7 @@ fn jsx_calls_with_no_matching_import_falls_through_to_unresolved() {
         file_package_id: None,
     };
     assert!(
-        MdxHooks.resolve_ref(&file_ctx, &ref_ctx, &index).is_none(),
+        run_resolve(&file_ctx, &ref_ctx, &index).is_none(),
         "no import → no Tier-1 resolution"
     );
 }

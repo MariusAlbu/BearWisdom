@@ -322,16 +322,17 @@ pub trait SymbolLookup {
         None
     }
 
-    /// Look up the class qualified name for an Angular component selector.
+    /// Look up the class qualified name for a component/directive selector.
     ///
-    /// `raw_selector` is the selector as stored in `@Component({selector:'...'})`,
-    /// post-normalization (brackets/dots stripped).  Element selectors look like
-    /// `"app-user-card"`; attribute selectors like `"appHighlight"`.
+    /// `raw_selector` is the selector as stored in `@Component({selector:'...'})`
+    /// / `@Directive({selector:'...'})`, post-normalization (brackets/dots
+    /// stripped). Element selectors look like `"app-user-card"`; attribute
+    /// selectors like `"appHighlight"`.
     ///
-    /// Returns `Some(qname)` when a `@Component` class with that selector was
-    /// indexed.  Default returns `None` — test lookups and non-Angular
-    /// projects pay no cost.
-    fn angular_selector(&self, _raw_selector: &str) -> Option<&str> {
+    /// Returns `Some(qname)` when a decorated class with that selector was
+    /// indexed. Default returns `None` — test lookups and projects with no
+    /// selector map pay no cost.
+    fn selector_qname(&self, _raw_selector: &str) -> Option<&str> {
         None
     }
 

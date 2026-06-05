@@ -1,7 +1,26 @@
-//! Tests for `angular::resolve::AngularResolver`.
+//! Tests for Angular template resolution (selector-map binding through the
+//! generic engine ladder) and the paired-`.ts` companion lookup.
 
-use super::hooks::{paired_ts_for_template, AngularHooks};
-use crate::type_checker::profile::hooks::LanguageEngineHooks;
+use super::hooks::paired_ts_for_template;
+use super::profile::ANGULAR_PROFILE;
+use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+
+/// Drive an Angular template ref through the generic engine ladder gated on
+/// `ANGULAR_PROFILE` — `selector_resolution` binds a component-tag / directive
+/// `Calls` ref to its decorated class via the selector map.
+fn run_resolve(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext<'_>,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    crate::type_checker::core::DefaultResolver {
+        file_ctx,
+        ref_ctx,
+        lookup,
+        kind_compatible: |_, _| true,
+    }
+    .resolve_all_with_profile(&ANGULAR_PROFILE)
+}
 
 #[test]
 fn paired_ts_for_component_template() {
@@ -49,7 +68,7 @@ fn companion_file_for_imports_delegates_to_paired_ts() {
 }
 
 // ---------------------------------------------------------------------------
-// Selector-map resolution (PR 18)
+// Selector-map resolution
 // ---------------------------------------------------------------------------
 
 /// Minimal `SymbolLookup` stub for testing the selector-map path.
@@ -110,7 +129,7 @@ impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
     fn reexports_from(&self, _f: &str) -> &[(String, String)] { &[] }
     fn is_external_name(&self, _n: &str, _l: &str) -> bool { false }
 
-    fn angular_selector(&self, raw_selector: &str) -> Option<&str> {
+    fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
         self.selectors.get(raw_selector).map(|s| s.as_str())
     }
 }
@@ -166,11 +185,11 @@ fn selector_map_hit_resolves_to_class() {
         file_package_id: None,
     };
 
-    let resolution = super::hooks::AngularHooks.resolve_ref(&file_ctx, &ref_ctx, &lookup);
+    let resolution = run_resolve(&file_ctx, &ref_ctx, &lookup);
     assert!(resolution.is_some(), "selector map hit should resolve");
     let res = resolution.unwrap();
     assert_eq!(res.target_symbol_id, 42);
-    assert_eq!(res.strategy, "angular_selector_map");
+    assert_eq!(res.strategy, "default_selector_map");
     assert!((res.confidence - 1.0).abs() < f64::EPSILON);
 }
 
@@ -179,7 +198,8 @@ fn selector_map_miss_falls_through() {
     use crate::indexer::resolve::engine::{FileContext, RefContext};
     use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
-    // No selectors in the map — TypeScriptResolver should handle it.
+    // No selectors in the map — the selector strategy declines and the rest
+    // of the ladder finds nothing in this empty lookup.
     let lookup = SelectorMapLookup::new();
 
     let host_sym = ExtractedSymbol {
@@ -223,8 +243,7 @@ fn selector_map_miss_falls_through() {
         file_package_id: None,
     };
 
-    // Should not panic, resolution may be None (no imports to resolve against).
-    let _result = super::hooks::AngularHooks.resolve_ref(&file_ctx, &ref_ctx, &lookup);
-    // We just verify it doesn't error — the TS resolver may return None here
-    // since the lookup has no symbols and no imports are set up.
+    // Should not panic, resolution may be None (no selectors, no symbols, no
+    // imports to resolve against).
+    let _result = run_resolve(&file_ctx, &ref_ctx, &lookup);
 }

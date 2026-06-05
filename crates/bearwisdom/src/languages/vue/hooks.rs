@@ -1,7 +1,6 @@
 use super::global_registry;
-use super::VueResolver;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::ParsedFile;
 
@@ -35,36 +34,61 @@ impl LanguageEngineHooks for VueHooks {
         )
     }
 
+    /// Build the per-file import table for a `.vue` file. The `<script>` block
+    /// IS TypeScript, so the imports come from the shared TS file-context
+    /// builder. On top of that, inject synthetic import entries for globally-
+    /// registered Vue components so the import-driven engine strategies resolve
+    /// `ComponentName` → `package.ComponentName` without an explicit import.
     fn build_file_context(
         &self,
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
-        Some(VueResolver.build_file_context(file, project_ctx))
-    }
+        let mut ctx =
+            crate::languages::typescript::hooks::build_file_context_inner(file, project_ctx);
 
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if let Some(res) = VueResolver.resolve(file_ctx, ref_ctx, lookup) {
-            return Some(res);
+        // For each Calls ref whose target is PascalCase and doesn't already
+        // appear in the file's import list, check the project-wide global
+        // registry stored in plugin_state. If a library covers that component
+        // (via a prefix convention), add a synthetic ImportEntry so the engine's
+        // import loop resolves the component against the external index.
+        if let Some(ctx_ref) = project_ctx {
+            if let Some(registry) =
+                ctx_ref.plugin_state.get::<global_registry::VueGlobalRegistry>()
+            {
+                if !registry.is_empty() {
+                    let already_imported: std::collections::HashSet<&str> =
+                        ctx.imports.iter().map(|e| e.imported_name.as_str()).collect();
+
+                    let mut extra_imports: Vec<ImportEntry> = Vec::new();
+                    for r in &file.refs {
+                        let name = &r.target_name;
+                        if !name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                            continue;
+                        }
+                        if already_imported.contains(name.as_str()) {
+                            continue;
+                        }
+                        if extra_imports.iter().any(|e| &e.imported_name == name) {
+                            continue;
+                        }
+                        if let Some(pkg) = global_registry::library_for_name(registry, name) {
+                            extra_imports.push(ImportEntry {
+                                imported_name: name.clone(),
+                                module_path: Some(pkg.to_string()),
+                                alias: None,
+                                is_wildcard: false,
+                            });
+                        }
+                    }
+                    if !extra_imports.is_empty() {
+                        ctx.imports.extend(extra_imports);
+                    }
+                }
+            }
         }
-        (crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: crate::languages::typescript::predicates::kind_compatible,
-        })
-        .resolve_all()
-    }
 
-    fn root_resolver(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::core::chain::RootResolver> {
-        Some(&super::root_resolver::VUE_ROOT_RESOLVER)
+        Some(ctx)
     }
 }
 

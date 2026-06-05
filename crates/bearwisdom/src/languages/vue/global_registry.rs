@@ -30,9 +30,9 @@
 // of files (main.ts/main.js, vite.config.*, package manifests), not the
 // entire project tree.
 //
-// The output is a `VueGlobalRegistry` consumed by `VueResolver::build_file_context`
+// The output is a `VueGlobalRegistry` consumed by `VueHooks::build_file_context`
 // to inject synthetic import entries for each registered component — so the
-// existing TS import-based resolution chain can resolve them without special-casing
+// import-based engine resolution strategies can resolve them without special-casing
 // the resolution engine.
 // =============================================================================
 
@@ -153,7 +153,7 @@ const SEARCH_DIRS: &[&str] = &["", "src", "apps"];
 ///
 /// This is called once per full or incremental index, before the resolution
 /// pass. The returned registry is stored in `ProjectContext::plugin_state`
-/// and consulted by `VueResolver::build_file_context`.
+/// and consulted by `VueHooks::build_file_context`.
 ///
 /// `parsed_paths` should be the list of relative paths of all project source
 /// files, used to efficiently enumerate candidate entry-point files without

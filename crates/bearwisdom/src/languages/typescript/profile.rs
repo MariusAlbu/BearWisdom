@@ -40,6 +40,7 @@ const TS_KIND_TABLE: KindTable = &[
             SymbolKind::Property,
             SymbolKind::Class,
             SymbolKind::Constructor,
+            SymbolKind::Test,
         ],
     ),
     (
@@ -50,6 +51,10 @@ const TS_KIND_TABLE: KindTable = &[
         EdgeKind::Implements,
         &[SymbolKind::Interface, SymbolKind::TypeAlias],
     ),
+    // TypeRef carries the TS import-binding ref (the extractor emits every
+    // `import { X } from '...'` as a TypeRef regardless of X's actual kind),
+    // so a function / variable / namespace import must bind here alongside the
+    // type kinds.
     (
         EdgeKind::TypeRef,
         &[
@@ -58,11 +63,14 @@ const TS_KIND_TABLE: KindTable = &[
             SymbolKind::Enum,
             SymbolKind::TypeAlias,
             SymbolKind::Struct,
+            SymbolKind::Function,
+            SymbolKind::Variable,
+            SymbolKind::Namespace,
         ],
     ),
     (
         EdgeKind::Instantiates,
-        &[SymbolKind::Class, SymbolKind::Interface],
+        &[SymbolKind::Class, SymbolKind::Interface, SymbolKind::Function],
     ),
 ];
 
@@ -120,22 +128,31 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: TS_PRIMITIVES,
     kind_compatible_table: TS_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    // Validated under engine-primary mode at Phase 5 § stage 4 — rate
-    // parity ±0.0pp across ts-rallly, vue-vben-admin, ts-immich;
-    // ±0.05pp on ts-nextjs. Engine takes the chain slot for TS.
+    // === Module-anchored resolution ===
+    // A `module` set by the extractor (import source) or post-pass (a call ref's
+    // owning module) anchors the bind. A relative `./x` / `../y` specifier binds
+    // by exact-name-and-kind in the resolved file (`in_module_from`); every bare
+    // specifier (`react`, `@scope/pkg`) routes to the directory/qname rule, which
+    // for TS means the qname-prefix rewrites below.
     // TS supports `new Foo()` (NewExpression) and `Foo()` (CallExpression)
     // both as construction; the extractor emits both as Construction
-    // segments. Engine accepts both.
+    // segments. The engine accepts both.
     builtin_skip: None,
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+    // Harvest the extractor's `TypeRef`-with-module import refs and the
+    // post-pass call refs that carry a `module` into the file's import table.
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+    // Relative (`./x`) modules bind by exact name + kind in the resolved file;
+    // bare specifiers route to ByNameUnderModuleDir (the qname-rewrite path).
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
+    ),
     module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     package_by_directory: false,
@@ -143,6 +160,26 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+    // DefinitelyTyped (`react` → `@types/react`) + deep-import peel
+    // (`rxjs/operators` → `rxjs`); a bare specifier never directory-matches a
+    // same-named project file.
+    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+        definitely_typed: true,
+        deep_import_peel: true,
+        decline_bare_directory_match: true,
+    },
+    workspace_packages: true,
+    // Declaration merging: interface + variable under one qname.
+    overload_pick_all: true,
+    // jest/vitest globals, jQuery `$`, DOM constructors, core-lib utility types.
+    ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
+        npm_confidence: 0.85,
+        lib_confidence: 0.85,
+        instantiate_accepts_variable: true,
+    },
+    self_receiver_discovery:
+        crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
+    selector_resolution: None,
     constructor_patterns: &[
         ConstructorPattern::New,
         ConstructorPattern::CallableClass,

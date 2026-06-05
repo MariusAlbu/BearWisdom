@@ -214,14 +214,16 @@ pub trait LanguageEngineHooks: Send + Sync {
     /// that renames the type would require new code. Let the framework's
     /// own declarations drive the answer.
     ///
-    /// The reusable building block is
-    /// `crate::type_checker::core::chain::discover_type_by_canonical_members`.
-    /// Pass it a seed method name and 2–3 sibling methods that uniquely
-    /// identify the framework's receiver type. Every existing
-    /// implementation should be one or two lines of glue around that
-    /// helper plus a SegmentKind::SelfRef arm; non-SelfRef segments
-    /// delegate to `DefaultRootResolver` (see `languages/vue/root_resolver.rs`
-    /// for the canonical example).
+    /// Prefer the data-driven path: a framework's canonical-member receiver
+    /// discovery is expressible as `LanguageProfile::self_receiver_discovery`
+    /// (`SelfReceiverDiscovery::CanonicalMembers { seed, siblings }`), which the
+    /// engine reads through `ProfileRootResolver` — no hook code (see
+    /// `VUE_PROFILE`). This hook is the residual escape hatch for a root rule
+    /// that profile data cannot express. The reusable building block is
+    /// `crate::type_checker::core::chain::discover_type_by_canonical_members`:
+    /// pass a seed method name and 2–3 sibling methods that uniquely identify
+    /// the framework's receiver type, plus a SegmentKind::SelfRef arm; non-SelfRef
+    /// segments delegate to `DefaultRootResolver`.
     ///
     /// Languages whose `this` is always explicit (Python `self` in a
     /// class, C# `this` in a class, Rust `&self` in an `impl`, Java

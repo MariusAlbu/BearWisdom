@@ -1,9 +1,55 @@
 use super::hooks::*;
+use super::profile::TYPESCRIPT_PROFILE;
 use crate::indexer::resolve::engine::{RefContext};
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
+use crate::indexer::resolve::engine::{
+    build_scope_chain, FileContext, Resolution, SymbolIndex, SymbolLookup,
+};
 use crate::types::*;
 use std::collections::HashMap;
+
+/// Build the TS file context the resolve loop would build for this file.
+fn build_file_context(file: &ParsedFile, ctx: Option<&ProjectContext>) -> FileContext {
+    super::hooks::build_file_context_inner(file, ctx)
+}
+
+/// Drive a TS ref through the generic engine exactly as the resolve loop does:
+/// a chain-bearing ref through the structured `resolve_via_chain` walker
+/// (`TS_CHAIN_CONFIG`, with the bare-name fallthrough for a single-segment
+/// chain), everything else through the `DefaultResolver` ladder gated on
+/// `TYPESCRIPT_PROFILE`.
+fn run_resolve(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext<'_>,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    let edge_kind = ref_ctx.extracted_ref.kind;
+    if let Some(chain) = &ref_ctx.extracted_ref.chain {
+        if let Some(res) = crate::type_checker::chain::resolve_via_chain(
+            &TS_CHAIN_CONFIG,
+            chain,
+            edge_kind,
+            Some(file_ctx),
+            ref_ctx,
+            lookup,
+        ) {
+            return Some(res);
+        }
+        // Multi-segment chains that decline are genuine misses (a same-name
+        // sibling must not hijack `a.b.c`); only a single-segment "chain"
+        // falls through to the bare-name ladder.
+        if chain.segments.len() != 1 {
+            return None;
+        }
+    }
+    crate::type_checker::core::DefaultResolver {
+        file_ctx,
+        ref_ctx,
+        lookup,
+        kind_compatible: super::predicates::kind_compatible,
+    }
+    .resolve_all_with_profile(&TYPESCRIPT_PROFILE)
+}
 
 // ---------------------------------------------------------------------------
 // Test helpers (same pattern as csharp_tests.rs)
@@ -185,8 +231,7 @@ fn test_same_file_resolution() {
     );
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -195,13 +240,13 @@ fn test_same_file_resolution() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "helper should resolve via same-file");
     let res = result.unwrap();
     assert_eq!(res.confidence, 1.0);
     // May resolve via scope_chain ("App.helper" won't exist, so falls through to same_file)
     assert!(
-        res.strategy == "ts_same_file" || res.strategy == "ts_scope_chain",
+        res.strategy == "default_same_file" || res.strategy == "default_scope_visible",
         "unexpected strategy: {}",
         res.strategy
     );
@@ -239,8 +284,7 @@ fn test_scope_chain_resolution() {
     );
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -250,11 +294,11 @@ fn test_scope_chain_resolution() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "validate should resolve via scope chain");
     let res = result.unwrap();
     assert_eq!(res.confidence, 1.0);
-    assert_eq!(res.strategy, "ts_scope_chain");
+    assert_eq!(res.strategy, "default_scope_visible");
     assert_eq!(
         res.target_symbol_id,
         *id_map
@@ -294,8 +338,7 @@ fn test_import_resolution_relative_by_in_file_lookup() {
     );
 
     let (index, id_map) = build_test_env(&[&utils_file, &app_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&app_file, None);
+    let file_ctx = build_file_context(&app_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &app_file.refs[0],
@@ -304,14 +347,14 @@ fn test_import_resolution_relative_by_in_file_lookup() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "formatDate should resolve via in-file lookup of ./utils"
     );
     let res = result.unwrap();
     assert_eq!(res.confidence, 1.0);
-    assert_eq!(res.strategy, "ts_import_file");
+    assert_eq!(res.strategy, "default_module_anchor");
     assert_eq!(
         res.target_symbol_id,
         *id_map
@@ -322,7 +365,8 @@ fn test_import_resolution_relative_by_in_file_lookup() {
 
 #[test]
 fn test_import_resolution_by_qualified_name() {
-    // The parser emits a qualified name `{module}.{symbol}` — resolved via ts_import.
+    // The parser emits a qualified name `{module}.{symbol}` — the relative
+    // module anchors the bind to the symbol in the resolved file.
     // Import module uses the relative specifier form (starts with "./").
     let component_file = make_ts_file(
         "./component.ts",
@@ -350,8 +394,7 @@ fn test_import_resolution_by_qualified_name() {
     );
 
     let (index, id_map) = build_test_env(&[&component_file, &app_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&app_file, None);
+    let file_ctx = build_file_context(&app_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &app_file.refs[0],
@@ -360,7 +403,7 @@ fn test_import_resolution_by_qualified_name() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "Component should resolve via qualified name or in-file lookup"
@@ -396,8 +439,7 @@ fn test_external_import_not_resolved() {
     );
 
     let (index, _) = build_test_env(&[&app_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&app_file, None);
+    let file_ctx = build_file_context(&app_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &app_file.refs[0],
@@ -406,7 +448,7 @@ fn test_external_import_not_resolved() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_none(), "External package import should not resolve");
 }
 
@@ -441,8 +483,7 @@ fn test_deep_import_strips_to_package_qname() {
     );
 
     let (index, id_map) = build_test_env(&[&rxjs_file, &app_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&app_file, None);
+    let file_ctx = build_file_context(&app_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &app_file.refs[0],
@@ -451,10 +492,10 @@ fn test_deep_import_strips_to_package_qname() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     let res = result.expect("rxjs/operators.tap should strip to rxjs.tap");
     assert_eq!(res.confidence, 1.0);
-    assert_eq!(res.strategy, "ts_import_deep");
+    assert_eq!(res.strategy, "default_module_anchor");
     assert_eq!(
         res.target_symbol_id,
         *id_map
@@ -499,8 +540,7 @@ fn test_deep_import_stops_at_scope_boundary() {
     );
 
     let (index, id_map) = build_test_env(&[&angular_file, &app_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&app_file, None);
+    let file_ctx = build_file_context(&app_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &app_file.refs[0],
@@ -509,7 +549,7 @@ fn test_deep_import_stops_at_scope_boundary() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     let res = result.expect("@angular/core/testing should strip once to @angular/core");
     assert_eq!(res.confidence, 1.0);
     assert_eq!(
@@ -541,8 +581,7 @@ fn test_deep_import_no_match_returns_none() {
     );
 
     let (index, _) = build_test_env(&[&app_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&app_file, None);
+    let file_ctx = build_file_context(&app_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &app_file.refs[0],
@@ -552,7 +591,7 @@ fn test_deep_import_no_match_returns_none() {
     };
 
     assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
+        run_resolve(&file_ctx, &ref_ctx, &index).is_none(),
         "unknown package deep import should not resolve"
     );
 }
@@ -585,8 +624,7 @@ fn test_qualified_name_resolution() {
     );
 
     let (index, _) = build_test_env(&[&file1, &file2]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
+    let file_ctx = build_file_context(&file2, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file2.refs[0],
@@ -595,9 +633,9 @@ fn test_qualified_name_resolution() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "Dotted name should resolve directly");
-    assert_eq!(result.unwrap().strategy, "ts_qualified_name");
+    assert_eq!(result.unwrap().strategy, "default_qname_exact");
 }
 
 #[test]
@@ -616,8 +654,7 @@ fn test_falls_back_for_unknown() {
     );
 
     let (index, _) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -627,7 +664,7 @@ fn test_falls_back_for_unknown() {
     };
 
     assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
+        run_resolve(&file_ctx, &ref_ctx, &index).is_none(),
         "Unknown ref should fall back"
     );
 }
@@ -653,8 +690,7 @@ fn test_infer_external_react_import() {
         vec![make_import_ref(0, "useState", "react", 1)],
     );
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context(&file, Some(&ctx));
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -690,8 +726,7 @@ fn test_infer_external_scoped_package() {
         vec![make_import_ref(0, "useQuery", "@tanstack/react-query", 1)],
     );
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context(&file, Some(&ctx));
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -727,8 +762,7 @@ fn test_infer_external_node_builtin() {
         vec![make_import_ref(0, "readFile", "fs", 1)],
     );
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context(&file, Some(&ctx));
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -764,8 +798,7 @@ fn test_infer_external_node_protocol() {
         vec![make_import_ref(0, "readFile", "node:fs", 1)],
     );
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context(&file, Some(&ctx));
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -801,8 +834,7 @@ fn test_no_external_inference_for_relative_import() {
         vec![make_import_ref(0, "helper", "./utils", 1)],
     );
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context(&file, Some(&ctx));
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -836,8 +868,7 @@ fn test_infer_external_without_project_context() {
         vec![make_import_ref(0, "someFunc", "some-package", 1)],
     );
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -882,8 +913,7 @@ fn test_infer_external_via_file_ctx_imports() {
         ],
     );
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context(&file, Some(&ctx));
 
     let usage_ref_ctx = RefContext {
         extracted_ref: &file.refs[1], // Calls ref, no module
@@ -1008,8 +1038,7 @@ fn test_namespace_import_binding_not_external() {
         ],
     );
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let file_ctx = build_file_context(&file, Some(&ctx));
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -1030,7 +1059,7 @@ fn test_namespace_import_binding_not_external() {
     assert_eq!(ns.unwrap(), "react");
 
     // Resolve returns None (bare specifier, not in index).
-    let resolution = resolver.resolve(&file_ctx, &ref_ctx, &index_empty());
+    let resolution = run_resolve(&file_ctx, &ref_ctx, &index_empty());
     assert!(resolution.is_none());
 }
 
@@ -1104,8 +1133,7 @@ fn test_barrel_named_reexport() {
     );
 
     let (index, id_map) = build_test_env(&[&user_service_file, &barrel_file, &consumer_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[0],
@@ -1114,7 +1142,7 @@ fn test_barrel_named_reexport() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "UserService should resolve through barrel file");
     let res = result.unwrap();
     assert_eq!(res.confidence, 1.0);
@@ -1166,8 +1194,7 @@ fn test_barrel_aliased_reexport() {
     );
 
     let (index, id_map) = build_test_env(&[&auth_file, &barrel_file, &consumer_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[0],
@@ -1176,7 +1203,7 @@ fn test_barrel_aliased_reexport() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "AuthService should resolve through aliased barrel re-export");
     let res = result.unwrap();
     assert_eq!(res.strategy, "reexport_chain");
@@ -1225,8 +1252,7 @@ fn test_barrel_wildcard_reexport() {
     );
 
     let (index, id_map) = build_test_env(&[&utils_file, &barrel_file, &consumer_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[0],
@@ -1235,7 +1261,7 @@ fn test_barrel_wildcard_reexport() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "formatDate should resolve through export-star barrel");
     let res = result.unwrap();
     // Wildcard resolution uses 0.95 confidence.
@@ -1299,8 +1325,7 @@ fn test_barrel_deep_chain() {
         &root_barrel,
         &consumer_file,
     ]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[0],
@@ -1309,7 +1334,7 @@ fn test_barrel_deep_chain() {
     file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "UserService should resolve through 2-hop barrel chain");
     assert_eq!(
         result.unwrap().target_symbol_id,
@@ -1354,8 +1379,7 @@ fn test_barrel_depth_limit() {
     );
 
     let (index, _) = build_test_env(&[&barrel_a, &barrel_b, &barrel_c, &consumer_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[0],
@@ -1365,7 +1389,7 @@ fn test_barrel_depth_limit() {
     };
 
     // Should not panic and should return None (Foo never defined).
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_none(), "Circular barrel chain should return None, not panic");
 }
 
@@ -1430,8 +1454,7 @@ fn workspace_package_exact_import_resolves_at_confidence_1() {
     let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
     let consumer_ref = &parsed[1];
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let file_ctx = build_file_context(consumer_ref, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &consumer_ref.refs[0],
         source_symbol: &consumer_ref.symbols[0],
@@ -1439,10 +1462,9 @@ fn workspace_package_exact_import_resolves_at_confidence_1() {
         file_package_id: Some(9),
     };
 
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
         .expect("workspace import should resolve");
-    assert_eq!(res.strategy, "ts_workspace_pkg");
+    assert_eq!(res.strategy, "default_workspace_package");
     assert_eq!(res.confidence, 1.0);
 }
 
@@ -1497,8 +1519,7 @@ fn workspace_package_deep_import_prefers_matching_file() {
     let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
     let consumer_ref = &parsed[2];
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let file_ctx = build_file_context(consumer_ref, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &consumer_ref.refs[0],
         source_symbol: &consumer_ref.symbols[0],
@@ -1506,10 +1527,9 @@ fn workspace_package_deep_import_prefers_matching_file() {
         file_package_id: Some(9),
     };
 
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
         .expect("deep import should resolve");
-    assert_eq!(res.strategy, "ts_workspace_pkg");
+    assert_eq!(res.strategy, "default_workspace_package");
     assert_eq!(res.confidence, 1.0);
     let expected_id = id_map[&(
         "packages/utils/src/sub/mod.ts".to_string(),
@@ -1539,8 +1559,7 @@ fn workspace_package_import_not_classified_as_external() {
     ctx.workspace_pkg_by_declared_name
         .insert("@myorg/utils".to_string(), 7);
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer, Some(&ctx));
+    let file_ctx = build_file_context(&consumer, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &consumer.refs[0],
         source_symbol: &consumer.symbols[0],
@@ -1658,8 +1677,7 @@ fn tsconfig_alias_resolves_bare_specifier() {
     let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
     let consumer_ref = &parsed[1];
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let file_ctx = build_file_context(consumer_ref, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &consumer_ref.refs[0],
         source_symbol: &consumer_ref.symbols[0],
@@ -1667,10 +1685,9 @@ fn tsconfig_alias_resolves_bare_specifier() {
         file_package_id: None,
     };
 
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
         .expect("alias-rewritten import should resolve");
-    assert_eq!(res.strategy, "ts_tsconfig_alias");
+    assert_eq!(res.strategy, "engine_aliased_import");
     assert_eq!(res.confidence, 1.0);
 }
 
@@ -1732,8 +1749,7 @@ fn tsconfig_alias_prepends_package_path_in_monorepo() {
     let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
     let consumer_ref = &parsed[1];
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let file_ctx = build_file_context(consumer_ref, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &consumer_ref.refs[0],
         source_symbol: &consumer_ref.symbols[0],
@@ -1741,10 +1757,9 @@ fn tsconfig_alias_prepends_package_path_in_monorepo() {
         file_package_id: Some(7),
     };
 
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
         .expect("per-package alias should resolve after path prepend");
-    assert_eq!(res.strategy, "ts_tsconfig_alias");
+    assert_eq!(res.strategy, "engine_aliased_import");
     assert_eq!(res.confidence, 1.0);
     let expected = id_map[&(
         "apps/landing/src/components/Button.tsx".to_string(),
@@ -1831,8 +1846,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
     let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
     let consumer_ref = &parsed[2];
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let file_ctx = build_file_context(consumer_ref, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &consumer_ref.refs[0],
         source_symbol: &consumer_ref.symbols[0],
@@ -1840,13 +1854,12 @@ fn tsconfig_alias_follows_barrel_reexport() {
         file_package_id: Some(7),
     };
 
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
         .expect("alias + barrel chain should resolve");
     // Either tsconfig_alias (if landed directly) or reexport_chain (if
     // the barrel walk surfaced the result).
     assert!(
-        res.strategy == "ts_tsconfig_alias" || res.strategy == "reexport_chain",
+        res.strategy == "engine_aliased_import" || res.strategy == "reexport_chain",
         "got unexpected strategy: {}",
         res.strategy
     );
@@ -1910,8 +1923,7 @@ fn tsconfig_alias_longest_prefix_wins() {
     let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
     let consumer_ref = &parsed[1];
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let file_ctx = build_file_context(consumer_ref, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &consumer_ref.refs[0],
         source_symbol: &consumer_ref.symbols[0],
@@ -1919,10 +1931,9 @@ fn tsconfig_alias_longest_prefix_wins() {
         file_package_id: None,
     };
 
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
         .expect("longer alias prefix should win");
-    assert_eq!(res.strategy, "ts_tsconfig_alias");
+    assert_eq!(res.strategy, "engine_aliased_import");
     let expected_id = id_map[&(
         "packages/ui/src/Button.ts".to_string(),
         "Button".to_string(),
@@ -1982,8 +1993,7 @@ fn relative_import_jsx_usage_resolves_via_module_to_file() {
     let index = SymbolIndex::build(&parsed, &id_map);
     let consumer_ref = &parsed[1];
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(consumer_ref, None);
+    let file_ctx = build_file_context(consumer_ref, None);
     // Resolve the JSX usage ref (index 1 — the Calls ref without module).
     let ref_ctx = RefContext {
         extracted_ref: &consumer_ref.refs[1],
@@ -1992,10 +2002,9 @@ fn relative_import_jsx_usage_resolves_via_module_to_file() {
         file_package_id: None,
     };
 
-    let res = resolver
-        .resolve(&file_ctx, &ref_ctx, &index)
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
         .expect("JSX usage of relative-imported symbol should resolve");
-    assert_eq!(res.strategy, "ts_relative_import");
+    assert_eq!(res.strategy, "default_file_import");
     assert_eq!(res.confidence, 1.0);
     let expected = id_map[&("packages/ui/src/lib/utils.ts".to_string(), "cn".to_string())];
     assert_eq!(res.target_symbol_id, expected);
@@ -2067,8 +2076,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
     let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
     let consumer_ref = &parsed[1];
 
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let file_ctx = build_file_context(consumer_ref, Some(&ctx));
     let ref_ctx = RefContext {
         extracted_ref: &consumer_ref.refs[0],
         source_symbol: &consumer_ref.symbols[0],
@@ -2326,8 +2334,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
     };
 
     let (index, id_map) = build_test_env(&[&chai_file, &consumer_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[1], // the chain ref for toBe
@@ -2336,7 +2343,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "expect(x).toBe(y) chain must resolve via call-root import fallback"
@@ -2503,8 +2510,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
     };
 
     let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[0],
@@ -2513,7 +2519,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "expect(spy).toHaveBeenCalledOnce() globals-mode chain must resolve via __npm_globals__"
@@ -2783,8 +2789,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
     };
 
     let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[1], // chain_ref
@@ -2793,7 +2798,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "this.users.get(k) must resolve via UserMap → Map alias expansion"
@@ -3024,8 +3029,7 @@ fn alias_expansion_handles_array_type_form() {
     };
 
     let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&consumer_file, None);
+    let file_ctx = build_file_context(&consumer_file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[1],
@@ -3034,7 +3038,7 @@ fn alias_expansion_handles_array_type_form() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "this.ns.map(f) must resolve via Numbers (array_type alias) → Array"
@@ -3195,8 +3199,7 @@ fn alias_expansion_refuses_union_aliases() {
     };
 
     let (index, _) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[1],
@@ -3205,7 +3208,7 @@ fn alias_expansion_refuses_union_aliases() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_none(),
         "Union aliases must NOT expand — chain must miss, not pick a branch"
@@ -3424,8 +3427,7 @@ fn typeof_alias_dereferences_to_value_type() {
     };
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[2],
@@ -3434,7 +3436,7 @@ fn typeof_alias_dereferences_to_value_type() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "this.a.greet() must resolve via ApiType (typeof api) → User"
@@ -3673,8 +3675,7 @@ fn transparent_mapped_partial_resolves_through_source() {
     };
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[2],
@@ -3683,7 +3684,7 @@ fn transparent_mapped_partial_resolves_through_source() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "this.p.greet() on Partial<User> must collapse through to User.greet"
@@ -3866,8 +3867,7 @@ fn phase2_inheritance_resolves_inherited_field() {
     };
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[2],
@@ -3876,7 +3876,7 @@ fn phase2_inheritance_resolves_inherited_field() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "this.db.find() must climb Child → Base inheritance to find the inherited db field"
@@ -4066,8 +4066,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
     };
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[3],
@@ -4076,7 +4075,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "this.svc.run() must climb Leaf → Mid → Grand to find inherited field"
@@ -4241,8 +4240,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
     };
 
     let (index, id_map) = build_test_env(&[&file]);
-    let resolver = TypeScriptResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
+    let file_ctx = build_file_context(&file, None);
 
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
@@ -4251,7 +4249,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
         file_package_id: None,
     };
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(
         result.is_some(),
         "new Builder().setA().setB() must keep the Builder binding through `: this` returns"
@@ -7205,7 +7203,6 @@ fn test_di_binding_inject_decorator_emits() {
         }],
         file_namespace: None,
     };
-    let resolver = super::hooks::TypeScriptResolver;
     let emissions = super::hooks::detect_flow_inner(&file_ctx, &ref_ctx);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
@@ -7265,7 +7262,6 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
         imports: vec![],
         file_namespace: None,
     };
-    let resolver = super::hooks::TypeScriptResolver;
     let emissions = super::hooks::detect_flow_inner(&file_ctx, &ref_ctx);
     assert!(emissions.is_empty());
 }
@@ -7321,7 +7317,6 @@ fn test_di_binding_inject_without_token_still_emits() {
         imports: vec![],
         file_namespace: None,
     };
-    let resolver = super::hooks::TypeScriptResolver;
     let emissions = super::hooks::detect_flow_inner(&file_ctx, &ref_ctx);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {

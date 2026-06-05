@@ -18,7 +18,9 @@ use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
 };
 use crate::type_checker::alias::{build_alias_index, AliasIndex};
-use crate::type_checker::core::chain::{ChainResolution, ChainWalker, DefaultRootResolver, RootResolver};
+use crate::type_checker::core::chain::{
+    ChainResolution, ChainWalker, ProfileRootResolver, RootResolver,
+};
 use crate::type_checker::core::inference::infer_expression_type;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
@@ -217,15 +219,20 @@ impl<'a> Engine<'a> {
                     profile,
                     lookup,
                 );
-                // Per-language root resolver wins over the default when the
-                // language hook ships one. Used for frameworks where the
-                // `this` receiver has an implicit, framework-declared type
-                // (Vue component instance, Vuex action context, ...) that
-                // the extractor can't capture as a scope_path.
-                let default_root = DefaultRootResolver;
-                let root: &dyn RootResolver = hooks
-                    .and_then(|h| h.root_resolver())
-                    .unwrap_or(&default_root);
+                // Root resolution, most-specific first: a per-language
+                // `root_resolver` hook wins when present (residue path), else
+                // the profile-driven `ProfileRootResolver`. The profile path
+                // reads `self_receiver_discovery` — `ScopePathThenDefault` (the
+                // default) is byte-identical to `DefaultRootResolver`, and
+                // `CanonicalMembers` discovers a framework `this` type the
+                // extractor can't capture as a scope_path (Vue instance), so a
+                // framework opts in through profile data rather than a hook.
+                let profile_root = ProfileRootResolver::new(profile.self_receiver_discovery);
+                let hook_root = hooks.and_then(|h| h.root_resolver());
+                let root: &dyn RootResolver = match hook_root {
+                    Some(r) => r,
+                    None => &profile_root,
+                };
                 if let Some(cr) = walker.walk_with_root(chain, ref_ctx, file_ctx, root) {
                     return Some(Resolution {
                         target_symbol_id: cr.target_symbol_id,
@@ -537,26 +544,29 @@ impl<'a> Engine<'a> {
     ///
     /// Tries the per-language hook first (the escape hatch for languages whose
     /// context needs more than profile data can express). When no hook builds
-    /// one, falls back to a generic context constructed from profile data —
-    /// but ONLY for languages that opt into template-include resolution
-    /// (`import_resolution.is_some()`). Those are the languages whose file
-    /// context is fully expressible as profile data (the import list, with
-    /// `module_path` per `import_module_path`); every other language keeps the
-    /// prior contract of returning `None` when no hook builds a context, so
-    /// the resolve loop's behavior for them is unchanged.
+    /// one, falls back to a generic context constructed from profile data — but
+    /// ONLY for languages whose file context is fully expressible as profile
+    /// data: those that opt into template-include resolution
+    /// (`import_resolution.is_some()`) or harvest their import table from refs'
+    /// `module` field (`import_module_path == FromModuleField`). Every other
+    /// language keeps the prior contract of returning `None` when no hook builds
+    /// a context, so the resolve loop's behavior for them is unchanged.
     pub fn build_file_context(
         &self,
         language: &str,
         file: &crate::types::ParsedFile,
         project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
     ) -> Option<FileContext> {
+        use crate::type_checker::profile::language_profile::ImportModulePath;
         if let Some(hooks) = self.hooks.get(language).copied() {
             if let Some(ctx) = hooks.build_file_context(file, project_ctx) {
                 return Some(ctx);
             }
         }
         let profile = self.profiles.get(language).copied()?;
-        if profile.import_resolution.is_none() {
+        let expressible = profile.import_resolution.is_some()
+            || profile.import_module_path == ImportModulePath::FromModuleField;
+        if !expressible {
             return None;
         }
         Some(generic_file_context(language, file, profile))
@@ -616,31 +626,51 @@ fn strip_leading_sigil<'t>(head: &'t str, self_keywords: &[&str]) -> &'t str {
 }
 
 /// Generic `FileContext` built purely from profile data, for languages that
-/// register a profile but no `build_file_context` hook. Collects every
-/// `EdgeKind::Imports` ref into an `ImportEntry`; `module_path` is filled per
-/// the profile's `import_module_path` (`None` → empty, `EchoTarget` → the raw
-/// target). `file_namespace` is `None` — namespace-bearing languages ship a
-/// hook for that data.
+/// register a profile but no `build_file_context` hook. `import_module_path`
+/// selects which refs become `ImportEntry`s and how `module_path` is filled:
+///   - `None` — every `EdgeKind::Imports` ref, `module_path` empty.
+///   - `EchoTarget` — every `Imports` ref, `module_path` = the raw target.
+///   - `FromModuleField` — every ref (any edge kind) that carries a `module`
+///     field, `module_path` = that module. The TS/JS extractor emits one
+///     `TypeRef`-with-module ref per imported binding and attaches a `module`
+///     to post-pass call refs; both are the file's import table.
+/// `file_namespace` is `None` — namespace-bearing languages ship a hook.
 fn generic_file_context(
     language: &str,
     file: &crate::types::ParsedFile,
     profile: &LanguageProfile,
 ) -> FileContext {
     use crate::type_checker::profile::language_profile::ImportModulePath;
-    let imports: Vec<ImportEntry> = file
-        .refs
-        .iter()
-        .filter(|r| r.kind == EdgeKind::Imports)
-        .map(|r| ImportEntry {
-            imported_name: r.target_name.clone(),
-            module_path: match profile.import_module_path {
-                ImportModulePath::None => None,
-                ImportModulePath::EchoTarget => Some(r.target_name.clone()),
-            },
-            alias: None,
-            is_wildcard: false,
-        })
-        .collect();
+    let imports: Vec<ImportEntry> = match profile.import_module_path {
+        ImportModulePath::FromModuleField => file
+            .refs
+            .iter()
+            .filter_map(|r| {
+                let module = r.module.clone()?;
+                Some(ImportEntry {
+                    imported_name: r.target_name.clone(),
+                    module_path: Some(module),
+                    alias: None,
+                    is_wildcard: false,
+                })
+            })
+            .collect(),
+        mode => file
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Imports)
+            .map(|r| ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: match mode {
+                    ImportModulePath::None => None,
+                    ImportModulePath::EchoTarget => Some(r.target_name.clone()),
+                    ImportModulePath::FromModuleField => unreachable!(),
+                },
+                alias: None,
+                is_wildcard: false,
+            })
+            .collect(),
+    };
     FileContext {
         file_path: file.path.clone(),
         language: language.to_string(),

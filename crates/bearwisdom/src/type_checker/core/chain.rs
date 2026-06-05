@@ -295,6 +295,64 @@ impl RootResolver for DefaultRootResolver {
     }
 }
 
+/// Profile-driven root resolver. Reads `LanguageProfile::self_receiver_discovery`
+/// to decide how a bare `self`/`this` receiver is typed, replacing the
+/// per-language `root_resolver` hook for the common cases:
+///   - `ScopePathThenDefault` (the default) is exactly `DefaultRootResolver` —
+///     every segment, including `SelfRef`, delegates straight to it, so a
+///     language with the default axis is byte-identical to the prior plumbing.
+///   - `CanonicalMembers { seed, siblings }` overrides ONLY `SelfRef`: honour an
+///     explicit non-empty `scope_path` first (Options-API methods scoped under
+///     the SFC class), else discover the framework's component-instance type
+///     structurally by its canonical member set (Vue `$emit` / `$nextTick` /
+///     `$forceUpdate`), else fall back to `DefaultRootResolver`. Non-`SelfRef`
+///     segments always delegate to `DefaultRootResolver`.
+pub struct ProfileRootResolver {
+    pub discovery: crate::type_checker::profile::language_profile::SelfReceiverDiscovery,
+}
+
+impl ProfileRootResolver {
+    pub fn new(
+        discovery: crate::type_checker::profile::language_profile::SelfReceiverDiscovery,
+    ) -> Self {
+        Self { discovery }
+    }
+}
+
+impl RootResolver for ProfileRootResolver {
+    fn resolve(
+        &self,
+        seg: &ChainSegment,
+        ref_ctx: &RefContext,
+        file_ctx: &FileContext,
+        arena: &TypeArena,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<TypeId> {
+        use crate::type_checker::profile::language_profile::SelfReceiverDiscovery;
+        match (seg.kind, self.discovery) {
+            (
+                SegmentKind::SelfRef,
+                SelfReceiverDiscovery::CanonicalMembers { seed, siblings },
+            ) => {
+                // Honour an explicit enclosing scope first.
+                if let Some(scope) = ref_ctx.source_symbol.scope_path.as_ref() {
+                    if !scope.is_empty() {
+                        return Some(arena.class(scope));
+                    }
+                }
+                // Discover the framework's component-instance type by its
+                // canonical member set, then resolve `this.$emit(...)` etc. as
+                // ordinary member walks against it.
+                if let Some(qname) = discover_type_by_canonical_members(lookup, seed, siblings) {
+                    return Some(arena.class(&qname));
+                }
+                DefaultRootResolver.resolve(seg, ref_ctx, file_ctx, arena, lookup)
+            }
+            _ => DefaultRootResolver.resolve(seg, ref_ctx, file_ctx, arena, lookup),
+        }
+    }
+}
+
 /// The unified chain walker. Owned references; consumers build a fresh
 /// walker per chain (cheap — just a struct of references).
 pub struct ChainWalker<'a> {

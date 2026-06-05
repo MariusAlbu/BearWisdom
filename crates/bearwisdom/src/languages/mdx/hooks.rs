@@ -1,11 +1,12 @@
-// MDX hooks. Absorbed from the deleted `mdx/resolve.rs`. MDX dispatches by
-// ref kind: Imports go through the markdown link resolver; everything else
-// goes through TypeScript via the TS resolver.
+// MDX hooks. MDX dispatches by ref kind purely through profile data: `Imports`
+// (markdown links) bind via `MDX_PROFILE.import_resolution` (`resolve_via_import_path`);
+// JSX component refs flow through the TypeScript-shaped strategy ladder. The
+// hook keeps only the external classifier and the import-table builder.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::ParsedFile;
 
 pub struct MdxHooks;
 
@@ -31,22 +32,6 @@ impl LanguageEngineHooks for MdxHooks {
             crate::languages::typescript::hooks::build_file_context_inner(
                 file, project_ctx,
             ),
-        )
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return crate::languages::markdown::hooks::resolve_markdown_link(
-                file_ctx, ref_ctx, lookup,
-            );
-        }
-        crate::languages::typescript::hooks::TypeScriptResolver.resolve(
-            file_ctx, ref_ctx, lookup,
         )
     }
 }

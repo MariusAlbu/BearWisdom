@@ -69,24 +69,24 @@ fn calls_kind_table_accepts_function_method_variable() {
 }
 
 #[test]
-fn typeref_kind_table_rejects_value_kinds() {
+fn typeref_kind_table_accepts_type_and_import_binding_kinds() {
     let table = TYPESCRIPT_PROFILE.kind_compatible_table;
-    assert!(
-        !KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::Function),
-        "Function is not a TypeRef target in TS"
-    );
-    assert!(
-        !KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::Variable),
-        "Variable is not a TypeRef target in TS"
-    );
-    assert!(
-        KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::Class),
-        "Class IS a TypeRef target in TS"
-    );
-    assert!(
-        KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::Interface),
-        "Interface IS a TypeRef target in TS"
-    );
+    // Type kinds are TypeRef targets.
+    for kind in [SymbolKind::Class, SymbolKind::Interface, SymbolKind::Enum, SymbolKind::TypeAlias] {
+        assert!(
+            KindCompatibility::check(table, EdgeKind::TypeRef, kind),
+            "{kind:?} IS a TypeRef target in TS"
+        );
+    }
+    // The TS extractor emits every `import { X } from '...'` binding as a
+    // TypeRef regardless of X's actual kind, so a function / variable /
+    // namespace import must bind through TypeRef too.
+    for kind in [SymbolKind::Function, SymbolKind::Variable, SymbolKind::Namespace] {
+        assert!(
+            KindCompatibility::check(table, EdgeKind::TypeRef, kind),
+            "{kind:?} import binding must resolve through a TypeRef ref"
+        );
+    }
 }
 
 #[test]

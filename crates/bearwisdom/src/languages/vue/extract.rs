@@ -72,12 +72,13 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         generic_params: Vec::new(),
 });
 
-    // `this.X` resolution in SFC methods goes through `VueRootResolver`
-    // (see `languages/vue/root_resolver.rs`), which discovers the project's
-    // Vue component-instance type structurally from the walked `vue` /
-    // `@vue/*` `.d.ts` files. No hardcoded inheritance target is emitted
-    // here — the discovery adapts across Vue 2 / Vue 3 / any future version
-    // without per-version branching.
+    // `this.X` resolution in SFC methods goes through the profile-driven
+    // `ProfileRootResolver` reading `VUE_PROFILE.self_receiver_discovery`
+    // (`CanonicalMembers`), which discovers the project's Vue component-instance
+    // type structurally from the walked `vue` / `@vue/*` `.d.ts` files by its
+    // canonical member set (`$emit` / `$nextTick` / `$forceUpdate`). No hardcoded
+    // inheritance target is emitted here — the discovery adapts across Vue 2 /
+    // Vue 3 / any future version without per-version branching.
 
     // Walk the document to find template elements and extract component usages.
     let root = tree.root_node();

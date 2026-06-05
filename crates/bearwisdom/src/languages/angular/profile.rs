@@ -1,6 +1,8 @@
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, LanguageProfile, NameTransform, SelectorResolution,
+    SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
 };
+use crate::types::EdgeKind;
 
 pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
     id: "angular",
@@ -24,10 +26,12 @@ pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
     module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+        crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
+    ),
     module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     package_by_directory: false,
@@ -35,6 +39,27 @@ pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+        definitely_typed: true,
+        deep_import_peel: true,
+        decline_bare_directory_match: true,
+    },
+    workspace_packages: true,
+    overload_pick_all: true,
+    ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
+        npm_confidence: 0.85,
+        lib_confidence: 0.85,
+        instantiate_accepts_variable: true,
+    },
+    self_receiver_discovery:
+        crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
+    // A template `Calls` ref naming a component tag (`<app-user-card>` arrives
+    // as `AppUserCard`) or attribute directive binds to the decorated class via
+    // its selector. The raw target is tried first, then the kebab form.
+    selector_resolution: Some(SelectorResolution {
+        edge_kinds: &[EdgeKind::Calls],
+        name_transforms: &[NameTransform::PascalToKebab],
+    }),
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

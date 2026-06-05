@@ -338,7 +338,7 @@ impl SymbolLookup for SymbolIndex {
         self.containing_scope.get(source_qname)
     }
 
-    fn angular_selector(&self, raw_selector: &str) -> Option<&str> {
+    fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
         self.angular_selectors.get(raw_selector).map(|s| s.as_str())
     }
 
