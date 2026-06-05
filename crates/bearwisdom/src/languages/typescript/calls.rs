@@ -162,8 +162,46 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 right: Box::new(right),
             }
         }
+        // `x => ...`, `(a, b) => ...`, `function (a) { ... }` — capture the
+        // lambda's own parameter names so the chain walker can type them from
+        // the higher-order method's callback-parameter signature.
+        "arrow_function" | "function_expression" | "function_declaration" | "function" => {
+            CallArg::Lambda { params: lambda_param_names(node, src) }
+        }
         _ => CallArg::Other,
     }
+}
+
+/// Collect the positional parameter identifier names of an arrow / function
+/// argument. Handles the bare single-param arrow (`x => ...`, whose param is a
+/// direct `parameter`-field identifier with no `formal_parameters` wrapper) and
+/// the parenthesized form (`(a, b) => ...`, params under the `parameters`
+/// field). A parameter whose binding is not a plain identifier (destructuring,
+/// rest) yields an empty slot so positions stay aligned with the signature.
+fn lambda_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+    // Bare single-param arrow: `x => ...`. The param is the `parameter` field,
+    // an identifier with no `formal_parameters` wrapper.
+    if let Some(p) = node.child_by_field_name("parameter") {
+        if p.kind() == "identifier" {
+            return vec![node_text(p, src)];
+        }
+    }
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    let mut cursor = params.walk();
+    params
+        .named_children(&mut cursor)
+        .map(|param| match param.kind() {
+            "required_parameter" | "optional_parameter" => param
+                .child_by_field_name("pattern")
+                .filter(|n| n.kind() == "identifier")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default(),
+            "identifier" => node_text(param, src),
+            _ => String::new(),
+        })
+        .collect()
 }
 
 /// Replace `${...}` spans in a raw template literal text with `{}` placeholders.

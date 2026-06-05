@@ -366,7 +366,13 @@ fn resolve_arg_type(
             let r = resolve_arg_type(right, arena, lookup, profile);
             resolve_binary(op, l, r, arena, profile)
         }
-        CallArg::ObjectKeys(_) | CallArg::Other => arena.intern(Type::Unknown),
+        // A lambda passed as an argument has no class type for overload
+        // dispatch — its element type flows the other way (the higher-order
+        // method's callback signature types the lambda's params), so as a
+        // dispatch arg it is Unknown.
+        CallArg::ObjectKeys(_) | CallArg::Lambda { .. } | CallArg::Other => {
+            arena.intern(Type::Unknown)
+        }
     }
 }
 

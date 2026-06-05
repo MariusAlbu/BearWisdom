@@ -120,6 +120,7 @@ struct EmptyLookup {
     parents: rustc_hash::FxHashMap<String, String>,
     generic_param_type_ids: rustc_hash::FxHashMap<String, Vec<TypeId>>,
     discriminants: rustc_hash::FxHashMap<String, (String, String, bool)>,
+    recorded_locals: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl EmptyLookup {
@@ -136,6 +137,7 @@ impl EmptyLookup {
             parents: Default::default(),
             generic_param_type_ids: Default::default(),
             discriminants: Default::default(),
+            recorded_locals: Default::default(),
         }
     }
     fn with_discriminant(mut self, name: &str, prop: &str, literal: &str) -> Self {
@@ -257,6 +259,9 @@ impl SymbolLookup for EmptyLookup {
     }
     fn is_external_name(&self, _: &str, _: &str) -> bool {
         false
+    }
+    fn record_local_type(&self, name: String, type_name: String) {
+        self.recorded_locals.borrow_mut().push((name, type_name));
     }
 }
 
@@ -1276,6 +1281,212 @@ fn bare_call_binds_generic_through_array_arg() {
         .infer_bare_call_yield(&sym, &[CallArg::Ident("items".to_string())])
         .expect("array-generic bare call yields the element type");
     assert_eq!(yielded, user_ty);
+}
+
+#[test]
+fn lambda_param_seeded_from_callback_signature() {
+    // interface Array<T> { map<U>(cb: (v: T) => U): U[] }
+    // const arr: User[]; arr.map(x => ...) — the receiver binds T→User via
+    // bind_apply_args, so map's callback param `(v: T)` substitutes to User and
+    // the lambda's own param `x` is seeded `User` in the forward cache.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let user_ty = arena.class("User");
+    let class_t = arena.class("T");
+    let array_cls = arena.class("Array");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+    // map's declared callback type: `(v: T) => U`, param-blind Class("T").
+    let class_u = arena.class("U");
+    let cb_fn = arena.intern(Type::Function {
+        params: vec![class_t],
+        return_: class_u,
+    });
+    // Receiver `Array<User>` so bind_apply_args binds T→User.
+    let array_of_user = arena.intern(Type::Apply {
+        base: array_cls,
+        args: vec![user_ty],
+    });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        7,
+        SymbolTypeData {
+            param_types: vec![cb_fn],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        array_cls,
+        sym_info(7, "map", "Array.map", "method", Some("Array")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // `Array`'s generic param T is the canonical Generic(T); the receiver's
+    // Apply args bind it, and owner_param_type_map(Array.map) rebinds the
+    // callback's Class("T") to it.
+    let lookup = EmptyLookup::new().with_generic_param_type_ids("Array", vec![gen_t]);
+
+    struct ApplyRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for ApplyRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("arr", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("map", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+        call_args: vec![CallArg::Lambda { params: vec!["x".to_string()] }],
+        ..dummy_extracted_ref("map")
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let _ = walker.walk_with_root(&chain, &ref_ctx, &fc, &ApplyRoot { ty: array_of_user });
+
+    let recorded = lookup.recorded_locals.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|(n, t)| n == "x" && t == "User"),
+        "expected lambda param x seeded as User, got: {recorded:?}"
+    );
+}
+
+#[test]
+fn lambda_param_unbound_receiver_seeds_nothing() {
+    // Raw `Array` receiver (no element type): T binds nothing, so the callback
+    // param stays Generic — the seed must skip it rather than record bare T.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let class_t = arena.class("T");
+    let array_cls = arena.class("Array");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+    let class_u = arena.class("U");
+    let cb_fn = arena.intern(Type::Function {
+        params: vec![class_t],
+        return_: class_u,
+    });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        7,
+        SymbolTypeData {
+            param_types: vec![cb_fn],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        array_cls,
+        sym_info(7, "map", "Array.map", "method", Some("Array")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_generic_param_type_ids("Array", vec![gen_t]);
+
+    struct BareRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for BareRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("arr", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("map", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+        call_args: vec![CallArg::Lambda { params: vec!["x".to_string()] }],
+        ..dummy_extracted_ref("map")
+    };
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let _ = walker.walk_with_root(&chain, &ref_ctx, &fc, &BareRoot { ty: array_cls });
+
+    assert!(
+        lookup.recorded_locals.borrow().is_empty(),
+        "unbound receiver must seed nothing, got: {:?}",
+        lookup.recorded_locals.borrow()
+    );
 }
 
 #[test]

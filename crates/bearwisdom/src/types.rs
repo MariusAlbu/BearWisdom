@@ -484,6 +484,15 @@ pub enum CallArg {
         left: Box<CallArg>,
         right: Box<CallArg>,
     },
+    /// Arrow-function or function-expression argument (`x => x.foo`,
+    /// `function (a, b) { ... }`). `params` are the lambda's own positional
+    /// parameter identifiers in declaration order. A parameter whose binding
+    /// is not a plain identifier (destructuring / rest pattern) contributes an
+    /// empty string in its slot so positions stay aligned with the callback
+    /// signature. Carries the names only — they are the keys the chain walker
+    /// seeds the local-type cache under after typing each param from the
+    /// higher-order method's callback-parameter signature.
+    Lambda { params: Vec<String> },
     /// Any argument shape not covered by the above variants.
     Other,
 }

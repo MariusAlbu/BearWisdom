@@ -120,6 +120,49 @@ function caller(url) { fetch(url); }
 }
 
 #[test]
+fn call_args_bare_arrow_captures_single_param() {
+    // `x => x.foo` — the single un-parenthesized param is the arrow's
+    // `parameter`-field identifier; capture it as CallArg::Lambda.
+    let src = r#"
+function caller(arr) { arr.map(x => x.foo); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["x"])),
+        "expected Lambda {{ params: [\"x\"] }}, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_parenthesized_arrow_captures_params() {
+    // `(a, b) => a + b` — params live under the `parameters` formal list.
+    let src = r#"
+function caller(arr) { arr.reduce((a, b) => a + b); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["a", "b"])),
+        "expected Lambda {{ params: [\"a\", \"b\"] }}, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_function_expression_captures_params() {
+    // A `function (v) { ... }` expression argument is also a lambda.
+    let src = r#"
+function caller(arr) { arr.forEach(function (v) { use(v); }); }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["v"])),
+        "expected Lambda {{ params: [\"v\"] }}, got: {args:?}"
+    );
+}
+
+#[test]
 fn call_args_numeric_literal() {
     let src = r#"
 function caller() { setTimeout(cb, 1000); }

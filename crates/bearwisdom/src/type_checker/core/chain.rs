@@ -654,6 +654,21 @@ impl<'a> ChainWalker<'a> {
                 );
             }
 
+            // Type un-annotated lambda parameters from the callee's
+            // callback-parameter signature. `env` now carries both the
+            // receiver-bound generics (`bind_apply_args`: `T→User` for
+            // `User[].map`) and the arg-bound ones (G2), so a callback param
+            // typed `(v: T) => U` resolves `v` to the element type. Seeds the
+            // per-file forward cache the next chain ref (the lambda body's
+            // `x.foo`) reads through its root resolver.
+            if is_call_seg {
+                self.seed_lambda_params(
+                    &member,
+                    &ref_ctx.extracted_ref.call_args,
+                    &env,
+                );
+            }
+
             match self.yield_type_of(&member, seg, &env, current_ty) {
                 Some(next_ty) => {
                     current_ty = next_ty;
@@ -1263,6 +1278,72 @@ impl<'a> ChainWalker<'a> {
             for (param_ty, &arg_ty) in data.param_types.iter().zip(arg_type_ids.iter()) {
                 let canon = self.arena.rebind_class_params(*param_ty, &name_to_id);
                 unify_into(canon, arg_ty, &bindable, env, self.arena);
+            }
+        }
+    }
+
+    /// Type un-annotated lambda parameters from the callee's declared
+    /// callback-parameter signature and seed the per-file forward cache.
+    ///
+    /// For each `CallArg::Lambda` argument at position `i`, the callee's
+    /// `param_types[i]` is the declared callback type (`(v: T) => U`). Rebind
+    /// its nominal param tokens (`Class("T")`) to the callee's canonical
+    /// `Generic(T)` and substitute against `env` — which already holds the
+    /// receiver's bound generics (`T→User` for `User[].map`) and any arg-bound
+    /// ones — so a callback param typed `T` resolves to the element type. When
+    /// the substituted callback is a `Type::Function`, each lambda parameter
+    /// name is recorded against its positional callback-param type. The element
+    /// type therefore flows structurally from the real signature plus the bound
+    /// generic env, never a method-name table.
+    ///
+    /// A still-`Generic` callback param (the receiver bound nothing — a raw or
+    /// untyped array) is skipped, so an unbindable receiver is a silent no-op
+    /// rather than seeding a junk type. Empty param names (destructuring slots)
+    /// are skipped.
+    fn seed_lambda_params(
+        &self,
+        member: &SymbolInfo,
+        call_args: &[CallArg],
+        env: &GenericEnv,
+    ) {
+        let has_lambda = call_args
+            .iter()
+            .any(|a| matches!(a, CallArg::Lambda { .. }));
+        if !has_lambda {
+            return;
+        }
+        let Some(data) = self.symbol_types.get(member.id) else {
+            return;
+        };
+        let name_to_id = self.owner_param_type_map(&member.qualified_name);
+        for (i, arg) in call_args.iter().enumerate() {
+            let CallArg::Lambda { params } = arg else {
+                continue;
+            };
+            let Some(&pty) = data.param_types.get(i) else {
+                continue;
+            };
+            let rebound = if name_to_id.is_empty() {
+                pty
+            } else {
+                self.arena.rebind_class_params(pty, &name_to_id)
+            };
+            let resolved = substitute(rebound, env, self.arena);
+            let Type::Function { params: fn_params, .. } = self.arena.get(resolved) else {
+                continue;
+            };
+            for (k, name) in params.iter().enumerate() {
+                let Some(&fp) = fn_params.get(k) else { break };
+                if name.is_empty() {
+                    continue;
+                }
+                // Skip an unbound callback param — a raw / untyped receiver
+                // left it `Generic`, so seeding would record a bare type var.
+                if matches!(self.arena.get(fp), Type::Generic { .. }) {
+                    continue;
+                }
+                self.lookup
+                    .record_local_type(name.clone(), self.arena.format_type(fp));
             }
         }
     }
