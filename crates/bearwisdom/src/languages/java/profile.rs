@@ -102,6 +102,7 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
     namespaceless_global_type_lookup: false,
+    explicit_member_import: false,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

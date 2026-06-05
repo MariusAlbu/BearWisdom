@@ -160,6 +160,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
     namespaceless_global_type_lookup: false,
+    explicit_member_import: false,
     constructor_patterns: &[
         ConstructorPattern::TypeColonColonNew,
         ConstructorPattern::TypeColonColonBuild,

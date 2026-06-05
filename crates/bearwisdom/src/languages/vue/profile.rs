@@ -65,6 +65,7 @@ pub const VUE_PROFILE: LanguageProfile = LanguageProfile {
         },
     selector_resolution: None,
     namespaceless_global_type_lookup: false,
+    explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

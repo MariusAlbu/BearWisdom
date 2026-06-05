@@ -75,6 +75,7 @@ pub const MATLAB_PROFILE: LanguageProfile = LanguageProfile {
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
     namespaceless_global_type_lookup: true,
+    explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

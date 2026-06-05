@@ -67,6 +67,7 @@ pub const SQL_PROFILE: LanguageProfile = LanguageProfile {
     argument_dependent_lookup: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     namespaceless_global_type_lookup: true,
+    explicit_member_import: false,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,

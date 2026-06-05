@@ -257,6 +257,16 @@ pub struct LanguageProfile {
     /// files are common and there is no structure to disambiguate. Runs LAST in
     /// the ladder, after every structural rung, so any structural evidence wins.
     pub namespaceless_global_type_lookup: bool,
+    /// Explicit-member submodule import binding. `false` (the default) leaves
+    /// the strategy inert. `true` opts in a language whose import statement can
+    /// name a symbol AND its enclosing module together (Swift
+    /// `import struct MyModule.Bar`): a bare ref to that symbol binds to the
+    /// UNIQUE internal symbol of the same name and compatible kind, gated on an
+    /// `ImportEntry` whose dotted `module_path` ends in the imported name. A
+    /// plain whole-module import (`import Foundation`, no dot) does NOT arm it —
+    /// that form has no project-symbol scope and is left for external
+    /// classification. Runs just before `resolve_via_file_import`.
+    pub explicit_member_import: bool,
     /// Component-selector resolution for template refs. `None` (the default)
     /// leaves it inert. `Some` binds a `Calls` ref whose target names a
     /// component/directive selector to the decorated class via
@@ -961,6 +971,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     argument_dependent_lookup: false,
     ambient_globals: AmbientGlobals::Off,
     namespaceless_global_type_lookup: false,
+    explicit_member_import: false,
     self_receiver_discovery: SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
     constructor_patterns: &[ConstructorPattern::CallableClass],

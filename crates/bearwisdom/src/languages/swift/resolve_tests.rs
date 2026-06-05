@@ -1,6 +1,199 @@
 use super::hooks::{detect_swift_grdb_emission, detect_swift_grpc_emission, detect_swift_http_chain, detect_swift_vapor_route};
 use crate::types::*;
 
+use crate::indexer::resolve::engine::{
+    FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
+};
+use crate::type_checker::core::DefaultResolver;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+// ---------------------------------------------------------------------------
+// SymbolLookup fixture for the Swift explicit-member-import strategy.
+//
+// Owns one `by_name` map; everything else is empty. The strategy under test
+// only consults `by_name` + `is_external_file` (default `ext:` prefix).
+// ---------------------------------------------------------------------------
+
+struct ByNameFixture {
+    by_name_map: HashMap<String, Vec<SymbolInfo>>,
+    empty: Vec<SymbolInfo>,
+    empty_reexports: Vec<(String, String)>,
+}
+
+impl ByNameFixture {
+    fn with(name: &str, syms: Vec<SymbolInfo>) -> Self {
+        let mut by_name_map: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
+        by_name_map.insert(name.to_string(), syms);
+        Self {
+            by_name_map,
+            empty: Vec::new(),
+            empty_reexports: Vec::new(),
+        }
+    }
+}
+
+impl SymbolLookup for ByNameFixture {
+    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+        self.by_name_map.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
+    }
+    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
+    fn members_of(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+    fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
+    fn has_in_namespace(&self, _: &str) -> bool { false }
+    fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.empty }
+    fn field_type_name(&self, _: &str) -> Option<&str> { None }
+    fn return_type_name(&self, _: &str) -> Option<&str> { None }
+    fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
+    fn generic_params(&self, _: &str) -> Option<&[String]> { None }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
+    fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+}
+
+fn make_resolve_sym(id: i64, name: &str, qname: &str, kind: &str, path: &str) -> SymbolInfo {
+    SymbolInfo {
+        id,
+        name: name.to_string(),
+        qualified_name: qname.to_string(),
+        kind: kind.to_string(),
+        visibility: Some("public".to_string()),
+        file_path: Arc::from(path),
+        scope_path: None,
+        package_id: None,
+        signature: None,
+    }
+}
+
+fn make_resolve_source(name: &str, qname: &str) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: qname.to_string(),
+        kind: SymbolKind::Function,
+        visibility: None,
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+fn make_typeref(target: &str) -> ExtractedRef {
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: target.to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 1,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+        chain: None,
+        byte_offset: 1,
+    }
+}
+
+/// `import struct MyModule.Bar` then a bare `Bar` type ref. The import's
+/// `module_path` is dotted (`MyModule.Bar`) and its `imported_name` is the
+/// path's last segment `Bar` == the ref target. The unique internal struct
+/// `Bar` binds via the new scope-directed strategy.
+///
+/// Pre-cut this returns None: `resolve_via_file_import`'s
+/// `file_path_matches_module` gate rejects `MyModule.Bar` against
+/// `Sources/MyModule/Bar.swift`, and no other ladder rung matches a bare
+/// `Bar` with no chain / no module on the ref.
+#[test]
+fn swift_explicit_member_import_binds_unique_internal_struct() {
+    let bar = make_resolve_sym(42, "Bar", "Bar", "struct", "Sources/MyModule/Bar.swift");
+    let fix = ByNameFixture::with("Bar", vec![bar]);
+
+    let file_ctx = FileContext {
+        file_path: "Sources/App/Use.swift".to_string(),
+        language: "swift".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "Bar".to_string(),
+            module_path: Some("MyModule.Bar".to_string()),
+            alias: None,
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    };
+    let source_sym = make_resolve_source("use", "use");
+    let extracted = make_typeref("Bar");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+
+    let res = (DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &fix,
+        kind_compatible: super::predicates::kind_compatible,
+    })
+    .resolve_all_with_profile(&super::profile::SWIFT_PROFILE)
+    .expect("explicit-member import binds the unique internal struct");
+    assert_eq!(res.strategy, "default_explicit_member_import");
+    assert_eq!(res.target_symbol_id, 42);
+}
+
+/// Soundness boundary: a NON-dotted `module_path` (plain `import Foundation`)
+/// plus a coincidental internal `Foundation`-named symbol must NOT bind via
+/// this strategy. A plain whole-module import carries no project-symbol scope
+/// evidence, so it stays out of the cut (left for external classification).
+#[test]
+fn swift_plain_module_import_does_not_arm_explicit_member_strategy() {
+    let coincidental =
+        make_resolve_sym(7, "Foundation", "Foundation", "struct", "Sources/App/Foundation.swift");
+    let fix = ByNameFixture::with("Foundation", vec![coincidental]);
+
+    let file_ctx = FileContext {
+        file_path: "Sources/App/Use.swift".to_string(),
+        language: "swift".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "Foundation".to_string(),
+            module_path: Some("Foundation".to_string()),
+            alias: None,
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    };
+    let source_sym = make_resolve_source("use", "use");
+    let extracted = make_typeref("Foundation");
+    let ref_ctx = RefContext {
+        extracted_ref: &extracted,
+        source_symbol: &source_sym,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+
+    let res = (DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &fix,
+        kind_compatible: super::predicates::kind_compatible,
+    })
+    .resolve_all_with_profile(&super::profile::SWIFT_PROFILE);
+    let strategy = res.map(|r| r.strategy).unwrap_or("");
+    assert_ne!(
+        strategy, "default_explicit_member_import",
+        "plain whole-module import must not arm the explicit-member strategy"
+    );
+}
+
 fn make_chain(segments: &[&str]) -> MemberChain {
     MemberChain {
         segments: segments

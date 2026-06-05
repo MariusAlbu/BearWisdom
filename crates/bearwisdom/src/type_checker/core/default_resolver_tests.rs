@@ -4244,6 +4244,7 @@ fn alias_module_qname_declines_kind_incompatible() {
 /// Profile mirroring DEFAULT but opting into the namespaceless-global rung.
 static NAMESPACELESS_PROFILE: LanguageProfile = LanguageProfile {
     namespaceless_global_type_lookup: true,
+    explicit_member_import: false,
     ..DEFAULT_PROFILE
 };
 

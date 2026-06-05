@@ -78,6 +78,7 @@ struct LadderProfileData<'p> {
     overload_pick_all: bool,
     ambient_globals: AmbientGlobals,
     namespaceless_global_type_lookup: bool,
+    explicit_member_import: bool,
     selector_resolution: Option<&'p SelectorResolution>,
 }
 
@@ -104,6 +105,7 @@ impl LadderProfileData<'static> {
         overload_pick_all: false,
         ambient_globals: AmbientGlobals::Off,
         namespaceless_global_type_lookup: false,
+        explicit_member_import: false,
         selector_resolution: None,
     };
 }
@@ -200,6 +202,72 @@ impl<'a> DefaultResolver<'a> {
             }
         }
         None
+    }
+
+    /// Strategy — explicit-member submodule import binds a unique internal
+    /// symbol of the imported name.
+    ///
+    /// An explicit-member import names the symbol AND its enclosing module in
+    /// one statement (`import struct MyModule.Bar`): the local binding is `Bar`
+    /// and the module path is the dotted `MyModule.Bar`. The discriminator is a
+    /// DOTTED `module_path` whose last segment equals both `imported_name` and
+    /// the bare `target` — that exact shape is the import-scope evidence, so the
+    /// bind is import-directed, not whole-program. Binds the UNIQUE internal
+    /// `by_name(target)` symbol of compatible kind; zero or multiple candidates
+    /// decline (never guess).
+    ///
+    /// Gated on `explicit_member_import` (default off). A non-dotted
+    /// `module_path` (a plain whole-module `import Foundation`) leaves the
+    /// strategy inert — that form carries no project-symbol scope and stays for
+    /// external classification.
+    pub fn resolve_via_explicit_member_import(
+        &self,
+        enabled: bool,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        if !enabled {
+            return None;
+        }
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.contains('.') || target.contains("::") || target.contains('/') {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+
+        // The import scope is genuine only when the import statement explicitly
+        // names this symbol: a dotted module path whose last segment is the
+        // imported name (== the bare target). A plain `import Foundation`
+        // (no dot) never satisfies this.
+        let armed = self.file_ctx.imports.iter().any(|import| {
+            if import.imported_name != target {
+                return false;
+            }
+            let Some(module) = import.module_path.as_deref() else {
+                return false;
+            };
+            module.contains('.') && module.rsplit('.').next() == Some(target)
+        });
+        if !armed {
+            return None;
+        }
+
+        let mut compatible: Vec<&SymbolInfo> = self
+            .lookup
+            .by_name(target)
+            .iter()
+            .filter(|sym| !self.lookup.is_external_file(&sym.file_path))
+            .filter(|sym| kind(edge_kind, &sym.kind))
+            .collect();
+        compatible.sort_by(|a, b| {
+            a.qualified_name
+                .cmp(&b.qualified_name)
+                .then(a.kind.cmp(&b.kind))
+        });
+        compatible.dedup_by(|a, b| a.qualified_name == b.qualified_name && a.kind == b.kind);
+        if compatible.len() != 1 {
+            return None;
+        }
+        Some(self.resolution(compatible[0].id, "default_explicit_member_import"))
     }
 
     /// Strategy 3 — bare target matches a name in the file's import list.
@@ -1941,6 +2009,7 @@ impl<'a> DefaultResolver<'a> {
                 overload_pick_all: profile.overload_pick_all,
                 ambient_globals: profile.ambient_globals,
                 namespaceless_global_type_lookup: profile.namespaceless_global_type_lookup,
+                explicit_member_import: profile.explicit_member_import,
                 selector_resolution: profile.selector_resolution.as_ref(),
             },
         )
@@ -2046,6 +2115,7 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_alias_module_qname(pd.alias_module_qname, kind))
             .or_else(|| self.resolve_via_chain_prefix(kind))
             .or_else(|| self.resolve_via_reexport_chain(kind))
+            .or_else(|| self.resolve_via_explicit_member_import(pd.explicit_member_import, kind))
             .or_else(|| self.resolve_via_file_import(kind))
             .or_else(|| self.resolve_via_reexport_following())
             .or_else(|| self.resolve_via_aliased_import(kind))

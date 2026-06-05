@@ -60,6 +60,7 @@ pub const HTML_PROFILE: LanguageProfile = LanguageProfile {
         name_transforms: &[NameTransform::PascalToKebab],
     }),
     namespaceless_global_type_lookup: false,
+    explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,
