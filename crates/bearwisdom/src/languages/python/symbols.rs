@@ -666,7 +666,15 @@ pub(super) fn extract_class_definition(
     }
 
     if let Some(body_node) = body {
-        super::extract::extract_from_node(body_node, source, symbols, refs, Some(idx), &new_prefix, true, import_map);
+        // A class/function body is not the module namespace: a `from .x import Y`
+        // nested in a body is not a package re-export even if `Y` collides with
+        // module-level `__all__`. Pass an empty export set so only module-level
+        // imports (direct children of root) are tagged `is_reexport=true`.
+        let nested_exports = rustc_hash::FxHashSet::default();
+        super::extract::extract_from_node(
+            body_node, source, symbols, refs, Some(idx), &new_prefix, true, import_map,
+            &nested_exports,
+        );
     }
 
     if decorators.iter().any(is_dataclass_decorator) {

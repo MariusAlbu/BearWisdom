@@ -7,6 +7,7 @@ use super::{assignments, calls, helpers, statements, symbols, types};
 use crate::types::{EdgeKind, ExtractionResult};
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use super::helpers::node_text;
+use rustc_hash::FxHashSet;
 use std::collections::HashMap;
 use tree_sitter::{Node, Parser};
 
@@ -49,7 +50,14 @@ pub fn extract(source: &str) -> ExtractionResult {
     // annotate qualified call refs with their source module.
     let import_map = calls::build_import_map(root, source);
 
-    extract_from_node(root, source, &mut syms, &mut refs, None, "", false, &import_map);
+    // Collect the module-level `__all__` export contract. A name imported into
+    // this file AND listed here is a genuine re-export; its Imports ref is
+    // tagged `is_reexport=true` so the generic re-export walker follows it.
+    let dunder_all = collect_dunder_all(root, source);
+
+    extract_from_node(
+        root, source, &mut syms, &mut refs, None, "", false, &import_map, &dunder_all,
+    );
 
     // Second pass: scan the full CST for `type` nodes and emit TypeRef for
     // each non-builtin identifier found inside a type annotation context.
@@ -86,6 +94,125 @@ fn clamp_owner(parent_index: Option<usize>, symbols_len: usize) -> usize {
     }
 }
 
+// ---------------------------------------------------------------------------
+// `__all__` export-contract collection
+// ---------------------------------------------------------------------------
+
+/// Collect the names listed in the module-level `__all__` export contract.
+///
+/// Scans the direct children of `root` (module scope only — an `__all__`
+/// inside a function or class body is not a package export contract) for the
+/// three forms that grow `__all__`:
+///
+/// ```python
+/// __all__ = ["A", "B"]      # assignment, list/tuple of string literals
+/// __all__ += ["C"]           # augmented assignment
+/// __all__.extend(["D"])      # extend / append call
+/// ```
+///
+/// Only string-literal entries are collected; a computed `__all__`
+/// (`__all__ = _gather()`, comprehension, `+= other.__all__`) is undecidable
+/// without executing Python, so its non-literal entries are skipped — a name
+/// only ever fails to be tagged, never mis-tagged.
+fn collect_dunder_all(root: Node, source: &str) -> FxHashSet<String> {
+    let mut names = FxHashSet::default();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() != "expression_statement" {
+            continue;
+        }
+        let mut ec = child.walk();
+        for inner in child.children(&mut ec) {
+            match inner.kind() {
+                // `__all__ = [...]` / `__all__ = (...)` and
+                // `__all__ += [...]` — both expose `left` / `right` fields.
+                "assignment" | "augmented_assignment" => {
+                    let targets_dunder_all = inner
+                        .child_by_field_name("left")
+                        .map(|l| node_text(&l, source) == "__all__")
+                        .unwrap_or(false);
+                    if !targets_dunder_all {
+                        continue;
+                    }
+                    if let Some(rhs) = inner.child_by_field_name("right") {
+                        collect_string_literals(&rhs, source, &mut names);
+                    }
+                }
+                // `__all__.extend([...])` / `__all__.append("X")` — a call
+                // whose function is the `__all__.extend` / `__all__.append`
+                // attribute. Collect the string literals from its arguments.
+                "call" => {
+                    if !call_targets_dunder_all_mutator(&inner, source) {
+                        continue;
+                    }
+                    if let Some(args) = inner.child_by_field_name("arguments") {
+                        collect_string_literals(&args, source, &mut names);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    names
+}
+
+/// True when `call` is `__all__.extend(...)` or `__all__.append(...)` — an
+/// attribute call whose object is the `__all__` identifier and whose attribute
+/// is a list-mutator that adds names.
+fn call_targets_dunder_all_mutator(call: &Node, source: &str) -> bool {
+    let Some(func) = call.child_by_field_name("function") else {
+        return false;
+    };
+    if func.kind() != "attribute" {
+        return false;
+    }
+    let object_is_dunder_all = func
+        .child_by_field_name("object")
+        .map(|o| node_text(&o, source) == "__all__")
+        .unwrap_or(false);
+    let attr = func
+        .child_by_field_name("attribute")
+        .map(|a| node_text(&a, source))
+        .unwrap_or_default();
+    object_is_dunder_all && matches!(attr.as_str(), "extend" | "append")
+}
+
+/// Recursively collect the decoded value of every `string` literal reachable
+/// from `node` (list / tuple / argument-list elements). Non-string entries are
+/// ignored — a computed entry contributes nothing.
+fn collect_string_literals(node: &Node, source: &str, out: &mut FxHashSet<String>) {
+    if node.kind() == "string" {
+        let decoded = strip_python_string_literal(&node_text(node, source));
+        if !decoded.is_empty() {
+            out.insert(decoded);
+        }
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.is_named() {
+            collect_string_literals(&child, source, out);
+        }
+    }
+}
+
+/// Strip surrounding quotes (single / double / triple forms) and a leading
+/// string prefix from a Python `string` literal's source text. Mirrors the
+/// quote-stripping in `calls::strip_python_string` for the names that appear in
+/// an `__all__` list.
+fn strip_python_string_literal(raw: &str) -> String {
+    let trimmed = raw
+        .trim_start_matches(['b', 'r', 'f', 'B', 'R', 'F', 'u', 'U']);
+    trimmed
+        .trim_start_matches("\"\"\"")
+        .trim_end_matches("\"\"\"")
+        .trim_start_matches("'''")
+        .trim_end_matches("'''")
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string()
+}
+
 pub(super) fn extract_from_node(
     node: Node,
     source: &str,
@@ -95,6 +222,7 @@ pub(super) fn extract_from_node(
     qualified_prefix: &str,
     inside_class: bool,
     import_map: &HashMap<String, String>,
+    dunder_all: &FxHashSet<String>,
 ) {
     let mut cursor = node.walk();
 
@@ -145,12 +273,12 @@ pub(super) fn extract_from_node(
                 // to the most-recently-pushed symbol (index 0 fallback).
                 // The index is always clamped so it stays in-bounds.
                 let owner = clamp_owner(parent_index, symbols.len());
-                calls::extract_import_statement(&child, source, refs, owner);
+                calls::extract_import_statement(&child, source, refs, owner, dunder_all);
             }
 
             "import_from_statement" => {
                 let owner = clamp_owner(parent_index, symbols.len());
-                calls::extract_import_from_statement(&child, source, refs, owner);
+                calls::extract_import_from_statement(&child, source, refs, owner, dunder_all);
             }
 
             // `from __future__ import annotations` — emit Imports refs for
@@ -282,6 +410,7 @@ pub(super) fn extract_from_node(
                     qualified_prefix,
                     inside_class,
                     import_map,
+                    dunder_all,
                 );
             }
         }

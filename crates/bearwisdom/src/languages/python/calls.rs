@@ -4,6 +4,7 @@
 
 use super::helpers::node_text;
 use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use rustc_hash::FxHashSet;
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -586,6 +587,7 @@ pub(super) fn extract_import_statement(
     source: &str,
     refs: &mut Vec<ExtractedRef>,
     current_symbol_count: usize,
+    dunder_all: &FxHashSet<String>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -599,7 +601,9 @@ pub(super) fn extract_import_statement(
                 } else {
                     None
                 };
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                // `import foo.bar` binds the TOP segment `foo` as the local name.
+                let local = parts.first().copied().unwrap_or(full.as_str());
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: dunder_all.contains(local),
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -622,7 +626,12 @@ pub(super) fn extract_import_statement(
                     } else {
                         None
                     };
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    // `import foo.bar as fb` binds the alias `fb` as the local name.
+                    let local = child
+                        .child_by_field_name("alias")
+                        .map(|a| node_text(&a, source))
+                        .unwrap_or_else(|| parts.first().map(|s| s.to_string()).unwrap_or_default());
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: dunder_all.contains(&local),
                         source_symbol_index: current_symbol_count,
                         target_name: target,
                         kind: EdgeKind::Imports,
@@ -646,6 +655,7 @@ pub(super) fn extract_import_from_statement(
     source: &str,
     refs: &mut Vec<ExtractedRef>,
     current_symbol_count: usize,
+    dunder_all: &FxHashSet<String>,
 ) {
     let module = node.child_by_field_name("module_name").map(|m| {
         node_text(&m, source).trim_start_matches('.').to_string()
@@ -668,7 +678,9 @@ pub(super) fn extract_import_from_statement(
         match child.kind() {
             "dotted_name" | "identifier" => {
                 let name = node_text(&child, source);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                // `from .mod import A` binds `A` (the imported name) locally.
+                let is_reexport = dunder_all.contains(&name);
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport,
                     source_symbol_index: current_symbol_count,
                     target_name: name,
                     kind: EdgeKind::Imports,
@@ -683,8 +695,15 @@ pub(super) fn extract_import_from_statement(
             }
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
+                    // The ref carries the SOURCE-side `name` for following; the
+                    // LOCAL bound name is the alias when present, else `name`.
                     let name = node_text(&name_node, source);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    let local = child
+                        .child_by_field_name("alias")
+                        .map(|a| node_text(&a, source))
+                        .unwrap_or_else(|| name.clone());
+                    let is_reexport = dunder_all.contains(&local);
+                    refs.push(ExtractedRef { is_import_binding: false, is_reexport,
                         source_symbol_index: current_symbol_count,
                         target_name: name,
                         kind: EdgeKind::Imports,

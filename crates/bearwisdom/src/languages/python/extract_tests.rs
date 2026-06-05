@@ -1216,3 +1216,152 @@ class Manual:
             .find(|s| s.qualified_name == "Plain.__init__");
         assert!(init.is_none(), "non-dataclass should not synthesize __init__");
     }
+
+    // -----------------------------------------------------------------------
+    // `__all__` re-export tagging (BIND-2)
+    //
+    // A package `__init__.py` that imports a name and lists it in module-level
+    // `__all__` re-exports it. Such Imports refs carry `is_reexport=true` so the
+    // generic `follow_reexports` rung walks them to the defining module. The
+    // ref's `target_name` stays the SOURCE-side name; the LOCAL bound name
+    // (alias when present) is what gets tested for `__all__` membership.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dunder_all_tags_reexported_import_and_skips_private() {
+        // `__init__.py` shape: User is re-exported (in __all__), _Private is not.
+        let src = "from .models import User\n\
+                   from .secret import _Private\n\
+                   __all__ = [\"User\"]\n";
+        let r = extract::extract(src);
+
+        let user_ref = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "User")
+            .expect("expected Imports ref for 'User'");
+        assert!(
+            user_ref.is_reexport,
+            "User is in __all__ and imported → must be tagged is_reexport=true"
+        );
+
+        let private_ref = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "_Private")
+            .expect("expected Imports ref for '_Private'");
+        assert!(
+            !private_ref.is_reexport,
+            "_Private is imported but NOT in __all__ → must stay is_reexport=false"
+        );
+    }
+
+    #[test]
+    fn dunder_all_aliased_import_tags_source_name_ref() {
+        // `from .models import User as Account` with `__all__ = ["Account"]`:
+        // the local alias `Account` matches __all__, but the emitted ref carries
+        // the SOURCE-side name `User` (what follow_reexports matches downstream).
+        let src = "from .models import User as Account\n\
+                   __all__ = [\"Account\"]\n";
+        let r = extract::extract(src);
+
+        let ref_for_user = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "User")
+            .expect("expected Imports ref with source-side target_name 'User'");
+        assert!(
+            ref_for_user.is_reexport,
+            "alias 'Account' is in __all__ → the source-side ref for 'User' must be is_reexport=true"
+        );
+    }
+
+    #[test]
+    fn dunder_all_tuple_form_tags_reexport() {
+        // `__all__ = ("A", "B")` tuple form is accepted alongside the list form.
+        let src = "from .a import A\n\
+                   from .b import B\n\
+                   __all__ = (\"A\", \"B\")\n";
+        let r = extract::extract(src);
+        for name in ["A", "B"] {
+            let rf = r
+                .refs
+                .iter()
+                .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == name)
+                .unwrap_or_else(|| panic!("expected Imports ref for {name}"));
+            assert!(rf.is_reexport, "{name} in tuple __all__ must be tagged");
+        }
+    }
+
+    #[test]
+    fn dunder_all_augmented_assignment_accumulates() {
+        // `__all__ = [...]` then `__all__ += [...]` and `.extend([...])` all
+        // contribute names at module level.
+        let src = "from .a import A\n\
+                   from .b import B\n\
+                   from .c import C\n\
+                   __all__ = [\"A\"]\n\
+                   __all__ += [\"B\"]\n\
+                   __all__.extend([\"C\"])\n";
+        let r = extract::extract(src);
+        for name in ["A", "B", "C"] {
+            let rf = r
+                .refs
+                .iter()
+                .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == name)
+                .unwrap_or_else(|| panic!("expected Imports ref for {name}"));
+            assert!(
+                rf.is_reexport,
+                "{name} accumulated into __all__ must be tagged is_reexport=true"
+            );
+        }
+    }
+
+    #[test]
+    fn import_dotted_top_segment_matches_dunder_all() {
+        // `import foo.bar` binds the local name `foo` (top segment). When `foo`
+        // is in __all__ the emitted ref (target_name = last segment `bar`) is a
+        // re-export.
+        let src = "import foo.bar\n\
+                   __all__ = [\"foo\"]\n";
+        let r = extract::extract(src);
+        let rf = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "bar")
+            .expect("expected Imports ref for 'bar' (last segment of foo.bar)");
+        assert!(
+            rf.is_reexport,
+            "top-segment local 'foo' is in __all__ → ref must be is_reexport=true"
+        );
+    }
+
+    #[test]
+    fn no_dunder_all_leaves_imports_untagged() {
+        // Without a module-level __all__, no import is a re-export.
+        let src = "from .models import User\n";
+        let r = extract::extract(src);
+        let rf = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "User")
+            .expect("expected Imports ref for 'User'");
+        assert!(!rf.is_reexport, "no __all__ → import stays is_reexport=false");
+    }
+
+    #[test]
+    fn dunder_all_inside_function_is_not_a_reexport_contract() {
+        // An `__all__` assigned inside a function body is not a package export
+        // contract — a module-level import must NOT be tagged from it.
+        let src = "from .models import User\ndef configure():\n    __all__ = [\"User\"]\n";
+        let r = extract::extract(src);
+        let rf = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "User")
+            .expect("expected Imports ref for 'User'");
+        assert!(
+            !rf.is_reexport,
+            "function-local __all__ is not a module export contract → no tag"
+        );
+    }
