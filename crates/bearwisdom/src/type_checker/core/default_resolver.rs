@@ -2972,8 +2972,39 @@ fn file_path_matches_module(file_path: &str, module: &str) -> bool {
     if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
         return true;
     }
-    let last_segment = module.rsplit('.').next().unwrap_or(module);
-    normalized.contains(last_segment)
+    // Package-directory match: the module's full slash-form must appear as a
+    // contiguous, segment-bounded run inside the path — `posthog.models`
+    // (→ `posthog/models`) matches `posthog/models/person.py` because the run
+    // sits between a leading `/` (or string start) and a trailing `/`. Matching
+    // only the module's bare LEAF would be unsound: `org.assertj.core.api`
+    // (leaf `api`) would bind a `…/junit/jupiter/api/Assertions.java` symbol by
+    // coincidence, a false 1.0 bind. Requiring the whole dotted path keeps the
+    // junit/assertj leaves from colliding while still resolving the package
+    // (`__init__.py` re-export) shape the `stem.ends_with` branch misses.
+    let dotted = cleaned.replace('.', "/");
+    if dotted.is_empty() {
+        return false;
+    }
+    path_contains_segment_run(&normalized, &dotted)
+}
+
+/// True when `run` (a `/`-joined path fragment) appears in `path` aligned to
+/// path-segment boundaries on both sides — bounded by `/` or a string edge.
+/// Distinguishes a real directory-prefix hit (`a/b` in `a/b/c.py`) from an
+/// incidental substring (`api` in `capi/x.py`, or a leaf landing mid-segment).
+fn path_contains_segment_run(path: &str, run: &str) -> bool {
+    let mut from = 0;
+    while let Some(rel) = path[from..].find(run) {
+        let start = from + rel;
+        let end = start + run.len();
+        let left_ok = start == 0 || path.as_bytes()[start - 1] == b'/';
+        let right_ok = end == path.len() || path.as_bytes()[end] == b'/';
+        if left_ok && right_ok {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
 }
 
 #[cfg(test)]

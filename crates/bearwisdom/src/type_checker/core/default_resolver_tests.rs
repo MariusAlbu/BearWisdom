@@ -3532,6 +3532,82 @@ fn wildcard_file_stem_declines_unrelated_unit() {
 }
 
 // ---------------------------------------------------------------------------
+// JVM static-wildcard test-framework globals (junit/scalatest/mockk) — a bare
+// `assertTrue` brought into scope by `import static …Assertions.*` binds to the
+// hydrated Maven framework method. Characterizes the generic-ladder bind so a
+// future reorder can't silently drop JVM ambient test globals.
+// ---------------------------------------------------------------------------
+
+/// `import static org.junit.jupiter.api.Assertions.*;` records the CLASS as the
+/// wildcard's module (`module=org.junit.jupiter.api.Assertions`, target=`*`).
+/// A bare `assertTrue` ref then binds to the hydrated framework method whose
+/// qname is `org.junit.jupiter.api.Assertions.assertTrue` — its qname sits one
+/// segment under the imported namespace. The bind flows through the single
+/// generic ladder (`resolve_via_imported_namespace` fires first because the
+/// static import's module IS the class; `resolve_via_wildcard_import`/QnameUnder
+/// is the equivalent fallback for the type-wildcard shape). Both are sound
+/// generic rungs, so this asserts the SYMBOL id, not the strategy literal.
+#[test]
+fn jvm_static_wildcard_import_binds_hydrated_assertion() {
+    let lookup = Lookup::new().with(sym(
+        9,
+        "assertTrue",
+        "org.junit.jupiter.api.Assertions.assertTrue",
+        "function",
+        "ext:java:org.junit.jupiter/junit-jupiter-api/5.10.0/org/junit/jupiter/api/Assertions.java",
+    ));
+    let r = extracted_call("assertTrue");
+    let s = source_symbol("someTestMethod");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(
+        vec![wildcard_import("org.junit.jupiter.api.Assertions")],
+        None,
+    );
+    fc.language = "java".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::java::JAVA_PROFILE)
+    .expect("bare static-wildcard-imported assertion binds the hydrated method");
+    assert_eq!(resolved.target_symbol_id, 9);
+}
+
+/// A wildcard import for a package that does NOT contain the symbol's namespace
+/// must decline — the import set is the gate, not the bare name. Locks the
+/// widening-only boundary: an `org.assertj.core.api.*` wildcard never pulls a
+/// junit `Assertions.assertTrue` into bare scope, because the candidate's qname
+/// sits under no imported namespace.
+#[test]
+fn jvm_wildcard_for_foreign_package_declines() {
+    let lookup = Lookup::new().with(sym(
+        9,
+        "assertTrue",
+        "org.junit.jupiter.api.Assertions.assertTrue",
+        "function",
+        "ext:java:org.junit.jupiter/junit-jupiter-api/5.10.0/org/junit/jupiter/api/Assertions.java",
+    ));
+    let r = extracted_call("assertTrue");
+    let s = source_symbol("someTestMethod");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("org.assertj.core.api")], None);
+    fc.language = "java".to_string();
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_all_with_profile(&crate::languages::java::JAVA_PROFILE)
+        .is_none(),
+        "a wildcard for a foreign package must not bind a symbol under another namespace"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // ExtMatch::FileStemOrDir — external bind by file-stem / dir against imports
 // ---------------------------------------------------------------------------
 
