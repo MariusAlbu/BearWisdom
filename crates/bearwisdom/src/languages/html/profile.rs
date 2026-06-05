@@ -2,8 +2,10 @@
 // Embedded scripts/styles route through their host language's profile.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, LanguageProfile, NameTransform, SelectorResolution,
+    SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
 };
+use crate::types::EdgeKind;
 
 pub const HTML_PROFILE: LanguageProfile = LanguageProfile {
     id: "html",
@@ -47,7 +49,15 @@ pub const HTML_PROFILE: LanguageProfile = LanguageProfile {
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
-    selector_resolution: None,
+    // A custom-element tag (`<user-card>` → `UserCard`) `Calls` ref binds to
+    // the class registered under that tag by `customElements.define()`. The
+    // raw target is tried first, then the kebab form; the map is keyed only on
+    // real `define()` declarations, so a library tag with no project-side
+    // define declines instead of binding to a coincidental same-named symbol.
+    selector_resolution: Some(SelectorResolution {
+        edge_kinds: &[EdgeKind::Calls],
+        name_transforms: &[NameTransform::PascalToKebab],
+    }),
     namespaceless_global_type_lookup: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

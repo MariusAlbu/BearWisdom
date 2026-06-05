@@ -68,6 +68,132 @@ pub fn extract_component_selectors(
     result
 }
 
+/// Scan `source` for `customElements.define('tag-name', ClassName)` (and the
+/// `window.customElements.define(...)` form) and return `(tag, class_qname)`
+/// pairs. The tag is the web-platform analog of an Angular `@Component`
+/// selector: the in-template `<tag-name>` element binds to `ClassName` via the
+/// project-wide selector map.
+///
+/// `symbols` must be the symbols already extracted from the same source so the
+/// class identifier in the second argument can be mapped to its qualified
+/// name. A `define()` whose second argument is an anonymous class expression
+/// has no symbol to bind to and is skipped.
+pub fn extract_custom_element_defines(
+    source: &str,
+    symbols: &[crate::types::ExtractedSymbol],
+) -> Vec<(String, String)> {
+    use crate::types::SymbolKind;
+
+    let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let src = source.as_bytes();
+    let root = tree.root_node();
+
+    let class_qnames: std::collections::HashMap<String, String> = symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Class)
+        .map(|s| (s.name.clone(), s.qualified_name.clone()))
+        .collect();
+
+    let mut result: Vec<(String, String)> = Vec::new();
+    collect_custom_element_defines_recursive(&root, src, &class_qnames, &mut result);
+    result
+}
+
+fn collect_custom_element_defines_recursive(
+    node: &tree_sitter::Node,
+    src: &[u8],
+    class_qnames: &std::collections::HashMap<String, String>,
+    result: &mut Vec<(String, String)>,
+) {
+    if node.kind() == "call_expression" {
+        try_extract_custom_element_define(node, src, class_qnames, result);
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_custom_element_defines_recursive(&child, src, class_qnames, result);
+    }
+}
+
+/// Match `customElements.define('tag', Class)` and
+/// `window.customElements.define('tag', Class)`. The callee is a
+/// `member_expression` whose property is `define` and whose object's tail
+/// identifier is `customElements`. Emits a pair when the first argument is a
+/// string-literal tag and the second is a named class identifier present in
+/// `class_qnames`.
+fn try_extract_custom_element_define(
+    call: &tree_sitter::Node,
+    src: &[u8],
+    class_qnames: &std::collections::HashMap<String, String>,
+    result: &mut Vec<(String, String)>,
+) {
+    let Some(func) = call.child_by_field_name("function") else { return };
+    if func.kind() != "member_expression" {
+        return;
+    }
+    let Some(prop) = func.child_by_field_name("property") else { return };
+    if super::helpers::node_text(prop, src) != "define" {
+        return;
+    }
+    let Some(object) = func.child_by_field_name("object") else { return };
+    if !member_object_is_custom_elements(&object, src) {
+        return;
+    }
+    let Some(args) = call.child_by_field_name("arguments") else { return };
+    let mut tag: Option<String> = None;
+    let mut class_name: Option<String> = None;
+    let mut cursor = args.walk();
+    for arg in args.children(&mut cursor) {
+        if !arg.is_named() {
+            continue;
+        }
+        if tag.is_none() {
+            // First positional argument: the tag-name string literal.
+            if matches!(arg.kind(), "string" | "template_string") {
+                tag = unquote(&arg, src);
+            } else {
+                // A non-string first argument is not a recognizable define().
+                return;
+            }
+            continue;
+        }
+        if class_name.is_none() {
+            // Second positional argument: a named class identifier. Anonymous
+            // class expressions have no symbol to bind and are skipped.
+            if arg.kind() == "identifier" {
+                class_name = Some(super::helpers::node_text(arg, src));
+            }
+            break;
+        }
+    }
+    if let (Some(tag), Some(name)) = (tag, class_name) {
+        if !tag.is_empty() {
+            if let Some(qname) = class_qnames.get(&name) {
+                result.push((tag, qname.clone()));
+            }
+        }
+    }
+}
+
+/// True when a member-expression object resolves to the `customElements`
+/// global — either the bare identifier or `window.customElements`.
+fn member_object_is_custom_elements(object: &tree_sitter::Node, src: &[u8]) -> bool {
+    match object.kind() {
+        "identifier" => super::helpers::node_text(*object, src) == "customElements",
+        "member_expression" => object
+            .child_by_field_name("property")
+            .map(|p| super::helpers::node_text(p, src) == "customElements")
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 fn collect_component_selectors_recursive(
     node: &tree_sitter::Node,
     src: &[u8],

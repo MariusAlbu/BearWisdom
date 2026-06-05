@@ -96,7 +96,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     };
 
     collect_anchors(&tree.root_node(), source, &file_name, host_index, &mut symbols);
-    let _ = &mut refs; // silence unused-mut lint when no refs were added
+    collect_component_tags(&tree.root_node(), source, host_index, &mut refs);
 
     ExtractionResult {
         symbols,
@@ -144,6 +144,104 @@ fn collect_anchors(
         }
         collect_anchors(&child, source, file_name, host_index, symbols);
     }
+}
+
+/// Emit one `Calls` ref per custom-element / component tag so the resolver can
+/// bind it through the selector map.
+///
+/// A tag qualifies when it is a custom element by the HTML rule — a name
+/// containing `-` — or a PascalCase tag (some component templating preserves
+/// case). Standard HTML tags (`div`, `span`) are all lowercase and hyphen-free
+/// and so never match. Kebab tags are normalized to PascalCase (`user-card` →
+/// `UserCard`); the resolver's `PascalToKebab` transform inverts it back to the
+/// `customElements.define()` map key. A tag with no registered selector
+/// declines at resolution — emitting the ref is harmless.
+fn collect_component_tags(
+    node: &Node,
+    source: &str,
+    host_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if matches!(child.kind(), "element" | "self_closing_element") {
+            if let Some((target, byte_offset, line)) = component_tag_ref(&child, source) {
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
+                    source_symbol_index: host_index,
+                    target_name: target,
+                    kind: EdgeKind::Calls,
+                    line,
+                    col: 0,
+                    module: None,
+                    chain: None,
+                    byte_offset,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
+            }
+        }
+        collect_component_tags(&child, source, host_index, refs);
+    }
+}
+
+/// Return `(target_name, byte_offset, line)` for a component/custom-element tag,
+/// or `None` for a standard HTML element. PascalCase tags pass through; kebab
+/// custom elements are normalized to PascalCase.
+fn component_tag_ref(element: &Node, source: &str) -> Option<(String, u32, u32)> {
+    let tag = element_tag_name(element, source);
+    if tag.is_empty() {
+        return None;
+    }
+    let byte_offset = element.start_byte() as u32;
+    let line = element.start_position().row as u32;
+    if tag.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+        return Some((tag, byte_offset, line));
+    }
+    if tag.contains('-') {
+        return Some((kebab_to_pascal(&tag), byte_offset, line));
+    }
+    None
+}
+
+fn element_tag_name(element: &Node, source: &str) -> String {
+    let mut cursor = element.walk();
+    for child in element.children(&mut cursor) {
+        match child.kind() {
+            "start_tag" | "self_closing_tag" => {
+                let mut tc = child.walk();
+                for tag_child in child.children(&mut tc) {
+                    if tag_child.kind() == "tag_name" {
+                        return source
+                            .get(tag_child.start_byte()..tag_child.end_byte())
+                            .unwrap_or("")
+                            .to_string();
+                    }
+                }
+            }
+            "tag_name" => {
+                return source
+                    .get(child.start_byte()..child.end_byte())
+                    .unwrap_or("")
+                    .to_string();
+            }
+            _ => {}
+        }
+    }
+    String::new()
+}
+
+fn kebab_to_pascal(s: &str) -> String {
+    s.split('-')
+        .map(|part| {
+            let mut c = part.chars();
+            match c.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect()
 }
 
 /// Read `id="…"` from the start tag of an `element` / `self_closing_element`

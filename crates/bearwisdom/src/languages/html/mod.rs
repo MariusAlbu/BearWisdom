@@ -79,3 +79,7 @@ impl LanguagePlugin for HtmlPlugin {
         Some(&profile::HTML_PROFILE)
     }
 }
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;

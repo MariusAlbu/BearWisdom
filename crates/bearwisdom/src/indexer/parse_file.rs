@@ -322,15 +322,27 @@ fn parse_file_internal(
             _ => Vec::new(),
         };
 
-    // Angular @Component selector metadata — populated for TypeScript and
-    // Angular files so the resolver can map kebab-case template tags to real
-    // component class qualified names without falling back to kebab→PascalCase
-    // guessing.
-    let component_selectors = if matches!(walked.language, "typescript" | "angular") {
-        crate::languages::typescript::selectors::extract_component_selectors(&content, &r.symbols)
-    } else {
-        Vec::new()
-    };
+    // Component selector metadata feeding the project-wide selector map. Two
+    // declaration sources land here:
+    //   * Angular `@Component({selector})` / Ivy metadata — TypeScript/Angular.
+    //   * Web-platform `customElements.define('tag', Class)` — any JS/TS, so a
+    //     plain-HTML `<tag>` binds to its defined class without kebab→Pascal
+    //     guessing.
+    let mut component_selectors =
+        if matches!(walked.language, "typescript" | "angular") {
+            crate::languages::typescript::selectors::extract_component_selectors(
+                &content, &r.symbols,
+            )
+        } else {
+            Vec::new()
+        };
+    if matches!(walked.language, "typescript" | "angular" | "javascript") {
+        component_selectors.extend(
+            crate::languages::typescript::selectors::extract_custom_element_defines(
+                &content, &r.symbols,
+            ),
+        );
+    }
 
     let mut parsed = ParsedFile {
         path: walked.relative_path.clone(),

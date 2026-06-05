@@ -78,6 +78,32 @@ fn ordinary_html_not_skipped() {
     assert!(r.symbols.iter().any(|s| s.name == "hero"));
 }
 
+// ---------------------------------------------------------------------------
+// Custom-element / component tag refs
+// ---------------------------------------------------------------------------
+
+#[test]
+fn custom_element_tag_emits_pascalcase_calls_ref() {
+    let src = "<html><body><user-card></user-card></body></html>";
+    let r = extract(src, "page.html");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
+        "custom element <user-card> should emit a Calls ref to UserCard, got {:?}",
+        r.refs
+    );
+}
+
+#[test]
+fn standard_html_tags_emit_no_component_refs() {
+    let src = "<html><body><div><span>hi</span></div></body></html>";
+    let r = extract(src, "page.html");
+    assert!(
+        r.refs.iter().all(|rf| rf.kind != EdgeKind::Calls),
+        "standard HTML tags must not emit Calls refs, got {:?}",
+        r.refs
+    );
+}
+
 #[test]
 fn generator_meta_outside_first_16kb_not_detected() {
     // If a generator marker only appears far past the head, we don't
