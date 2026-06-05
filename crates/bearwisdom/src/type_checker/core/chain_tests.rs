@@ -5157,3 +5157,199 @@ fn associated_type_angle_unrelated_concrete_head_declines() {
         "<Other as Trait>::Output keys Other.Output (absent) — no hijack to C.Output"
     );
 }
+
+#[test]
+fn associated_type_chained_projection_resolves_assoc_of_assoc() {
+    // `c.add().leaf()` where `C.add` returns the CHAINED associated form
+    // `Self::Output::Item`. Two hops: the impl binds `type Output = Mid`
+    // (field_type "C.Output" = "Mid") and `Mid` in turn binds `type Item = Leaf`
+    // (field_type "Mid.Item" = "Leaf"). The projection must resolve the head
+    // `Self::Output` to `Mid` first, then project `::Item` off `Mid` to `Leaf`,
+    // so the next segment resolves `Leaf.leaf`.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let leaf_ty = arena.class("Leaf");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(leaf_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    members.add_direct(
+        leaf_ty,
+        sym_info(9, "leaf", "Leaf.leaf", "method", Some("Leaf")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Leaf", "Leaf")
+        .with_return_type("C.add", "Self::Output::Item")
+        // First hop: C's `type Output = Mid`.
+        .with_field_type("C.Output", "Mid")
+        // Second hop: Mid's `type Item = Leaf`.
+        .with_field_type("Mid.Item", "Leaf");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("leaf", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("leaf");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+        .expect("Self::Output::Item projects C.Output->Mid then Mid.Item->Leaf; leaf resolves");
+    assert_eq!(result.target_symbol_id, 9);
+}
+
+#[test]
+fn associated_type_chained_projection_declines_when_inner_binding_absent() {
+    // Same chained `Self::Output::Item` return, but the FIRST hop binding
+    // (`C.Output`) is absent. The head `Self::Output` resolves to no concrete
+    // type, so the outer `::Item` projection has no receiver to key — the whole
+    // chained projection declines (widening-only: a missing inner hop never
+    // silently keys a coincidental `Self.Item`/bare `Item`).
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let leaf_ty = arena.class("Leaf");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(leaf_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    members.add_direct(
+        leaf_ty,
+        sym_info(9, "leaf", "Leaf.leaf", "method", Some("Leaf")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // `C.Output` ABSENT; only the second-hop binding is present. The head must
+    // not resolve, so `Mid.Item` is never consulted.
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Leaf", "Leaf")
+        .with_return_type("C.add", "Self::Output::Item")
+        .with_field_type("Mid.Item", "Leaf");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("leaf", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("leaf");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+            .is_none(),
+        "missing inner hop (C.Output) => head unresolved => chained projection declines"
+    );
+}
+
+#[test]
+fn associated_type_chained_angle_projection_resolves_assoc_of_assoc() {
+    // The chained head is the angle-qualified form: `<C as Trait>::Output::Item`.
+    // The inner head `<C as Trait>::Output` resolves through the receiver C's
+    // `Output` binding to `Mid`, then `::Item` projects off `Mid` to `Leaf`.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let leaf_ty = arena.class("Leaf");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(leaf_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    members.add_direct(
+        leaf_ty,
+        sym_info(9, "leaf", "Leaf.leaf", "method", Some("Leaf")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Leaf", "Leaf")
+        .with_return_type("C.add", "<C as Trait>::Output::Item")
+        .with_field_type("C.Output", "Mid")
+        .with_field_type("Mid.Item", "Leaf");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("leaf", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("leaf");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+        .expect("<C as Trait>::Output::Item projects C.Output->Mid then Mid.Item->Leaf");
+    assert_eq!(result.target_symbol_id, 9);
+}

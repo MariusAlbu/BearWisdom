@@ -838,13 +838,13 @@ impl<'a> ChainWalker<'a> {
     }
 
     /// Project a `<head>::<Assoc>` associated-type return through the receiver's
-    /// impl binding. Returns the concrete type the impl bound `Assoc` to
-    /// (`type Assoc = Concrete` → `field_type["{C}.Assoc"]`) when `head` names the
-    /// current receiver C and that binding exists; `None` otherwise (the caller
-    /// then falls through to interning the raw string). The `::`-split takes the
-    /// LAST segment as the associated-type name and the prefix as the head, so a
-    /// real path return (`module::Foo`) whose head is neither a self-keyword nor
-    /// the receiver qname declines — no hijack.
+    /// impl binding, then apply the outer generic-rebind + call-unwrap. The
+    /// bare-id projection lives in `project_associated_type_to_id`; this site
+    /// rebinds the bound type's nominal params to the owner's canonical generics
+    /// and substitutes the env once (the recursion in the helper must NOT, so
+    /// intermediate hops stay plain concretes). `None` when the projection has
+    /// no binding — the caller then falls through to interning the raw string,
+    /// so a real path return (`module::Foo`) is never hijacked.
     fn project_associated_type(
         &self,
         cleaned: &str,
@@ -854,17 +854,7 @@ impl<'a> ChainWalker<'a> {
         seg: &ChainSegment,
         sym_kind: &str,
     ) -> Option<TypeId> {
-        let split = cleaned.rfind("::")?;
-        let head = cleaned[..split].trim();
-        let assoc = cleaned[split + 2..].trim();
-        if head.is_empty() || assoc.is_empty() || assoc.contains("::") {
-            return None;
-        }
-        let receiver_qname = self.associated_type_receiver_qname(head, current_ty)?;
-        let bound = self
-            .lookup
-            .field_type_name(&format!("{receiver_qname}.{assoc}"))?;
-        let yielded = self.arena.intern_type_str(bound);
+        let yielded = self.project_associated_type_to_id(cleaned, current_ty)?;
         let params = self.owner_param_type_map(member_qname);
         let yielded = if params.is_empty() {
             yielded
@@ -872,6 +862,52 @@ impl<'a> ChainWalker<'a> {
             self.arena.rebind_class_params(yielded, &params)
         };
         Some(self.unwrap_if_called(substitute(yielded, env, self.arena), seg, sym_kind))
+    }
+
+    /// Resolve a `<head>::<Assoc>` projection to the concrete type the impl
+    /// bound `Assoc` to, returning the bare interned `TypeId` (no generic
+    /// rebind, no call-unwrap — those apply once at the outer `yield_type_of`
+    /// site). The LAST `::` splits the associated-type name from the head; the
+    /// head resolves to a concrete receiver qname C and the binding keys
+    /// `field_type["{C}.{Assoc}"]`. A chained head (`Self::Output::Item`) is
+    /// resolved recursively: its own projection yields the intermediate concrete
+    /// whose qname keys the outer assoc. Each recursion strips one trailing
+    /// `::Assoc` and requires a real binding, so it is bounded by the `::` depth
+    /// and declines (no coincidental bind) the moment any hop has no binding.
+    fn project_associated_type_to_id(
+        &self,
+        cleaned: &str,
+        current_ty: TypeId,
+    ) -> Option<TypeId> {
+        let split = cleaned.rfind("::")?;
+        let head = cleaned[..split].trim();
+        let assoc = cleaned[split + 2..].trim();
+        if head.is_empty() || assoc.is_empty() || assoc.contains("::") {
+            return None;
+        }
+        let receiver_qname = self.associated_type_head_qname(head, current_ty)?;
+        let bound = self
+            .lookup
+            .field_type_name(&format!("{receiver_qname}.{assoc}"))?;
+        Some(self.arena.intern_type_str(bound))
+    }
+
+    /// Resolve the head of a `<head>::<Assoc>` projection to the concrete
+    /// receiver qname the impl binding must key under. Three direct shapes pin
+    /// the receiver (`associated_type_receiver_qname`): a self-keyword, a
+    /// complete angle form (`<C as Trait>`), or a bare qname equal to the
+    /// receiver. A head that is ITSELF a chained projection (contains `::` and
+    /// is not a complete angle form — e.g. `Self::Output`) is resolved
+    /// recursively to its concrete intermediate, whose qname keys the outer
+    /// assoc. Declines (`None`) when no shape matches or the intermediate has no
+    /// qname — never a coincidental key.
+    fn associated_type_head_qname(&self, head: &str, current_ty: TypeId) -> Option<String> {
+        let is_complete_angle = head.starts_with('<') && head.ends_with('>');
+        if head.contains("::") && !is_complete_angle {
+            let mid_ty = self.project_associated_type_to_id(head, current_ty)?;
+            return self.class_qname(mid_ty);
+        }
+        self.associated_type_receiver_qname(head, current_ty)
     }
 
     /// Resolve the head of a `<head>::<Assoc>` projection to the concrete
