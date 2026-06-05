@@ -4015,3 +4015,84 @@ fn alias_decode_member_missing_falls_through_to_type_then_fallback() {
     assert_eq!(resolved.target_symbol_id, 85);
     assert_eq!(resolved.confidence, 0.85);
 }
+
+// ---------------------------------------------------------------------------
+// alias_module_qname — a bare target equal to an import's bound name binds to
+// the symbol whose qname IS the import's full module path (the module symbol,
+// not a member). `alias MyApp.Foo` then a bare `Foo` → MyApp.Foo.
+// ---------------------------------------------------------------------------
+
+fn reject_module(_: EdgeKind, sym_kind: &str) -> bool {
+    sym_kind != "module"
+}
+
+#[test]
+fn alias_module_qname_off_is_inert() {
+    let lookup = Lookup::new().with(sym(70, "Foo", "MyApp.Foo", "module", "lib/foo.ex"));
+    let r = extracted_call("Foo");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Foo", Some("MyApp.Foo"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d.resolve_via_alias_module_qname(false, &accept_any).is_none());
+}
+
+#[test]
+fn alias_module_qname_binds_import_full_path_to_module_symbol() {
+    let lookup = Lookup::new().with(sym(70, "Foo", "MyApp.Foo", "module", "lib/foo.ex"));
+    let r = extracted_call("Foo");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Foo", Some("MyApp.Foo"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_alias_module_qname(true, &accept_any)
+        .expect("bare alias binds to the module symbol whose qname is the import path");
+    assert_eq!(resolved.target_symbol_id, 70);
+    assert_eq!(resolved.strategy, "default_alias_module_qname");
+    assert_eq!(resolved.confidence, 1.0);
+}
+
+#[test]
+fn alias_module_qname_declines_when_no_import_matches_target() {
+    let lookup = Lookup::new().with(sym(70, "Foo", "MyApp.Foo", "module", "lib/foo.ex"));
+    let r = extracted_call("Foo");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Bar", Some("MyApp.Bar"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d.resolve_via_alias_module_qname(true, &accept_any).is_none());
+}
+
+#[test]
+fn alias_module_qname_declines_kind_incompatible() {
+    // The kind predicate rejects "module", so the alias bind must decline even
+    // though the import's full path names a symbol of that kind.
+    let lookup = Lookup::new().with(sym(70, "Foo", "MyApp.Foo", "module", "lib/foo.ex"));
+    let r = extracted_call("Foo");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Foo", Some("MyApp.Foo"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d.resolve_via_alias_module_qname(true, &reject_module).is_none());
+}

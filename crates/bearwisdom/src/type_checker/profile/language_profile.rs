@@ -172,6 +172,14 @@ pub struct LanguageProfile {
     /// `On { wildcard_only }` opts a language in, optionally restricting the
     /// scan to wildcard imports. See `FileScopedImports`.
     pub file_scoped_imports: FileScopedImports,
+    /// Whether a bare target equal to an import's bound name binds to the MODULE
+    /// symbol whose qname IS the import's full module path. A namespace-qualified
+    /// import (`alias MyApp.Foo`) brings the bare `Foo` into scope bound to the
+    /// module `MyApp.Foo` itself, not a member under it. `false` (the default)
+    /// leaves the strategy inert; `true` opts in namespace-qualified-import
+    /// languages (Elixir, and any sibling whose aliases map a local name to a
+    /// full module qname through the import table).
+    pub alias_module_qname: bool,
     /// Alternate module-prefix candidates the `ByNameUnderModuleDir` anchor
     /// tries against a BARE specifier before the directory-containment probe.
     /// `Off` (the default) leaves the anchor's bare-specifier handling on the
@@ -865,6 +873,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     ext_match: ExtMatch::PkgSegment,
     head_alias: HeadAliasBind::Off,
     file_scoped_imports: FileScopedImports::Off,
+    alias_module_qname: false,
     module_prefix_rewrites: ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,

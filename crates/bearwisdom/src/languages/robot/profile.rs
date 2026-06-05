@@ -69,6 +69,7 @@ pub const ROBOT_PROFILE: LanguageProfile = LanguageProfile {
             fallback_confidence: 0.75,
         }),
     },
+    alias_module_qname: false,
     module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,

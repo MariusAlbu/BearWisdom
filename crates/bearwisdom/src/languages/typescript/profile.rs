@@ -163,6 +163,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // DefinitelyTyped (`react` → `@types/react`) + deep-import peel
     // (`rxjs/operators` → `rxjs`); a bare specifier never directory-matches a
     // same-named project file.
+    alias_module_qname: false,
     module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
         definitely_typed: true,
         deep_import_peel: true,

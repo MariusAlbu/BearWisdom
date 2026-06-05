@@ -14,7 +14,6 @@ pub(crate) mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::ELIXIR_HOOKS;
-pub use hooks::ElixirResolver;
 pub use profile::ELIXIR_PROFILE;
 
 #[cfg(test)]

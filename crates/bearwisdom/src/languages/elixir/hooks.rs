@@ -1,80 +1,28 @@
 // =============================================================================
-// languages/elixir/hooks.rs — ElixirHooks impl plus the concrete
-// ElixirResolver (alias-to-module-qname binding only; scope-chain,
-// same-module, and fully-qualified lookups are handled by the engine ladder)
-// plus 6 flow detectors (Ecto Repo ops on `.Repo`-suffix modules,
+// languages/elixir/hooks.rs — ElixirHooks impl: file-context construction
+// (the alias→module-qname import table the generic ladder consumes),
+// 6 flow detectors (Ecto Repo ops on `.Repo`-suffix modules,
 // HTTPoison/Tesla/Req/Finch/Mojito chains, grpc-elixir generated stubs ending
 // in `.Stub`, Oban bgjob, Phoenix.Channel / Phoenix.LiveView WebSocket
-// Consumer from `use` macro, Bamboo/Swoosh mailer deliver_*) plus
+// Consumer from `use` macro, Bamboo/Swoosh mailer deliver_*), plus
 // infer_external_inner with mix.exs dep matching (CamelCase root ↔
 // snake_case dep atom, plus first-segment prefix), the `Routes`
 // Phoenix-convention universal alias rule, import-wildcard fallback for
 // `import Bamboo.Test`-style injection, and use-injection inference via
 // `lookup.by_qualified_name(module.target)` confirmation against the
-// externals symbol set.
+// externals symbol set. Bare-alias binding (`alias MyApp.Foo` → `Foo`) is
+// handled by the generic ladder's `resolve_via_alias_module_qname` strategy,
+// gated by `ELIXIR_PROFILE.alias_module_qname`.
 // =============================================================================
 
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolLookup,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
-
-pub struct ElixirResolver;
-
-impl ElixirResolver {
-    pub(crate) fn build_file_context(
-        &self,
-        file: &ParsedFile,
-        project_ctx: Option<&ProjectContext>,
-    ) -> FileContext {
-        build_file_context_inner(file, project_ctx)
-    }
-
-    /// Resolve an `alias MyApp.Foo` reference to the module symbol itself.
-    ///
-    /// When an import's bound name equals the target (`alias MyApp.Foo` then a
-    /// bare `Foo`), the answer is the symbol whose qname IS the import's full
-    /// module path — not a member under that module's file. The generic
-    /// file-import strategy keys on the module's file path and on a member
-    /// name, so it can't bind a bare alias to the module qname; this stays as
-    /// language code. Scope-chain (`{scope}.{target}`), same-module
-    /// (`{file_namespace}.{target}`), and fully-qualified dotted lookups are
-    /// all covered by the engine ladder and run before this hook.
-    pub(crate) fn resolve(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        for import in &file_ctx.imports {
-            if import.imported_name != *target {
-                continue;
-            }
-            if let Some(full_module) = &import.module_path {
-                if let Some(sym) = lookup.by_qualified_name(full_module) {
-                    if predicates::kind_compatible(edge_kind, &sym.kind) {
-                        return Some(Resolution {
-                            target_symbol_id: sym.id,
-                            confidence: 1.0,
-                            strategy: "elixir_alias",
-                            resolved_yield_type: None,
-                            flow_emit: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        None
-    }
-}
 
 pub(crate) fn detect_elixir_ecto_emission(
     module: &str,
@@ -606,15 +554,6 @@ impl LanguageEngineHooks for ElixirHooks {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
         Some(build_file_context_inner(file, project_ctx))
-    }
-
-    fn resolve_ref(
-        &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext<'_>,
-        lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        ElixirResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 }
 

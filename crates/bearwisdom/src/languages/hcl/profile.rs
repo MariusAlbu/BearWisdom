@@ -49,6 +49,7 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
         require_kind: Some("class"),
     },
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+    alias_module_qname: false,
     module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,

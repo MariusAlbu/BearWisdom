@@ -72,6 +72,7 @@ struct LadderProfileData<'p> {
     wildcard_match: WildcardMatch,
     head_alias: HeadAliasBind,
     file_scoped_imports: FileScopedImports,
+    alias_module_qname: bool,
     module_prefix_rewrites: ModulePrefixRewrites,
     workspace_packages: bool,
     overload_pick_all: bool,
@@ -96,6 +97,7 @@ impl LadderProfileData<'static> {
         wildcard_match: WildcardMatch::QnameUnder,
         head_alias: HeadAliasBind::Off,
         file_scoped_imports: FileScopedImports::Off,
+        alias_module_qname: false,
         module_prefix_rewrites: ModulePrefixRewrites::Off,
         workspace_packages: false,
         overload_pick_all: false,
@@ -1341,6 +1343,50 @@ impl<'a> DefaultResolver<'a> {
         None
     }
 
+    /// Strategy — bare target bound to the MODULE symbol whose qname IS an
+    /// import's full module path.
+    ///
+    /// A namespace-qualified import (`alias MyApp.Foo`) brings the bare name
+    /// `Foo` into scope bound to the module `MyApp.Foo` itself, not to a member
+    /// under it. When an import's `imported_name` equals the bare `target`, the
+    /// answer is the symbol looked up by the import's `module_path` qname. The
+    /// file-scoped/file-import rungs key on a FILE PATH and a member name, so
+    /// they cannot bind a bare alias to a module qname; this rung does the
+    /// by-qname-equals-import-full-path lookup the others skip. Gated by
+    /// `enabled`; off (every non-opted language) returns immediately.
+    pub fn resolve_via_alias_module_qname(
+        &self,
+        enabled: bool,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        if !enabled {
+            return None;
+        }
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty()
+            || target.contains('.')
+            || target.contains("::")
+            || target.contains('/')
+        {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        for import in &self.file_ctx.imports {
+            if import.imported_name != target {
+                continue;
+            }
+            let Some(full_module) = import.module_path.as_deref() else {
+                continue;
+            };
+            if let Some(sym) = self.lookup.by_qualified_name(full_module) {
+                if kind(edge_kind, &sym.kind) {
+                    return Some(self.resolution(sym.id, "default_alias_module_qname"));
+                }
+            }
+        }
+        None
+    }
+
     /// Strategy — bare target bound to a symbol in a file-naming import.
     ///
     /// An import whose `module_path` names a FILE (a Robot `.robot` / `.resource`
@@ -1772,6 +1818,7 @@ impl<'a> DefaultResolver<'a> {
                 wildcard_match: profile.wildcard_match,
                 head_alias: profile.head_alias,
                 file_scoped_imports: profile.file_scoped_imports,
+                alias_module_qname: profile.alias_module_qname,
                 module_prefix_rewrites: profile.module_prefix_rewrites,
                 workspace_packages: profile.workspace_packages,
                 overload_pick_all: profile.overload_pick_all,
@@ -1876,6 +1923,7 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_ref_module(kind))
             .or_else(|| self.resolve_via_qname_exact(pd.overload_pick_all, kind))
             .or_else(|| self.resolve_via_head_alias(pd.head_alias, kind))
+            .or_else(|| self.resolve_via_alias_module_qname(pd.alias_module_qname, kind))
             .or_else(|| self.resolve_via_chain_prefix(kind))
             .or_else(|| self.resolve_via_reexport_chain(kind))
             .or_else(|| self.resolve_via_file_import(kind))

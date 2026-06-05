@@ -46,6 +46,7 @@ pub const CMAKE_PROFILE: LanguageProfile = LanguageProfile {
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+    alias_module_qname: false,
     module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
