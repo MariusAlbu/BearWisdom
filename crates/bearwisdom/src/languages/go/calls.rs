@@ -139,8 +139,43 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
                 right: Box::new(right),
             }
         }
+        // `func(x int) { ... }` — function literal. Capture the closure's own
+        // positional parameter names so the chain walker can type them from the
+        // higher-order function's callback-parameter signature.
+        "func_literal" => CallArg::Lambda { params: func_literal_param_names(node, src) },
         _ => CallArg::Other,
     }
+}
+
+/// Collect the positional parameter identifier names of a Go `func_literal`
+/// argument. The `parameters` field is a `parameter_list` of
+/// `parameter_declaration` nodes; each declaration may name several parameters
+/// sharing a type (`func(a, b int)`), so every `identifier` child of a
+/// declaration is one positional name. A declaration with no name (`func(int)`)
+/// yields an empty slot so positions stay aligned with the callback signature.
+fn func_literal_param_names(node: &Node, src: &str) -> Vec<String> {
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut cursor = params.walk();
+    for decl in params.named_children(&mut cursor) {
+        if decl.kind() != "parameter_declaration" {
+            continue;
+        }
+        let mut dc = decl.walk();
+        let names: Vec<String> = decl
+            .named_children(&mut dc)
+            .filter(|c| c.kind() == "identifier")
+            .map(|c| node_text(&c, src))
+            .collect();
+        if names.is_empty() {
+            out.push(String::new());
+        } else {
+            out.extend(names);
+        }
+    }
+    out
 }
 
 fn strip_go_string(raw: &str) -> String {

@@ -144,7 +144,48 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             .named_child(0)
             .map(|n| extract_arg(&n, src, depth + 1))
             .unwrap_or(CallArg::Other),
+        // `x -> x.f()`, `(a, b) -> g(a, b)`, `(String s) -> h(s)` — capture the
+        // lambda's own positional parameter names so the chain walker can type
+        // them from the higher-order method's callback-parameter signature.
+        "lambda_expression" => CallArg::Lambda { params: lambda_arg_param_names(node, src) },
         _ => CallArg::Other,
+    }
+}
+
+/// Collect the positional parameter identifier names of a Java
+/// `lambda_expression` argument. The `parameters` field is one of: a bare
+/// `identifier` (`x -> ...`), an `inferred_parameters` list of `identifier`s
+/// (`(x, y) -> ...`), or a `formal_parameters` list of `formal_parameter`
+/// nodes carrying a `name` field (`(Type x) -> ...`). A parameter without a
+/// plain `name` identifier yields an empty slot so positions stay aligned with
+/// the callback signature.
+fn lambda_arg_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    match params.kind() {
+        "identifier" => vec![node_text(params, src)],
+        "inferred_parameters" => {
+            let mut cursor = params.walk();
+            params
+                .named_children(&mut cursor)
+                .filter(|p| p.kind() == "identifier")
+                .map(|p| node_text(p, src))
+                .collect()
+        }
+        "formal_parameters" => {
+            let mut cursor = params.walk();
+            params
+                .named_children(&mut cursor)
+                .filter(|p| p.kind() == "formal_parameter")
+                .map(|p| {
+                    p.child_by_field_name("name")
+                        .map(|n| node_text(n, src))
+                        .unwrap_or_default()
+                })
+                .collect()
+        }
+        _ => Vec::new(),
     }
 }
 

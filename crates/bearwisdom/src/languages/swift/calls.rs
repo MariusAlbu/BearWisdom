@@ -463,9 +463,54 @@ pub(super) fn extract_swift_call_args(call_node: &Node, src: &[u8]) -> Vec<crate
             "simple_identifier" | "identifier" => CallArg::Ident(node_text(inner, src)),
             "integer_literal" | "real_literal" => CallArg::Literal(node_text(inner, src)),
             "boolean_literal" | "nil_literal" | "nil" => CallArg::Literal(inner.kind().to_string()),
+            // `{ x in x.foo }` — trailing or parenthesized closure with a named
+            // parameter. Capture the closure's own parameter names so the chain
+            // walker can type them from the higher-order method's callback-
+            // parameter signature. The anonymous-shorthand form (`{ $0.foo }`)
+            // declares no parameter name and yields an empty list (deferred).
+            "lambda_literal" => CallArg::Lambda {
+                params: swift_closure_param_names(&inner, src),
+            },
             _ => CallArg::Other,
         };
         out.push(arg);
     }
     out
+}
+
+/// Collect the named positional parameter names of a Swift `lambda_literal`.
+/// Named parameters live under a `type` field as a `lambda_function_type`
+/// whose `lambda_function_type_parameters` hold `lambda_parameter` nodes with a
+/// `name` field. The anonymous-shorthand form (`$0`, `$1`) declares no `type`
+/// and yields an empty list.
+fn swift_closure_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+    let Some(ty) = node.child_by_field_name("type") else {
+        return Vec::new();
+    };
+    let Some(params) = swift_named_child(&ty, "lambda_function_type_parameters") else {
+        return Vec::new();
+    };
+    let mut cursor = params.walk();
+    params
+        .named_children(&mut cursor)
+        .filter(|p| p.kind() == "lambda_parameter")
+        .map(|p| {
+            p.child_by_field_name("name")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// First named child of `node` whose kind is `kind`, searched by index so the
+/// returned node carries the tree lifetime rather than a local cursor's.
+fn swift_named_child<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut i = 0;
+    while let Some(child) = node.named_child(i) {
+        if child.kind() == kind {
+            return Some(child);
+        }
+        i += 1;
+    }
+    None
 }

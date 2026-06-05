@@ -144,8 +144,35 @@ fn extract_arg(node: &Node, source: &str, depth: u32) -> CallArg {
                 CallArg::Other
             }
         }
+        // `|x| x.foo()`, `|a, b| f(a, b)` — closure expression. Capture the
+        // closure's own positional parameter names so the chain walker can type
+        // them from the higher-order method's callback-parameter signature.
+        "closure_expression" => CallArg::Lambda { params: closure_param_names(node, source) },
         _ => CallArg::Other,
     }
+}
+
+/// Collect the positional parameter identifier names of a Rust
+/// `closure_expression` argument. The `parameters` field is a
+/// `closure_parameters` node whose children are the parameter patterns; a plain
+/// `identifier` contributes its name, any other pattern (tuple, ref, typed
+/// `pattern: type`) yields an empty slot so positions stay aligned with the
+/// callback signature.
+fn closure_param_names(node: &Node, source: &str) -> Vec<String> {
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    let mut cursor = params.walk();
+    params
+        .named_children(&mut cursor)
+        .map(|p| {
+            if p.kind() == "identifier" {
+                node_text(&p, source)
+            } else {
+                String::new()
+            }
+        })
+        .collect()
 }
 
 /// Extract the first string-literal-shaped argument from a `macro_invocation`

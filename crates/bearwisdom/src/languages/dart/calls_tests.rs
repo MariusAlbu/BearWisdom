@@ -118,3 +118,25 @@ fn call_args_binary_expression_produces_binary_variant() {
         "expected Binary variant with op \"+\", got: {args:?}"
     );
 }
+
+#[test]
+fn call_args_function_expression_single_param_captured() {
+    let src = "void caller(xs) { xs.map((u) => u.name); }";
+    let args = call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["u"])),
+        "expected Lambda {{ params: [\"u\"] }}, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_function_expression_multi_param_captured() {
+    let src = "void caller(xs) { xs.fold((a, b) => f(a, b)); }";
+    let args = call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["a", "b"])),
+        "expected Lambda {{ params: [\"a\", \"b\"] }}, got: {args:?}"
+    );
+}

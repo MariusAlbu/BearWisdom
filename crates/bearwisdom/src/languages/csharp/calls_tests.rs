@@ -118,3 +118,31 @@ class C { void M(string url) { F("/api/users", url, 42, true); } }
         "expected Literal(\"true\"), got: {args:?}"
     );
 }
+
+#[test]
+fn call_args_lambda_implicit_single_param_captured() {
+    // `u => u.Name` — single implicit parameter.
+    let src = r#"
+class C { void M(System.Collections.Generic.List<int> users) { users.Select(u => u.Name); } }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["u"])),
+        "expected Lambda {{ params: [\"u\"] }}, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_lambda_parenthesized_params_captured() {
+    // `(x, y) => f(x, y)` — parenthesized parameter list.
+    let src = r#"
+class C { void M(System.Collections.Generic.List<int> xs) { xs.Select((x, y) => f(x, y)); } }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["x", "y"])),
+        "expected Lambda {{ params: [\"x\", \"y\"] }}, got: {args:?}"
+    );
+}

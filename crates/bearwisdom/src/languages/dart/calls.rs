@@ -154,8 +154,44 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
         | "bitwise_xor_expression"
         | "shift_expression" => binary_from_node(node, src, depth),
 
+        // `(u) => u.name`, `(a, b) => f(a, b)` — capture the closure's own
+        // positional parameter names so the chain walker can type them from the
+        // higher-order method's callback-parameter signature.
+        "function_expression" => CallArg::Lambda { params: dart_lambda_param_names(node, src) },
+
         _ => CallArg::Other,
     }
+}
+
+/// Collect the positional parameter identifier names of a Dart
+/// `function_expression` argument. The `parameters` field is a
+/// `formal_parameter_list` of `formal_parameter` nodes wrapping an
+/// `identifier`. A parameter without a plain identifier yields an empty slot so
+/// positions stay aligned with the callback signature.
+fn dart_lambda_param_names(node: &Node, src: &str) -> Vec<String> {
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    let mut cursor = params.walk();
+    params
+        .named_children(&mut cursor)
+        .filter(|p| p.kind() == "formal_parameter")
+        .map(|p| dart_first_identifier(&p, src))
+        .collect()
+}
+
+/// The first `identifier` child of a Dart `formal_parameter`, or an empty
+/// string when the binding is not a plain identifier (so positions stay
+/// aligned with the callback signature).
+fn dart_first_identifier(node: &Node, src: &str) -> String {
+    let mut i = 0;
+    while let Some(child) = node.named_child(i) {
+        if child.kind() == "identifier" {
+            return node_text(child, src);
+        }
+        i += 1;
+    }
+    String::new()
 }
 
 /// Detect a subscript argument (`a[i]`). Dart has no `index_expression` node:
@@ -642,6 +678,7 @@ fn extract_inline_call_from_statement(
 
     let target = last_member.or(callee_ident).unwrap_or_default();
     if !target.is_empty() {
+        let call_args = extract_dart_call_args(node, src);
         refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: target,
@@ -652,7 +689,7 @@ fn extract_inline_call_from_statement(
             chain: None,
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
-            call_args: Vec::new(),
+            call_args,
         });
     }
 }

@@ -161,8 +161,35 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
             }
         }
 
+        // `lambda u: u.name` — capture the lambda's own positional parameter
+        // names so the chain walker can type them from the higher-order
+        // method's callback-parameter signature.
+        "lambda" => CallArg::Lambda { params: lambda_param_names(node, src) },
+
         _ => CallArg::Other,
     }
+}
+
+/// Collect the positional parameter identifier names of a Python `lambda`
+/// argument. Names live under the `parameters` field as a `lambda_parameters`
+/// node whose children are `identifier`s. A non-identifier binding (tuple
+/// pattern, default, splat) yields an empty slot so positions stay aligned
+/// with the callback signature.
+fn lambda_param_names(node: &Node, src: &str) -> Vec<String> {
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    let mut cursor = params.walk();
+    params
+        .named_children(&mut cursor)
+        .map(|p| {
+            if p.kind() == "identifier" {
+                node_text(&p, src)
+            } else {
+                String::new()
+            }
+        })
+        .collect()
 }
 
 /// Return the source text of the first unnamed (operator) token child of

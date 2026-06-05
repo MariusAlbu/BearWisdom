@@ -180,8 +180,40 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 right: Box::new(right),
             }
         }
+        // `u => u.Name`, `(x, y) => f(x, y)`, `delegate(int z) { ... }` —
+        // capture the lambda's own positional parameter names so the chain
+        // walker can type them from the higher-order method's callback-
+        // parameter signature.
+        "lambda_expression" | "anonymous_method_expression" => {
+            CallArg::Lambda { params: lambda_param_names(node, src) }
+        }
         _ => CallArg::Other,
     }
+}
+
+/// Collect the positional parameter identifier names of a C# lambda /
+/// anonymous-method argument. The `parameters` field is either a single
+/// `implicit_parameter` (`u => ...`, whose node text IS the name) or a
+/// `parameter_list` of `parameter` nodes carrying a `name` field. A parameter
+/// without a plain `name` identifier yields an empty slot so positions stay
+/// aligned with the callback signature.
+fn lambda_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    if params.kind() == "implicit_parameter" {
+        return vec![node_text(params, src)];
+    }
+    let mut cursor = params.walk();
+    params
+        .named_children(&mut cursor)
+        .filter(|p| p.kind() == "parameter")
+        .map(|p| {
+            p.child_by_field_name("name")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default()
+        })
+        .collect()
 }
 
 /// Replace `{...}` interpolation holes in a C# interpolated string with

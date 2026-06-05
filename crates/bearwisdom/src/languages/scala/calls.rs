@@ -30,11 +30,45 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
                 CallArg::Literal(node_text(child, src))
             }
             "boolean_literal" | "null_literal" => CallArg::Literal(child.kind().to_string()),
+            // `x => x.foo`, `(a, b) => f(a, b)` — capture the lambda's own
+            // positional parameter names so the chain walker can type them from
+            // the higher-order method's callback-parameter signature.
+            "lambda_expression" => CallArg::Lambda {
+                params: scala_lambda_param_names(&child, src),
+            },
             _ => CallArg::Other,
         };
         out.push(arg);
     }
     out
+}
+
+/// Collect the positional parameter identifier names of a Scala
+/// `lambda_expression` argument. The `parameters` field is either a single
+/// `identifier` (`x => ...`) or a `bindings` node of `binding` children whose
+/// `name` field is the parameter identifier (`(a, b) => ...`). A binding
+/// without a plain `name` identifier yields an empty slot so positions stay
+/// aligned with the callback signature.
+fn scala_lambda_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    match params.kind() {
+        "identifier" => vec![node_text(params, src)],
+        "bindings" => {
+            let mut cursor = params.walk();
+            params
+                .named_children(&mut cursor)
+                .filter(|b| b.kind() == "binding")
+                .map(|b| {
+                    b.child_by_field_name("name")
+                        .map(|n| node_text(n, src))
+                        .unwrap_or_default()
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    }
 }
 
 fn strip_scala_string(raw: &str) -> String {

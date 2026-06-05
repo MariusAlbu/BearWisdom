@@ -21,6 +21,7 @@ const MAX_ARG_DEPTH: u32 = 32;
 /// index access, binary). Tree-sitter-kotlin-ng wraps args in `value_arguments`
 /// with nested `value_argument` children that contain the expression.
 pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
+    let mut out = Vec::new();
     let mut args_node: Option<Node> = None;
     let mut cursor = call_node.walk();
     for c in call_node.children(&mut cursor) {
@@ -29,40 +30,87 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
             break;
         }
     }
-    let Some(args) = args_node else { return Vec::new() };
-    let mut out = Vec::new();
-    let mut ac = args.walk();
-    for child in args.named_children(&mut ac) {
-        // A `value_argument` is `[name =] [*] expression`: the optional name
-        // label and the optional spread `*` are absorbed at this level (a bare
-        // `*` token, not a `spread_expression` node), so detect the spread here.
-        let (value_node, is_spread) = if child.kind() == "value_argument" {
-            let spread = (0..child.child_count())
-                .any(|i| child.child(i).map(|c| c.kind() == "*").unwrap_or(false));
-            let mut found: Option<Node> = None;
-            let mut vc = child.walk();
-            for v in child.named_children(&mut vc) {
-                if v.kind() != "simple_identifier" || found.is_some() {
+    if let Some(args) = args_node {
+        let mut ac = args.walk();
+        for child in args.named_children(&mut ac) {
+            // A `value_argument` is `[name =] [*] expression`: the optional name
+            // label and the optional spread `*` are absorbed at this level (a
+            // bare `*` token, not a `spread_expression` node), so detect the
+            // spread here.
+            let (value_node, is_spread) = if child.kind() == "value_argument" {
+                let spread = (0..child.child_count())
+                    .any(|i| child.child(i).map(|c| c.kind() == "*").unwrap_or(false));
+                let mut found: Option<Node> = None;
+                let mut vc = child.walk();
+                for v in child.named_children(&mut vc) {
+                    if v.kind() != "simple_identifier" || found.is_some() {
+                        found = Some(v);
+                        break;
+                    }
                     found = Some(v);
-                    break;
                 }
-                found = Some(v);
-            }
-            match found {
-                Some(n) => (n, spread),
-                None => continue,
-            }
-        } else {
-            (child, false)
-        };
-        let arg = extract_arg(&value_node, src, 0);
-        out.push(if is_spread {
-            CallArg::Spread { expr: Box::new(arg) }
-        } else {
-            arg
-        });
+                match found {
+                    Some(n) => (n, spread),
+                    None => continue,
+                }
+            } else {
+                (child, false)
+            };
+            let arg = extract_arg(&value_node, src, 0);
+            out.push(if is_spread {
+                CallArg::Spread { expr: Box::new(arg) }
+            } else {
+                arg
+            });
+        }
     }
+    // A trailing lambda (`list.map { ... }`) carries no `value_arguments`, so it
+    // is appended whether or not parenthesized args were present.
+    append_trailing_lambda(call_node, src, &mut out);
     out
+}
+
+/// Append a `CallArg::Lambda` for a Kotlin trailing lambda
+/// (`list.map { x -> x.foo }`), whose `annotated_lambda` (or bare
+/// `lambda_literal`) is a sibling of the call's `value_arguments`, not a
+/// `value_argument` inside it. The trailing lambda is always the last
+/// positional argument, so it is pushed after the parenthesized args.
+///
+/// The Calls ref for a method call is built from either the wrapping
+/// `call_expression` (the lambda is then a direct child) or, when the callee is
+/// `obj.method`, the inner `navigation_expression` (the lambda is then a
+/// following sibling under the `call_expression` parent). Both shapes are
+/// handled so the lambda lands on the ref regardless of which node carries it.
+fn append_trailing_lambda(call_node: &Node, src: &[u8], out: &mut Vec<CallArg>) {
+    // Case 1 — `call_node` is the `call_expression`: scan its own children.
+    let mut cursor = call_node.walk();
+    for child in call_node.children(&mut cursor) {
+        if let Some(ll) = trailing_lambda_literal(&child) {
+            out.push(CallArg::Lambda { params: lambda_literal_params(&ll, src) });
+        }
+    }
+    // Case 2 — `call_node` is the callee `navigation_expression`: the lambda is
+    // a following sibling, but only when this node IS the callee of a
+    // `call_expression` (otherwise a sibling lambda belongs to another call).
+    if call_node.parent().map(|p| p.kind()) == Some("call_expression") {
+        let mut sib = call_node.next_named_sibling();
+        while let Some(node) = sib {
+            if let Some(ll) = trailing_lambda_literal(&node) {
+                out.push(CallArg::Lambda { params: lambda_literal_params(&ll, src) });
+            }
+            sib = node.next_named_sibling();
+        }
+    }
+}
+
+/// The `lambda_literal` carried by a trailing-lambda node — an
+/// `annotated_lambda` wrapper or a bare `lambda_literal` — or `None`.
+fn trailing_lambda_literal<'a>(node: &Node<'a>) -> Option<Node<'a>> {
+    match node.kind() {
+        "annotated_lambda" => child_of_kind(node, "lambda_literal"),
+        "lambda_literal" => Some(*node),
+        _ => None,
+    }
 }
 
 /// Convert a single Kotlin expression node to a `CallArg`, recursing for
@@ -170,8 +218,72 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             }
         }
 
+        // `{ x -> x.foo }` / `{ it.foo }` — a lambda passed as a parenthesized
+        // argument (`list.map({ x -> ... })`). The trailing-lambda form
+        // (`list.map { ... }`) is a sibling of the call and is appended in
+        // `extract_call_args`. Capture the lambda's own positional parameter
+        // names so the chain walker can type them from the higher-order
+        // method's callback-parameter signature.
+        "lambda_literal" => CallArg::Lambda { params: lambda_literal_params(node, src) },
+
         _ => CallArg::Other,
     }
+}
+
+/// Collect the positional parameter names of a Kotlin `lambda_literal`. Names
+/// live under a `lambda_parameters` child as `variable_declaration` (or
+/// `multi_variable_declaration`) nodes whose identifier is the parameter name.
+/// When `lambda_parameters` is absent, Kotlin's implicit single parameter `it`
+/// is synthesized — the grammar guarantees it, so seeding `it` is sound.
+fn lambda_literal_params(node: &Node, src: &[u8]) -> Vec<String> {
+    let Some(params) = child_of_kind(node, "lambda_parameters") else {
+        // No declared parameters — Kotlin binds the single argument to `it`.
+        return vec!["it".to_string()];
+    };
+    let mut out = Vec::new();
+    let mut pc = params.walk();
+    for param in params.named_children(&mut pc) {
+        match param.kind() {
+            "variable_declaration" => out.push(variable_declaration_name(&param, src)),
+            "multi_variable_declaration" => {
+                let mut mc = param.walk();
+                for inner in param.named_children(&mut mc) {
+                    if inner.kind() == "variable_declaration" {
+                        out.push(variable_declaration_name(&inner, src));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The parameter name of a Kotlin `variable_declaration` — its first
+/// identifier child. A declaration without a plain identifier yields an empty
+/// string so positions stay aligned with the callback signature.
+fn variable_declaration_name(node: &Node, src: &[u8]) -> String {
+    let mut i = 0;
+    while let Some(child) = node.named_child(i) {
+        if child.kind() == "simple_identifier" || child.kind() == "identifier" {
+            return node_text(child, src);
+        }
+        i += 1;
+    }
+    String::new()
+}
+
+/// First named child of `node` whose kind is `kind`, searched by index so the
+/// returned node carries the tree lifetime rather than a local cursor's.
+fn child_of_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut i = 0;
+    while let Some(child) = node.named_child(i) {
+        if child.kind() == kind {
+            return Some(child);
+        }
+        i += 1;
+    }
+    None
 }
 
 fn strip_kt_string(raw: &str) -> String {

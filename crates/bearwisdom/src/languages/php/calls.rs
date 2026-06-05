@@ -172,8 +172,37 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 right: Box::new(right),
             }
         }
+        // `fn($u) => $u->name`, `function($a, $b) { ... }` — capture the
+        // closure's own positional parameter names (without the `$` sigil) so
+        // the chain walker can type them from the higher-order method's
+        // callback-parameter signature.
+        "arrow_function" | "anonymous_function" => {
+            CallArg::Lambda { params: php_lambda_param_names(node, src) }
+        }
         _ => CallArg::Other,
     }
+}
+
+/// Collect the positional parameter names of a PHP arrow-function /
+/// anonymous-function argument. The `parameters` field is a `formal_parameters`
+/// list of `simple_parameter` nodes whose `name` field is a `variable_name`
+/// (`$u`); the leading `$` sigil is stripped. A parameter without a plain
+/// variable name yields an empty slot so positions stay aligned with the
+/// callback signature.
+fn php_lambda_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+    let Some(params) = node.child_by_field_name("parameters") else {
+        return Vec::new();
+    };
+    let mut cursor = params.walk();
+    params
+        .named_children(&mut cursor)
+        .filter(|p| p.kind() == "simple_parameter" || p.kind() == "variadic_parameter")
+        .map(|p| {
+            p.child_by_field_name("name")
+                .map(|n| node_text(&n, src).trim_start_matches('$').to_string())
+                .unwrap_or_default()
+        })
+        .collect()
 }
 
 /// Convert one `array_element_initializer` to a `CallArg`. A plain element

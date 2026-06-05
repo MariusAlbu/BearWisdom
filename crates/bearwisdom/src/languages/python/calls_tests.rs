@@ -114,3 +114,25 @@ fn call_args_comparison_operator_produces_binary_variant() {
         "expected Binary variant with op \"==\" for comparison arg, got: {args:?}"
     );
 }
+
+#[test]
+fn call_args_lambda_single_param_captured() {
+    let src = "def caller(users):\n    users.map(lambda u: u.name)\n";
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["u"])),
+        "expected Lambda {{ params: [\"u\"] }}, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_lambda_multi_param_captured() {
+    let src = "def caller(xs):\n    xs.reduce(lambda a, b: a + b)\n";
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["a", "b"])),
+        "expected Lambda {{ params: [\"a\", \"b\"] }}, got: {args:?}"
+    );
+}

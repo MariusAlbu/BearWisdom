@@ -111,3 +111,47 @@ fun caller(a: Int?, b: Int) { f(a ?: b) }
         "expected Binary variant with op \"?:\" for elvis arg, got: {args:?}"
     );
 }
+
+#[test]
+fn call_args_trailing_lambda_named_param_captured() {
+    // `list.map { x -> x.foo }` — the trailing lambda is an `annotated_lambda`
+    // sibling of the call_expression, not a value_argument.
+    let src = r#"
+fun caller(list: List<Int>) { list.map { x -> x.foo } }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["x"])),
+        "expected Lambda {{ params: [\"x\"] }}, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_trailing_lambda_implicit_it_synthesized() {
+    // `list.map { it.foo }` — no `lambda_parameters`; the implicit single
+    // parameter `it` is synthesized so the seed key exists.
+    let src = r#"
+fun caller(list: List<Int>) { list.map { it.foo } }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["it"])),
+        "expected Lambda {{ params: [\"it\"] }}, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_parenthesized_lambda_param_captured() {
+    // `list.map({ y -> y.foo })` — the lambda is a value_argument here.
+    let src = r#"
+fun caller(list: List<Int>) { list.map({ y -> y.foo }) }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["y"])),
+        "expected Lambda {{ params: [\"y\"] }}, got: {args:?}"
+    );
+}
