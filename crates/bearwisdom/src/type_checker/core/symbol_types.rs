@@ -163,17 +163,22 @@ impl SymbolTypeMap {
     ) -> Self {
         let mut map = SymbolTypeMap::new();
         for pf in parsed {
-            // Skip externals — see members.rs build for rationale.
-            // Externals are SymbolIndex lookup targets, not engine
-            // member-set entries; processing them at build time creates
-            // hundreds of thousands of redundant arena.class writes.
-            if pf.path.starts_with("ext:") {
-                continue;
-            }
+            let is_external = pf.path.starts_with("ext:");
             for (idx, sym) in pf.symbols.iter().enumerate() {
                 let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
                     continue;
                 };
+
+                // For externals, admit value-bearing kinds (callables whose
+                // param_types/return_type the externals pipeline interned,
+                // plus fields/properties with a declared_type) but skip
+                // type-DEFINING kinds. The skipped path is the (None, true)
+                // self-yield arm below, whose arena.class write is the
+                // write-storm the ext: skip guarded against; callables take
+                // the (Some, false) arm and add zero arena entries.
+                if is_external && is_type_defining(sym.kind) {
+                    continue;
+                }
 
                 let extractor_return = sym.return_type;
                 let extractor_declared = sym.declared_type;
