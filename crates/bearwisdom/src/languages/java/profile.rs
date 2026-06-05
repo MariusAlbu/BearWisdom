@@ -65,6 +65,7 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &["CompletableFuture", "Future"],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    deref_wrapper: None,
     iterator_method: Some("iterator"),
     primitive_mapping: JAVA_PRIMITIVES,
     kind_compatible_table: JAVA_KIND_TABLE,
@@ -99,6 +100,7 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,
+    blanket_impl_resolution: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,

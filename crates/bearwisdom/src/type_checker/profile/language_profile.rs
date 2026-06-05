@@ -60,6 +60,19 @@ pub struct LanguageProfile {
     /// container (`Vec`, `HashMap`) must be ABSENT so its accessors stay on the
     /// container. `&[]` (the default) leaves every `Apply` receiver intact.
     pub single_inner_wrappers: &'static [&'static str],
+    /// A user-defined single-inner Deref wrapper: a type `C` with an
+    /// `impl Deref for C { type Target = Inner }` exposes Inner's member set on
+    /// a `C` receiver (Rust autoderef). Unlike `single_inner_wrappers` — which
+    /// peels a generic type ARG (`args[0]`) off a known std pointer head — this
+    /// peels the Deref `Target` BINDING off an arbitrary user type. The chain
+    /// walker fires it only when BOTH hold: `C` has a supertype edge reaching
+    /// `trait_name` (the structural impl evidence), and the indexed
+    /// `field_type["{C}.{target_assoc}"]` binding exists. The Target type is
+    /// read from that already-indexed binding, never from a name table, and the
+    /// edge requirement keeps it widening-only (no bare-name coincidence). The
+    /// trait + assoc names are language DATA. `None` (the default) leaves every
+    /// receiver intact.
+    pub deref_wrapper: Option<DerefWrapper>,
     pub iterator_method: Option<&'static str>,
     pub primitive_mapping: &'static [(&'static str, PrimKind)],
     pub kind_compatible_table: KindTable,
@@ -259,6 +272,20 @@ pub struct LanguageProfile {
     /// path return is never hijacked), and a missing binding declines to the prior
     /// raw-intern behavior, so the projection is strictly widening.
     pub associated_type_projection: bool,
+    /// Blanket-impl graph population (Rust `impl<U: Bound> Trait for U {}`).
+    /// `false` (the default) leaves the supertype builder single-pass — a
+    /// blanket impl's self-TypeRef names the impl's own generic param (`U`),
+    /// which resolves to no concrete type, so no `C → Trait` edge ever forms and
+    /// the blanket trait's default methods are unreachable. `true` opts a
+    /// language into a second `build_explicit` pass: each concrete type C that
+    /// provably satisfies Bound (its supertype graph reaches the resolved Bound
+    /// trait) gains a `C → Trait` edge, so the existing member walk binds the
+    /// trait's default methods on C. Widening-only — an edge forms ONLY when
+    /// `walk_up(C)` reaches the bound; an unhydrated or unsatisfied bound
+    /// declines (no edge), never a coincidental same-name bind. The two-pass
+    /// split is inert when off: pass 2 runs only under this gate, so a language
+    /// without it produces byte-identical edges.
+    pub blanket_impl_resolution: bool,
     /// Ambient npm/test-framework/core-lib globals probed for a bare
     /// single-identifier call/typeref/instantiation that no import binds.
     /// `Off` (the default) leaves the probe inert. `On` checks the synthetic
@@ -724,6 +751,20 @@ pub struct NormSpec {
 // Type system axes
 // ---------------------------------------------------------------------------
 
+/// Names the trait + associated type a single-inner Deref wrapper uses, so the
+/// chain walker can peel a user `impl Deref for C { type Target = Inner }`
+/// receiver to its inner type. `trait_name` is the wrapper trait whose
+/// supertype edge proves `C` implements it (Rust `"Deref"`); `target_assoc`
+/// is the associated-type name whose indexed binding (`field_type["C.Target"]`)
+/// names the inner type (Rust `"Target"`). Both are language facts, not member
+/// tables — the inner type itself comes from the binding, never from a name
+/// lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DerefWrapper {
+    pub trait_name: &'static str,
+    pub target_assoc: &'static str,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupertypeDiscovery {
     /// Inherits / Implements refs only. Most static-OO languages.
@@ -969,6 +1010,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
@@ -996,6 +1038,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,
+    blanket_impl_resolution: false,
     ambient_globals: AmbientGlobals::Off,
     namespaceless_global_type_lookup: false,
     explicit_member_import: false,

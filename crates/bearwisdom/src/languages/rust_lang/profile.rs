@@ -8,8 +8,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
-    SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DerefWrapper, DispatchAxis, KindTable,
+    LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -136,6 +136,11 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // absent too — they expose a GUARD's members via `.borrow()`/`.lock()`, not
     // the inner's, so peeling them to the inner would be unsound.
     single_inner_wrappers: &["Box", "Rc", "Arc", "Pin", "Cow"],
+    // A user `impl Deref for C { type Target = Inner }` exposes Inner's members
+    // on a `C` receiver. The peel reads the inner from the already-indexed
+    // `field_type["C.Target"]` binding, gated on a real `C → Deref` supertype
+    // edge so a bare name match never fires it.
+    deref_wrapper: Some(DerefWrapper { trait_name: "Deref", target_assoc: "Target" }),
     iterator_method: Some("next"),
     primitive_mapping: RUST_PRIMITIVES,
     kind_compatible_table: RUST_KIND_TABLE,
@@ -180,6 +185,11 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // receiver's impl binding (`type Output = Concrete`, already in field_type as
     // `C.Output`) so a chain types past an associated-type-returning method.
     associated_type_projection: true,
+    // `impl<U: Bound> Trait for U {}` — the blanket trait's default methods
+    // become reachable from every concrete C whose supertype graph reaches
+    // Bound. A second `build_explicit` pass adds the `C → Trait` edge per
+    // bound-satisfying C; an unsatisfied or unhydrated bound declines.
+    blanket_impl_resolution: true,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,

@@ -17,6 +17,7 @@ pub const VUE_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
@@ -50,6 +51,7 @@ pub const VUE_PROFILE: LanguageProfile = LanguageProfile {
     overload_pick_all: true,
     argument_dependent_lookup: false,
     associated_type_projection: false,
+    blanket_impl_resolution: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
         npm_confidence: 0.85,
         lib_confidence: 0.85,

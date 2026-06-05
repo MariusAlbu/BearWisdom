@@ -136,6 +136,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // unwrap on a single method name — let the chain walker peel via
     // Type::Apply<Array,[T]> args[0] explicitly when needed.
     single_inner_wrappers: &[],
+    deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: TS_PRIMITIVES,
     kind_compatible_table: TS_KIND_TABLE,
@@ -186,6 +187,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     overload_pick_all: true,
     argument_dependent_lookup: false,
     associated_type_projection: false,
+    blanket_impl_resolution: false,
     // jest/vitest globals, jQuery `$`, DOM constructors, core-lib utility types.
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
         npm_confidence: 0.85,

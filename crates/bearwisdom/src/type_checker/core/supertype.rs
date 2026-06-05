@@ -279,17 +279,26 @@ impl SupertypeGraph {
         let mut graph = SupertypeGraph::new();
         match profile.supertype_discovery {
             SupertypeDiscovery::Explicit => {
-                build_explicit(&mut graph, parsed, arena, lookup);
+                build_explicit(&mut graph, parsed, arena, lookup, profile.blanket_impl_resolution);
             }
             SupertypeDiscovery::Structural => {
                 build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping);
             }
             SupertypeDiscovery::Both => {
-                build_explicit(&mut graph, parsed, arena, lookup);
+                build_explicit(&mut graph, parsed, arena, lookup, profile.blanket_impl_resolution);
                 build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping);
             }
         }
         graph
+    }
+
+    /// Nodes that have at least one direct parent edge — the set of types the
+    /// graph knows as a subtype of something. The blanket-impl pass uses this as
+    /// its candidate space: a concrete C that satisfies a nominal `impl Bound
+    /// for C` necessarily carries a `C → Bound` edge, so any bound-satisfying
+    /// candidate is already a child key here. Bounded by the graph's node count.
+    fn child_keys(&self) -> impl Iterator<Item = TypeId> + '_ {
+        self.edges.keys().copied()
     }
 }
 
@@ -315,12 +324,32 @@ impl<'a> Iterator for SupertypeWalk<'a> {
     }
 }
 
+/// A deferred blanket-impl container collected in pass 1: the trait it
+/// implements (`Trait` in `impl<U: Bound> Trait for U {}`) and the set of bound
+/// trait names every candidate must satisfy. Drained in pass 2 against the
+/// fully-built concrete graph.
+struct BlanketImpl {
+    /// The `Implements` edge's target — the trait whose default members the
+    /// satisfying candidates should gain.
+    trait_name: String,
+    /// The bound traits the impl param is constrained by (`Bound` in `<U:
+    /// Bound>`, every conjunct of `<U: A + B>`). A candidate must reach ALL of
+    /// them. Empty ⇒ an unconditional `impl<T> Trait for T` — declined (see the
+    /// pass-2 skip), never populated.
+    bound_names: Vec<String>,
+}
+
 fn build_explicit(
     graph: &mut SupertypeGraph,
     parsed: &[ParsedFile],
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
+    blanket_impl_resolution: bool,
 ) {
+    // Pass 1: every non-blanket inheritance edge, exactly as the single-pass
+    // builder did. A blanket-impl container is deferred (when the gate is on) so
+    // its candidate edges can be added against the complete concrete graph.
+    let mut blankets: Vec<BlanketImpl> = Vec::new();
     for pf in parsed {
         // EXT-3: external files ARE included. A project class extending an
         // external base (`class UserRepo extends Repository<User>`) needs the
@@ -337,6 +366,24 @@ fn build_explicit(
             let Some(source_sym) = pf.symbols.get(r.source_symbol_index) else {
                 continue;
             };
+            // A blanket impl `impl<U: Bound> Trait for U {}` — the source is an
+            // impl-container whose self-TypeRef names its OWN generic param `U`.
+            // Rerouting that self-TypeRef would resolve `U` to no concrete type
+            // (a dead edge), so when the gate is on, defer this container: pass 2
+            // adds a `C → Trait` edge for each concrete C that satisfies Bound.
+            // Only an `Implements` ref carries the trait; an `Inherits` ref on
+            // the same blanket container is not the trait edge and is skipped.
+            if blanket_impl_resolution && r.kind == EdgeKind::Implements {
+                if let Some(bound_names) =
+                    blanket_bound_names(source_sym, r.source_symbol_index, &pf.refs, arena, lookup)
+                {
+                    blankets.push(BlanketImpl {
+                        trait_name: r.target_name.clone(),
+                        bound_names,
+                    });
+                    continue;
+                }
+            }
             // An inheritance edge whose source symbol is an impl-container
             // (`impl Trait for C` emits a Namespace symbol, not C itself) must
             // attach to the IMPLEMENTING type C, not the container — otherwise
@@ -406,6 +453,172 @@ fn build_explicit(
             }
         }
     }
+
+    // Pass 2: drain the deferred blanket impls against the now-complete concrete
+    // graph. Runs only under the gate (the collection is empty otherwise), so a
+    // language without blanket-impl resolution is byte-identical to pass 1.
+    drain_blankets(graph, &blankets, arena, lookup);
+}
+
+/// A blanket impl with its bound/trait names resolved to graph node ids — the
+/// graph-independent part of `drain_blankets`, computed once and reused across
+/// every fixpoint round. An empty bound set is dropped here (an unconditional
+/// `impl<T> Trait for T` is a deliberately-deferred fan-out, never populated).
+struct ResolvedBlanket {
+    /// The bound traits a candidate must ALL reach (`Bound` ids, the conjunction
+    /// of `<U: A + B>`). Each is the canonical node a nominal `impl Bound for C`
+    /// edge points at, so `walk_up` reachability lines up.
+    bound_ids: Vec<TypeId>,
+    /// The trait whose default members satisfying candidates gain.
+    trait_id: TypeId,
+}
+
+/// Add a `C → Trait` edge for every candidate concrete C that provably
+/// satisfies a blanket impl's bounds. C satisfies the bound set when its
+/// supertype graph (`walk_up`) reaches EVERY resolved bound trait — a real
+/// nominal `impl Bound for C` edge populated in pass 1. An unhydrated or
+/// unsatisfied bound yields no reachability, so no edge forms (widening-only,
+/// never a coincidental same-name bind).
+///
+/// Layered blanket impls compose: `impl<U: Display> Greet for U` +
+/// `impl<V: Greet> Loud for V` give `Loud` to every Display-bound type, but
+/// `Loud`'s `Greet` bound is itself supplied by the first blanket's edge. A
+/// single ordered pass would resolve this only when the provider blanket happens
+/// to precede the dependent one in collection order; processed the other way the
+/// dependent blanket runs while `C → Greet` does not yet exist and is never
+/// revisited. The drain therefore runs to a FIXPOINT: re-snapshot the candidate
+/// set and re-evaluate reachability each round, halting when a full round adds no
+/// edge. Each round resolves at least one further dependency layer, so the loop
+/// terminates in at most `blankets.len()` rounds (edges are only ever added, over
+/// a finite candidate × blanket space). Soundness is unchanged per round — an
+/// edge still forms only through real reached bounds, so transitivity widens
+/// strictly through structurally-formed edges, never a coincidental bind.
+fn drain_blankets(
+    graph: &mut SupertypeGraph,
+    blankets: &[BlanketImpl],
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+) {
+    if blankets.is_empty() {
+        return;
+    }
+    // Resolve bound/trait names to node ids once — name→id is graph-independent,
+    // so it never changes across rounds. Empty-bound impls are dropped here.
+    let resolved: Vec<ResolvedBlanket> = blankets
+        .iter()
+        .filter(|b| !b.bound_names.is_empty())
+        .map(|blanket| {
+            let bound_ids: Vec<TypeId> = blanket
+                .bound_names
+                .iter()
+                .map(|name| {
+                    let qname = resolve_target_qname(
+                        name,
+                        lookup,
+                        KindPreference::Supertype(EdgeKind::Implements),
+                    );
+                    arena.class(qname.as_str())
+                })
+                .collect();
+            let trait_qname = resolve_target_qname(
+                &blanket.trait_name,
+                lookup,
+                KindPreference::Supertype(EdgeKind::Implements),
+            );
+            ResolvedBlanket {
+                bound_ids,
+                trait_id: arena.class(trait_qname.as_str()),
+            }
+        })
+        .collect();
+    if resolved.is_empty() {
+        return;
+    }
+
+    // At most one new dependency layer resolves per round; cap the fixpoint at
+    // the blanket count so a pathological cycle can't loop unbounded.
+    for _ in 0..resolved.len() {
+        // Re-snapshot each round — an edge added last round can make a node a
+        // child key (a candidate) and grows the edge set `walk_up` reads.
+        let candidates: Vec<TypeId> = graph.child_keys().collect();
+        let mut added = false;
+        for blanket in &resolved {
+            for &candidate in &candidates {
+                // Don't attach a trait to itself or to its own bound traits, and
+                // skip a candidate that already carries the edge (idempotent
+                // add, but the explicit check keeps the `added` flag honest).
+                if candidate == blanket.trait_id
+                    || blanket.bound_ids.contains(&candidate)
+                    || graph.parents_of(candidate).contains(&blanket.trait_id)
+                {
+                    continue;
+                }
+                let reached: FxHashSet<TypeId> = graph.walk_up(candidate).collect();
+                if blanket.bound_ids.iter().all(|b| reached.contains(b)) {
+                    graph.add_edge(candidate, blanket.trait_id);
+                    added = true;
+                }
+            }
+        }
+        if !added {
+            break;
+        }
+    }
+}
+
+/// The bound trait names of a blanket impl `impl<U: Bound> Trait for U {}`, or
+/// `None` when `sym` is not a blanket impl-container.
+///
+/// A blanket impl is structurally an impl-container (a `Namespace` source on an
+/// inheritance edge) whose self-`TypeRef` names one of the container's OWN
+/// declared generic params — `impl<U: …> … for U`, where the implementing type
+/// IS the param `U`, not a concrete type. A normal `impl Trait for Concrete` has
+/// a self-TypeRef target that is a concrete type name, never in the impl's param
+/// list, so it returns `None` and takes the existing reroute path unchanged.
+///
+/// The bounds are the container's sibling `TypeRef`s (same source symbol) MINUS
+/// the self-TypeRef (the one naming the param). Both inline `<U: Bound>` and
+/// `where U: Bound` forms emit these sibling TypeRefs, so both are captured.
+/// `?Sized` emits no TypeRef (it widens, not restricts) and is correctly absent.
+fn blanket_bound_names(
+    sym: &ExtractedSymbol,
+    source_index: usize,
+    refs: &[ExtractedRef],
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+) -> Option<Vec<String>> {
+    if sym.kind != SymbolKind::Namespace {
+        return None;
+    }
+    // The container's declared generic params (`["U"]` from the parsed
+    // `impl<U: Bound> U` signature). A non-generic impl has none → not blanket.
+    let params = lookup.generic_params(&sym.qualified_name)?;
+    if params.is_empty() {
+        return None;
+    }
+    // The self-TypeRef names the implementing type — for a blanket impl its base
+    // IS one of the container's own params. Identify it independent of emission
+    // order so a bound TypeRef emitted before the self-TypeRef can't be mistaken
+    // for it.
+    let self_ref = refs.iter().find(|r| {
+        matches!(r.kind, EdgeKind::TypeRef)
+            && r.source_symbol_index == source_index
+            && params.contains(&type_base_qname(&r.target_name, arena))
+    })?;
+    // Every OTHER sibling TypeRef is a bound on the param. The self-TypeRef is
+    // matched by-identity so a second TypeRef that coincidentally shares the
+    // param's surface form (a bound literally named `U`) is not also dropped.
+    let bounds: Vec<String> = refs
+        .iter()
+        .filter(|r| {
+            matches!(r.kind, EdgeKind::TypeRef)
+                && r.source_symbol_index == source_index
+                && !std::ptr::eq(*r, self_ref)
+        })
+        .map(|r| type_base_qname(&r.target_name, arena))
+        .filter(|b| !b.is_empty())
+        .collect();
+    Some(bounds)
 }
 
 /// The C3 merge: repeatedly take the head of the first sequence that does NOT

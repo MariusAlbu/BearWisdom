@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 struct TypeLookup {
     types: rustc_hash::FxHashMap<String, Vec<SymbolInfo>>,
+    generic_params: rustc_hash::FxHashMap<String, Vec<String>>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -26,17 +27,25 @@ impl TypeLookup {
     fn new() -> Self {
         Self {
             types: Default::default(),
+            generic_params: Default::default(),
             empty: Vec::new(),
             empty_reexports: Vec::new(),
         }
     }
 
     fn with_type(mut self, name: &str, qname: &str) -> Self {
+        self.with_type_kind(name, qname, "class")
+    }
+
+    /// Register a type symbol under a chosen kind so the supertype builder's
+    /// kind-preference tie-break (`KindPreference::matches`) can distinguish a
+    /// trait/interface parent from a concrete implementing type.
+    fn with_type_kind(mut self, name: &str, qname: &str, kind: &str) -> Self {
         let info = SymbolInfo {
             id: 1,
             name: name.to_string(),
             qualified_name: qname.to_string(),
-            kind: "class".to_string(),
+            kind: kind.to_string(),
             visibility: None,
             file_path: Arc::from("x.rs"),
             scope_path: None,
@@ -44,6 +53,18 @@ impl TypeLookup {
             signature: None,
         };
         self.types.entry(name.to_string()).or_default().push(info);
+        self
+    }
+
+    /// Seed the declared generic params of a symbol (keyed by name or qname),
+    /// mirroring the build-time `generic_params` map the impl-container parses
+    /// from its `impl<U: Bound> U` signature. The blanket-impl discriminator
+    /// reads this to decide a self-TypeRef target IS the impl's own param.
+    fn with_generic_params(mut self, type_name: &str, params: &[&str]) -> Self {
+        self.generic_params.insert(
+            type_name.to_string(),
+            params.iter().map(|p| p.to_string()).collect(),
+        );
         self
     }
 }
@@ -79,8 +100,8 @@ impl SymbolLookup for TypeLookup {
     fn field_type_args(&self, _: &str) -> Option<&[String]> {
         None
     }
-    fn generic_params(&self, _: &str) -> Option<&[String]> {
-        None
+    fn generic_params(&self, type_name: &str) -> Option<&[String]> {
+        self.generic_params.get(type_name).map(|v| v.as_slice())
     }
     fn alias_target(&self, _: &str) -> Option<&AliasTarget> {
         None
@@ -1046,4 +1067,305 @@ fn build_both_combines_explicit_and_structural() {
     let admin_id = arena.class("myapp.Admin");
     assert!(graph.parents_of(admin_id).contains(&writer));
     assert!(graph.parents_of(file).contains(&writer));
+}
+
+// ---------------------------------------------------------------------------
+// RUST-1-blanket: `impl<U: Bound> Trait for U {}` — Trait's default methods
+// become reachable from every concrete C that provably satisfies Bound.
+//
+// The container is a Namespace whose self-TypeRef target IS the impl's own
+// generic param (`U`), distinguishing it from a normal `impl Trait for C`
+// where the self-TypeRef target is a concrete type. The bound (`Bound`) is a
+// sibling TypeRef. An edge `C → Trait` forms only when `walk_up(C)` reaches
+// the resolved Bound — a real nominal `impl Bound for C` edge must exist.
+// ---------------------------------------------------------------------------
+
+/// A blanket-impl container `impl<U: Bound> Trait for U {}`: a Namespace whose
+/// `<impl U@N>` qname carries the impl param `U` (so its `generic_params` is
+/// `["U"]`) and whose self-TypeRef names that same param `U`. Mirrors
+/// `extract_impl` for the blanket shape, where the implementing-type node text
+/// is the impl's own generic param rather than a concrete type.
+fn blanket_impl_container_sym(param: &str, line: u32, bound: &str) -> ExtractedSymbol {
+    let short = format!("<impl {param}@{line}>");
+    ExtractedSymbol {
+        name: short.clone(),
+        qualified_name: short,
+        kind: SymbolKind::Namespace,
+        visibility: Some(Visibility::Public),
+        start_line: line,
+        end_line: line,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: Some(format!("impl<{param}: {bound}> {param}")),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+/// The fixture shared by the blanket-impl tests: `trait Greet`, `trait Display`,
+/// a nominal `impl Display for Dog` (so the concrete graph carries Dog→Display),
+/// and a blanket container `impl<U: Display> Greet for U {}`. The concrete type
+/// whose conformance to Display is in question is left to the caller.
+fn blanket_fixture_parsed() -> Vec<ParsedFile> {
+    vec![parsed_with_refs(
+        "x.rs",
+        vec![
+            // index 0: nominal `impl Display for Dog` container.
+            impl_container_sym("Dog", 1),
+            // index 1: blanket `impl<U: Display> Greet for U {}` container.
+            blanket_impl_container_sym("U", 5, "Display"),
+        ],
+        vec![
+            // `impl Display for Dog` — self-TypeRef Dog, Implements Display.
+            impl_typeref(0, "Dog"),
+            implements_ref(0, "Display"),
+            // blanket — self-TypeRef U (the impl param), Implements Greet,
+            // bound TypeRef Display.
+            impl_typeref(1, "U"),
+            implements_ref(1, "Greet"),
+            impl_typeref(1, "Display"),
+        ],
+    )]
+}
+
+fn rust_blanket_profile() -> LanguageProfile {
+    LanguageProfile {
+        blanket_impl_resolution: true,
+        ..crate::type_checker::profile::language_profile::DEFAULT_PROFILE
+    }
+}
+
+#[test]
+fn blanket_impl_binds_trait_default_when_bound_satisfied() {
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type_kind("Dog", "Dog", "struct")
+        .with_type_kind("Greet", "Greet", "trait")
+        .with_type_kind("Display", "Display", "trait")
+        .with_generic_params("<impl U@5>", &["U"]);
+
+    let parsed = blanket_fixture_parsed();
+
+    // `hello` is the trait Greet's default method body (filed under Greet).
+    let mut members = MembersIndex::new();
+    let greet = arena.class("Greet");
+    members.add_direct(greet, method(99, "hello", "Greet"));
+
+    let symbol_types = SymbolTypeMap::new();
+    let profile = rust_blanket_profile();
+    let graph =
+        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    assert!(
+        graph.parents_of(dog).contains(&greet),
+        "Dog impls Display so the blanket impl attaches Dog -> Greet"
+    );
+
+    let hit = members
+        .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &profile)
+        .expect("dog.hello() resolves to the blanket trait default method");
+    assert_eq!(hit.id, 99, "resolved symbol is Greet's default `hello`");
+}
+
+#[test]
+fn blanket_impl_declines_when_bound_not_satisfied() {
+    // Soundness: a struct `Cat` with NO `impl Display for Cat` must not gain
+    // Greet from the blanket impl — bound-satisfaction is the gate, a same-name
+    // coincidence can't fire because reachability requires the real Cat→Display
+    // edge.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type_kind("Dog", "Dog", "struct")
+        .with_type_kind("Cat", "Cat", "struct")
+        .with_type_kind("Greet", "Greet", "trait")
+        .with_type_kind("Display", "Display", "trait")
+        .with_generic_params("<impl U@5>", &["U"]);
+
+    // Cat appears in the graph via an unrelated nominal edge (Cat: Animal) so it
+    // IS a candidate node, but it never reaches Display.
+    let mut parsed = blanket_fixture_parsed();
+    parsed[0].symbols.push(class_sym("Cat", "Cat"));
+    let cat_idx = parsed[0].symbols.len() - 1;
+    parsed[0].refs.push(inherits_ref(cat_idx, "Animal"));
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let profile = rust_blanket_profile();
+    let graph =
+        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let cat = arena.class("Cat");
+    let greet = arena.class("Greet");
+    assert!(
+        !graph.parents_of(cat).contains(&greet),
+        "Cat does not impl Display, so the blanket impl must NOT attach Cat -> Greet"
+    );
+    // And Dog (which does impl Display) still gets the edge — proves the decline
+    // is bound-specific, not a blanket no-op.
+    let dog = arena.class("Dog");
+    assert!(
+        graph.parents_of(dog).contains(&greet),
+        "Dog impls Display so it still gains Greet"
+    );
+}
+
+#[test]
+fn blanket_impl_inert_under_default_profile() {
+    // Gate-off: with `blanket_impl_resolution = false` (DEFAULT_PROFILE) the
+    // two-pass split is inert — no Dog→Greet edge forms. Proves existing
+    // languages are byte-identical: the blanket container's self-TypeRef `U`
+    // reroutes to `types_by_name("U")` (no concrete type) → no edge, exactly the
+    // pre-change behavior.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type_kind("Dog", "Dog", "struct")
+        .with_type_kind("Greet", "Greet", "trait")
+        .with_type_kind("Display", "Display", "trait")
+        .with_generic_params("<impl U@5>", &["U"]);
+
+    let parsed = blanket_fixture_parsed();
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph =
+        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    let greet = arena.class("Greet");
+    assert!(
+        !graph.parents_of(dog).contains(&greet),
+        "without the opt-in bool, no blanket Dog -> Greet edge forms"
+    );
+}
+
+/// Two layered blanket impls plus nominal `impl Display for Dog`. Dog satisfies
+/// `Greet`'s bound (Display) DIRECTLY, but satisfies `Loud`'s bound (Greet) only
+/// THROUGH the first blanket impl's `Dog → Greet` edge. The DEPENDENT blanket
+/// (`impl<V: Greet> Loud for V`) is collected BEFORE its provider
+/// (`impl<U: Display> Greet for U`) so a single ordered drain pass processes
+/// `Loud` while `Dog → Greet` does not yet exist and never revisits it. The
+/// fixpoint drain re-runs until no edge is added, so round 2 sees the
+/// `Dog → Greet` edge round 1 produced and attaches `Dog → Loud`.
+fn blanket_chain_fixture_parsed() -> Vec<ParsedFile> {
+    vec![parsed_with_refs(
+        "x.rs",
+        vec![
+            // index 0: nominal `impl Display for Dog`.
+            impl_container_sym("Dog", 1),
+            // index 1: dependent blanket `impl<V: Greet> Loud for V {}` —
+            // collected first, before its provider exists in the graph.
+            blanket_impl_container_sym("V", 5, "Greet"),
+            // index 2: provider blanket `impl<U: Display> Greet for U {}`.
+            blanket_impl_container_sym("U", 7, "Display"),
+        ],
+        vec![
+            // Dog impls Display.
+            impl_typeref(0, "Dog"),
+            implements_ref(0, "Display"),
+            // dependent: self-TypeRef V, Implements Loud, bound Greet.
+            impl_typeref(1, "V"),
+            implements_ref(1, "Loud"),
+            impl_typeref(1, "Greet"),
+            // provider: self-TypeRef U, Implements Greet, bound Display.
+            impl_typeref(2, "U"),
+            implements_ref(2, "Greet"),
+            impl_typeref(2, "Display"),
+        ],
+    )]
+}
+
+#[test]
+fn blanket_impl_chain_resolves_transitively_to_fixpoint() {
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type_kind("Dog", "Dog", "struct")
+        .with_type_kind("Greet", "Greet", "trait")
+        .with_type_kind("Loud", "Loud", "trait")
+        .with_type_kind("Display", "Display", "trait")
+        .with_generic_params("<impl V@5>", &["V"])
+        .with_generic_params("<impl U@7>", &["U"]);
+
+    let parsed = blanket_chain_fixture_parsed();
+
+    // `shout` is the trait Loud's default method body (filed under Loud); Dog
+    // reaches Loud only through the chained Display → Greet → Loud blanket edges.
+    let mut members = MembersIndex::new();
+    let loud = arena.class("Loud");
+    members.add_direct(loud, method(77, "shout", "Loud"));
+
+    let symbol_types = SymbolTypeMap::new();
+    let profile = rust_blanket_profile();
+    let graph =
+        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    let greet = arena.class("Greet");
+    assert!(
+        graph.parents_of(dog).contains(&greet),
+        "round 1: Dog impls Display so the first blanket attaches Dog -> Greet"
+    );
+    assert!(
+        graph.parents_of(dog).contains(&loud),
+        "round 2: the Dog -> Greet edge satisfies the second blanket's Greet bound, attaching Dog -> Loud"
+    );
+
+    let hit = members
+        .lookup(dog, "shout", EdgeKind::Calls, &graph, &arena, &profile)
+        .expect("dog.shout() resolves to the transitively-attached Loud default");
+    assert_eq!(hit.id, 77, "resolved symbol is Loud's default `shout`");
+}
+
+#[test]
+fn blanket_impl_chain_declines_when_root_bound_unsatisfied() {
+    // Soundness: a struct `Cat` that does NOT impl Display gains neither Greet
+    // (first blanket's bound unmet) NOR Loud (its bound Greet never forms). The
+    // fixpoint widens reachability ONLY through real edges — an unmet root bound
+    // propagates a decline through the whole chain, no coincidental transitive
+    // bind.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type_kind("Dog", "Dog", "struct")
+        .with_type_kind("Cat", "Cat", "struct")
+        .with_type_kind("Greet", "Greet", "trait")
+        .with_type_kind("Loud", "Loud", "trait")
+        .with_type_kind("Display", "Display", "trait")
+        .with_generic_params("<impl V@5>", &["V"])
+        .with_generic_params("<impl U@7>", &["U"]);
+
+    // Cat is a graph node (via Cat: Animal) but never reaches Display.
+    let mut parsed = blanket_chain_fixture_parsed();
+    parsed[0].symbols.push(class_sym("Cat", "Cat"));
+    let cat_idx = parsed[0].symbols.len() - 1;
+    parsed[0].refs.push(inherits_ref(cat_idx, "Animal"));
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let profile = rust_blanket_profile();
+    let graph =
+        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let cat = arena.class("Cat");
+    let greet = arena.class("Greet");
+    let loud = arena.class("Loud");
+    assert!(
+        !graph.parents_of(cat).contains(&greet),
+        "Cat does not impl Display, so the first blanket must not attach Cat -> Greet"
+    );
+    assert!(
+        !graph.parents_of(cat).contains(&loud),
+        "Cat never reaches Greet, so the second blanket must not attach Cat -> Loud"
+    );
+    // Dog (impls Display) still gains BOTH edges — proves the decline is
+    // bound-specific, not a fixpoint no-op.
+    let dog = arena.class("Dog");
+    assert!(graph.parents_of(dog).contains(&greet));
+    assert!(graph.parents_of(dog).contains(&loud));
 }

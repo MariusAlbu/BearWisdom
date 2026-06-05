@@ -45,6 +45,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: C_PRIMITIVES,
     kind_compatible_table: C_KIND_TABLE,
@@ -84,6 +85,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     // function `swap` declared in the namespace of an argument's type.
     argument_dependent_lookup: true,
     associated_type_projection: false,
+    blanket_impl_resolution: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
