@@ -62,6 +62,7 @@ pub const VBNET_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &["Task"],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: VBNET_PRIMITIVES,
     kind_compatible_table: VBNET_KIND_TABLE,

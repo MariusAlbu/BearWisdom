@@ -58,6 +58,7 @@ pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &["Async", "Task"],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: FSHARP_PRIMITIVES,
     kind_compatible_table: FSHARP_KIND_TABLE,

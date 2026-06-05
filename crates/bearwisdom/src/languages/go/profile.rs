@@ -79,6 +79,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     container_accessors: &[],
     // Range loops use the type-side `range` keyword, not a method call.
     // Engine iteration peeling stays off.
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: GO_PRIMITIVES,
     kind_compatible_table: GO_KIND_TABLE,

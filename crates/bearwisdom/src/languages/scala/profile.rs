@@ -73,6 +73,7 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &["Future", "IO", "Task"],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: Some("iterator"),
     primitive_mapping: SCALA_PRIMITIVES,
     kind_compatible_table: SCALA_KIND_TABLE,

@@ -63,6 +63,7 @@ pub const HASKELL_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &["IO"],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: HASKELL_PRIMITIVES,
     kind_compatible_table: HASKELL_KIND_TABLE,

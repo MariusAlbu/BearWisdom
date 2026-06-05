@@ -173,6 +173,7 @@ fn unwrap_iterator_peels_iterator_wrapper_when_axis_set() {
     let iter_user = arena.intern(Type::Iterator(user));
 
     let profile = LanguageProfile {
+        single_inner_wrappers: &[],
         iterator_method: Some("next"),
         ..DEFAULT_PROFILE
     };
@@ -191,6 +192,7 @@ fn unwrap_iterator_peels_generic_apply_first_arg() {
     });
 
     let profile = LanguageProfile {
+        single_inner_wrappers: &[],
         iterator_method: Some("next"),
         ..DEFAULT_PROFILE
     };
@@ -211,6 +213,7 @@ fn unwrap_iterator_is_identity_on_non_iterable_class() {
     let mut arena = TypeArena::new();
     let user = arena.class("User");
     let profile = LanguageProfile {
+        single_inner_wrappers: &[],
         iterator_method: Some("next"),
         ..DEFAULT_PROFILE
     };

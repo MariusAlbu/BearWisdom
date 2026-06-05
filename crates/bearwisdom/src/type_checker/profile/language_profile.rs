@@ -49,6 +49,17 @@ pub struct LanguageProfile {
     /// lookups: with no entry they don't project, so a chain past one misses
     /// unless a real member of that name exists.
     pub container_accessors: &'static [(&'static str, ContainerShape, AccessorSlot)],
+    /// Single-inner smart-pointer type heads whose member set is the pointed-to
+    /// value's. The chain walker peels a `Type::Apply { base, args }` with one
+    /// arg whose `base` simple-name is listed here to `args[0]` at the chain
+    /// root, before member lookup — these wrappers `Deref` to their single
+    /// inner, so peeling the structural `args[0]` IS that one Deref hop and the
+    /// existing member walk then applies to the inner type. DATA, not a
+    /// method→type table: the peel is the structural `args[0]` projection and
+    /// the names only gate WHICH `Apply` is a single-inner wrapper. A real
+    /// container (`Vec`, `HashMap`) must be ABSENT so its accessors stay on the
+    /// container. `&[]` (the default) leaves every `Apply` receiver intact.
+    pub single_inner_wrappers: &'static [&'static str],
     pub iterator_method: Option<&'static str>,
     pub primitive_mapping: &'static [(&'static str, PrimKind)],
     pub kind_compatible_table: KindTable,
@@ -943,6 +954,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,

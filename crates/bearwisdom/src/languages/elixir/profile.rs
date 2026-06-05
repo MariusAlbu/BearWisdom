@@ -65,6 +65,7 @@ pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: ELIXIR_PRIMITIVES,
     kind_compatible_table: ELIXIR_KIND_TABLE,

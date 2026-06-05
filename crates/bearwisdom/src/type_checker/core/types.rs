@@ -222,6 +222,16 @@ impl TypeArena {
         if trimmed.is_empty() {
             return self.class(s);
         }
+        // Reference sigil: a LEADING `&`, optionally followed by a lifetime
+        // (`'a`) and `mut`, denotes a reference whose members are the
+        // referent's. A `&`-led string is never a valid class name in any
+        // language, so re-interning the referent is universally sound:
+        // `&C`→C, `&mut C`→C, `&'a C`→C, `&Box<C>`→Box<C>. Only byte 0 is
+        // treated as a sigil — an interior `&` (a TS `A & B` intersection)
+        // stays on the union/intersection fallback below.
+        if let Some(referent) = strip_reference_sigil(trimmed) {
+            return self.intern_type_str(referent);
+        }
         // Function type: a top-level `=>` (`() => User`, TS/JS, Scala `T => R`)
         // or `->` (Rust `Fn() -> T`, Kotlin/Swift `(T) -> R`) marks a callable.
         // Both arrows are 2 bytes, so the return is `trimmed[arrow + 2..]`. The
@@ -499,6 +509,34 @@ impl TypeArena {
     pub fn generic_param_count(&self) -> usize {
         self.inner.read().unwrap().generic_params.len()
     }
+}
+
+/// Strip a leading reference sigil from a type string, returning the trimmed
+/// referent when `s` begins with `&`. Consumes the `&`, then an optional
+/// lifetime (`'a`), then an optional `mut`, returning whatever type string
+/// follows. Returns `None` when `s` does not start with `&` so the caller
+/// leaves non-reference strings (including a TS `A & B` intersection, whose
+/// `&` is interior) untouched.
+fn strip_reference_sigil(s: &str) -> Option<&str> {
+    let rest = s.strip_prefix('&')?.trim_start();
+    // Optional lifetime: `'a`, `'static`, etc. Consumed up to the next
+    // whitespace so the type that follows is what binds.
+    let rest = if let Some(after_tick) = rest.strip_prefix('\'') {
+        match after_tick.find(char::is_whitespace) {
+            Some(ws) => after_tick[ws..].trim_start(),
+            // A bare `&'a` with no following type — nothing to intern.
+            None => "",
+        }
+    } else {
+        rest
+    };
+    // Optional `mut`, requiring a word boundary so a type named `mutate`
+    // isn't truncated.
+    let rest = match rest.strip_prefix("mut") {
+        Some(after) if after.starts_with(char::is_whitespace) => after.trim_start(),
+        _ => rest,
+    };
+    Some(rest)
 }
 
 /// Byte index of a top-level `=>` (function-type arrow) in `s`, or `None`.

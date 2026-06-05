@@ -20,6 +20,7 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,

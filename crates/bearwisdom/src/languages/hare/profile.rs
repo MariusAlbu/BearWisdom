@@ -34,6 +34,7 @@ pub const HARE_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: HARE_PRIMITIVES,
     kind_compatible_table: HARE_KIND_TABLE,

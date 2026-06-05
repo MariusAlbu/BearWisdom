@@ -151,6 +151,7 @@ fn array_destructure_peels_iterator_when_profile_allows() {
     let symbol_types = SymbolTypeMap::new();
 
     let profile = LanguageProfile {
+        single_inner_wrappers: &[],
         iterator_method: Some("next"),
         ..DEFAULT_PROFILE
     };
@@ -191,6 +192,7 @@ fn array_destructure_rest_at_tail_keeps_original_value_type() {
     let supertypes = SupertypeGraph::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = LanguageProfile {
+        single_inner_wrappers: &[],
         iterator_method: Some("next"),
         ..DEFAULT_PROFILE
     };
@@ -238,6 +240,7 @@ fn nested_object_in_array_destructures_correctly() {
     );
     let supertypes = SupertypeGraph::new();
     let profile = LanguageProfile {
+        single_inner_wrappers: &[],
         iterator_method: Some("next"),
         ..DEFAULT_PROFILE
     };

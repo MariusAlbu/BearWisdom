@@ -84,6 +84,7 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &["Task", "ValueTask"],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: Some("GetEnumerator"),
     primitive_mapping: CS_PRIMITIVES,
     kind_compatible_table: CS_KIND_TABLE,

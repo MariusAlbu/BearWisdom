@@ -206,7 +206,13 @@ impl RootResolver for DefaultRootResolver {
                             .flatten()
                     })
                 {
-                    return Some(arena.class(&type_name));
+                    // Intern structurally so a generic-application receiver
+                    // (`Box<C>`, `Repository<User>`) decomposes into
+                    // `Apply { base, args }` — `bind_apply_args` then composes
+                    // its args and `peel_receiver_wrappers` can strip a
+                    // single-inner wrapper. A plain name interns identically to
+                    // `arena.class`.
+                    return Some(arena.intern_type_str(&type_name));
                 }
                 // 3. Unique type symbol with this simple name.
                 let matches = lookup.types_by_name(&seg.name);
@@ -236,7 +242,12 @@ impl RootResolver for DefaultRootResolver {
                                 return Some(gid);
                             }
                         }
-                        return Some(arena.class(type_name));
+                        // A bare param name was caught above; a non-param
+                        // declared type interns structurally so a generic
+                        // application decomposes into `Apply` (a plain name is
+                        // unchanged) — feeding `bind_apply_args` and the
+                        // single-inner-wrapper peel.
+                        return Some(arena.intern_type_str(type_name));
                     }
                 }
                 // 5. Bare-specifier import binding. `import { vi } from 'vitest'`
@@ -421,6 +432,7 @@ impl<'a> ChainWalker<'a> {
             None => root.resolve(root_seg, ref_ctx, file_ctx, self.arena, self.lookup)?,
         };
         current_ty = self.expand_aliases(current_ty);
+        current_ty = self.peel_receiver_wrappers(current_ty);
         current_ty = self.narrow_union_by_discriminant(current_ty, root_seg);
 
         // Root-call form: `f().x` where the root `f` is a function-typed value.
@@ -1118,6 +1130,46 @@ impl<'a> ChainWalker<'a> {
                 }
                 _ => break,
             }
+        }
+        ty
+    }
+
+    /// Peel single-inner smart-pointer wrappers off the chain root so the
+    /// receiver types as the pointed-to value before member lookup. A
+    /// `Type::Apply { base, args }` with exactly one arg whose `base` is named
+    /// in `LanguageProfile::single_inner_wrappers` is replaced by `args[0]`,
+    /// looping until a non-wrapper head is reached (`&Box<C>` → strip the sigil
+    /// at intern time, then peel Box → C). These wrappers `Deref` to their
+    /// single inner, so projecting `args[0]` IS the one Deref hop the receiver
+    /// resolves through; the existing member + trait-default walk then applies
+    /// to the inner type unchanged.
+    ///
+    /// Allowlist-gated by the profile axis, never a blanket arity-1 peel: a
+    /// real container (`Vec<C>`, `HashMap<K,V>`) is deliberately absent, so
+    /// `vec.push()` stays on `Vec`. An empty axis (the default for every
+    /// non-Rust profile) is inert. Bounded at 8 hops to guard a malformed
+    /// self-referential wrapper.
+    fn peel_receiver_wrappers(&self, current_ty: TypeId) -> TypeId {
+        if self.profile.single_inner_wrappers.is_empty() {
+            return current_ty;
+        }
+        let mut ty = current_ty;
+        for _ in 0..8 {
+            let Type::Apply { base, args } = self.arena.get(ty) else {
+                break;
+            };
+            if args.len() != 1 {
+                break;
+            }
+            let head = match self.arena.get(base) {
+                Type::Class(q) => q,
+                _ => break,
+            };
+            let simple = head.rsplit(&['.', ':'][..]).next().unwrap_or(&head);
+            if !self.profile.single_inner_wrappers.contains(&simple) {
+                break;
+            }
+            ty = args[0];
         }
         ty
     }

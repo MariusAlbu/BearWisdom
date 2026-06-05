@@ -135,6 +135,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // expressed via the `[Symbol.iterator]` method; the engine doesn't
     // unwrap on a single method name — let the chain walker peel via
     // Type::Apply<Array,[T]> args[0] explicitly when needed.
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: TS_PRIMITIVES,
     kind_compatible_table: TS_KIND_TABLE,

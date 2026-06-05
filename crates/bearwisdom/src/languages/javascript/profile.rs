@@ -52,6 +52,7 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // element type for the projection to read — left empty pending inference
     // that types JS containers structurally.
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: JS_PRIMITIVES,
     kind_compatible_table: JS_KIND_TABLE,

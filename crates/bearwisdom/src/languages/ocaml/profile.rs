@@ -65,6 +65,7 @@ pub const OCAML_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &["Lwt.t", "Async.Deferred.t"],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: OCAML_PRIMITIVES,
     kind_compatible_table: OCAML_KIND_TABLE,

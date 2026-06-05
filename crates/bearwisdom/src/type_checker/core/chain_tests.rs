@@ -4412,3 +4412,204 @@ fn empty_container_accessors_axis_leaves_chain_unchanged() {
         "no container_accessors entry → `pop` does not project → chain misses"
     );
 }
+
+#[test]
+fn box_receiver_resolves_inner_type_method() {
+    // let b: Box<C> = ...; b.method() — the receiver types as the inner C
+    // (the single-inner wrapper peel), so `method` resolves on C's member,
+    // not on Box (which carries no `method`).
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    // Box<C> interns as Apply{base:Class("Box"), args:[Class("C")]}.
+    let box_ty = arena.intern_type_str("Box<C>");
+    let c_ty = arena.class("C");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 99);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        c_ty,
+        sym_info(7, "method", "C.method", "method", Some("C")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("b", SegmentKind::Identifier),
+            seg("method", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("method");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: box_ty })
+        .expect("method resolves on the peeled inner C");
+    assert_eq!(result.target_symbol_id, 7);
+}
+
+#[test]
+fn box_field_receiver_resolves_inner_via_default_root() {
+    // End-to-end through the REAL DefaultRootResolver scope-walk path: a
+    // receiver `b` whose enclosing-scope declared type is `Box<C>` must intern
+    // structurally as Apply{Box,[C]} so `peel_receiver_wrappers` fires and
+    // `b.method()` binds C's member. Driving `walk()` (not a FixedRoot that
+    // pre-interns the Apply) exercises the `field_type_name` root site, which
+    // interned a flat `Class("Box<C>")` the peel could never decompose.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 99);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        c_ty,
+        sym_info(7, "method", "C.method", "method", Some("C")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // `b` is a field/local of enclosing scope `Scope`, declared type `Box<C>`.
+    let lookup = EmptyLookup::new().with_field_type("Scope.b", "Box<C>");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("b", SegmentKind::Identifier),
+            seg("method", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("method");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: vec!["Scope".to_string()],
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("method resolves on the peeled inner C via DefaultRootResolver");
+    assert_eq!(result.target_symbol_id, 7);
+}
+
+#[test]
+fn vec_receiver_does_not_peel() {
+    // Vec is NOT in the single-inner wrapper list, so `Vec<C>.method` stays on
+    // Vec — proving the peel is allowlist-gated, not a blanket arity-1 Apply
+    // peel that would unsoundly skip every container.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let vec_ty = arena.intern_type_str("Vec<C>");
+    let vec_base = arena.class("Vec");
+    let c_ty = arena.class("C");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(vec_base, 88);
+
+    let mut members = MembersIndex::new();
+    // `method` lives on Vec; C has none. A peel to C would miss.
+    members.add_direct(
+        vec_base,
+        sym_info(11, "method", "Vec.method", "method", Some("Vec")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+    let _ = c_ty;
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("v", SegmentKind::Identifier),
+            seg("method", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("method");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: vec_ty })
+        .expect("method resolves on Vec — no peel");
+    assert_eq!(result.target_symbol_id, 11);
+}

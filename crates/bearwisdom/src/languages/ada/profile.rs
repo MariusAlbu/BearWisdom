@@ -40,6 +40,7 @@ pub const ADA_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: None,
     primitive_mapping: ADA_PRIMITIVES,
     kind_compatible_table: ADA_KIND_TABLE,

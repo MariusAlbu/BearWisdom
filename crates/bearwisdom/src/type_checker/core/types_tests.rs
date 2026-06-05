@@ -375,3 +375,28 @@ fn format_type_round_trips_through_arena() {
     let id2 = arena.intern_type_str(&formatted);
     assert_eq!(id, id2);
 }
+
+#[test]
+fn intern_type_str_strips_reference_sigil() {
+    let arena = TypeArena::new();
+    // A leading `&` (with an optional lifetime and `mut`) is a reference sigil,
+    // never part of a class name — strip it so the receiver interns as the
+    // referent, matching the type a `&C` / `&mut C` binding members against.
+    let c = arena.class("C");
+    assert_eq!(arena.intern_type_str("&C"), c);
+    assert_eq!(arena.intern_type_str("&mut C"), c);
+    assert_eq!(arena.intern_type_str("&'a C"), c);
+    assert_eq!(arena.intern_type_str("& 'a mut C"), c);
+    // A reference to a generic application strips the sigil and keeps the Apply.
+    assert_eq!(arena.intern_type_str("&Box<C>"), arena.intern_type_str("Box<C>"));
+}
+
+#[test]
+fn intern_type_str_leaves_interior_ampersand_alone() {
+    let arena = TypeArena::new();
+    // An interior `&` is a TS intersection operator, not a reference sigil —
+    // only a byte-0 `&` is stripped, so `A & B` still falls through to the
+    // class fallback unchanged.
+    let id = arena.intern_type_str("A & B");
+    assert!(matches!(arena.get(id), Type::Class(q) if q == "A & B"));
+}

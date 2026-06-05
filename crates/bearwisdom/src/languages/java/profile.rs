@@ -64,6 +64,7 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &["CompletableFuture", "Future"],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: Some("iterator"),
     primitive_mapping: JAVA_PRIMITIVES,
     kind_compatible_table: JAVA_KIND_TABLE,

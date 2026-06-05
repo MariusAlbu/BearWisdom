@@ -115,6 +115,12 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // Async fn returns impl Future<Output = T>; await unwraps to T.
     async_wrappers: &["Future", "Pin"],
     container_accessors: &[],
+    // Std smart pointers that `Deref` to their single inner: the receiver of a
+    // method call on `Box<C>` / `Rc<C>` / `Arc<C>` types as the inner `C`. The
+    // chain walker peels these structurally (`args[0]`) at the root, then the
+    // member + trait-default walk resolves against `C`. `Vec` / `HashMap` are
+    // deliberately absent — their accessors must stay on the container.
+    single_inner_wrappers: &["Box", "Rc", "Arc"],
     iterator_method: Some("next"),
     primitive_mapping: RUST_PRIMITIVES,
     kind_compatible_table: RUST_KIND_TABLE,

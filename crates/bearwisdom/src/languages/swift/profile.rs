@@ -79,6 +79,7 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     literal_narrowing: false,
     async_wrappers: &["Task", "AsyncSequence"],
     container_accessors: &[],
+    single_inner_wrappers: &[],
     iterator_method: Some("makeIterator"),
     primitive_mapping: SWIFT_PRIMITIVES,
     kind_compatible_table: SWIFT_KIND_TABLE,
