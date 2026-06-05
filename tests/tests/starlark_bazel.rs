@@ -2,7 +2,7 @@
 //!
 //! Verifies:
 //!   1. Starlark symbols and refs are extracted from .bzl and BUILD files.
-//!   2. ctx.* chains produce REAL resolved edges (strategy "starlark_ctx_chain")
+//!   2. ctx.* chains produce REAL resolved edges (strategy "engine_chain")
 //!      against the synthetic ctx API symbols — not opaque external classification.
 //!   3. repository_ctx.* chains are classified as external (predicate fallback for
 //!      refs the chain walker misses — e.g. uncommon members not in CTX_MEMBERS).
@@ -40,7 +40,7 @@ fn starlark_project_indexes_without_errors() {
 #[test]
 fn ctx_chain_refs_produce_real_resolved_edges() {
     // Round 2: ctx.* chains that appear in CTX_MEMBERS are resolved to real
-    // internal edges via strategy "starlark_ctx_chain", NOT opaque external refs.
+    // internal edges via the generic chain walker, NOT opaque external refs.
     let project = TestProject::starlark_bazel_project();
     let mut db = TestProject::in_memory_db();
 
@@ -59,17 +59,19 @@ fn ctx_chain_refs_produce_real_resolved_edges() {
         "ctx.* refs must never be unresolved — found {ctx_unresolved}"
     );
 
-    // Known ctx.* members in CTX_MEMBERS resolve via the chain walker → edges table.
+    // Known ctx.* members resolve via the generic chain walker → edges table.
     let ctx_chain_edges: i64 = db
         .query_row(
-            "SELECT COUNT(*) FROM edges WHERE strategy = 'starlark_ctx_chain'",
+            "SELECT COUNT(*) FROM edges e \
+             JOIN symbols t ON t.id = e.target_id \
+             WHERE t.qualified_name LIKE 'ctx.%' AND e.strategy = 'engine_chain'",
             [],
             |r| r.get(0),
         )
         .unwrap_or(0);
     assert!(
         ctx_chain_edges > 0,
-        "expected ctx.* chain-walker edges in edges table (strategy starlark_ctx_chain), got 0"
+        "expected ctx.* chain-walker edges in edges table (strategy engine_chain), got 0"
     );
 }
 
@@ -175,8 +177,8 @@ fn synth_ctx_api_symbols_in_database() {
     assert_eq!(label_name, 1, "ctx.label.name must be in symbol table");
 }
 
-/// Round 2 test: ctx.actions.run_shell resolves to the synthetic symbol via
-/// the chain walker, producing a real edge rather than external classification.
+/// ctx.actions.run_shell resolves to the synthetic symbol via the generic
+/// chain walker, producing a real edge rather than external classification.
 #[test]
 fn ctx_actions_run_shell_resolves_to_synthetic_symbol() {
     let project = TestProject::starlark_bazel_project();
@@ -192,7 +194,7 @@ fn ctx_actions_run_shell_resolves_to_synthetic_symbol() {
             SELECT COUNT(*) FROM edges e
             JOIN symbols t ON t.id = e.target_id
             WHERE t.qualified_name = 'ctx.actions.run_shell'
-              AND e.strategy = 'starlark_ctx_chain'
+              AND e.strategy = 'engine_chain'
             "#,
             [],
             |r| r.get(0),
@@ -200,12 +202,12 @@ fn ctx_actions_run_shell_resolves_to_synthetic_symbol() {
         .unwrap_or(0);
     assert!(
         run_shell_edges > 0,
-        "expected at least one edge targeting ctx.actions.run_shell via starlark_ctx_chain, got 0"
+        "expected at least one edge targeting ctx.actions.run_shell via engine_chain, got 0"
     );
 }
 
-/// Round 2 test: ctx.actions.declare_file (3-level chain) resolves to its
-/// synthetic symbol via the chain walker.
+/// ctx.actions.declare_file (3-level chain) resolves to its synthetic symbol
+/// via the generic chain walker.
 #[test]
 fn ctx_actions_declare_file_resolves_to_synthetic_symbol() {
     let project = TestProject::starlark_bazel_project();
@@ -221,7 +223,7 @@ fn ctx_actions_declare_file_resolves_to_synthetic_symbol() {
             SELECT COUNT(*) FROM edges e
             JOIN symbols t ON t.id = e.target_id
             WHERE t.qualified_name = 'ctx.actions.declare_file'
-              AND e.strategy = 'starlark_ctx_chain'
+              AND e.strategy = 'engine_chain'
             "#,
             [],
             |r| r.get(0),
@@ -229,7 +231,7 @@ fn ctx_actions_declare_file_resolves_to_synthetic_symbol() {
         .unwrap_or(0);
     assert!(
         declare_file_edges > 0,
-        "expected at least one edge targeting ctx.actions.declare_file via starlark_ctx_chain, got 0"
+        "expected at least one edge targeting ctx.actions.declare_file via engine_chain, got 0"
     );
 }
 
@@ -289,8 +291,9 @@ fn synth_env_api_symbols_in_database() {
     );
 }
 
-/// Round 3 test: env.expect.that_str (3-level chain) resolves to the synthetic
-/// flat-alias symbol via the chain walker, producing a real starlark_ctx_chain edge.
+/// env.expect.that_str (3-level chain) resolves through the generic chain
+/// walker: `env.expect` yields the `env_expect` type, and `that_str` binds to
+/// its type-level member `env_expect.that_str`.
 #[test]
 fn env_expect_that_str_resolves_to_synthetic_symbol() {
     let project = TestProject::starlark_bazel_project();
@@ -298,15 +301,15 @@ fn env_expect_that_str_resolves_to_synthetic_symbol() {
 
     full_index(&mut db, project.path(), None, None, None).unwrap();
 
-    // The flat alias `env.expect.that_str` (matching the extractor's dotted ref)
-    // must be the target of at least one edge emitted by the chain walker.
+    // The chain walker types the receiver `env.expect` as `env_expect`, so the
+    // `that_str` member binds to `env_expect.that_str`.
     let edges: i64 = db
         .query_row(
             r#"
             SELECT COUNT(*) FROM edges e
             JOIN symbols t ON t.id = e.target_id
-            WHERE t.qualified_name = 'env.expect.that_str'
-              AND e.strategy = 'starlark_ctx_chain'
+            WHERE t.qualified_name = 'env_expect.that_str'
+              AND e.strategy = 'engine_chain'
             "#,
             [],
             |r| r.get(0),
@@ -314,12 +317,13 @@ fn env_expect_that_str_resolves_to_synthetic_symbol() {
         .unwrap_or(0);
     assert!(
         edges > 0,
-        "expected at least one edge targeting env.expect.that_str via starlark_ctx_chain, got 0"
+        "expected at least one edge targeting env_expect.that_str via engine_chain, got 0"
     );
 }
 
-/// Round 3 test: env.expect.that_collection (3-level chain from analysistest_impl.bzl)
-/// resolves to the synthetic flat-alias symbol via the chain walker.
+/// env.expect.that_collection (3-level chain from analysistest_impl.bzl)
+/// resolves through the generic chain walker to the `env_expect` type-level
+/// member `env_expect.that_collection`.
 #[test]
 fn env_expect_that_collection_resolves_to_synthetic_symbol() {
     let project = TestProject::starlark_bazel_project();
@@ -332,8 +336,8 @@ fn env_expect_that_collection_resolves_to_synthetic_symbol() {
             r#"
             SELECT COUNT(*) FROM edges e
             JOIN symbols t ON t.id = e.target_id
-            WHERE t.qualified_name = 'env.expect.that_collection'
-              AND e.strategy = 'starlark_ctx_chain'
+            WHERE t.qualified_name = 'env_expect.that_collection'
+              AND e.strategy = 'engine_chain'
             "#,
             [],
             |r| r.get(0),
@@ -341,6 +345,6 @@ fn env_expect_that_collection_resolves_to_synthetic_symbol() {
         .unwrap_or(0);
     assert!(
         edges > 0,
-        "expected at least one edge targeting env.expect.that_collection via starlark_ctx_chain, got 0"
+        "expected at least one edge targeting env_expect.that_collection via engine_chain, got 0"
     );
 }
