@@ -8,6 +8,70 @@ fn looks_like_bicep_clone_rejects_arbitrary_directory() {
     std::fs::remove_dir_all(&tmp).unwrap();
 }
 
+// ---------------------------------------------------------------------------
+// Project-tree discovery — the locator must find an Azure/bicep clone
+// vendored anywhere inside the project tree, with no env-var and no
+// machine-path probe.
+// ---------------------------------------------------------------------------
+
+/// Build a minimal Azure/bicep checkout under `clone_root` so
+/// `looks_like_bicep_clone` accepts it and synthesis finds real names.
+fn write_minimal_clone(clone_root: &std::path::Path) {
+    let core = clone_root.join("src").join("Bicep.Core");
+    let ns = core.join("Semantics").join("Namespaces");
+    std::fs::create_dir_all(&ns).unwrap();
+    std::fs::write(core.join("Bicep.Core.csproj"), "<Project/>").unwrap();
+    std::fs::write(
+        ns.join("SystemNamespaceType.cs"),
+        r#"
+            new FunctionOverloadBuilder("resourceId").Build();
+            new DecoratorBuilder("description").Build();
+        "#,
+    )
+    .unwrap();
+    std::fs::write(
+        ns.join("AzNamespaceType.cs"),
+        r#"new FunctionOverloadBuilder("resourceGroup").Build();"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn discover_finds_clone_vendored_in_project_tree() {
+    let root = std::env::temp_dir().join("bw-bicep-vendored-in-tree");
+    let _ = std::fs::remove_dir_all(&root);
+    // Clone sits a few levels down, alongside dirs that must be pruned.
+    let clone = root.join("infra").join("vendor").join("bicep");
+    write_minimal_clone(&clone);
+    std::fs::create_dir_all(root.join("node_modules").join("junk")).unwrap();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+
+    let roots = discover_bicep_source(&root);
+    assert_eq!(roots.len(), 1, "exactly one dep root from the vendored clone");
+    let located = &roots[0].root;
+    assert!(
+        located.ends_with(std::path::Path::new("src").join("Bicep.Core")),
+        "dep root points at the clone's src/Bicep.Core, got {}",
+        located.display()
+    );
+    assert!(located.starts_with(&clone), "dep root is inside the vendored clone");
+
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn discover_returns_empty_when_no_clone_in_tree() {
+    let root = std::env::temp_dir().join("bw-bicep-no-clone-in-tree");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("src").join("app")).unwrap();
+    std::fs::write(root.join("main.bicep"), "param x string").unwrap();
+
+    let roots = discover_bicep_source(&root);
+    assert!(roots.is_empty(), "no Bicep.Core in tree → honest empty");
+
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
 #[test]
 fn looks_like_bicep_clone_accepts_synthetic_layout() {
     let tmp = std::env::temp_dir().join("bw-bicep-synthetic");

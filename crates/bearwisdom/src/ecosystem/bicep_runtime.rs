@@ -9,26 +9,24 @@
 // runtime surface (Bicep ships as a single self-contained .NET binary
 // with embedded DLLs that aren't trivially walkable).
 //
-// **Discovery strategy** (no vendored data, real on-disk only):
-//   1. `BEARWISDOM_BICEP_SOURCE` env var — explicit path to a local clone
-//      of `github.com/Azure/bicep`. Honored unconditionally if set.
-//   2. Common dev-machine locations — `~/repos/bicep`, `~/source/bicep`,
-//      `~/work/bicep`, `~/code/bicep`. Cheap to probe, common pattern.
-//   3. The Bicep CLI binary install (`%USERPROFILE%\.bicep\` or
-//      `~/.bicep/`). Note: this contains DLLs, not C# source — we don't
-//      attempt DLL parsing here. If a user wants Bicep names resolved,
-//      the standard answer is to clone Azure/bicep and point #1 at it.
+// **Discovery strategy** (project-driven, real on-disk only): search the
+// project tree itself for a vendored Azure/bicep checkout — a directory
+// whose `src/Bicep.Core/Bicep.Core.csproj` +
+// `Semantics/Namespaces/SystemNamespaceType.cs` marker pair identifies it
+// (`looks_like_bicep_clone`). The walk is depth-bounded and prunes dep
+// caches / VCS dirs. No env-var override and no machine-path probing: a
+// project resolves these names only when it carries the compiler source
+// in its own tree.
 //
-// When discovery succeeds we return the `Bicep.Core/Semantics/Namespaces`
-// directory as a C# external root. The regular C# extractor walks the
-// `.cs` files there and emits Function/Property symbols for the
-// `FunctionOverloadBuilder("name")` / `DecoratorBuilder(constName)` calls
-// already encoded as method signatures. Resolution against those happens
-// through the standard symbol index lookup — no synthetic ParsedFiles.
+// When discovery succeeds we synthesise a single `ParsedFile` whose
+// symbols are the Bicep runtime grammar names, extracted by recognising
+// the upstream `FunctionOverloadBuilder("name")` / `DecoratorBuilder(...)`
+// registration calls in those `.cs` files. The symbols resolve through
+// the ambient-package rung in the standard symbol index.
 //
-// **When discovery fails** (no clone, no env var): Bicep refs to builtin
-// names stay unresolved. That's the honest state — we can't know the
-// surface without the source on disk.
+// **When discovery fails** (no clone anywhere in the tree): Bicep refs to
+// builtin names stay unresolved. That's the honest state — we can't know
+// the surface without the source on disk.
 //
 // Activation: `.bicep` files present in the project.
 // =============================================================================
@@ -57,8 +55,8 @@ impl Ecosystem for BicepRuntimeEcosystem {
         EcosystemActivation::LanguagePresent("bicep")
     }
 
-    fn locate_roots(&self, _ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
-        discover_bicep_source()
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        discover_bicep_source(ctx.project_root)
     }
 
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
@@ -81,14 +79,14 @@ impl Ecosystem for BicepRuntimeEcosystem {
 impl ExternalSourceLocator for BicepRuntimeEcosystem {
     fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
 
-    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
-        discover_bicep_source()
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_bicep_source(project_root)
     }
 
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> { Vec::new() }
 
-    fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<ParsedFile>> {
-        let roots = discover_bicep_source();
+    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
+        let roots = discover_bicep_source(project_root);
         let root = roots.first()?;
         Some(synthesise_bicep_namespace_file(&root.root))
     }
@@ -104,20 +102,12 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 // Discovery
 // ---------------------------------------------------------------------------
 
-fn discover_bicep_source() -> Vec<ExternalDepRoot> {
-    let Some(root) = find_bicep_clone() else { return Vec::new() };
+fn discover_bicep_source(project_root: &Path) -> Vec<ExternalDepRoot> {
+    let Some(clone) = find_bicep_clone_in_tree(project_root) else { return Vec::new() };
     // The two namespace files plus LanguageConstants live under the same
-    // Bicep.Core C# project. We register the project root as the dep —
-    // walk_bicep_source narrows to the directories we care about.
-    let bicep_core = root.join("src").join("Bicep.Core");
-    if !bicep_core.is_dir() {
-        tracing::debug!(
-            "bicep-runtime: located clone at {} but src/Bicep.Core is missing — \
-             not a recognisable Azure/bicep checkout",
-            root.display()
-        );
-        return Vec::new();
-    }
+    // Bicep.Core C# project. `looks_like_bicep_clone` already proved the
+    // marker pair, so src/Bicep.Core exists.
+    let bicep_core = clone.join("src").join("Bicep.Core");
     tracing::info!("bicep-runtime: using Bicep source at {}", bicep_core.display());
     vec![ExternalDepRoot {
         module_path: "bicep-core".to_string(),
@@ -129,26 +119,62 @@ fn discover_bicep_source() -> Vec<ExternalDepRoot> {
     }]
 }
 
-fn find_bicep_clone() -> Option<PathBuf> {
-    // 1. Explicit override.
-    if let Some(raw) = std::env::var_os("BEARWISDOM_BICEP_SOURCE") {
-        let p = PathBuf::from(raw);
-        if looks_like_bicep_clone(&p) {
-            return Some(p);
+/// Depth cap for the project-tree clone search. A vendored compiler
+/// checkout (`infra/vendor/bicep`, `third_party/bicep`, …) sits within a
+/// few levels of the root; beyond that the search is wasted work.
+const MAX_CLONE_SEARCH_DEPTH: u32 = 6;
+
+/// Search the project tree for a directory that looks like an Azure/bicep
+/// checkout. Returns the first match (depth-first), or None. Prunes dep
+/// caches, build outputs, and dot/VCS dirs so the walk stays cheap; the
+/// marker check is a two-file stat per directory.
+fn find_bicep_clone_in_tree(project_root: &Path) -> Option<PathBuf> {
+    if looks_like_bicep_clone(project_root) {
+        return Some(project_root.to_path_buf());
+    }
+    walk_for_clone(project_root, 0)
+}
+
+fn walk_for_clone(dir: &Path, depth: u32) -> Option<PathBuf> {
+    if depth >= MAX_CLONE_SEARCH_DEPTH {
+        return None;
+    }
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if !ft.is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if is_pruned_search_dir(name) {
+                continue;
+            }
+        }
+        if looks_like_bicep_clone(&path) {
+            return Some(path);
+        }
+        if let Some(found) = walk_for_clone(&path, depth + 1) {
+            return Some(found);
         }
     }
-    // 2. Common dev locations under $HOME / $USERPROFILE.
-    let home = home_dir()?;
-    for sub in &["repos/bicep", "source/bicep", "work/bicep", "code/bicep", "src/bicep"] {
-        let candidate = home.join(sub);
-        if looks_like_bicep_clone(&candidate) {
-            return Some(candidate);
-        }
-    }
-    // No standard Bicep CLI install layout exposes the .cs source — only
-    // the compiled DLLs. Skip that path: trying to parse `Bicep.Core.dll`
-    // for these names is a separate (much heavier) work item.
     None
+}
+
+/// Dependency caches, build outputs, and VCS/hidden dirs that can't hold a
+/// vendored compiler checkout — skipped to keep the search bounded.
+fn is_pruned_search_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "node_modules"
+            | "target"
+            | "bin"
+            | "obj"
+            | "dist"
+            | "build"
+            | "out"
+            | ".bearwisdom"
+    ) || name.starts_with('.')
 }
 
 fn looks_like_bicep_clone(p: &Path) -> bool {
@@ -157,19 +183,6 @@ fn looks_like_bicep_clone(p: &Path) -> bool {
         && p
             .join("src/Bicep.Core/Semantics/Namespaces/SystemNamespaceType.cs")
             .is_file()
-}
-
-fn home_dir() -> Option<PathBuf> {
-    // Avoid pulling in `dirs` for one call.
-    if let Some(h) = std::env::var_os("HOME") {
-        let p = PathBuf::from(h);
-        if p.is_dir() { return Some(p) }
-    }
-    if let Some(h) = std::env::var_os("USERPROFILE") {
-        let p = PathBuf::from(h);
-        if p.is_dir() { return Some(p) }
-    }
-    None
 }
 
 // ---------------------------------------------------------------------------
