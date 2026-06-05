@@ -1,10 +1,29 @@
-// Minimal LanguageProfile for SQL. Declarative query language with no
-// chains in the engine sense. Schema references resolve through the
-// dedicated db-mapping path, not the engine.
+// LanguageProfile for SQL. Declarative DDL with no imports, namespace, or
+// scope: it emits only `TypeRef` refs and binds table/type names cross-file by
+// flat-global first-match (`namespaceless_global_type_lookup`). Built-in scalar
+// and pseudo-function names decline before the ladder via `builtin_skip`.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
 };
+use crate::types::{EdgeKind, SymbolKind};
+
+// SQL emits only `TypeRef` refs (FK `REFERENCES`, `ALTER TABLE` target,
+// `CREATE INDEX` → table, custom column type). Table/type targets land as
+// `struct`/`class`; user-defined functions as `function`; `CREATE INDEX`
+// targets as `variable`.
+const SQL_KIND_TABLE: KindTable = &[
+    (
+        EdgeKind::TypeRef,
+        &[
+            SymbolKind::Struct,
+            SymbolKind::Class,
+            SymbolKind::Function,
+            SymbolKind::Variable,
+        ],
+    ),
+    (EdgeKind::Calls, &[SymbolKind::Function, SymbolKind::Method]),
+];
 
 pub const SQL_PROFILE: LanguageProfile = LanguageProfile {
     id: "sql",
@@ -20,9 +39,9 @@ pub const SQL_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     iterator_method: None,
     primitive_mapping: &[],
-    kind_compatible_table: PERMISSIVE_KIND_TABLE,
+    kind_compatible_table: SQL_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::hooks::is_sql_builtin_type),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
@@ -44,6 +63,7 @@ pub const SQL_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: false,
     overload_pick_all: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
+    namespaceless_global_type_lookup: true,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,

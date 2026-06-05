@@ -181,6 +181,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
+    namespaceless_global_type_lookup: false,
     constructor_patterns: &[
         ConstructorPattern::New,
         ConstructorPattern::CallableClass,

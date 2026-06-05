@@ -220,6 +220,15 @@ pub struct LanguageProfile {
     /// is reserved for frameworks whose `this` has an implicit declared type.
     /// See `SelfReceiverDiscovery`.
     pub self_receiver_discovery: SelfReceiverDiscovery,
+    /// Flat-global first-match by-name binding. `false` (the default) leaves the
+    /// strategy inert. `true` opts in a language with NO imports, namespace, or
+    /// scope structure (SQL and other namespaceless DDL/config languages): a bare
+    /// target binds to the FIRST kind-compatible, project-internal symbol of the
+    /// same name. Unlike `resolve_via_unique_internal_name`, which declines on
+    /// more than one candidate, this first-match-binds — duplicate names across
+    /// files are common and there is no structure to disambiguate. Runs LAST in
+    /// the ladder, after every structural rung, so any structural evidence wins.
+    pub namespaceless_global_type_lookup: bool,
     /// Component-selector resolution for template refs. `None` (the default)
     /// leaves it inert. `Some` binds a `Calls` ref whose target names a
     /// component/directive selector to the decorated class via
@@ -878,6 +887,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: false,
     overload_pick_all: false,
     ambient_globals: AmbientGlobals::Off,
+    namespaceless_global_type_lookup: false,
     self_receiver_discovery: SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
     constructor_patterns: &[ConstructorPattern::CallableClass],

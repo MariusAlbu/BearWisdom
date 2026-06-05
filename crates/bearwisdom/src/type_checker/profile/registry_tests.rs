@@ -41,6 +41,7 @@ static TS_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: false,
     overload_pick_all: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
+    namespaceless_global_type_lookup: false,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,

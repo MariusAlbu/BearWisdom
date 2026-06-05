@@ -60,6 +60,7 @@ pub const ANGULAR_TEMPLATE_PROFILE: LanguageProfile = LanguageProfile {
         edge_kinds: &[EdgeKind::Calls],
         name_transforms: &[NameTransform::PascalToKebab],
     }),
+    namespaceless_global_type_lookup: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

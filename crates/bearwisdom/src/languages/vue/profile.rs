@@ -61,6 +61,7 @@ pub const VUE_PROFILE: LanguageProfile = LanguageProfile {
             siblings: &["$nextTick", "$forceUpdate"],
         },
     selector_resolution: None,
+    namespaceless_global_type_lookup: false,
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

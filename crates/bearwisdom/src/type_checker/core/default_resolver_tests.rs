@@ -4096,3 +4096,106 @@ fn alias_module_qname_declines_kind_incompatible() {
     };
     assert!(d.resolve_via_alias_module_qname(true, &reject_module).is_none());
 }
+
+// ---------------------------------------------------------------------------
+// namespaceless_global_type_lookup — flat-global first-match by-name bind
+// (SQL and other namespaceless DDL/config languages)
+// ---------------------------------------------------------------------------
+
+/// Profile mirroring DEFAULT but opting into the namespaceless-global rung.
+static NAMESPACELESS_PROFILE: LanguageProfile = LanguageProfile {
+    namespaceless_global_type_lookup: true,
+    ..DEFAULT_PROFILE
+};
+
+/// A TypeRef ref (the only edge SQL emits), bare-name, no scope/imports.
+fn extracted_typeref(target: &str) -> ExtractedRef {
+    let mut r = extracted_call(target);
+    r.kind = EdgeKind::TypeRef;
+    r
+}
+
+#[test]
+fn namespaceless_global_binds_first_match_by_name() {
+    // Two internal `struct` symbols both named `users`, in different files,
+    // with distinct qnames — two genuinely separate candidates. The flat-global
+    // rung binds the FIRST (id 1), where resolve_via_unique_internal_name
+    // declines on the ambiguity.
+    let lookup = Lookup::new()
+        .with(sym(1, "users", "schema_a.users", "struct", "db/a.sql"))
+        .with(sym(2, "users", "schema_b.users", "struct", "db/b.sql"));
+    let r = extracted_typeref("users");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    // The non-unique sibling: first-match where the unique rung refuses.
+    assert!(
+        d.resolve_via_unique_internal_name(&accept_any).is_none(),
+        "two candidates — the unique rung must decline"
+    );
+    let resolved = d
+        .resolve_via_namespaceless_global(&accept_any)
+        .expect("first-match binds among duplicate names");
+    assert_eq!(resolved.target_symbol_id, 1, "binds the first candidate");
+    assert_eq!(resolved.confidence, 1.0);
+    assert_eq!(resolved.strategy, "default_namespaceless_global");
+}
+
+#[test]
+fn namespaceless_global_skips_external_only_name() {
+    // A name owned ONLY by an external file binds nothing — the rung is
+    // internal-files-only.
+    let mut ext = sym(5, "audit_log", "audit_log", "struct", "ext:db/vendor.sql");
+    ext.file_path = Arc::from("ext:db/vendor.sql");
+    let lookup = Lookup::new().with(ext);
+    let r = extracted_typeref("audit_log");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_namespaceless_global(&accept_any).is_none(),
+        "external-only candidate must not bind"
+    );
+}
+
+#[test]
+fn namespaceless_global_gate_default_inert() {
+    // A default-profile language never reaches the rung in the full ladder for
+    // the same duplicate-name fixture — the bool gate is default-off.
+    let lookup = Lookup::new()
+        .with(sym(1, "users", "schema_a.users", "struct", "db/a.sql"))
+        .with(sym(2, "users", "schema_b.users", "struct", "db/b.sql"));
+    let r = extracted_typeref("users");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_all_with_profile(&DEFAULT_PROFILE).is_none(),
+        "gate default-off — the ladder must not first-match-bind"
+    );
+    // With the gate ON, the same fixture binds the first candidate through the
+    // ladder.
+    let bound = d
+        .resolve_all_with_profile(&NAMESPACELESS_PROFILE)
+        .expect("the gated rung binds through the full ladder");
+    assert_eq!(bound.target_symbol_id, 1);
+    assert_eq!(bound.strategy, "default_namespaceless_global");
+}

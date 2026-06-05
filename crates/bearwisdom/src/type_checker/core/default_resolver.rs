@@ -77,6 +77,7 @@ struct LadderProfileData<'p> {
     workspace_packages: bool,
     overload_pick_all: bool,
     ambient_globals: AmbientGlobals,
+    namespaceless_global_type_lookup: bool,
     selector_resolution: Option<&'p SelectorResolution>,
 }
 
@@ -102,6 +103,7 @@ impl LadderProfileData<'static> {
         workspace_packages: false,
         overload_pick_all: false,
         ambient_globals: AmbientGlobals::Off,
+        namespaceless_global_type_lookup: false,
         selector_resolution: None,
     };
 }
@@ -1679,6 +1681,38 @@ impl<'a> DefaultResolver<'a> {
         None
     }
 
+    /// Strategy — bare target first-match-bound in a flat global namespace.
+    ///
+    /// For a language with NO imports, namespace, or scope structure (SQL and
+    /// other namespaceless DDL/config languages), a bare `target` binds to the
+    /// FIRST kind-compatible, project-internal symbol of the same name. Unlike
+    /// `resolve_via_unique_internal_name`, which declines on more than one
+    /// candidate, this first-match-binds: duplicate names across files are
+    /// common and there is no structure to disambiguate. External candidates are
+    /// excluded so a project symbol always wins over a same-named external.
+    /// Gated by `namespaceless_global_type_lookup`; off (every other language)
+    /// returns immediately. Runs LAST in the ladder so any structural evidence
+    /// wins first.
+    pub fn resolve_via_namespaceless_global(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty() {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        for sym in self.lookup.by_name(target) {
+            if self.lookup.is_external_file(&sym.file_path) {
+                continue;
+            }
+            if kind(edge_kind, &sym.kind) {
+                return Some(self.resolution(sym.id, "default_namespaceless_global"));
+            }
+        }
+        None
+    }
+
     /// Strategy — template ref bound to a component/directive via its selector.
     ///
     /// A template `Calls` ref whose target names a component tag or attribute
@@ -1762,12 +1796,14 @@ impl<'a> DefaultResolver<'a> {
     ///        (gated on `package_by_directory`; module-independent)
     ///   17. wildcard import — bare target under a wildcard import's namespace
     ///   18. generic param — bare target matches a declared generic parameter
+    ///   19. namespaceless global — bare target first-match-bound to an internal
+    ///        symbol (gated on `namespaceless_global_type_lookup`; dead last)
     ///
-    /// Every strategy binds through scope or import structure. There is no
-    /// global `by_name` search in this ladder — a name binds through that
-    /// structure or stays unresolved. The by-name methods
-    /// `resolve_via_unique_internal_name` and `resolve_via_ranked_candidates`
-    /// are not part of the default binder.
+    /// Every structural strategy binds through scope or import structure. The
+    /// only non-structural binder is the gated, dead-last namespaceless-global
+    /// rung for flat-global languages with no structure to bind through; every
+    /// other language stays structure-only. The by-name method
+    /// `resolve_via_unique_internal_name` is not part of the default binder.
     ///
     /// Language hooks that want a different order or additional language-
     /// specific strategies call individual methods themselves.
@@ -1823,6 +1859,7 @@ impl<'a> DefaultResolver<'a> {
                 workspace_packages: profile.workspace_packages,
                 overload_pick_all: profile.overload_pick_all,
                 ambient_globals: profile.ambient_globals,
+                namespaceless_global_type_lookup: profile.namespaceless_global_type_lookup,
                 selector_resolution: profile.selector_resolution.as_ref(),
             },
         )
@@ -1968,7 +2005,15 @@ impl<'a> DefaultResolver<'a> {
             // Last resort: an unimported ambient global (jest/jQuery/DOM/core
             // lib). Below the structural strategies so a project symbol always
             // wins; gated on `ambient_globals`.
-            .or_else(|| self.resolve_via_npm_globals(pd.ambient_globals, kind));
+            .or_else(|| self.resolve_via_npm_globals(pd.ambient_globals, kind))
+            // Terminal first-match for a flat-global language (SQL and other
+            // namespaceless DDL/config). Dead last so every structural rung
+            // above wins first; gated on `namespaceless_global_type_lookup`.
+            .or_else(|| {
+                pd.namespaceless_global_type_lookup
+                    .then(|| self.resolve_via_namespaceless_global(kind))
+                    .flatten()
+            });
         if result.is_none() {
             self.record_bare_name_chain_miss();
         }
