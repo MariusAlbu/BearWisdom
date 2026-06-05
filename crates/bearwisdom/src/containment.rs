@@ -250,7 +250,14 @@ pub fn build_containing_scope(
 
     let mut cur = Some(idx);
     let mut topmost = idx;
+    // A malformed `parent_index` chain can be cyclic (self-parent, or A→B→A).
+    // The walk must terminate at the first revisit, bounding the chain to the
+    // distinct ancestors rather than growing the frame Vec without limit.
+    let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
     while let Some(i) = cur {
+        if i >= symbols.len() || !seen.insert(i) {
+            break;
+        }
         let sym = &symbols[i];
         frames.push(ScopeFrame {
             kind: FrameKind::Sym(sym.kind),

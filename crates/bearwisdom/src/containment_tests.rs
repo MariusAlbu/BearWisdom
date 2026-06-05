@@ -249,6 +249,39 @@ fn project_root_is_capped_but_not_serialized() {
     assert!(scope.chain().any(|f| f.kind == FrameKind::Project));
 }
 
+/// A `parent_index` self-cycle (a symbol whose parent is itself) must terminate
+/// the chain walk instead of looping until the frame Vec exhausts memory. The
+/// frame for the symbol is pushed once; the revisit breaks the loop.
+#[test]
+fn build_containing_scope_terminates_on_self_cycle() {
+    let symbols = vec![esym(
+        "Loop",
+        "Loop",
+        SymbolKind::Class,
+        None,
+        Some(0), // parent is itself
+    )];
+    let scope = build_containing_scope(&symbols, 0, None);
+    assert_eq!(scope.chain().count(), 1);
+    assert_eq!(scope.own().map(|f| f.name.as_str()), Some("Loop"));
+}
+
+/// A multi-node `parent_index` cycle (A→B→A) must terminate after visiting each
+/// node once. Each node's frame appears exactly once; the back-edge to an
+/// already-visited index breaks the walk.
+#[test]
+fn build_containing_scope_terminates_on_multi_node_cycle() {
+    let symbols = vec![
+        esym("A", "A", SymbolKind::Class, None, Some(1)), // 0 -> 1
+        esym("B", "B", SymbolKind::Class, None, Some(0)), // 1 -> 0
+    ];
+    let scope = build_containing_scope(&symbols, 0, None);
+    // Both frames pushed once, no duplicates, no unbounded growth.
+    assert_eq!(scope.chain().count(), 2);
+    let names: Vec<&str> = scope.chain().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, vec!["A", "B"]);
+}
+
 #[test]
 fn build_scope_arena_maps_every_symbol() {
     let symbols = vec![
