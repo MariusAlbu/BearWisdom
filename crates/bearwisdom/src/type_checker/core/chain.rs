@@ -1273,29 +1273,87 @@ impl<'a> ChainWalker<'a> {
     /// `vec.push()` stays on `Vec`. An empty axis (the default for every
     /// non-Rust profile) is inert. Bounded at 8 hops to guard a malformed
     /// self-referential wrapper.
+    ///
+    /// A USER Deref wrapper is peeled in the same loop (`peel_user_deref`): a
+    /// `Class(C)` receiver whose type implements the profile's Deref
+    /// `trait_name` is replaced by the inner type named in its indexed
+    /// `field_type["{C}.{target_assoc}"]` binding. So `Box<MyWrapper>` peels
+    /// Box → MyWrapper (std arg) → Inner (user Deref Target) to a fixpoint.
     fn peel_receiver_wrappers(&self, current_ty: TypeId) -> TypeId {
-        if self.profile.single_inner_wrappers.is_empty() {
+        if self.profile.single_inner_wrappers.is_empty() && self.profile.deref_wrapper.is_none() {
             return current_ty;
         }
         let mut ty = current_ty;
         for _ in 0..8 {
-            let Type::Apply { base, args } = self.arena.get(ty) else {
-                break;
-            };
-            if args.len() != 1 {
-                break;
+            if let Some(peeled) = self.peel_single_inner_wrapper(ty) {
+                ty = peeled;
+                continue;
             }
-            let head = match self.arena.get(base) {
-                Type::Class(q) => q,
-                _ => break,
-            };
-            let simple = head.rsplit(&['.', ':'][..]).next().unwrap_or(&head);
-            if !self.profile.single_inner_wrappers.contains(&simple) {
-                break;
+            if let Some(peeled) = self.peel_user_deref(ty) {
+                ty = peeled;
+                continue;
             }
-            ty = args[0];
+            break;
         }
         ty
+    }
+
+    /// One std single-inner-wrapper hop: a `Type::Apply { base, args }` with
+    /// exactly one arg whose `base` simple-name is in `single_inner_wrappers`
+    /// yields `args[0]`. `None` when `ty` is not such a wrapper application.
+    fn peel_single_inner_wrapper(&self, ty: TypeId) -> Option<TypeId> {
+        let Type::Apply { base, args } = self.arena.get(ty) else {
+            return None;
+        };
+        if args.len() != 1 {
+            return None;
+        }
+        let head = match self.arena.get(base) {
+            Type::Class(q) => q,
+            _ => return None,
+        };
+        let simple = head.rsplit(&['.', ':'][..]).next().unwrap_or(&head);
+        if !self.profile.single_inner_wrappers.contains(&simple) {
+            return None;
+        }
+        Some(args[0])
+    }
+
+    /// One user-Deref hop: a `Class(C)` (or generic-application head `C<…>`)
+    /// receiver whose type implements the profile's Deref `trait_name` yields
+    /// the inner type from its indexed `field_type["{C}.{target_assoc}"]`
+    /// binding, re-interned structurally. `None` when the profile carries no
+    /// `deref_wrapper`, the receiver has no qname, the type does not reach the
+    /// Deref trait, or no Target binding exists.
+    ///
+    /// Widening-only: the peel fires only when BOTH a real `C → Deref`
+    /// supertype edge (structural impl evidence) AND a real `field_type` Target
+    /// binding hold, so a type that merely shares the trait's short name — or
+    /// carries an unrelated `Target` assoc with no Deref impl — never peels.
+    fn peel_user_deref(&self, ty: TypeId) -> Option<TypeId> {
+        let dw = self.profile.deref_wrapper?;
+        let qname = self.class_qname(ty)?;
+        if !self.type_implements(&qname, dw.trait_name) {
+            return None;
+        }
+        let target_key = format!("{qname}.{}", dw.target_assoc);
+        let inner = self.lookup.field_type_name(&target_key)?;
+        Some(self.arena.intern_type_str(inner))
+    }
+
+    /// True when the type named `qname` reaches a supertype whose simple name
+    /// equals `trait_name`. Walks the supertype graph from the type's interned
+    /// `Class` id; a `trait_name`-named ancestor is the structural evidence the
+    /// type implements that trait. The edge is what proves the impl — a bare
+    /// same-name type with no edge to the trait never matches.
+    fn type_implements(&self, qname: &str, trait_name: &str) -> bool {
+        let start = self.arena.class(qname);
+        self.supertypes.walk_up(start).any(|anc| {
+            self.class_qname(anc)
+                .as_deref()
+                .map(|q| q.rsplit(&['.', ':'][..]).next().unwrap_or(q) == trait_name)
+                .unwrap_or(false)
+        })
     }
 
     /// Narrow a discriminated-union receiver to the branch selected by an active

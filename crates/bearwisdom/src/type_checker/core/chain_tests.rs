@@ -4824,6 +4824,205 @@ fn vec_receiver_does_not_peel() {
     assert_eq!(result.target_symbol_id, 11);
 }
 
+// Shared root resolver for the user-Deref peel tests below: each pins the
+// receiver to a fixed `MyWrapper` Class TypeId.
+struct DerefFixedRoot {
+    ty: TypeId,
+}
+impl RootResolver for DerefFixedRoot {
+    fn resolve(
+        &self,
+        _seg: &ChainSegment,
+        _ref_ctx: &RefContext,
+        _file_ctx: &FileContext,
+        _arena: &TypeArena,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<TypeId> {
+        Some(self.ty)
+    }
+}
+
+#[test]
+fn user_deref_receiver_resolves_inner_target_method() {
+    // `let w: MyWrapper = ...; w.inner_method()` where `MyWrapper` is a USER
+    // type with `impl Deref for MyWrapper { type Target = Inner }` and
+    // `inner_method` lives on Inner. Rust's autoderef makes `w.inner_method()`
+    // resolve to `Inner::inner_method`. The receiver peel must climb the user
+    // Deref: a `MyWrapper → Deref` supertype edge (structural impl evidence)
+    // plus the indexed `field_type["MyWrapper.Target"] = "Inner"` binding peel
+    // the receiver to Inner before member lookup.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let wrapper_ty = arena.class("MyWrapper");
+    let deref_ty = arena.class("Deref");
+    let inner_ty = arena.class("Inner");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(inner_ty, 1);
+
+    let mut members = MembersIndex::new();
+    // `inner_method` lives on Inner; MyWrapper has none. Resolution requires the
+    // Deref peel to Inner.
+    members.add_direct(
+        inner_ty,
+        sym_info(7, "inner_method", "Inner.inner_method", "method", Some("Inner")),
+    );
+
+    let mut supertypes = SupertypeGraph::new();
+    // The impl-container reroute forms `MyWrapper → Deref` for `impl Deref for
+    // MyWrapper`.
+    supertypes.add_edge(wrapper_ty, deref_ty);
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_field_type("MyWrapper.Target", "Inner");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("w", SegmentKind::Identifier),
+            seg("inner_method", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("inner_method");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &DerefFixedRoot { ty: wrapper_ty })
+        .expect("inner_method resolves on the peeled Deref target Inner");
+    assert_eq!(result.target_symbol_id, 7);
+}
+
+#[test]
+fn user_deref_peel_declines_without_deref_edge() {
+    // A type with a `Target` assoc binding but NO `→ Deref` supertype edge is
+    // not a Deref wrapper — the peel must not fire on a bare name coincidence.
+    // Without the structural impl edge the receiver stays `Plain`, so a method
+    // that only exists on the (unrelated) `Inner` cannot resolve.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let plain_ty = arena.class("Plain");
+    let inner_ty = arena.class("Inner");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(inner_ty, 1);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        inner_ty,
+        sym_info(7, "inner_method", "Inner.inner_method", "method", Some("Inner")),
+    );
+
+    // No edge: Plain does NOT implement Deref.
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_field_type("Plain.Target", "Inner");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("p", SegmentKind::Identifier),
+            seg("inner_method", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("inner_method");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result =
+        walker.walk_with_root(&chain, &ref_ctx, &fc, &DerefFixedRoot { ty: plain_ty });
+    assert!(
+        result.is_none(),
+        "no Deref edge → no peel → inner_method must not resolve"
+    );
+}
+
+#[test]
+fn user_deref_peel_inert_under_default_profile() {
+    // The peel is gated on `LanguageProfile::deref_wrapper`; the default profile
+    // sets it to None, so even with a `→ Deref` edge and a `Target` binding the
+    // receiver is NOT peeled — every non-Rust language is byte-identical.
+    use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+
+    let arena = TypeArena::new();
+    let wrapper_ty = arena.class("MyWrapper");
+    let deref_ty = arena.class("Deref");
+    let inner_ty = arena.class("Inner");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(inner_ty, 1);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        inner_ty,
+        sym_info(7, "inner_method", "Inner.inner_method", "method", Some("Inner")),
+    );
+
+    let mut supertypes = SupertypeGraph::new();
+    supertypes.add_edge(wrapper_ty, deref_ty);
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_field_type("MyWrapper.Target", "Inner");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("w", SegmentKind::Identifier),
+            seg("inner_method", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("inner_method");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result =
+        walker.walk_with_root(&chain, &ref_ctx, &fc, &DerefFixedRoot { ty: wrapper_ty });
+    assert!(
+        result.is_none(),
+        "default profile has no deref_wrapper → no peel → no resolution"
+    );
+}
+
 struct FixedRootTy {
     ty: TypeId,
 }
