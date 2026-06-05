@@ -43,6 +43,7 @@ pub const GOTEMPLATE_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
+    associated_type_projection: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,

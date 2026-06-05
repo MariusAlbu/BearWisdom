@@ -245,6 +245,20 @@ pub struct LanguageProfile {
     /// import / scope / using brings the function into scope. Strictly a fallback
     /// after the structural ladder, so scope/import evidence always wins.
     pub argument_dependent_lookup: bool,
+    /// Associated-type projection (Rust `Self::Output` / `<C as Trait>::Item`).
+    /// `false` (the default) leaves the projection inert — the raw `Self::Output`
+    /// string interns as an opaque class with no members, so a chain cannot type
+    /// past an associated-type-returning method. `true` opts a language in: in the
+    /// string-fallback arm of `yield_type_of`, when a method/field's resolved type
+    /// string is a `<head>::<Assoc>` qualified path whose head resolves to the
+    /// current receiver's concrete qname C (a `self_keyword` head pins C; a
+    /// `<C as Trait>` angle head extracts the inner C; a bare head equal to C),
+    /// the engine projects `field_type_name("{C}.{Assoc}")` — the impl's real
+    /// `type Assoc = Concrete` binding already in the index — and yields Concrete.
+    /// A head that is neither a self-keyword nor C declines (a plain `module::Foo`
+    /// path return is never hijacked), and a missing binding declines to the prior
+    /// raw-intern behavior, so the projection is strictly widening.
+    pub associated_type_projection: bool,
     /// Ambient npm/test-framework/core-lib globals probed for a bare
     /// single-identifier call/typeref/instantiation that no import binds.
     /// `Off` (the default) leaves the probe inert. `On` checks the synthetic
@@ -981,6 +995,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
+    associated_type_projection: false,
     ambient_globals: AmbientGlobals::Off,
     namespaceless_global_type_lookup: false,
     explicit_member_import: false,

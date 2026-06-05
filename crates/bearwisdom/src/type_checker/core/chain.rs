@@ -807,6 +807,18 @@ impl<'a> ChainWalker<'a> {
         if cleaned.is_empty() {
             return None;
         }
+        // Associated-type projection (Rust `Self::Output` / `<C as Trait>::Item`):
+        // rewrite a `<head>::<Assoc>` return whose head names the concrete
+        // receiver C into C's impl binding (`type Assoc = Concrete`, indexed as
+        // `field_type["C.Assoc"]`). A hit yields Concrete; a miss falls through to
+        // the raw-intern path below, so the step only ever widens.
+        if self.profile.associated_type_projection {
+            if let Some(projected) =
+                self.project_associated_type(cleaned, current_ty, env, &sym.qualified_name, seg, &sym.kind)
+            {
+                return Some(projected);
+            }
+        }
         // Decompose the declared-type string structurally so a generic return
         // (`Iter<User>`, `Array<T>`) keeps its args instead of collapsing to
         // the bare base — the next segment can then carry or substitute them.
@@ -823,6 +835,82 @@ impl<'a> ChainWalker<'a> {
             self.arena.rebind_class_params(yielded, &params)
         };
         Some(self.unwrap_if_called(substitute(yielded, env, self.arena), seg, &sym.kind))
+    }
+
+    /// Project a `<head>::<Assoc>` associated-type return through the receiver's
+    /// impl binding. Returns the concrete type the impl bound `Assoc` to
+    /// (`type Assoc = Concrete` → `field_type["{C}.Assoc"]`) when `head` names the
+    /// current receiver C and that binding exists; `None` otherwise (the caller
+    /// then falls through to interning the raw string). The `::`-split takes the
+    /// LAST segment as the associated-type name and the prefix as the head, so a
+    /// real path return (`module::Foo`) whose head is neither a self-keyword nor
+    /// the receiver qname declines — no hijack.
+    fn project_associated_type(
+        &self,
+        cleaned: &str,
+        current_ty: TypeId,
+        env: &GenericEnv,
+        member_qname: &str,
+        seg: &ChainSegment,
+        sym_kind: &str,
+    ) -> Option<TypeId> {
+        let split = cleaned.rfind("::")?;
+        let head = cleaned[..split].trim();
+        let assoc = cleaned[split + 2..].trim();
+        if head.is_empty() || assoc.is_empty() || assoc.contains("::") {
+            return None;
+        }
+        let receiver_qname = self.associated_type_receiver_qname(head, current_ty)?;
+        let bound = self
+            .lookup
+            .field_type_name(&format!("{receiver_qname}.{assoc}"))?;
+        let yielded = self.arena.intern_type_str(bound);
+        let params = self.owner_param_type_map(member_qname);
+        let yielded = if params.is_empty() {
+            yielded
+        } else {
+            self.arena.rebind_class_params(yielded, &params)
+        };
+        Some(self.unwrap_if_called(substitute(yielded, env, self.arena), seg, sym_kind))
+    }
+
+    /// Resolve the head of a `<head>::<Assoc>` projection to the concrete
+    /// receiver qname C it must key the impl binding under. Head shapes that
+    /// pin C: a `self_keyword` (`Self`/`self`) pins the current receiver's qname;
+    /// a `<C as Trait>` angle-qualified head whose inner concrete names a
+    /// concrete type (`C` → C directly) or the self-keyword (`<Self as Trait>`
+    /// → the receiver's qname); a bare head equal to the receiver's own qname is
+    /// C directly. Any other head — a real module path, an unrelated concrete —
+    /// returns `None`/the unrelated name so the projection keys that name's
+    /// binding (absent for an unrelated type → declines), never mis-binding C.
+    fn associated_type_receiver_qname(&self, head: &str, current_ty: TypeId) -> Option<String> {
+        if self.profile.self_keywords.contains(&head) {
+            return self.class_qname(current_ty);
+        }
+        if let Some(inner) = head
+            .strip_prefix('<')
+            .and_then(|h| h.strip_suffix('>'))
+        {
+            // `<C as Trait>` — the concrete type is the text before ` as `; a
+            // bare `<C>` (no trait) keeps the whole inner. The trait is
+            // disambiguating context only; the binding is keyed on C.
+            let concrete = inner.split(" as ").next().unwrap_or(inner).trim();
+            if concrete.is_empty() {
+                return None;
+            }
+            // A `<Self as Trait>` head names the receiver via the self-keyword;
+            // resolve it to the receiver's own qname so the binding keys
+            // `{C}.{Assoc}` (the impl-binding key) rather than the never-present
+            // `Self.{Assoc}`. A named concrete (`<C as Trait>`) keys directly.
+            if self.profile.self_keywords.contains(&concrete) {
+                return self.class_qname(current_ty);
+            }
+            return Some(concrete.to_string());
+        }
+        if self.class_qname(current_ty).as_deref() == Some(head) {
+            return Some(head.to_string());
+        }
+        None
     }
 
     /// When a function-typed value member (field/property/variable/parameter)

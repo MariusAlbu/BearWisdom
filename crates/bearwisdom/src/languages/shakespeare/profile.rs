@@ -44,6 +44,7 @@ const fn minimal(id: &'static str) -> LanguageProfile {
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
+    associated_type_projection: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     namespaceless_global_type_lookup: false,
     explicit_member_import: false,

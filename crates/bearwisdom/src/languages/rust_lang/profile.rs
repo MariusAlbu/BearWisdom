@@ -26,7 +26,14 @@ use crate::types::{EdgeKind, SymbolKind, Visibility};
 ///     extend other structs).
 ///   - Implements: trait (only valid impl target).
 ///   - TypeRef: struct / enum / trait / type_alias / enum_member (a
-///     `Self::Variant` member-walk lands the variant on a TypeRef edge).
+///     `Self::Variant` member-walk lands the variant on a TypeRef edge), plus
+///     method / function / field / property. The chain walker uses `TypeRef` as
+///     its mid-chain walk-through filter — every non-terminal segment in
+///     `c.add().finish()` is filtered against this table — so a mid-chain method
+///     call (`add()`) or field access must be kind-compatible here to type the
+///     receiver of the next segment. The terminal segment carries the ref's own
+///     edge kind, so admitting callables here cannot loosen a real terminal
+///     TypeRef ref (those target a type/variant by name, never a method).
 ///   - Instantiates: struct / enum / enum_member (enum-variant construction).
 const RUST_KIND_TABLE: KindTable = &[
     (
@@ -51,6 +58,10 @@ const RUST_KIND_TABLE: KindTable = &[
             SymbolKind::Trait,
             SymbolKind::TypeAlias,
             SymbolKind::EnumMember,
+            SymbolKind::Method,
+            SymbolKind::Function,
+            SymbolKind::Field,
+            SymbolKind::Property,
         ],
     ),
     (
@@ -165,6 +176,10 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
+    // `Self::Output` / `<C as Trait>::Item` return strings project through the
+    // receiver's impl binding (`type Output = Concrete`, already in field_type as
+    // `C.Output`) so a chain types past an associated-type-returning method.
+    associated_type_projection: true,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,

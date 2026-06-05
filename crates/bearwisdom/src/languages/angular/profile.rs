@@ -51,6 +51,7 @@ pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: true,
     overload_pick_all: true,
     argument_dependent_lookup: false,
+    associated_type_projection: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
         npm_confidence: 0.85,
         lib_confidence: 0.85,

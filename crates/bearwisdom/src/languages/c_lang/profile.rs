@@ -83,6 +83,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     // C++ argument-dependent lookup: a bare `swap(a, b)` resolves to a free
     // function `swap` declared in the namespace of an argument's type.
     argument_dependent_lookup: true,
+    associated_type_projection: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,

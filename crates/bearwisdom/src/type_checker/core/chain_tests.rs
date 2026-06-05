@@ -4689,3 +4689,471 @@ fn vec_receiver_does_not_peel() {
         .expect("method resolves on Vec — no peel");
     assert_eq!(result.target_symbol_id, 11);
 }
+
+struct FixedRootTy {
+    ty: TypeId,
+}
+impl RootResolver for FixedRootTy {
+    fn resolve(
+        &self,
+        _seg: &ChainSegment,
+        _ref_ctx: &RefContext,
+        _file_ctx: &FileContext,
+        _arena: &TypeArena,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<TypeId> {
+        Some(self.ty)
+    }
+}
+
+#[test]
+fn associated_type_self_output_projects_to_impl_binding() {
+    // `c.add().finish()` where `C.add` returns `Self::Output` and the impl
+    // binds `type Output = Concrete` (field_type "C.Output" = "Concrete").
+    // yield_type_of must project Self::Output through the receiver C to
+    // Concrete so the next segment resolves Concrete.finish.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let concrete_ty = arena.class("Concrete");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(concrete_ty, 2);
+
+    let mut members = MembersIndex::new();
+    // C.add: a method whose return string is the associated-type projection.
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    // Concrete.finish: only reachable if the chain typed past add() to Concrete.
+    members.add_direct(
+        concrete_ty,
+        sym_info(9, "finish", "Concrete.finish", "method", Some("Concrete")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Concrete", "Concrete")
+        .with_return_type("C.add", "Self::Output")
+        .with_field_type("C.Output", "Concrete");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("finish", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("finish");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+        .expect("Self::Output projects through C.Output to Concrete; finish resolves");
+    assert_eq!(result.target_symbol_id, 9);
+}
+
+#[test]
+fn associated_type_projection_declines_when_no_impl_binding() {
+    // Same chain, but NO `C.Output` impl binding. The projection must NOT fire
+    // on a coincidental name match — Self::Output interns as an opaque Class
+    // with no `finish` member, so the walk declines (widening-only soundness).
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let concrete_ty = arena.class("Concrete");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(concrete_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    members.add_direct(
+        concrete_ty,
+        sym_info(9, "finish", "Concrete.finish", "method", Some("Concrete")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // No `C.Output` field_type — the binding is absent.
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Concrete", "Concrete")
+        .with_return_type("C.add", "Self::Output");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("finish", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("finish");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+            .is_none(),
+        "no impl binding => no projection => walk declines"
+    );
+}
+
+#[test]
+fn associated_type_projection_off_by_default_profile() {
+    // The projection is profile-gated (`associated_type_projection`). Under
+    // DEFAULT_PROFILE the flag is false, so Self::Output is NOT rewritten even
+    // with the impl binding present — the next segment cannot resolve.
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let concrete_ty = arena.class("Concrete");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(concrete_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    members.add_direct(
+        concrete_ty,
+        sym_info(9, "finish", "Concrete.finish", "method", Some("Concrete")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Concrete", "Concrete")
+        .with_return_type("C.add", "Self::Output")
+        .with_field_type("C.Output", "Concrete");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("finish", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("finish");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+            .is_none(),
+        "default profile keeps associated_type_projection off"
+    );
+}
+
+#[test]
+fn associated_type_projection_ignores_plain_module_path_return() {
+    // A method returning `module::Foo` (a real path, not an assoc projection)
+    // must NOT be hijacked into projecting through `C.Foo`: there is no such
+    // impl binding, so the `::`-split lookup misses and the raw string interns
+    // unchanged as `Class("module::Foo")`. The projection only ever fires when
+    // the `{receiver}.{last}` binding HITS — a real path return declines, never
+    // mis-binds. A `C.Foo` binding to `Hijacked` is present to PROVE the split
+    // does not key on the path's last segment when the receiver is the path's
+    // module-qualified return rather than an assoc projection of C.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let hijacked_ty = arena.class("Hijacked");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(hijacked_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "make", "C.make", "method", Some("C")));
+    // If the projection wrongly keyed on the LAST `::` segment of the return
+    // (`Foo`) it would project `C.Foo` -> Hijacked and `go` would bind id 13.
+    members.add_direct(
+        hijacked_ty,
+        sym_info(13, "go", "Hijacked.go", "method", Some("Hijacked")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Hijacked", "Hijacked")
+        .with_return_type("C.make", "module::Foo")
+        .with_field_type("C.Foo", "Hijacked");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("make", SegmentKind::Property),
+            seg("go", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("go");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+            .is_none(),
+        "module::Foo is a path return, not an assoc projection of C — no hijack"
+    );
+}
+
+#[test]
+fn associated_type_angle_self_qualified_projects_to_impl_binding() {
+    // `c.add().finish()` where `C.add` returns the fully-qualified angle form
+    // `<Self as Trait>::Output`. The inner concrete of the angle head is the
+    // `Self` keyword, which must resolve to the receiver C — keying the impl
+    // binding `field_type["C.Output"] = "Concrete"` — exactly like the bare
+    // `Self::Output` form. Without resolving `Self` to C, the head keys the
+    // never-present `Self.Output` and the projection silently declines.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let concrete_ty = arena.class("Concrete");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(concrete_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    members.add_direct(
+        concrete_ty,
+        sym_info(9, "finish", "Concrete.finish", "method", Some("Concrete")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Concrete", "Concrete")
+        .with_return_type("C.add", "<Self as Trait>::Output")
+        .with_field_type("C.Output", "Concrete");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("finish", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("finish");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+        .expect("<Self as Trait>::Output projects through C.Output to Concrete");
+    assert_eq!(result.target_symbol_id, 9);
+}
+
+#[test]
+fn associated_type_angle_concrete_qualified_projects_when_head_is_receiver() {
+    // The angle head names the concrete receiver directly: `<C as Trait>::Output`.
+    // The inner concrete `C` equals the receiver qname, so the binding keys
+    // `C.Output` and the projection fires. (The trait is disambiguating context
+    // only; the binding keys on C.)
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let concrete_ty = arena.class("Concrete");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(concrete_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    members.add_direct(
+        concrete_ty,
+        sym_info(9, "finish", "Concrete.finish", "method", Some("Concrete")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Concrete", "Concrete")
+        .with_return_type("C.add", "<C as Trait>::Output")
+        .with_field_type("C.Output", "Concrete");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("finish", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("finish");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+        .expect("<C as Trait>::Output projects through C.Output to Concrete");
+    assert_eq!(result.target_symbol_id, 9);
+}
+
+#[test]
+fn associated_type_angle_unrelated_concrete_head_declines() {
+    // The angle head names a DIFFERENT concrete type than the receiver:
+    // `<Other as Trait>::Output`. The inner concrete `Other` is neither a
+    // self-keyword nor the receiver qname C, so the projection keys `Other.Output`
+    // (a binding genuinely about `Other`, not C). With no `Other.Output` binding
+    // present the projection declines — it must NOT silently key `C.Output`
+    // and bind a member that belongs to a different type's associated type.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+    let concrete_ty = arena.class("Concrete");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 1);
+    symbol_types.mark_self_yielding(concrete_ty, 2);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(c_ty, sym_info(5, "add", "C.add", "method", Some("C")));
+    members.add_direct(
+        concrete_ty,
+        sym_info(9, "finish", "Concrete.finish", "method", Some("Concrete")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // `C.Output` IS present; the head names `Other`, so projecting through
+    // `C.Output` would be a hijack. The correct key is `Other.Output` (absent).
+    let lookup = EmptyLookup::new()
+        .with_type("C", "C")
+        .with_type("Concrete", "Concrete")
+        .with_return_type("C.add", "<Other as Trait>::Output")
+        .with_field_type("C.Output", "Concrete");
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            seg("add", SegmentKind::Property),
+            seg("finish", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("finish");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &FixedRootTy { ty: c_ty })
+            .is_none(),
+        "<Other as Trait>::Output keys Other.Output (absent) — no hijack to C.Output"
+    );
+}
