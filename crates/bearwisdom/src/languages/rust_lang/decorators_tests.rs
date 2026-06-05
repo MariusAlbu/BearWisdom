@@ -10,7 +10,7 @@
 // What IS still emitted:
 //   * TypeRefs for each derive trait inside `#[derive(...)]` (Debug, Clone,
 //     serde::Serialize, ...). These participate in inheritance/impl edges
-//     and feed `synthesize_derive_methods`.
+//     and feed the derive-member synthesis recognizer.
 
 use super::super::extract::extract;
 use crate::types::EdgeKind;

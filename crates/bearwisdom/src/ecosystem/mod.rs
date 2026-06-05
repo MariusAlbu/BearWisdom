@@ -40,7 +40,6 @@ pub mod prolog_runtime;
 pub mod hexo_runtime;
 pub mod nuxt_runtime;
 pub mod cargo_build_scripts;
-pub mod cargo_expand_runtime;
 pub mod alire;
 pub mod cabal;
 pub mod bazel_central_registry;
@@ -116,7 +115,6 @@ pub use prolog_runtime::PrologRuntimeEcosystem;
 pub use hexo_runtime::HexoRuntimeEcosystem;
 pub use nuxt_runtime::NuxtRuntimeEcosystem;
 pub use cargo_build_scripts::CargoBuildScriptsEcosystem;
-pub use cargo_expand_runtime::CargoExpandRuntimeEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use alire::AlireEcosystem;
 pub use cabal::CabalEcosystem;
@@ -665,7 +663,6 @@ pub fn default_locator(
         "hexo-runtime" => Some(hexo_runtime::shared_locator()),
         "nuxt-runtime" => Some(nuxt_runtime::shared_locator()),
         "cargo-build-scripts" => Some(cargo_build_scripts::shared_locator()),
-        "cargo-expand-runtime" => Some(cargo_expand_runtime::shared_locator()),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
         "puppet-forge" => Some(puppet_forge::shared_locator()),
@@ -778,7 +775,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(HexoRuntimeEcosystem);
         reg_eco!(NuxtRuntimeEcosystem);
         reg_eco!(CargoBuildScriptsEcosystem);
-        reg_eco!(CargoExpandRuntimeEcosystem);
         reg_eco!(SwiftFoundationEcosystem);
         reg_eco!(SwiftPmDslEcosystem);
         reg_eco!(VbaTypelibsEcosystem);

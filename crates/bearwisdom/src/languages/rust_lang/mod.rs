@@ -5,6 +5,7 @@ mod calls_args;
 mod calls_imports;
 mod calls_macros;
 pub(crate) mod decorators;
+mod derives;
 mod embedded;
 pub(crate) mod flow;
 mod flow_detectors;
@@ -32,8 +33,12 @@ mod coverage_tests;
 #[path = "resolve_tests.rs"]
 mod resolve_tests;
 
-use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
+#[cfg(test)]
+#[path = "derives_tests.rs"]
+mod derives_tests;
+
+use crate::languages::{LanguagePlugin, Synthesized};
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 pub struct RustLangPlugin;
@@ -75,6 +80,15 @@ impl LanguagePlugin for RustLangPlugin {
         _lang_id: &str,
     ) -> Vec<EmbeddedRegion> {
         embedded::detect_regions(source)
+    }
+
+    fn synthesize_symbols(
+        &self,
+        source: &str,
+        symbols: &[ExtractedSymbol],
+        refs: &[ExtractedRef],
+    ) -> Synthesized {
+        derives::synthesize_derive_members(source, symbols, refs)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
