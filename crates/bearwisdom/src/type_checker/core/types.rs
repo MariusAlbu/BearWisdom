@@ -224,15 +224,29 @@ impl TypeArena {
         }
         // Function type: a top-level `=>` (`() => User`, TS/JS, Scala `T => R`)
         // or `->` (Rust `Fn() -> T`, Kotlin/Swift `(T) -> R`) marks a callable.
-        // Keep the return type — params aren't needed for call-yield. Checked
-        // before the generic-bracket search so a function type with generic
-        // params/return isn't mis-read as an application.
+        // Both arrows are 2 bytes, so the return is `trimmed[arrow + 2..]`. The
+        // params are the LAST top-level parenthesized group in `trimmed[..arrow]`
+        // (`(value: T)`, Rust `Fn(T)` / `impl Fn(T)`), comma-split with each
+        // piece's `name:` annotation peeled (the bare type is what binds T).
+        // Checked before the generic-bracket search so a function type with
+        // generic params/return isn't mis-read as an application.
         if let Some(arrow) = find_top_level_arrow(trimmed) {
             let return_ = self.intern_type_str(trimmed[arrow + 2..].trim());
-            return self.intern(Type::Function {
-                params: Vec::new(),
-                return_,
-            });
+            let pre = trimmed[..arrow].trim();
+            let params = match pre.char_indices().find(|&(_, c)| c == '(') {
+                Some((open, _)) => match find_matching_close(&pre[open..], '(', ')') {
+                    Some(close_rel) => {
+                        let inner = &pre[open + 1..open + close_rel];
+                        split_depth_zero_commas(inner)
+                            .iter()
+                            .map(|piece| self.intern_type_str(strip_param_name(piece)))
+                            .collect()
+                    }
+                    None => Vec::new(),
+                },
+                None => Vec::new(),
+            };
+            return self.intern(Type::Function { params, return_ });
         }
         // Locate the first generic-open at depth 0. Accept both `<` and
         // `[` so Scala / OCaml-style param brackets resolve too.
@@ -528,6 +542,28 @@ fn find_matching_close(s: &str, open: char, close: char) -> Option<usize> {
         }
     }
     None
+}
+
+/// Peel a `name:` annotation off one function-type parameter piece, returning
+/// the bare type. Splits on the LAST `:` at bracket depth 0 so TS `value: T`
+/// yields `T` while a type argument that itself contains `:` stays intact. A
+/// piece with no top-level `:` (Rust `Fn(T)`, where the param is bare) is
+/// returned whole.
+fn strip_param_name(piece: &str) -> &str {
+    let mut depth: i32 = 0;
+    let mut last_colon: Option<usize> = None;
+    for (i, ch) in piece.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            ':' if depth == 0 => last_colon = Some(i),
+            _ => {}
+        }
+    }
+    match last_colon {
+        Some(i) => piece[i + 1..].trim(),
+        None => piece.trim(),
+    }
 }
 
 /// Split `s` on commas that sit at bracket depth 0, returning the trimmed

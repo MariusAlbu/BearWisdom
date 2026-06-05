@@ -68,6 +68,31 @@ fn intern_type_str_parses_arrow_return_function_type() {
 }
 
 #[test]
+fn intern_type_str_preserves_function_param_types() {
+    let mut arena = TypeArena::new();
+    // TS `(name: T) =>` — the param annotation is peeled to its bare type, so
+    // the param interns as `Class("T")` (rebind lifts Class→Generic later).
+    let t = arena.intern_type_str("T");
+    let f = arena.intern_type_str("(value: T) => U");
+    match arena.get(f) {
+        Type::Function { params, return_ } => {
+            assert_eq!(params, vec![t]);
+            assert!(matches!(arena.get(return_), Type::Class(q) if q == "U"));
+        }
+        other => panic!("expected Function, got {other:?}"),
+    }
+    // Rust `Fn(T) -> U` — the param is bare (no colon), so the whole piece is
+    // the type. The param list is the first top-level parens after `Fn`.
+    match arena.get(arena.intern_type_str("Fn(T) -> U")) {
+        Type::Function { params, return_ } => {
+            assert_eq!(params, vec![arena.intern_type_str("T")]);
+            assert!(matches!(arena.get(return_), Type::Class(q) if q == "U"));
+        }
+        other => panic!("expected Function, got {other:?}"),
+    }
+}
+
+#[test]
 fn rebind_canonicalizes_higher_kinded_base() {
     use rustc_hash::FxHashMap;
     // `F<A>` interned nominally rebinds BOTH the base and the arg to their
