@@ -581,6 +581,182 @@ fn method(id: i64, name: &str, scope: &str) -> SymbolInfo {
     }
 }
 
+/// A Swift extension container, mirroring `push_extension`: a `Namespace`-kind
+/// symbol named after the extended type. Like a Rust impl-container it carries
+/// the extended/implementing type structurally via a sibling self-`TypeRef`
+/// (`impl_typeref`), which the supertype reroute reads. Here the container's
+/// own name IS the extended base (Swift files the extension under it), and the
+/// reroute resolves the same base through the self-TypeRef.
+fn ext_container_sym(extended_type: &str) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: extended_type.to_string(),
+        qualified_name: extended_type.to_string(),
+        kind: SymbolKind::Namespace,
+        visibility: Some(Visibility::Public),
+        start_line: 1,
+        end_line: 1,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: Some(format!("extension {extended_type}")),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+#[test]
+fn swift_protocol_extension_default_method_reachable_from_conforming_type() {
+    // LANG-SWIFT-1 headline: `protocol Greet`, `extension Greet { func hello(){} }`,
+    // `struct Dog: Greet {}`. The extension's `hello` files under `Greet`
+    // (scope_path = "Greet"); the protocol-extension container is a Namespace
+    // emitting a self-TypeRef to `Greet`. `Dog: Greet` emits `Implements
+    // Dog -> Greet` directly (the source is the real Dog type, not a container).
+    // `MembersIndex::lookup` from the concrete receiver `Dog` walks the ancestor
+    // `Greet` and resolves the protocol-extension default `hello`.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type("Dog", "Dog")
+        .with_type("Greet", "Greet");
+
+    let parsed = vec![parsed_with_refs(
+        "x.swift",
+        vec![
+            // Protocol Greet (Interface) — index 0.
+            ExtractedSymbol {
+                kind: SymbolKind::Interface,
+                ..class_sym("Greet", "Greet")
+            },
+            // Extension container `extension Greet { ... }` (Namespace) — index 1.
+            ext_container_sym("Greet"),
+            // Concrete conforming type `struct Dog: Greet {}` — index 2.
+            ExtractedSymbol {
+                kind: SymbolKind::Struct,
+                ..class_sym("Dog", "Dog")
+            },
+        ],
+        vec![
+            // Extension container self-TypeRef to the extended base (index 1).
+            impl_typeref(1, "Greet"),
+            // `struct Dog: Greet` conformance — source is the real Dog (index 2).
+            implements_ref(2, "Greet"),
+        ],
+    )];
+
+    // The extension's default `hello` is filed under `Greet` (scope_path).
+    let mut members = MembersIndex::new();
+    let greet = arena.class("Greet");
+    members.add_direct(greet, method(42, "hello", "Greet"));
+
+    let symbol_types = SymbolTypeMap::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph =
+        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    let hit = members
+        .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &profile)
+        .expect("dog.hello() resolves to the protocol-extension default method");
+    assert_eq!(hit.id, 42, "resolved symbol is the protocol-extension default `hello`");
+}
+
+#[test]
+fn swift_extension_member_not_reachable_without_conformance() {
+    // Soundness guard: a struct `Cat` that does NOT conform to `Greet` must not
+    // resolve the extension's `hello`. Binding requires the real conformance
+    // edge — a member filed under a protocol is never offered to a type that
+    // doesn't conform (no coincidental same-name bind).
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type("Cat", "Cat")
+        .with_type("Greet", "Greet");
+
+    let parsed = vec![parsed_with_refs(
+        "x.swift",
+        vec![
+            ExtractedSymbol {
+                kind: SymbolKind::Interface,
+                ..class_sym("Greet", "Greet")
+            },
+            ext_container_sym("Greet"),
+            // Cat exists but has NO `: Greet` conformance.
+            ExtractedSymbol {
+                kind: SymbolKind::Struct,
+                ..class_sym("Cat", "Cat")
+            },
+        ],
+        vec![impl_typeref(1, "Greet")],
+    )];
+
+    let mut members = MembersIndex::new();
+    let greet = arena.class("Greet");
+    members.add_direct(greet, method(42, "hello", "Greet"));
+
+    let symbol_types = SymbolTypeMap::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph =
+        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let cat = arena.class("Cat");
+    assert!(
+        members
+            .lookup(cat, "hello", EdgeKind::Calls, &graph, &arena, &profile)
+            .is_none(),
+        "Cat does not conform to Greet, so the extension's hello must NOT resolve"
+    );
+}
+
+#[test]
+fn swift_extension_retroactive_conformance_reroutes_to_implementing_type() {
+    // `extension Dog: Greet {}` — the conformance is declared ON the extension
+    // container (a Namespace), so the `Implements` edge's source is the
+    // container. The reroute reads the container's self-TypeRef (`Dog`) and
+    // keys the edge under the implementing type `Dog`, not the dead container.
+    let mut arena = TypeArena::new();
+    let lookup = TypeLookup::new()
+        .with_type("Dog", "Dog")
+        .with_type("Greet", "Greet");
+
+    let parsed = vec![parsed_with_refs(
+        "x.swift",
+        vec![
+            ExtractedSymbol {
+                kind: SymbolKind::Interface,
+                ..class_sym("Greet", "Greet")
+            },
+            ExtractedSymbol {
+                kind: SymbolKind::Struct,
+                ..class_sym("Dog", "Dog")
+            },
+            // `extension Dog: Greet {}` container — index 2.
+            ext_container_sym("Dog"),
+        ],
+        vec![
+            // Self-TypeRef carries the extended/implementing type Dog.
+            impl_typeref(2, "Dog"),
+            // The conformance is declared on the extension container.
+            implements_ref(2, "Greet"),
+        ],
+    )];
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+    let graph =
+        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    let greet = arena.class("Greet");
+    assert!(
+        graph.parents_of(dog).contains(&greet),
+        "retroactive conformance must attach Dog -> Greet via the reroute"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // LANG-PY-1: ancestor-order axis (BFS vs C3 linearization).
 //

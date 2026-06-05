@@ -192,3 +192,149 @@ enum MyEnum {
         assert!(r.symbols.iter().any(|s| s.name == "bar"), "missing 'bar' function from extension: {:?}", names);
         assert!(r.symbols.iter().any(|s| s.name == "method"), "missing 'method' function from enum: {:?}", names);
     }
+
+    // -----------------------------------------------------------------------
+    // Protocol-extension default methods (LANG-SWIFT-1).
+    //
+    // An extension's direct body declarations file under the extended type's
+    // normalized base via `scope_path`, and the extension container emits a
+    // self-`TypeRef` to that base — the impl-container shape the supertype
+    // reroute already consumes. Retroactive conformance (`extension C: P {}`)
+    // additionally emits an `Implements` ref from the container.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn extension_default_method_files_under_extended_base() {
+        let src = r#"
+protocol Greet { func hello() }
+extension Greet { func hello() { } }
+struct Dog: Greet {}
+"#;
+        let r = super::extract::extract(src);
+
+        // The extension's method `hello` files under `Greet` (its extended base),
+        // not at top level.
+        let hello = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "hello" && s.kind == SymbolKind::Method)
+            .expect("extension method 'hello' must be a Method symbol");
+        assert_eq!(
+            hello.scope_path.as_deref(),
+            Some("Greet"),
+            "extension method must file under the extended base 'Greet', got: {:?}",
+            hello.scope_path
+        );
+
+        // The extension container emits a self-TypeRef to the extended base, so
+        // the supertype reroute can read the implementing/extended type.
+        let ext_idx = r
+            .symbols
+            .iter()
+            .position(|s| s.kind == SymbolKind::Namespace && s.name == "Greet")
+            .expect("extension container Namespace named 'Greet'");
+        assert!(
+            r.refs.iter().any(|rf| {
+                rf.kind == EdgeKind::TypeRef
+                    && rf.source_symbol_index == ext_idx
+                    && rf.target_name == "Greet"
+            }),
+            "extension container must emit a self-TypeRef to 'Greet'; refs: {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == ext_idx)
+                .map(|rf| (&rf.target_name, rf.kind))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn extension_local_let_keeps_method_scope_not_extended_base() {
+        // A local `let` inside an extension method's body must stay scoped to
+        // the method, NOT be hoisted under the extended base. Only the direct
+        // body declarations of the extension file under the base.
+        let src = r#"
+protocol Greet { func hello() }
+extension Greet {
+    func hello() {
+        let local = 5
+    }
+}
+"#;
+        let r = super::extract::extract(src);
+        if let Some(local) = r.symbols.iter().find(|s| s.name == "local") {
+            assert_ne!(
+                local.scope_path.as_deref(),
+                Some("Greet"),
+                "a local inside the method body must not file under the extended base"
+            );
+        }
+    }
+
+    #[test]
+    fn extension_retroactive_conformance_emits_implements() {
+        // `extension Dog: Greet {}` forms the Dog -> Greet conformance via an
+        // Implements ref sourced from the extension container (a Namespace), so
+        // the supertype reroute keys it under the implementing type Dog.
+        let src = r#"
+protocol Greet { func hello() }
+struct Dog {}
+extension Dog: Greet {}
+"#;
+        let r = super::extract::extract(src);
+
+        let ext_idx = r
+            .symbols
+            .iter()
+            .position(|s| s.kind == SymbolKind::Namespace && s.name == "Dog")
+            .expect("extension container Namespace named 'Dog'");
+        assert!(
+            r.refs.iter().any(|rf| {
+                rf.kind == EdgeKind::Implements
+                    && rf.source_symbol_index == ext_idx
+                    && rf.target_name == "Greet"
+            }),
+            "retroactive conformance must emit Implements Dog-container -> Greet; refs: {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == ext_idx)
+                .map(|rf| (&rf.target_name, rf.kind))
+                .collect::<Vec<_>>()
+        );
+
+        // The extended type itself (Dog) is the self-TypeRef carrier, never an
+        // Implements parent — guard against double-emitting Dog as a conformance.
+        assert!(
+            !r.refs.iter().any(|rf| {
+                rf.kind == EdgeKind::Implements
+                    && rf.source_symbol_index == ext_idx
+                    && rf.target_name == "Dog"
+            }),
+            "the extended type must not be emitted as its own conformance parent"
+        );
+    }
+
+    #[test]
+    fn extension_generic_base_normalized_to_bare_name() {
+        // `extension Array<Element> { ... }` files members under the bare base
+        // `Array`, and the self-TypeRef carries the same base so the reroute and
+        // the member filing agree.
+        let src = r#"
+extension Array {
+    func firstOrNil() -> Element? { return first }
+}
+"#;
+        let r = super::extract::extract(src);
+        let m = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "firstOrNil")
+            .expect("extension method 'firstOrNil'");
+        assert_eq!(
+            m.scope_path.as_deref(),
+            Some("Array"),
+            "concrete-type extension files members under the base 'Array', got: {:?}",
+            m.scope_path
+        );
+    }
+

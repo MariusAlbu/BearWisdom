@@ -217,6 +217,19 @@ pub(super) fn push_type_decl(
     Some(idx)
 }
 
+/// Bare base of a type's text: drop any generic-argument list and a trailing
+/// dot. `Array<Element>` → `Array`, `path.C` → `path.C`. Mirrors the structural
+/// split the supertype reroute applies to the self-`TypeRef`, so an extension
+/// member's `scope_path` and the rerouted supertype edge agree on the same
+/// canonical base.
+pub(super) fn extension_base_name(text: &str) -> String {
+    let base = match text.find('<') {
+        Some(i) => &text[..i],
+        None => text,
+    };
+    base.trim_end_matches('.').to_string()
+}
+
 pub(super) fn push_extension(
     node: &Node,
     src: &[u8],
@@ -759,6 +772,13 @@ pub(super) fn push_associatedtype(
 }
 
 /// Dispatch the `class_declaration` node to the correct handler.
+///
+/// Swift's grammar folds `extension` into `class_declaration` (its
+/// `declaration_kind` field is `extension`); `swift_type_decl_kind` maps that to
+/// `Namespace`. An extension is treated as an impl-container: it carries the
+/// extended type structurally via a self-`TypeRef`, and its direct body members
+/// file under the extended type's base so the generic supertype reroute makes a
+/// protocol extension's defaults reachable from conforming types.
 pub(super) fn handle_class_declaration(
     child: &Node,
     src: &[u8],
@@ -769,10 +789,51 @@ pub(super) fn handle_class_declaration(
 ) {
     let swift_kind = swift_type_decl_kind(child, src);
     let is_enum = swift_kind == SymbolKind::Enum;
+    let is_extension = swift_kind == SymbolKind::Namespace;
     let all_implements = swift_kind != SymbolKind::Class;
     let idx = push_type_decl(child, src, scope_tree, swift_kind, symbols, parent_index);
     if let Some(sym_idx) = idx {
+        // For an extension, `extract_type_inheritance` emits the conformance
+        // (`extension C: P`) as Implements edges sourced from this Namespace
+        // container — the reroute attaches them to the implementing type read
+        // from the self-`TypeRef` below. The extended type is the `name` field,
+        // never an inheritance specifier, so it is not re-emitted as a parent.
         extract_type_inheritance(child, src, sym_idx, refs, all_implements);
+
+        if is_extension {
+            // The extended type's text (`Greet`, `Array`) is the container's own
+            // name. Emit a self-`TypeRef` to it so the supertype reroute can read
+            // the extended/implementing type; the reroute normalizes generics.
+            let extended = symbols[sym_idx].name.clone();
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
+                source_symbol_index: sym_idx,
+                target_name: extended.clone(),
+                kind: EdgeKind::TypeRef,
+                line: child.start_position().row as u32,
+                col: 0,
+                module: None,
+                chain: None,
+                byte_offset: child.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
+
+            // Recurse the body, then file the extension's DIRECT body
+            // declarations under the extended-type base. Direct declarations
+            // carry `parent_index == Some(sym_idx)`; locals nested inside method
+            // bodies carry the method's index, so they keep their own scope.
+            let body_start = symbols.len();
+            recurse_into_body(child, src, scope_tree, symbols, refs, idx);
+            let base = extension_base_name(&extended);
+            for s in symbols[body_start..].iter_mut() {
+                if s.parent_index == Some(sym_idx) {
+                    s.scope_path = Some(base.clone());
+                }
+            }
+            return;
+        }
     }
     if is_enum {
         recurse_enum_body(child, src, scope_tree, symbols, refs, idx);

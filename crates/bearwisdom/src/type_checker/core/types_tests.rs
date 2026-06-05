@@ -424,3 +424,35 @@ fn intern_type_str_leaves_interior_ampersand_alone() {
     let id = arena.intern_type_str("A & B");
     assert!(matches!(arena.get(id), Type::Class(q) if q == "A & B"));
 }
+
+#[test]
+fn intern_type_str_strips_opaque_existential_prefix() {
+    let arena = TypeArena::new();
+    // A leading `some `/`any ` is Swift's opaque/existential keyword prefix,
+    // never part of a class name — strip it so a value typed `some Greet` /
+    // `any Greet` interns as the bare protocol `Greet`, the base under which a
+    // protocol extension files its default members.
+    let greet = arena.class("Greet");
+    assert_eq!(arena.intern_type_str("some Greet"), greet);
+    assert_eq!(arena.intern_type_str("any Greet"), greet);
+    // Extra interior whitespace is tolerated (the prefix is keyword + space).
+    assert_eq!(arena.intern_type_str("some   Greet"), greet);
+    // A constrained existential keeps its application: `any Collection<Int>`
+    // strips the keyword and re-interns the constrained type.
+    assert_eq!(
+        arena.intern_type_str("any Collection<Int>"),
+        arena.intern_type_str("Collection<Int>")
+    );
+}
+
+#[test]
+fn intern_type_str_does_not_strip_some_any_as_type_name_prefix() {
+    let arena = TypeArena::new();
+    // `some`/`any` are only stripped as standalone keyword prefixes (followed by
+    // whitespace then a type). A class whose NAME begins with those letters but
+    // is not the bare keyword (`Something`, `anyOf`, `SomeType`) is untouched —
+    // no word boundary, no strip.
+    assert!(matches!(arena.get(arena.intern_type_str("Something")), Type::Class(q) if q == "Something"));
+    assert!(matches!(arena.get(arena.intern_type_str("anyOf")), Type::Class(q) if q == "anyOf"));
+    assert!(matches!(arena.get(arena.intern_type_str("SomeType")), Type::Class(q) if q == "SomeType"));
+}

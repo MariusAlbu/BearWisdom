@@ -232,6 +232,16 @@ impl TypeArena {
         if let Some(referent) = strip_reference_sigil(trimmed) {
             return self.intern_type_str(referent);
         }
+        // Opaque/existential prefix: a LEADING `some`/`any` keyword (Swift's
+        // `some P` opaque type / `any P` existential) names a value whose
+        // member-lookup base is the constraint `P`, not a type literally named
+        // `some P`. The keyword is contextual and only appears in type position,
+        // so peeling it and re-interning the inner type is sound: `some Greet`→
+        // Greet, `any Collection<Int>`→Collection<Int>. A word boundary is
+        // required so a class named `Something`/`anyOf` is left untouched.
+        if let Some(inner) = strip_opaque_existential_prefix(trimmed) {
+            return self.intern_type_str(inner);
+        }
         // Function type: a top-level `=>` (`() => User`, TS/JS, Scala `T => R`)
         // or `->` (Rust `Fn() -> T`, Kotlin/Swift `(T) -> R`) marks a callable.
         // Both arrows are 2 bytes, so the return is `trimmed[arrow + 2..]`. The
@@ -545,6 +555,26 @@ fn strip_reference_sigil(s: &str) -> Option<&str> {
         _ => rest,
     };
     Some(rest)
+}
+
+/// Strip a leading opaque/existential keyword (`some`/`any`) from a type
+/// string, returning the trimmed inner type when `s` begins with the keyword
+/// followed by whitespace and a non-empty type. A trailing whitespace boundary
+/// is required so a class name that merely starts with those letters
+/// (`Something`, `anyOf`) is not truncated. Returns `None` otherwise so the
+/// caller leaves the string untouched.
+fn strip_opaque_existential_prefix(s: &str) -> Option<&str> {
+    for kw in ["some", "any"] {
+        if let Some(after) = s.strip_prefix(kw) {
+            if after.starts_with(char::is_whitespace) {
+                let inner = after.trim_start();
+                if !inner.is_empty() {
+                    return Some(inner);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Byte index of a top-level `=>` (function-type arrow) in `s`, or `None`.

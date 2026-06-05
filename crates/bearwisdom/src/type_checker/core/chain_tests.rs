@@ -1663,6 +1663,79 @@ fn cast_segment_adopts_asserted_type() {
 }
 
 #[test]
+fn opaque_existential_root_resolves_protocol_extension_default() {
+    // A receiver declared `some Greet` / `any Greet` dispatches members through
+    // the protocol `Greet`, where a protocol extension files its default `hello`
+    // (the part-(b) scope_path filing). The opaque/existential keyword prefix is
+    // peeled at intern time, so the chain root types as `Greet` and the member
+    // walk finds the default.
+    for opaque in ["some Greet", "any Greet"] {
+        let mut arena = TypeArena::new();
+        let irrelevant = arena.class("Whatever");
+        let greet_ty = arena.class("Greet");
+
+        let symbol_types = SymbolTypeMap::new();
+        let mut members = MembersIndex::new();
+        members.add_direct(
+            greet_ty,
+            sym_info(7, "hello", "Greet.hello", "method", Some("Greet")),
+        );
+
+        let supertypes = SupertypeGraph::new();
+        let aliases = AliasIndex::default();
+        let lookup = EmptyLookup::new();
+
+        struct FixedRoot {
+            ty: TypeId,
+        }
+        impl RootResolver for FixedRoot {
+            fn resolve(
+                &self,
+                _seg: &ChainSegment,
+                _ref_ctx: &RefContext,
+                _file_ctx: &FileContext,
+                _arena: &TypeArena,
+                _lookup: &dyn SymbolLookup,
+            ) -> Option<TypeId> {
+                Some(self.ty)
+            }
+        }
+
+        let walker = ChainWalker::new(
+            &mut arena,
+            &members,
+            &supertypes,
+            &symbol_types,
+            &aliases,
+            &DEFAULT_PROFILE,
+            &lookup,
+        );
+        let chain = MemberChain {
+            segments: vec![
+                ChainSegment {
+                    declared_type: Some(opaque.to_string()),
+                    ..seg("g", SegmentKind::Identifier)
+                },
+                seg("hello", SegmentKind::Property),
+            ],
+        };
+        let source = dummy_source_symbol("caller", None);
+        let r = dummy_extracted_ref("hello");
+        let ref_ctx = RefContext {
+            extracted_ref: &r,
+            source_symbol: &source,
+            scope_chain: Vec::new(),
+            file_package_id: None,
+        };
+        let fc = file_ctx();
+        let result = walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: irrelevant })
+            .unwrap_or_else(|| panic!("hello resolves on the peeled `{opaque}` receiver"));
+        assert_eq!(result.target_symbol_id, 7, "{opaque} dispatches `hello` through Greet");
+    }
+}
+
+#[test]
 fn generic_arg_substitutes_through_inheritance() {
     // class Repository<T> { find_one(): T }
     // class UserRepo: Repository<User> {}
