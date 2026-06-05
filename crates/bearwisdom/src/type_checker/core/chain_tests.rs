@@ -4485,6 +4485,82 @@ fn box_receiver_resolves_inner_type_method() {
 }
 
 #[test]
+fn pin_and_cow_receivers_resolve_inner_type_method() {
+    // `Pin<C>` and `Cow<'a, C>` are pure-Deref single-inner wrappers (Pin derefs
+    // to its pointee, Cow to its borrowed inner). Both must peel to C so a
+    // `.method()` resolves on C. Cow's first generic arg is a LIFETIME — the
+    // intern-time lifetime drop makes `Cow<'a, C>` a single-type-arg Apply so the
+    // existing peel projects `args[0]` = C. Mirrors the Box case for the two
+    // additional wrappers added to the Rust profile data.
+    use crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let arena = TypeArena::new();
+    let c_ty = arena.class("C");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.mark_self_yielding(c_ty, 99);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        c_ty,
+        sym_info(7, "method", "C.method", "method", Some("C")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &RUST_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("v", SegmentKind::Identifier),
+            seg("method", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("method");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+
+    for spec in ["Pin<C>", "Cow<'a, C>"] {
+        let wrapped = arena.intern_type_str(spec);
+        let result = walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: wrapped })
+            .unwrap_or_else(|| panic!("method resolves on the peeled inner C for {spec}"));
+        assert_eq!(result.target_symbol_id, 7, "{spec} must peel to C");
+    }
+}
+
+#[test]
 fn box_field_receiver_resolves_inner_via_default_root() {
     // End-to-end through the REAL DefaultRootResolver scope-walk path: a
     // receiver `b` whose enclosing-scope declared type is `Box<C>` must intern

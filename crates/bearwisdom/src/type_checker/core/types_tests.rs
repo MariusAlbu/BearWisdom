@@ -392,6 +392,30 @@ fn intern_type_str_strips_reference_sigil() {
 }
 
 #[test]
+fn intern_type_str_drops_leading_lifetime_arg() {
+    let arena = TypeArena::new();
+    // A generic argument that is a lifetime (`'a`, `'static`) is never a type —
+    // it is dropped from the Apply's args so a wrapper whose first param is a
+    // lifetime (`Cow<'a, str>`) interns as a SINGLE-type-arg application, the
+    // shape the single-inner-wrapper peel projects through.
+    let str_ty = arena.class("str");
+    let cow_str = arena.intern_type_str("Cow<'a, str>");
+    match arena.get(cow_str) {
+        Type::Apply { base, args } => {
+            assert!(matches!(arena.get(base), Type::Class(q) if q == "Cow"));
+            assert_eq!(args, vec![str_ty], "lifetime arg dropped, only `str` remains");
+        }
+        other => panic!("expected Apply, got {other:?}"),
+    }
+    // A `'static` lifetime is dropped the same way.
+    let cow_static = arena.intern_type_str("Cow<'static, str>");
+    assert_eq!(cow_static, cow_str, "any lifetime arg is dropped identically");
+    // An all-lifetime arg list collapses to the bare base class (no type args).
+    let only_life = arena.intern_type_str("Ref<'a>");
+    assert!(matches!(arena.get(only_life), Type::Class(q) if q == "Ref"));
+}
+
+#[test]
 fn intern_type_str_leaves_interior_ampersand_alone() {
     let arena = TypeArena::new();
     // An interior `&` is a TS intersection operator, not a reference sigil —

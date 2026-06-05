@@ -942,6 +942,90 @@ fn external_trait_default_method_is_reachable_from_implementing_type() {
 }
 
 #[test]
+fn external_supertrait_default_method_is_reachable_transitively() {
+    // Sub-case (b) of fork #4 — transitive ext:→ext: supertrait chains. An
+    // external trait `Derived: Base` extends another external trait `Base`. Base
+    // declares a default `base_method`; Derived declares a default
+    // `derived_method`. A project type `Dog` implements `Derived` only. The
+    // supertrait edge `Derived → Base` forms in build_explicit from Derived's own
+    // `Inherits` ref (source is the Trait symbol, NOT an impl-container, so the
+    // reroute does not fire), and `Dog → Derived` forms via the impl-container
+    // reroute. Both Base's and Derived's default bodies live in ext: files and are
+    // admitted by the per-symbol trait gate. The chain walk
+    // `Dog → Derived → Base` must reach BOTH defaults — the inner hop is the
+    // transitive ext:→ext: case the single-hop fork left unexercised.
+    use crate::types::SymbolKind;
+
+    // ext: dep crate A — Base trait (idx 0) + default base_method (idx 1).
+    let ext_base = parsed(
+        "ext:rust:base-crate/lib.rs",
+        "rust",
+        vec![
+            ex_sym("Base", "Base", SymbolKind::Trait, None),
+            ex_sym("base_method", "Base.base_method", SymbolKind::Function, Some("Base")),
+        ],
+        Vec::new(),
+    );
+    // ext: dep crate B (a DIFFERENT file) — Derived trait (idx 0) + default
+    // derived_method (idx 1); Derived inherits Base from crate A. The per-file
+    // trait gate must admit each crate's defaults independently, and the
+    // cross-file supertrait `Inherits` edge must still form so the walk spans
+    // both ext: files.
+    let ext_derived = parsed(
+        "ext:rust:derived-crate/lib.rs",
+        "rust",
+        vec![
+            ex_sym("Derived", "Derived", SymbolKind::Trait, None),
+            ex_sym("derived_method", "Derived.derived_method", SymbolKind::Function, Some("Derived")),
+        ],
+        vec![ex_ref(0, "Base", EdgeKind::Inherits)],
+    );
+
+    // Internal file — impl-container Namespace (idx 0) implementing Derived for
+    // Dog, plus the Dog struct (idx 1).
+    let app_file = parsed(
+        "app.rs",
+        "rust",
+        vec![
+            ex_sym("<impl Dog@1>", "<impl Dog@1>", SymbolKind::Namespace, None),
+            ex_sym("Dog", "Dog", SymbolKind::Struct, None),
+        ],
+        vec![
+            ex_ref(0, "Derived", EdgeKind::Implements),
+            ex_ref(0, "Dog", EdgeKind::TypeRef),
+        ],
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:rust:base-crate/lib.rs".to_string(), 0), 100); // Base
+    sym_ids.insert(("ext:rust:base-crate/lib.rs".to_string(), 1), 101); // base_method
+    sym_ids.insert(("ext:rust:derived-crate/lib.rs".to_string(), 0), 102); // Derived
+    sym_ids.insert(("ext:rust:derived-crate/lib.rs".to_string(), 1), 103); // derived_method
+    sym_ids.insert(("app.rs".to_string(), 0), 200); // impl container
+    sym_ids.insert(("app.rs".to_string(), 1), 201); // Dog
+
+    let arena = TypeArena::new();
+    let slice = vec![ext_base, ext_derived, app_file];
+    let members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+
+    let lookup = NullLookup::new();
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(&slice, &arena, &DEFAULT_PROFILE, &members, &symbol_types, &lookup);
+
+    let dog = arena.class("Dog");
+    // The directly-implemented trait's default resolves (single hop).
+    let derived = members
+        .lookup(dog, "derived_method", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .expect("directly-implemented trait's default method must be reachable");
+    assert_eq!(derived.id, 103);
+    // The SUPERTRAIT's default resolves through the transitive ext:→ext: hop.
+    let base = members
+        .lookup(dog, "base_method", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .expect("external supertrait default method must be reachable transitively");
+    assert_eq!(base.id, 101, "resolves to the supertrait's default-method body symbol");
+}
+
+#[test]
 fn external_non_trait_member_still_skipped() {
     // The write-storm guard: an external Class `Curl` with a Method `perform`
     // (the common case — a non-trait external type with body methods) must NOT

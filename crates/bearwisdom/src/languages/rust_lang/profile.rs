@@ -116,11 +116,15 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &["Future", "Pin"],
     container_accessors: &[],
     // Std smart pointers that `Deref` to their single inner: the receiver of a
-    // method call on `Box<C>` / `Rc<C>` / `Arc<C>` types as the inner `C`. The
-    // chain walker peels these structurally (`args[0]`) at the root, then the
-    // member + trait-default walk resolves against `C`. `Vec` / `HashMap` are
-    // deliberately absent — their accessors must stay on the container.
-    single_inner_wrappers: &["Box", "Rc", "Arc"],
+    // method call on `Box<C>` / `Rc<C>` / `Arc<C>` / `Pin<C>` / `Cow<'a, C>`
+    // types as the inner `C`. The chain walker peels these structurally
+    // (`args[0]`) at the root, then the member + trait-default walk resolves
+    // against `C`. Cow's leading lifetime arg is dropped at intern time so its
+    // single type arg is `args[0]`. `Vec` / `HashMap` are deliberately absent —
+    // their accessors must stay on the container. `RefCell`/`Cell`/`Mutex` are
+    // absent too — they expose a GUARD's members via `.borrow()`/`.lock()`, not
+    // the inner's, so peeling them to the inner would be unsound.
+    single_inner_wrappers: &["Box", "Rc", "Arc", "Pin", "Cow"],
     iterator_method: Some("next"),
     primitive_mapping: RUST_PRIMITIVES,
     kind_compatible_table: RUST_KIND_TABLE,

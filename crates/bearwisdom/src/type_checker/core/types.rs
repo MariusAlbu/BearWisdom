@@ -293,9 +293,17 @@ impl TypeArena {
             return self.class(trimmed);
         }
         let inner = &trimmed[open_idx + 1..open_idx + close_rel];
-        let arg_strs = split_depth_zero_commas(inner);
+        // A `'`-led argument is a lifetime parameter (`'a`, `'static`), never a
+        // type — drop it so a wrapper whose leading param is a lifetime
+        // (`Cow<'a, str>`) decomposes to the type args alone. No language has a
+        // type whose name starts with `'`, so this is universally sound; an
+        // all-lifetime arg list collapses to the bare base class below.
+        let arg_strs: Vec<String> = split_depth_zero_commas(inner)
+            .into_iter()
+            .filter(|a| !a.trim_start().starts_with('\''))
+            .collect();
         if arg_strs.is_empty() {
-            // Empty `Foo<>` — treat as plain class.
+            // Empty `Foo<>`, or only lifetime args — treat as plain class.
             return self.class(head);
         }
         let args: Vec<TypeId> = arg_strs
