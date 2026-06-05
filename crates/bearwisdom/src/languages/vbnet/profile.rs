@@ -65,7 +65,11 @@ pub const VBNET_PROFILE: LanguageProfile = LanguageProfile {
     iterator_method: None,
     primitive_mapping: VBNET_PRIMITIVES,
     kind_compatible_table: VBNET_KIND_TABLE,
-    chain_qualification: ChainQualification::None,
+    // Same-namespace + Imports qualification of a bare receiver type, so the
+    // structured walker's `qualify_current_ty` rewrites `Button` to its FQ
+    // `System.Windows.Controls.Button` form and hard-binds to the hydrated
+    // ext:dotnet symbol — the .NET qualification C# already runs.
+    chain_qualification: ChainQualification::SamePackageAndImports,
     builtin_skip: None,
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-05-27T00:00:00Z",
+  "captured_at": "2026-06-05T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -10241,7 +10241,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 56
+        "min_resolution_rate": 89
       },
       "code_chunks": 3100,
       "files": 87,
@@ -10249,8 +10249,8 @@
         "db_query": 9
       },
       "flow_edges": 9,
-      "internal_edges": 1202,
-      "internal_unresolved": 936,
+      "internal_edges": 1120,
+      "internal_unresolved": 132,
       "languages": {
         "csharp": 20,
         "markdown": 2,
@@ -10259,19 +10259,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/vbnet-compactgui",
       "perf": {
-        "end_ws_mb": 370,
-        "files_per_sec": 9,
-        "index_duration_ms": 9715
+        "end_ws_mb": 101,
+        "files_per_sec": 12,
+        "index_duration_ms": 6985
       },
       "project": "vbnet-compactgui",
-      "resolution_rate": 56.22,
+      "resolution_rate": 89.46,
       "routes": 0,
-      "symbols": 1465,
+      "symbols": 1467,
       "unresolved_by_lang_kind": {
-        "vbnet.calls": 643,
-        "vbnet.imports": 135,
-        "vbnet.inherits": 1,
-        "vbnet.instantiates": 157
+        "vbnet.calls": 102,
+        "vbnet.imports": 13,
+        "vbnet.instantiates": 17
       }
     },
     {

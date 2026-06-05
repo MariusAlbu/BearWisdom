@@ -199,7 +199,7 @@ fn dominant_dotnet_language(project_files: &[PathBuf]) -> &'static str {
     }
     if cs >= fs && cs >= vb { "csharp" }
     else if fs >= vb { "fsharp" }
-    else { "vb" }
+    else { "vbnet" }
 }
 
 pub fn nuget_packages_root() -> Option<PathBuf> {
