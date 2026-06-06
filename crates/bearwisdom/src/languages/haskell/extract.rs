@@ -216,7 +216,7 @@ fn visit(
                 } else {
                     SymbolKind::Function
                 };
-                extract_signature_symbols(&child, src, scope_tree, symbols, kind, parent_index);
+                extract_signature_symbols(&child, src, scope_tree, symbols, refs, kind, parent_index);
             }
             _ => {
                 visit(child, src, scope_tree, symbols, refs, routes, parent_index, inside_class_or_instance);

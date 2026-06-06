@@ -489,11 +489,80 @@ pub(super) fn extract_foreign(
 // share a signature: `foo, bar :: Int` declares both. The resolver needs
 // every identifier surfaced as its own symbol so chain lookups land.
 
+/// Collect the constraint-introduced type variables a signature declares.
+///
+/// `f :: Ord a => a -> a -> Bool` introduces tyvar `a` (the lowercase
+/// `variable` argument of the constraint `Ord a`); `Ord` is the class name
+/// (an uppercase `name`) and is NOT a tyvar. The tree shape is
+/// `signature` → field `type` → `context` (field `context` = the constraint
+/// expression) or `forall` (field `variables` = explicit tyvars, field `type`
+/// = the inner `context`). A constraint expression is an `apply` (single
+/// `Ord a`), a `tuple` (`(Ord a, Show b)`), or `parens` (`(Eq a)`); in every
+/// shape the tyvars are exactly the lowercase `variable` leaves, so collecting
+/// all `variable` node texts under the constraint subtree is the sound rule.
+/// Order-preserving, deduplicated.
+fn collect_constraint_tyvars(sig_node: &Node, src: &[u8]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let Some(type_node) = sig_node.child_by_field_name("type") else {
+        return out;
+    };
+
+    // `forall a b. Ctx => ...` — the quantifier names the explicit tyvars.
+    if type_node.kind() == "forall" {
+        if let Some(vars) = type_node.child_by_field_name("variables") {
+            collect_variable_leaves(&vars, src, &mut out);
+        }
+        // Descend into the quantified body for any constraint tyvars the
+        // forall list might have omitted (superset stays sound).
+        if let Some(inner) = type_node.child_by_field_name("type") {
+            collect_context_tyvars(&inner, src, &mut out);
+        }
+        return out;
+    }
+
+    collect_context_tyvars(&type_node, src, &mut out);
+    out
+}
+
+/// When `node` is a `context` (`Ctx => Type`), collect tyvars from its
+/// `context` field (the constraint expression). Other node kinds contribute
+/// nothing — a signature with no constraint has no constraint tyvars.
+fn collect_context_tyvars(node: &Node, src: &[u8], out: &mut Vec<String>) {
+    if node.kind() != "context" {
+        return;
+    }
+    if let Some(constraint) = node.child_by_field_name("context") {
+        collect_variable_leaves(&constraint, src, out);
+    }
+}
+
+/// Recursively collect lowercase `variable` leaf texts, skipping class names
+/// (`name` / `constructor` / `qualified`, all uppercase by Haskell rule).
+/// Wrapper nodes (`apply`, `tuple`, `parens`, `context`) are traversed.
+fn collect_variable_leaves(node: &Node, src: &[u8], out: &mut Vec<String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "variable" => {
+                let t = node_text(child, src);
+                if !t.is_empty() && !out.iter().any(|v| v == &t) {
+                    out.push(t);
+                }
+            }
+            // Class names — never tyvars. Don't descend (a qualified class
+            // name has no tyvar children).
+            "name" | "constructor" | "qualified" | "operator" => {}
+            _ => collect_variable_leaves(&child, src, out),
+        }
+    }
+}
+
 pub(super) fn extract_signature_symbols(
     node: &Node,
     src: &[u8],
     scope_tree: &scope_tree::ScopeTree,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     kind: SymbolKind,
     parent_index: Option<usize>,
 ) {
@@ -560,6 +629,19 @@ pub(super) fn extract_signature_symbols(
     let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
         .map(|s| s.qualified_name.clone());
 
+    // Constraint-introduced type variables become generic params of every
+    // identifier this signature declares. They ride on a leading `<a, b>`
+    // signature clause — the channel the index build's generic-param scan
+    // already reads for every `<>`/`[]` language — so the shared
+    // `engine_generic_param` rung resolves their occurrences with no
+    // Haskell-specific resolver code.
+    let tyvars = collect_constraint_tyvars(node, src);
+    let signature = if tyvars.is_empty() {
+        None
+    } else {
+        Some(format!("<{}>", tyvars.join(", ")))
+    };
+
     for name in names {
         let qname = if let Some(p) = &scope {
             format!("{}.{}", p, name)
@@ -567,9 +649,27 @@ pub(super) fn extract_signature_symbols(
             name.clone()
         };
         let idx = symbols.len();
-        symbols.push(make_symbol(name, qname, kind, node, None, parent_index));
+        symbols.push(make_symbol(name, qname, kind, node, signature.clone(), parent_index));
         if let Some(ref s) = scope {
             symbols[idx].scope_path = Some(s.clone());
+        }
+        // Emit the tyvar's constraint-clause occurrence as a TypeRef sourced
+        // from this symbol, so the generic-param bind is observable as an edge.
+        for tv in &tyvars {
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
+                source_symbol_index: idx,
+                target_name: tv.clone(),
+                kind: EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                col: 0,
+                module: None,
+                chain: None,
+                byte_offset: node.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }

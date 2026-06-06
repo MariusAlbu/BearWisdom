@@ -69,6 +69,123 @@ class Num a where
     }
 }
 
+/// The tyvars an extractor records for a symbol surface as a leading
+/// `<...>` clause on the symbol signature — the same channel the index
+/// build's generic-param scan already reads for every `<>`/`[]` language.
+/// Parse that clause back out so the extractor tests can assert on the
+/// recorded tyvar set directly.
+fn sig_generics(sig: Option<&str>) -> Vec<String> {
+    let sig = sig.unwrap_or("");
+    let Some(start) = sig.find('<') else { return Vec::new() };
+    let Some(end_rel) = sig[start..].find('>') else { return Vec::new() };
+    sig[start + 1..start + end_rel]
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+#[test]
+fn constraint_tyvar_recorded_as_generic_param() {
+    // `f :: Ord a => a -> a -> Bool` — the constraint context `Ord a`
+    // introduces type variable `a` (lowercase, the tyvar) under class `Ord`
+    // (uppercase, NOT a tyvar). The extractor must record `a` as a generic
+    // param of `f` (carried on the signature's leading `<...>` clause) so the
+    // resolver's generic-param strategy can bind constraint occurrences.
+    let src = "f :: Ord a => a -> a -> Bool\nf x y = x == y\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    let f = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "f" && s.signature.is_some())
+        .expect("expected signature symbol `f`");
+    let gens = sig_generics(f.signature.as_deref());
+    assert!(
+        gens.iter().any(|p| p == "a"),
+        "expected `a` among f generics; got {:?} (sig {:?})",
+        gens,
+        f.signature
+    );
+}
+
+#[test]
+fn multi_constraint_tuple_collects_all_tyvars() {
+    // `g :: (Ord a, Show b) => a -> b -> String` — the constraint is a tuple
+    // of two single-param constraints. Collect both tyvars `a` and `b`.
+    let src = "g :: (Ord a, Show b) => a -> b -> String\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    let g = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "g" && s.signature.is_some())
+        .expect("expected signature symbol `g`");
+    let gens = sig_generics(g.signature.as_deref());
+    assert!(
+        gens.iter().any(|p| p == "a") && gens.iter().any(|p| p == "b"),
+        "expected {{a,b}} ⊆ g generics; got {:?}",
+        gens
+    );
+}
+
+#[test]
+fn constraint_class_name_not_a_tyvar() {
+    // Soundness hinge: the class name `Ord` (uppercase) must NEVER be recorded
+    // as a generic param — only the lowercase tyvar is. An uppercase name in
+    // generic_params would let the generic-param strategy falsely bind a
+    // type-constructor reference to the wrong declaring symbol.
+    let src = "f :: Ord a => a -> a -> Bool\nf x y = x == y\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    let f = r.symbols.iter().find(|s| s.name == "f" && s.signature.is_some()).unwrap();
+    let gens = sig_generics(f.signature.as_deref());
+    assert!(
+        !gens.iter().any(|p| p == "Ord"),
+        "class name `Ord` must not be a generic param; got {:?}",
+        gens
+    );
+}
+
+#[test]
+fn forall_quantified_tyvars_collected() {
+    // `forall a b. (Eq a) => a -> b -> Bool` — the explicit `forall`
+    // quantifier names both tyvars; collect `a` and `b` (superset of the
+    // constraint tyvars).
+    let src = "h :: forall a b. (Eq a) => a -> b -> Bool\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    let h = r.symbols.iter().find(|s| s.name == "h" && s.signature.is_some()).unwrap();
+    let gens = sig_generics(h.signature.as_deref());
+    assert!(
+        gens.iter().any(|p| p == "a") && gens.iter().any(|p| p == "b"),
+        "expected {{a,b}} ⊆ h generics; got {:?}",
+        gens
+    );
+}
+
+#[test]
+fn constraint_tyvar_emits_observable_ref() {
+    // The tyvar's occurrence inside the constraint clause is emitted as a
+    // TypeRef ref sourced from the declaring function, so the bind is
+    // observable to the resolver (and lockable by the resolve test).
+    let src = "f :: Ord a => a -> a -> Bool\nf x y = x == y\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    let f_idx = r
+        .symbols
+        .iter()
+        .position(|s| s.name == "f")
+        .expect("symbol `f`");
+    assert!(
+        r.refs.iter().any(|rf| {
+            rf.kind == crate::types::EdgeKind::TypeRef
+                && rf.target_name == "a"
+                && rf.source_symbol_index == f_idx
+        }),
+        "expected a TypeRef to `a` sourced from `f`; got {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn data_with_operator_constructor_emits_cons() {
     // `a : List a` — Haskell's list cons constructor is an operator
