@@ -57,8 +57,9 @@ pub fn populate_return_type_ids(
                 let Some(sig) = sym.signature.as_deref() else { continue };
                 if sym.return_type.is_none() {
                     if let Some(rt) =
-                        crate::indexer::resolve::engine::chain_walker::parse_return_type_from_signature(
+                        crate::indexer::resolve::engine::chain_walker::parse_return_type_from_signature_for_lang(
                             sig,
+                            lang_id,
                         )
                     {
                         if !rt.is_empty() {

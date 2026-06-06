@@ -444,20 +444,39 @@ pub(crate) fn parse_param_types_from_signature_for_lang(
     if bytes.is_empty() {
         return None;
     }
-    // Locate the outermost parenthesized group: forward-scan for first `(`
-    // at depth 0 across `<` and `[` so generic / index args don't fool us.
+    // A Go struct method (`func (recv) Name(params) result`) leads with a
+    // RECEIVER paren group; its params live in the SECOND top-level group. Skip
+    // the receiver so params aren't read off `(r *Repo)`. An interface
+    // method_elem (`Name(params) result`) has no `func`/receiver, so the first
+    // group is already the param list.
+    let groups_to_skip = (lang_id == "go" && sig.trim_start().starts_with("func")) as usize;
+    // Locate the param-list group's opening `(`: forward-scan for the
+    // (groups_to_skip+1)-th `(` at depth 0 across `<` and `[` so generic /
+    // index args don't fool us.
     let mut depth_angle: i32 = 0;
     let mut depth_square: i32 = 0;
+    let mut groups_skipped = 0usize;
     let mut open_idx: Option<usize> = None;
+    let mut paren_depth: i32 = 0;
     for (i, &b) in bytes.iter().enumerate() {
         match b {
             b'<' => depth_angle += 1,
             b'>' => depth_angle -= 1,
             b'[' => depth_square += 1,
             b']' => depth_square -= 1,
-            b'(' if depth_angle == 0 && depth_square == 0 => {
-                open_idx = Some(i);
-                break;
+            b'(' if depth_angle == 0 && depth_square == 0 && paren_depth == 0 => {
+                if groups_skipped == groups_to_skip {
+                    open_idx = Some(i);
+                    break;
+                }
+                paren_depth += 1;
+            }
+            b'(' => paren_depth += 1,
+            b')' => {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    groups_skipped += 1;
+                }
             }
             _ => {}
         }
@@ -542,7 +561,9 @@ fn extract_param_type_colon_separated(part: &str) -> String {
 
 /// Go style: arg looks like `name Type` (postfix type, no colon). Take
 /// the substring after the last whitespace at top-level — the trailing
-/// token is the type, possibly with generic brackets.
+/// token is the type, possibly with generic brackets. A leading pointer `*`
+/// is stripped so `*User` and `User` intern alike (matching `pointer_type_name`),
+/// keeping the structural member-compare's SOURCE/TARGET TypeIds aligned.
 fn extract_param_type_postfix_no_colon(part: &str) -> String {
     let trimmed = part.trim();
     if trimmed.is_empty() {
@@ -558,10 +579,11 @@ fn extract_param_type_postfix_no_colon(part: &str) -> String {
             _ => {}
         }
     }
-    match last_ws {
-        Some(ws) => trimmed[ws + 1..].trim().to_string(),
-        None => trimmed.to_string(),
-    }
+    let ty = match last_ws {
+        Some(ws) => trimmed[ws + 1..].trim(),
+        None => trimmed,
+    };
+    strip_go_pointer(ty).to_string()
 }
 
 /// C / C++ / Java / C# style: arg looks like `Type name` (prefix type).
@@ -588,7 +610,30 @@ fn extract_param_type_prefix(part: &str) -> String {
     }
 }
 
+/// Convenience wrapper: TS/.NET/arrow-shaped return parsing. Kept for sites
+/// that don't have a language id handy — byte-identical to the no-lang path
+/// of `parse_return_type_from_signature_for_lang`.
 pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {
+    parse_return_type_from_signature_for_lang(sig, "")
+}
+
+/// Per-language return-type extraction from a callable signature string.
+///
+/// The default (empty / non-Go `lang_id`) recognizes the params-first return
+/// spellings: a top-level `):` (TS / .NET) and a top-level `->`/`=>` arrow
+/// (Python / Rust / TS). Go has no separator — the result sits bare AFTER the
+/// param list — so it gets a dedicated arm: `parse_go_result`. The Go result is
+/// returned verbatim, including a parenthesized multi-return group `(int, error)`
+/// (so two identical multi-returns intern to the same TypeId and the structural
+/// member-compare sees `Yes`), with a single-token result's leading pointer `*`
+/// stripped to agree with the rest of the Go engine (`pointer_type_name`).
+pub(crate) fn parse_return_type_from_signature_for_lang(
+    sig: &str,
+    lang_id: &str,
+) -> Option<String> {
+    if lang_id == "go" {
+        return parse_go_result(sig);
+    }
     // Find the top-level `):` separator. Scan right-to-left tracking
     // paren depth from zero upward — the FIRST `)` at depth 0 (from
     // the end) followed by `:` marks the return type boundary.
@@ -666,6 +711,73 @@ pub(crate) fn parse_return_type_from_signature(sig: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Parse a Go method's result type from its signature. Go places the result
+/// AFTER the param list with no separator, in two shapes the structural
+/// member-compare consumes:
+///   - interface method_elem `Name(params) result` (no receiver)
+///   - struct method `func (recv) Name(params) result` (a leading receiver
+///     group the result must skip past)
+///
+/// The result is the text following the PARAM list's closing paren — the param
+/// list is the SECOND top-level paren group for a `func`-prefixed signature
+/// (the first is the receiver), the FIRST otherwise. A parenthesized
+/// multi-return `(int, error)` is returned verbatim (identical multi-returns on
+/// two sides intern to the same TypeId → the structural compare sees `Yes`); a
+/// single trailing token is returned with a trailing `{` body dropped and a
+/// leading pointer `*` stripped (so `*User` and `User` agree, matching
+/// `pointer_type_name`). A void method (nothing after the param list) → `None`.
+fn parse_go_result(sig: &str) -> Option<String> {
+    let trimmed = sig.trim();
+    let skip_receiver = trimmed.starts_with("func");
+    // Index of the first param-list group to skip (the receiver) before the
+    // real param list. `func`-prefixed struct methods carry one; interface
+    // method_elems carry none.
+    let groups_to_skip = if skip_receiver { 1 } else { 0 };
+
+    let bytes = trimmed.as_bytes();
+    let mut depth: i32 = 0;
+    let mut groups_seen = 0usize;
+    let mut param_close: Option<usize> = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' | b'{' => depth += 1,
+            b']' | b'}' => depth -= 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    if groups_seen == groups_to_skip {
+                        param_close = Some(i);
+                        break;
+                    }
+                    groups_seen += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    let close = param_close?;
+    let mut after = trimmed[close + 1..].trim();
+    if let Some(pos) = after.find('{') {
+        after = after[..pos].trim_end();
+    }
+    if after.is_empty() {
+        return None;
+    }
+    // A parenthesized multi-return is a single comparable group — keep it whole.
+    if after.starts_with('(') {
+        return Some(after.to_string());
+    }
+    Some(strip_go_pointer(after).to_string())
+}
+
+/// Drop leading Go pointer markers (`*`, `**`) so a pointer type interns the
+/// same as its pointee — mirrors `pointer_type_name`, which the Go extractor
+/// already applies to TypeRefs. Keeps the structural compare's SOURCE and
+/// TARGET TypeIds aligned regardless of pointer spelling.
+fn strip_go_pointer(t: &str) -> &str {
+    t.trim_start_matches('*').trim_start()
 }
 
 /// Split a type string into (head, args) where args are the top-level generic

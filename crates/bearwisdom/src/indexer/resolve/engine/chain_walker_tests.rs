@@ -1,4 +1,4 @@
-use super::{is_plain_type_name, merge_where_bounds, parse_generic_param_clause, parse_return_type_from_jvm_descriptor, parse_return_type_from_signature, parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args, parse_type_head_and_args_bracket};
+use super::{is_plain_type_name, merge_where_bounds, parse_generic_param_clause, parse_param_types_from_signature_for_lang, parse_return_type_from_jvm_descriptor, parse_return_type_from_signature, parse_return_type_from_signature_for_lang, parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args, parse_type_head_and_args_bracket};
 
 #[test]
 fn names_only_when_unbounded() {
@@ -414,6 +414,114 @@ fn trailing_go_func_and_method() {
 fn trailing_none_for_void_and_tuple() {
     assert_eq!(parse_return_type_trailing("func F(a A)"), None);
     assert_eq!(parse_return_type_trailing("func F() (A, error)"), None);
+}
+
+// --- parse_return_type_from_signature_for_lang: Go result shapes ---
+//
+// The structural-satisfaction consumer compares the SOURCE method's return
+// TypeId against the TARGET interface method's. Go results sit AFTER the param
+// list with no `):`/arrow separator, so the no-lang parser returns None; the
+// Go arm reads the bare post-paren result (a single token or a parenthesized
+// multi-return group, returned verbatim so two identical multi-returns intern
+// equal and compare Yes).
+
+#[test]
+fn go_return_interface_single_token() {
+    // Interface method_elem `Name(params) result`, no receiver.
+    assert_eq!(
+        parse_return_type_from_signature_for_lang("Find(id int) User", "go"),
+        Some("User".to_string())
+    );
+}
+
+#[test]
+fn go_return_interface_multi_return_group() {
+    // io.Reader-style parenthesized multi-return — returned verbatim.
+    assert_eq!(
+        parse_return_type_from_signature_for_lang("Read(p []byte) (n int, err error)", "go"),
+        Some("(n int, err error)".to_string())
+    );
+}
+
+#[test]
+fn go_return_struct_method_multi_return_after_receiver() {
+    // Struct method `func (recv) Name(params) result` — the result follows the
+    // PARAM list, not the receiver group.
+    assert_eq!(
+        parse_return_type_from_signature_for_lang(
+            "func (r *Repo) Read(p []byte) (int, error)",
+            "go"
+        ),
+        Some("(int, error)".to_string())
+    );
+}
+
+#[test]
+fn go_return_pointer_normalized() {
+    // A pointer result drops its leading `*` so `*User` and `User` agree (the
+    // rest of the Go engine drops `*` via pointer_type_name).
+    assert_eq!(
+        parse_return_type_from_signature_for_lang("func (r *Repo) Get() *User", "go"),
+        Some("User".to_string())
+    );
+}
+
+#[test]
+fn go_return_none_for_void() {
+    // No result after the param list — a void method carries no return.
+    assert_eq!(
+        parse_return_type_from_signature_for_lang("func (r *Repo) Do(x int)", "go"),
+        None
+    );
+    assert_eq!(
+        parse_return_type_from_signature_for_lang("Close()", "go"),
+        None
+    );
+}
+
+#[test]
+fn for_lang_empty_id_matches_no_lang_parser() {
+    // The _for_lang wrapper with an empty lang id is byte-identical to the
+    // historical TS/arrow-shaped parser.
+    for sig in [
+        "findUnique(args): Prisma.User",
+        "get(): Promise<User>",
+        "find_one(self, id) -> User",
+        "(x: number) => string",
+        "void Foo()",
+    ] {
+        assert_eq!(
+            parse_return_type_from_signature_for_lang(sig, ""),
+            parse_return_type_from_signature(sig),
+            "_for_lang(_, \"\") diverged from the no-lang parser on {sig:?}"
+        );
+    }
+}
+
+// --- parse_param_types_from_signature_for_lang: Go receiver skip ---
+
+#[test]
+fn go_params_skip_receiver_on_struct_method() {
+    // `func (r *Repo) Save(u *User, ctx Context)` — params come from the SECOND
+    // top-level paren group (the param list), not the receiver `(r *Repo)`.
+    // Pointers are normalized (`*User` → `User`) to match the Go engine.
+    assert_eq!(
+        parse_param_types_from_signature_for_lang(
+            "func (r *Repo) Save(u *User, ctx Context)",
+            "go"
+        ),
+        Some(vec!["User".to_string(), "Context".to_string()])
+    );
+}
+
+#[test]
+fn go_params_interface_method_elem_no_receiver() {
+    // Interface method_elem has no `func` and no receiver — the first paren
+    // group IS the param list.
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("Read(p []byte) (n int, err error)", "go"),
+        Some(vec!["[]byte".to_string()])
+    );
 }
 
 // --- is_plain_type_name ---

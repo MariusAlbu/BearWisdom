@@ -1369,3 +1369,155 @@ fn blanket_impl_chain_declines_when_root_bound_unsatisfied() {
     assert!(graph.parents_of(dog).contains(&greet));
     assert!(graph.parents_of(dog).contains(&loud));
 }
+
+// ---------------------------------------------------------------------------
+// LANG-GO-1 positive edge, end-to-end through the real Go extractor.
+//
+// A concrete struct whose method set structurally satisfies a Go interface
+// must gain a `struct -> interface` structural supertype edge. The whole
+// reason it didn't was the shared signature parsers returning no Go method
+// type-data, so the sound INFER-5 structural check stayed `Unknown` (no edge).
+// This drives the production path: real Go signatures -> populate_return_type_ids
+// -> SymbolTypeMap/MembersIndex -> SupertypeGraph::build under GO_PROFILE.
+// ---------------------------------------------------------------------------
+
+fn go_parsed_file(path: &str, source: &str, arena: &TypeArena) -> ParsedFile {
+    let mut extraction = crate::languages::go::extract::extract(source);
+    crate::languages::common::populate_return_type_ids(&mut extraction, arena, "go");
+    ParsedFile {
+        path: path.to_string(),
+        language: "go".to_string(),
+        content_hash: String::new(),
+        size: source.len() as u64,
+        line_count: source.lines().count() as u32,
+        mtime: None,
+        package_id: None,
+        symbols: extraction.symbols,
+        refs: extraction.refs,
+        routes: extraction.routes,
+        db_sets: extraction.db_sets,
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: Some(source.to_string()),
+        has_errors: extraction.has_errors,
+        flow: Default::default(),
+        demand_contributions: extraction.demand_contributions,
+        alias_targets: extraction.alias_targets,
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+fn go_structural_graph(source: &str) -> (TypeArena, SupertypeGraph) {
+    use crate::languages::go::profile::GO_PROFILE;
+    use crate::type_checker::core::members::SymbolIdMap;
+
+    let mut arena = TypeArena::new();
+    let pf = go_parsed_file("src/repo.go", source, &arena);
+
+    let mut sym_id_map: SymbolIdMap = Default::default();
+    for (idx, _) in pf.symbols.iter().enumerate() {
+        sym_id_map.insert((pf.path.clone(), idx), idx as i64 + 1);
+    }
+
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_id_map, &arena);
+    let symbol_types = SymbolTypeMap::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_id_map,
+        &arena,
+        &GO_PROFILE,
+    );
+    let lookup = TypeLookup::new();
+    let graph = SupertypeGraph::build(
+        std::slice::from_ref(&pf),
+        &mut arena,
+        &GO_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+    (arena, graph)
+}
+
+#[test]
+fn go_concrete_struct_satisfies_interface_structurally() {
+    // `Repo.Find` matches `Finder.Find`'s param + return shape exactly, so Repo
+    // structurally satisfies Finder. `Other.Find` returns a different type, same
+    // name+kind — under the sound INFER-5 check it must NOT satisfy Finder. This
+    // drives the production path: real Go signatures → populate_return_type_ids
+    // → SymbolTypeMap/MembersIndex → SupertypeGraph::build under GO_PROFILE. The
+    // positive edge was the LANG-GO-1 gate: without Go method type-data the
+    // member-compare stayed Unknown and no edge formed.
+    let source = r#"
+package repo
+
+type User struct{}
+type Account struct{}
+
+type Finder interface {
+    Find(id int) User
+}
+
+type Repo struct{}
+
+func (r *Repo) Find(id int) User {
+    return User{}
+}
+
+type Other struct{}
+
+func (o *Other) Find(id int) Account {
+    return Account{}
+}
+"#;
+
+    let (mut arena, graph) = go_structural_graph(source);
+
+    let finder = arena.class("repo.Finder");
+    let repo = arena.class("repo.Repo");
+    let other = arena.class("repo.Other");
+
+    assert!(
+        graph.parents_of(repo).contains(&finder),
+        "Repo.Find matches Finder.Find exactly: Repo -> Finder edge must form (positive LANG-GO-1 bind)"
+    );
+    assert!(
+        !graph.parents_of(other).contains(&finder),
+        "Other.Find returns a different type: must NOT satisfy Finder (sound INFER-5 check)"
+    );
+}
+
+#[test]
+fn go_struct_method_params_read_past_receiver() {
+    // A pointer-receiver method whose PARAM (not receiver) shape must match the
+    // interface. If the param parser read off the receiver `(r *Repo)` instead
+    // of the param list, `Save(u User)` would compare a `Repo` param against the
+    // interface's `User` and decline — so this edge forming proves the receiver
+    // skip. Pointer `*User` normalizes to `User`, matching the interface param.
+    let source = r#"
+package repo
+
+type User struct{}
+
+type Saver interface {
+    Save(u User) bool
+}
+
+type Repo struct{}
+
+func (r *Repo) Save(u *User) bool {
+    return true
+}
+"#;
+
+    let (mut arena, graph) = go_structural_graph(source);
+
+    let saver = arena.class("repo.Saver");
+    let repo = arena.class("repo.Repo");
+    assert!(
+        graph.parents_of(repo).contains(&saver),
+        "Repo.Save's param read past the receiver and `*User` normalized: Repo -> Saver edge must form"
+    );
+}
