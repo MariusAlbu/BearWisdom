@@ -1054,6 +1054,9 @@ impl<'a> ChainWalker<'a> {
     ///   2. **Explicit imports.** A non-wildcard `import a.b.C` makes a
     ///      receiver typed `C` resolve to `a.b.C` — the import names the class
     ///      itself, so the module IS the qname.
+    ///   3. **Wildcard-import prefix.** A wildcard `using NS;` / `Imports NS`
+    ///      names the namespace, so a bare receiver `C` is `NS.C` — probe
+    ///      `{module}.{base}` and promote only when it keys a type or member.
     ///
     /// Only promotes to a qname that owns a type or keys a member, so it can
     /// only widen resolution. Preserves an `Apply`'s args by rebuilding it on
@@ -1149,6 +1152,30 @@ impl<'a> ChainWalker<'a> {
                 };
                 if self.keys_a_type_or_member(module) {
                     qualified = Some(module.to_string());
+                    break;
+                }
+            }
+        }
+
+        // 4. Wildcard-import prefix. A wildcard `using NS;` / `Imports NS`
+        //    brings every top-level type from `NS.*` into scope by short name,
+        //    so a bare receiver `Button` is `NS.Button`. The import names the
+        //    namespace, not the class, so probe `{module}.{base}` and promote
+        //    only to a candidate the index actually keys a type or member
+        //    under — a wildcard namespace that doesn't export the type fails
+        //    the guard and the receiver stays bare (lands external). Ordered
+        //    after case 3 so an explicit class import keeps precedence.
+        if qualified.is_none() {
+            for import in &file_ctx.imports {
+                if !import.is_wildcard {
+                    continue;
+                }
+                let Some(module) = import.module_path.as_deref() else {
+                    continue;
+                };
+                let candidate = format!("{module}.{base_qname}");
+                if self.keys_a_type_or_member(&candidate) {
+                    qualified = Some(candidate);
                     break;
                 }
             }

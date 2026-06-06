@@ -3637,6 +3637,75 @@ fn jvm_wildcard_for_foreign_package_declines() {
 }
 
 // ---------------------------------------------------------------------------
+// C# `using static` member-wildcard (the .NET analogue of the JVM static
+// wildcard above). `using static System.Math;` brings every static member of
+// `System.Math` into bare scope; a bare `Sqrt()` binds to the hydrated NuGet/
+// stdlib method whose qname is `System.Math.Sqrt`. C# records the static
+// import with `module=System.Math` (the CLASS), so the member's qname sits one
+// segment under it — the same generic-ladder shape as junit's `Assertions.*`.
+// No per-language code: the bind rides `resolve_via_imported_namespace` /
+// `resolve_via_wildcard_import`/QnameUnder, so this pins the SYMBOL id, not a
+// strategy literal, and a reorder can't silently drop .NET static members.
+// ---------------------------------------------------------------------------
+
+/// `using static System.Math;` + a bare `Sqrt` call binds the hydrated
+/// `System.Math.Sqrt` method (qname one segment under the imported module).
+#[test]
+fn csharp_using_static_member_wildcard_binds_hydrated_method() {
+    let lookup = Lookup::new().with(sym(
+        14,
+        "Sqrt",
+        "System.Math.Sqrt",
+        "method",
+        "ext:dotnet:System.Runtime/System.Private.CoreLib/System/Math.cs",
+    ));
+    let r = extracted_call("Sqrt");
+    let s = source_symbol("Compute");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("System.Math")], None);
+    fc.language = "csharp".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::csharp::CSHARP_PROFILE)
+    .expect("bare static-wildcard-imported member binds the hydrated method");
+    assert_eq!(resolved.target_symbol_id, 14);
+}
+
+/// A `using static` for a foreign type must decline — a `System.Math.Sqrt`
+/// candidate stays unbound under a `System.Text` wildcard, because its qname
+/// sits under no imported module. Locks the widening-only boundary for .NET.
+#[test]
+fn csharp_using_static_foreign_type_declines() {
+    let lookup = Lookup::new().with(sym(
+        14,
+        "Sqrt",
+        "System.Math.Sqrt",
+        "method",
+        "ext:dotnet:System.Runtime/System.Private.CoreLib/System/Math.cs",
+    ));
+    let r = extracted_call("Sqrt");
+    let s = source_symbol("Compute");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("System.Text")], None);
+    fc.language = "csharp".to_string();
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_all_with_profile(&crate::languages::csharp::CSHARP_PROFILE)
+        .is_none(),
+        "a static wildcard for a foreign type must not bind a member under another module"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // ExtMatch::FileStemOrDir — external bind by file-stem / dir against imports
 // ---------------------------------------------------------------------------
 

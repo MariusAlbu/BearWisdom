@@ -5886,3 +5886,165 @@ fn associated_type_chained_angle_projection_resolves_assoc_of_assoc() {
         .expect("<C as Trait>::Output::Item projects C.Output->Mid then Mid.Item->Leaf");
     assert_eq!(result.target_symbol_id, 9);
 }
+
+// ---------------------------------------------------------------------------
+// Wildcard-import-prefix ROOT promotion (.NET `using NS;` / `Imports NS`)
+// ---------------------------------------------------------------------------
+
+/// Mirrors the C#/VB chain-qualification axis: bare receivers promote to a
+/// package-qualified qname via same-package and import sources. All other
+/// axes are DEFAULT_PROFILE's conservative values.
+const SAME_PACKAGE_PROFILE: LanguageProfile = LanguageProfile {
+    chain_qualification: ChainQualification::SamePackageAndImports,
+    ..DEFAULT_PROFILE
+};
+
+#[test]
+fn wildcard_using_promotes_root_receiver_to_fqn() {
+    // C# `using System.Windows.Controls;` + chain `Button.Show()`. The bare
+    // `Button` root self-yields, but its member `Show` is keyed ONLY under
+    // the fully-qualified receiver `System.Windows.Controls.Button`. The
+    // member resolves only if the wildcard import promotes the root receiver
+    // `Button` -> `System.Windows.Controls.Button` BEFORE member lookup.
+    let mut arena = TypeArena::new();
+    let button_ty = arena.class("Button");
+    let fqn_ty = arena.class("System.Windows.Controls.Button");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        200,
+        SymbolTypeData {
+            return_type: Some(button_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(button_ty, 200);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        fqn_ty,
+        sym_info(
+            201,
+            "Show",
+            "System.Windows.Controls.Button.Show",
+            "method",
+            Some("System.Windows.Controls.Button"),
+        ),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // The promotion guard `keys_a_type_or_member` consults by_qualified_name;
+    // the FQN type symbol is what makes the wildcard-prefix candidate key.
+    // Deliberately NOT registered on any bare-name path.
+    let lookup = EmptyLookup::new().with_qname_symbol(
+        "System.Windows.Controls.Button",
+        sym_info(
+            300,
+            "Button",
+            "System.Windows.Controls.Button",
+            "class",
+            None,
+        ),
+    );
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &SAME_PACKAGE_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("Button", SegmentKind::TypeAccess),
+            seg("Show", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("Show");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let mut fc = file_ctx();
+    fc.imports.push(crate::indexer::resolve::engine::ImportEntry {
+        imported_name: "System.Windows.Controls".to_string(),
+        module_path: Some("System.Windows.Controls".to_string()),
+        alias: None,
+        is_wildcard: true,
+    });
+
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("Button.Show resolves via wildcard-using root promotion");
+    assert_eq!(result.target_symbol_id, 201);
+}
+
+#[test]
+fn wildcard_using_promotes_only_when_fqn_keys() {
+    // Widening guard: same setup but NOTHING keyed under
+    // `System.Windows.Controls.Button` (no member, no type symbol), so
+    // `keys_a_type_or_member` is false. The root stays bare `Button`,
+    // `Show` is unknown, and the walk declines — no false 1.0 bind from a
+    // wildcard namespace that doesn't actually export the type.
+    let mut arena = TypeArena::new();
+    let button_ty = arena.class("Button");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        200,
+        SymbolTypeData {
+            return_type: Some(button_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(button_ty, 200);
+
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &SAME_PACKAGE_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("Button", SegmentKind::TypeAccess),
+            seg("Show", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("Show");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let mut fc = file_ctx();
+    fc.imports.push(crate::indexer::resolve::engine::ImportEntry {
+        imported_name: "System.Windows.Controls".to_string(),
+        module_path: Some("System.Windows.Controls".to_string()),
+        alias: None,
+        is_wildcard: true,
+    });
+
+    assert!(
+        walker.walk(&chain, &ref_ctx, &fc).is_none(),
+        "no FQN keyed → no promotion → no false bind"
+    );
+}
