@@ -503,6 +503,100 @@ func (f *FileBuffer) Close() error {
 }
 
 #[test]
+fn declaration_merging_pools_interface_members_under_one_owner() {
+    // TS declaration merging: two same-name `interface Foo` declarations
+    // contribute to one logical interface. There is no alias machinery — both
+    // declarations qualify to the qname `Foo`, so their members carry
+    // `scope_path = Some("Foo")` and accumulate under one `MembersIndex` key
+    // (`direct.entry(arena.class("Foo")).or_default().push(..)`). The invariant
+    // pinned here: a member declared on the SECOND `interface Foo` resolves on
+    // `Foo` alongside the first declaration's member — merging is member
+    // pooling, not alias expansion.
+    let source = r#"
+export interface Foo {
+    a: string;
+}
+export interface Foo {
+    b: number;
+}
+"#;
+    let pf = wrap_as_parsed_file("src/merge.ts", source);
+    let sym_ids = deterministic_ids(&pf);
+    let lookup = ParsedFileLookup::from(&pf, &sym_ids);
+
+    let mut arena = crate::type_checker::core::TypeArena::new();
+    let members = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+    );
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        std::slice::from_ref(&pf),
+        &mut arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+
+    let foo_ty = arena.class("Foo");
+    let a = members
+        .lookup(foo_ty, "a", EdgeKind::Reads, &graph, &arena, &DEFAULT_PROFILE)
+        .expect("member `a` from the first interface declaration resolves on Foo");
+    assert_eq!(a.qualified_name, "Foo.a");
+    let b = members
+        .lookup(foo_ty, "b", EdgeKind::Reads, &graph, &arena, &DEFAULT_PROFILE)
+        .expect("member `b` from the merged second interface declaration resolves on Foo");
+    assert_eq!(b.qualified_name, "Foo.b");
+}
+
+#[test]
+fn declaration_merging_pools_interface_and_namespace_members_under_one_owner() {
+    // `interface Foo` + `namespace Foo` declaration merging — the value-side
+    // namespace member and the type-side interface member co-qualify to `Foo`
+    // and pool under one `MembersIndex` key, exactly like interface+interface.
+    // Same structural mechanism, no alias target involved.
+    let source = r#"
+export interface Cfg {
+    timeout: number;
+}
+export namespace Cfg {
+    export const DEFAULT_TIMEOUT = 30;
+}
+"#;
+    let pf = wrap_as_parsed_file("src/cfg.ts", source);
+    let sym_ids = deterministic_ids(&pf);
+    let lookup = ParsedFileLookup::from(&pf, &sym_ids);
+
+    let mut arena = crate::type_checker::core::TypeArena::new();
+    let members = MembersIndex::build_from_parsed_files(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        &mut arena,
+    );
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        std::slice::from_ref(&pf),
+        &mut arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+
+    let cfg_ty = arena.class("Cfg");
+    let interface_member = members
+        .lookup(cfg_ty, "timeout", EdgeKind::Reads, &graph, &arena, &DEFAULT_PROFILE)
+        .expect("interface member `timeout` resolves on Cfg");
+    assert_eq!(interface_member.qualified_name, "Cfg.timeout");
+    let namespace_member = members
+        .lookup(cfg_ty, "DEFAULT_TIMEOUT", EdgeKind::Reads, &graph, &arena, &DEFAULT_PROFILE)
+        .expect("namespace member `DEFAULT_TIMEOUT` pools under the same Cfg owner");
+    assert_eq!(namespace_member.qualified_name, "Cfg.DEFAULT_TIMEOUT");
+}
+
+#[test]
 fn lookup_misses_when_member_absent() {
     let source = r#"
 export class User { name: string; }
