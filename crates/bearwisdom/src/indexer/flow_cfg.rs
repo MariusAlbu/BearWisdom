@@ -770,6 +770,107 @@ pub const R_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     block_tail_returns: false,
 };
 
+/// Dart node-kind table. Dart has no single function-wrapper node — a top-level
+/// `function_signature` and its `function_body` are siblings, and a method's
+/// body is likewise a sibling `function_body`. So `function_body` itself is the
+/// function kind the CFG roots on (its child `block` is the body block). The
+/// if-statement carries `consequence`/`alternative` fields but NO condition
+/// field — the `type_test_expression` (`x is Foo`) is a positional child, and
+/// the narrowing it implies arrives through the per-language `type_guard_query`
+/// as a `Narrowing`, not the syntactic `condition_to_true_guard` path.
+pub const DART_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_body", "function_expression_body"],
+    block_kinds: &["block"],
+    if_kind: "if_statement",
+    if_consequence_field: "consequence",
+    if_alternative_field: "alternative",
+    // No condition field on Dart's if_statement; the type-test narrowing rides
+    // the type_guard_query, so an empty field name disables the syntactic path.
+    if_condition_field: "",
+    assignment_kind: "assignment_expression",
+    assignment_lhs_field: "left",
+    declarator_kind: "initialized_variable_definition",
+    declarator_name_field: "name",
+    loop_kinds: &["while_statement", "for_statement", "do_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["switch_statement"],
+    switch_value_field: "condition",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["switch_statement_case"],
+    switch_default_kinds: &["switch_statement_default"],
+    transparent_kinds: &[],
+    block_tail_returns: false,
+};
+
+/// Swift node-kind table (tree-sitter-swift 0.7). `function_declaration` carries
+/// a `body` field whose value is a `function_body` wrapping a `statements`
+/// block — `function_body` is listed in `transparent_kinds` so
+/// `find_function_body` descends through it to the `statements` block. The
+/// if-statement lists its condition and branches POSITIONALLY with no
+/// consequence/alternative field (only `condition`/`name`/`bound_identifier`
+/// fields exist), so `if_consequence_field` is empty and `if_consequence_node`
+/// finds the then-block by the first `statements` child. The narrowing from
+/// `x is T` / `if let y = x as? T` arrives through the `type_guard_query`; the
+/// guard attaches to the then-block by byte range, so the field-less if-diamond
+/// degrades gracefully (else-branch precision is reduced — a dropped narrowing
+/// at worst, never a false bind).
+pub const SWIFT_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_declaration", "init_declaration", "lambda_literal"],
+    block_kinds: &["statements"],
+    if_kind: "if_statement",
+    if_consequence_field: "",
+    if_alternative_field: "",
+    if_condition_field: "condition",
+    assignment_kind: "assignment",
+    assignment_lhs_field: "target",
+    declarator_kind: "property_declaration",
+    declarator_name_field: "name",
+    loop_kinds: &["while_statement", "for_statement", "repeat_while_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["switch_statement"],
+    switch_value_field: "expr",
+    switch_body_field: None,
+    switch_case_kinds: &["switch_entry"],
+    switch_default_kinds: &[],
+    // `function_body` wraps the `statements` block; descend through it.
+    transparent_kinds: &["function_body"],
+    block_tail_returns: false,
+};
+
+/// GDScript node-kind table (tree-sitter-gdscript 6.1). Python-shaped: the
+/// then/else branch and every loop body is a `body` block; the if-statement
+/// carries `condition`/`body`/`alternative` fields. The `is T` narrowing
+/// arrives through the `type_guard_query` (a `binary_operator` with the `is`
+/// op inside the condition). `match` lists `pattern_section` clauses inside a
+/// `match_body`; there is no separate default node — the `_` pattern is a
+/// pattern_section like any other, so a post-match join drops a narrowing the
+/// same way Python's `case _` does. A bare trailing expression in a `body` is a
+/// statement, not a return, so `block_tail_returns` is false.
+pub const GDSCRIPT_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
+    function_kinds: &["function_definition", "lambda"],
+    block_kinds: &["body"],
+    if_kind: "if_statement",
+    if_consequence_field: "body",
+    if_alternative_field: "alternative",
+    if_condition_field: "condition",
+    assignment_kind: "assignment",
+    assignment_lhs_field: "left",
+    declarator_kind: "variable_statement",
+    declarator_name_field: "name",
+    loop_kinds: &["while_statement", "for_statement"],
+    loop_body_field: "body",
+    loop_condition_field: Some("condition"),
+    switch_kinds: &["match_statement"],
+    switch_value_field: "value",
+    switch_body_field: Some("body"),
+    switch_case_kinds: &["pattern_section"],
+    switch_default_kinds: &[],
+    transparent_kinds: &[],
+    block_tail_returns: false,
+};
+
 /// Build CFGs for every function in `root`. The returned `FileCfg`'s functions
 /// are independent — each is its own dataflow.
 ///
@@ -967,6 +1068,27 @@ fn process_block_child(
 ///
 /// where the guard fact (if recognizable) rides the true-edge. Returns the
 /// `join` block as the new current block.
+/// The consequence (then) body of an if-statement. Tries the language's
+/// `if_consequence_field` first; when that field does not exist on the grammar
+/// (Swift's `if_statement` lists its branches positionally with no field), falls
+/// back to the FIRST `block_kinds` named child. The positional fallback is
+/// approximate for `if … else` — the first block is the consequence, the else
+/// block is reached through the alternative path or, absent a field, missed —
+/// but the guard still attaches by byte range, so the then-block narrowing is
+/// sound. Returns `None` only when neither the field nor any block child exists.
+fn if_consequence_node<'a>(if_node: &Node<'a>, kinds: &CfgNodeKinds) -> Option<Node<'a>> {
+    if !kinds.if_consequence_field.is_empty() {
+        if let Some(n) = if_node.child_by_field_name(kinds.if_consequence_field) {
+            return Some(n);
+        }
+    }
+    let mut c = if_node.walk();
+    let found = if_node
+        .named_children(&mut c)
+        .find(|ch| kinds.block_kinds.contains(&ch.kind()));
+    found
+}
+
 fn build_if(
     if_node: &Node,
     src: &[u8],
@@ -984,8 +1106,7 @@ fn build_if(
     //     byte range fits inside the then-body — generic, all languages.
     //   * the TS-specific syntactic recognizer for patterns the query may
     //     not capture (e.g., `||` disjunctions yielding a Union fact).
-    let then_range = if_node
-        .child_by_field_name(kinds.if_consequence_field)
+    let then_range = if_consequence_node(if_node, kinds)
         .map(|n| (n.start_byte() as u32, n.end_byte() as u32))
         .unwrap_or((if_node.end_byte() as u32, if_node.end_byte() as u32));
     let mut true_guard = guards_for_range(narrowings, then_range.0, then_range.1);
@@ -997,7 +1118,7 @@ fn build_if(
     }
 
     // THEN branch.
-    let then_node = if_node.child_by_field_name(kinds.if_consequence_field);
+    let then_node = if_consequence_node(if_node, kinds);
     let then_start = then_node
         .as_ref()
         .map(|n| n.start_byte() as u32)

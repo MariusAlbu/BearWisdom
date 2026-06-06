@@ -126,16 +126,6 @@ impl LanguagePlugin for GoPlugin {
     // Stop emission was redundant with that bridge.
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
-        // Disabled — go-pocketbase reproducibly OOMs on a 400MB single
-        // allocation even though no source file is >130KB. The size guard
-        // doesn't help; the cost is in tree-sitter query-automaton state
-        // expansion on certain Go patterns (assignment_query's
-        // `right: (expression_list (_) @rhs)` is suspect — unrestricted
-        // wildcard inside a list creates combinatorial captures).
-        //
-        // Chain-walker gains from Sprint 1 (call-site type_args via
-        // TypeEnvironment) still apply — the +14227-edge win on
-        // go-pocketbase in earlier runs came with flow_config=None.
-        None
+        Some(&flow::GO_FLOW_CONFIG)
     }
 }

@@ -2,6 +2,7 @@
 
 mod calls;
 pub(crate) mod decorators;
+pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
@@ -95,6 +96,10 @@ impl LanguagePlugin for DartPlugin {
     ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
     {
         Some(&hooks::DART_HOOKS)
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::DART_FLOW_CONFIG)
     }
 
     // DartRestConnector deleted — its routes-table re-read for Stop points

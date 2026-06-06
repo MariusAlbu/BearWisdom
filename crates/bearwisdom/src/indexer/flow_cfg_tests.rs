@@ -531,3 +531,109 @@ fn cfg_r_structural_function_body_builds() {
     let fc = _build_cfg_via_runner(&RLangPlugin, "r", src);
     assert!(!fc.is_empty(), "r CFG should be built");
 }
+
+// ---------- long-tail CfgNodeKinds smoke tests (Dart / Swift / Go) ---------
+
+#[test]
+fn cfg_dart_is_test_narrows_via_cfg() {
+    use crate::languages::dart::DartPlugin;
+    let src = "void f(Object x) {\n  if (x is Foo) {\n    x.bar();\n  }\n}\n";
+    let fc = _build_cfg_via_runner(&DartPlugin, "dart", src);
+    assert!(!fc.is_empty(), "dart CFG should be built");
+    let probe = src.find("x.bar()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("x", probe),
+        Some("Foo"),
+        "Dart `is Foo` narrows `x` in the then-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_swift_is_check_narrows_via_cfg() {
+    use crate::languages::swift::SwiftPlugin;
+    let src = "func f(x: Any) {\n  if x is Bar {\n    x.use()\n  }\n}\n";
+    let fc = _build_cfg_via_runner(&SwiftPlugin, "swift", src);
+    assert!(!fc.is_empty(), "swift CFG should be built");
+    let probe = src.find("x.use()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("x", probe),
+        Some("Bar"),
+        "Swift `x is Bar` narrows `x` in the then-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_gdscript_is_test_narrows_via_cfg() {
+    use crate::languages::gdscript::GDScriptPlugin;
+    let src = "func f(x):\n\tif x is Foo:\n\t\tx.bar()\n";
+    let fc = _build_cfg_via_runner(&GDScriptPlugin, "gdscript", src);
+    assert!(!fc.is_empty(), "gdscript CFG should be built");
+    let probe = src.find("x.bar()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("x", probe),
+        Some("Foo"),
+        "GDScript `x is Foo` narrows `x` in the then-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_swift_if_let_as_narrows_via_cfg() {
+    use crate::languages::swift::SwiftPlugin;
+    let src = "func f(x: Any) {\n  if let y = x as? Foo {\n    y.bar()\n  }\n}\n";
+    let fc = _build_cfg_via_runner(&SwiftPlugin, "swift", src);
+    assert!(!fc.is_empty(), "swift CFG should be built");
+    let probe = src.find("y.bar()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("y", probe),
+        Some("Foo"),
+        "Swift `if let y = x as? Foo` binds `y` as Foo in the then-block via the CFG"
+    );
+}
+
+#[test]
+fn cfg_go_flow_config_enabled_no_oom() {
+    // The Go OOM workaround disabled flow_config(); the constrained
+    // assignment_query RHS alternation re-enables it. Parsing a
+    // go-pocketbase-shaped `expression_list` assignment must run
+    // `run_flow_queries` to completion (no 400MB automaton blowup) and produce
+    // a non-empty CFG with the type-switch narrowing intact.
+    use crate::languages::go::GoPlugin;
+    use crate::languages::LanguagePlugin;
+    assert!(
+        GoPlugin.flow_config().is_some(),
+        "Go flow_config must be re-enabled"
+    );
+    let src = "package p\nfunc f(x interface{}) {\n    rec := db.Find(\"c\")\n    sel := rec.Field\n    switch v := x.(type) {\n    case *Foo:\n        v.bar()\n    }\n    _ = sel\n}\n";
+    let fc = _build_cfg_via_runner(&GoPlugin, "go", src);
+    assert!(!fc.is_empty(), "go CFG should be built with flow_config enabled");
+    let probe = src.find("v.bar()").unwrap() as u32;
+    assert_eq!(
+        fc.fact_string_at("v", probe),
+        Some("Foo"),
+        "Go type-switch narrows `v` to Foo in the case body via the CFG"
+    );
+}
+
+#[test]
+fn cfg_go_expression_switch_discriminant_narrowing_emitted() {
+    // Expression-switch discriminant: `switch x.kind { case "circle": ... }`
+    // produces a DiscriminantNarrowing scoping `x`'s `kind` field to the
+    // literal within the case body.
+    use crate::indexer::flow::run_flow_queries;
+    use crate::languages::go::GoPlugin;
+    use crate::languages::LanguagePlugin;
+    use crate::types::{ExtractedRef, ExtractedSymbol};
+    let src = "package p\nfunc f(x Shape) {\n    switch x.kind {\n    case \"circle\":\n        x.area()\n    }\n}\n";
+    let lang = GoPlugin.grammar("go").unwrap();
+    let fc = GoPlugin.flow_config().unwrap();
+    let syms: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+    let meta = run_flow_queries(src, &lang, fc, &syms, &mut refs);
+    assert!(
+        meta.discriminant_narrowings
+            .iter()
+            .any(|d| d.name == "x" && d.prop == "kind" && d.literal.contains("circle")),
+        "Go expression-switch case discriminant narrows x.kind=circle, got: {:?}",
+        meta.discriminant_narrowings
+    );
+}

@@ -150,6 +150,9 @@ fn cfg_node_kinds_for(
         "kotlin" => Some(&crate::indexer::flow_cfg::KOTLIN_CFG_KINDS),
         "ruby" => Some(&crate::indexer::flow_cfg::RUBY_CFG_KINDS),
         "r" => Some(&crate::indexer::flow_cfg::R_CFG_KINDS),
+        "dart" => Some(&crate::indexer::flow_cfg::DART_CFG_KINDS),
+        "swift" => Some(&crate::indexer::flow_cfg::SWIFT_CFG_KINDS),
+        "gdscript" => Some(&crate::indexer::flow_cfg::GDSCRIPT_CFG_KINDS),
         _ => None,
     }
 }

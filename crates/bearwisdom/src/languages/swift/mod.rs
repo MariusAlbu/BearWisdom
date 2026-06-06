@@ -3,6 +3,7 @@
 mod calls;
 pub(crate) mod decorators;
 mod embedded;
+pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
@@ -113,6 +114,10 @@ impl LanguagePlugin for SwiftPlugin {
     ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
     {
         Some(&hooks::SWIFT_HOOKS)
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::SWIFT_FLOW_CONFIG)
     }
 
     // resolve_connection_points removed — SwiftRestConnector's only role was
