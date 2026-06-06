@@ -7,13 +7,37 @@ use super::helpers::{call_target_name, node_text};
 use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
+#[cfg(test)]
+#[path = "calls_tests.rs"]
+mod tests;
+
 pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     let mut args_node: Option<Node> = None;
     let mut cursor = call_node.walk();
     for c in call_node.children(&mut cursor) {
-        if c.kind() == "arguments" || c.kind() == "argument_list" {
-            args_node = Some(c);
-            break;
+        match c.kind() {
+            "arguments" | "argument_list" => {
+                args_node = Some(c);
+                break;
+            }
+            // Brace-block call form `list.map { x => x.foo }`: the `arguments`
+            // field is a `block` whose lambda lives as a `lambda_expression`
+            // named child. Emit only its lambda param names; a non-lambda block
+            // (`{ val t = x; t.foo }`) carries no `lambda_expression` child and
+            // contributes nothing, preserving current behavior.
+            "block" => {
+                let mut bc = c.walk();
+                if let Some(lambda) = c
+                    .named_children(&mut bc)
+                    .find(|n| n.kind() == "lambda_expression")
+                {
+                    return vec![CallArg::Lambda {
+                        params: scala_lambda_param_names(&lambda, src),
+                    }];
+                }
+                return Vec::new();
+            }
+            _ => {}
         }
     }
     let Some(args) = args_node else { return Vec::new() };

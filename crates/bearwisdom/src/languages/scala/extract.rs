@@ -667,6 +667,7 @@ fn dispatch_body_node(
                     .map(|s| s.name.clone())
                     .unwrap_or_else(|| call_target_name(&callee, src));
                 if !target_name.is_empty() {
+                    let call_args = calls::extract_call_args(&node, src);
                     refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
                         source_symbol_index,
                         target_name,
@@ -677,7 +678,7 @@ fn dispatch_body_node(
                         chain,
                         byte_offset: callee.start_byte() as u32,
                                             namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
+                                            call_args,
 });
                 }
             }

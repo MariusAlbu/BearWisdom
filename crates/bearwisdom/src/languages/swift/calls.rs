@@ -7,6 +7,10 @@ use super::predicates;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
+#[cfg(test)]
+#[path = "calls_tests.rs"]
+mod tests;
+
 pub(super) fn extract_calls_from_body(
     node: &Node,
     src: &[u8],
@@ -463,11 +467,10 @@ pub(super) fn extract_swift_call_args(call_node: &Node, src: &[u8]) -> Vec<crate
             "simple_identifier" | "identifier" => CallArg::Ident(node_text(inner, src)),
             "integer_literal" | "real_literal" => CallArg::Literal(node_text(inner, src)),
             "boolean_literal" | "nil_literal" | "nil" => CallArg::Literal(inner.kind().to_string()),
-            // `{ x in x.foo }` — trailing or parenthesized closure with a named
-            // parameter. Capture the closure's own parameter names so the chain
-            // walker can type them from the higher-order method's callback-
-            // parameter signature. The anonymous-shorthand form (`{ $0.foo }`)
-            // declares no parameter name and yields an empty list (deferred).
+            // `{ x in x.foo }` — named closure parameter — or the anonymous-
+            // shorthand form `{ $0.foo }`. Capture the closure's parameter names
+            // (named, or synthetic `$0..$max`) so the chain walker can type them
+            // from the higher-order method's callback-parameter signature.
             "lambda_literal" => CallArg::Lambda {
                 params: swift_closure_param_names(&inner, src),
             },
@@ -478,28 +481,70 @@ pub(super) fn extract_swift_call_args(call_node: &Node, src: &[u8]) -> Vec<crate
     out
 }
 
-/// Collect the named positional parameter names of a Swift `lambda_literal`.
+/// Collect the positional parameter names of a Swift `lambda_literal`.
+///
 /// Named parameters live under a `type` field as a `lambda_function_type`
 /// whose `lambda_function_type_parameters` hold `lambda_parameter` nodes with a
-/// `name` field. The anonymous-shorthand form (`$0`, `$1`) declares no `type`
-/// and yields an empty list.
+/// `name` field (`{ x in x.foo }` → `["x"]`). When the closure declares no
+/// named parameters, the anonymous-shorthand form (`{ $0.foo }`, `{ $0 + $1 }`)
+/// is recognized: `\$[0-9]+` is a `simple_identifier` alternative in the Swift
+/// grammar, so each `$N` is a real token in the closure body. The dense list
+/// `["$0".."$max"]` is returned, where `max` is the highest index referenced.
+/// The seeding step then types each `$N` from the callback signature exactly as
+/// for a named param; an unreferenced dense slot is a harmless no-op seed.
 fn swift_closure_param_names(node: &Node, src: &[u8]) -> Vec<String> {
-    let Some(ty) = node.child_by_field_name("type") else {
-        return Vec::new();
-    };
-    let Some(params) = swift_named_child(&ty, "lambda_function_type_parameters") else {
-        return Vec::new();
-    };
-    let mut cursor = params.walk();
-    params
-        .named_children(&mut cursor)
-        .filter(|p| p.kind() == "lambda_parameter")
-        .map(|p| {
-            p.child_by_field_name("name")
-                .map(|n| node_text(n, src))
-                .unwrap_or_default()
-        })
-        .collect()
+    if let Some(ty) = node.child_by_field_name("type") {
+        if let Some(params) = swift_named_child(&ty, "lambda_function_type_parameters") {
+            let mut cursor = params.walk();
+            return params
+                .named_children(&mut cursor)
+                .filter(|p| p.kind() == "lambda_parameter")
+                .map(|p| {
+                    p.child_by_field_name("name")
+                        .map(|n| node_text(n, src))
+                        .unwrap_or_default()
+                })
+                .collect();
+        }
+    }
+    // No named parameter list — recognize the anonymous-shorthand form.
+    match swift_max_shorthand_index(node, src) {
+        Some(max) => (0..=max).map(|i| format!("${i}")).collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Highest `$N` index referenced in this closure's own body, or `None` when the
+/// closure uses no shorthand parameters. Descent stops at nested `lambda_literal`
+/// boundaries so an inner closure's `$N` never leaks to the outer closure's
+/// parameter list (sound scoping).
+fn swift_max_shorthand_index(node: &Node, src: &[u8]) -> Option<u32> {
+    let mut max: Option<u32> = None;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "lambda_literal" {
+            continue;
+        }
+        if child.kind() == "simple_identifier" {
+            if let Some(idx) = parse_shorthand_index(&node_text(child, src)) {
+                max = Some(max.map_or(idx, |m| m.max(idx)));
+            }
+        }
+        if let Some(inner) = swift_max_shorthand_index(&child, src) {
+            max = Some(max.map_or(inner, |m| m.max(inner)));
+        }
+    }
+    max
+}
+
+/// Parse a `$N` shorthand token into its index. Returns `None` for any other
+/// identifier (`$foo`, `x`, named-capture `$`-prefixed bindings).
+fn parse_shorthand_index(text: &str) -> Option<u32> {
+    let digits = text.strip_prefix('$')?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
 }
 
 /// First named child of `node` whose kind is `kind`, searched by index so the
