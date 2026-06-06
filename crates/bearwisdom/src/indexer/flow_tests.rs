@@ -1128,3 +1128,64 @@ fn flow_return_ts_block_tail_not_a_return() {
         "TS is not block_tail_returns — a trailing statement must not bind as a return"
     );
 }
+
+#[test]
+fn kotlin_is_smartcast_narrows_in_if_block() {
+    use crate::languages::kotlin::KotlinPlugin;
+
+    // `if (x is Admin) { x.ban() }` smart-casts `x` to Admin in the block.
+    let source = "fun f(x: Any) {\n  if (x is Admin) {\n    x.ban()\n  }\n}\n";
+    let grammar = KotlinPlugin.grammar("kotlin").expect("kotlin grammar must load");
+    let cfg = KotlinPlugin.flow_config().expect("kotlin flow config");
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
+
+    let n = meta
+        .narrowings
+        .iter()
+        .find(|n| n.name == "x" && n.narrowed_type == "Admin")
+        .unwrap_or_else(|| panic!("`is` smart-cast should narrow `x` to Admin; got {:?}", meta.narrowings));
+    assert!(n.byte_end > n.byte_start);
+}
+
+#[test]
+fn kotlin_smartcast_dropped_on_reassignment() {
+    use crate::languages::kotlin::KotlinPlugin;
+
+    // A reassignment to `x` inside the smart-cast block invalidates the
+    // narrowing from that point on — the use after `x = reset()` must NOT be
+    // covered by the narrowing range.
+    let source =
+        "fun f(x: Any) {\n  if (x is Admin) {\n    x.ban()\n    x = reset()\n    x.bar()\n  }\n}\n";
+    let grammar = KotlinPlugin.grammar("kotlin").expect("kotlin grammar must load");
+    let cfg = KotlinPlugin.flow_config().expect("kotlin flow config");
+    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
+
+    let n = meta
+        .narrowings
+        .iter()
+        .find(|n| n.name == "x")
+        .expect("`is` smart-cast should narrow `x`");
+    assert_eq!(n.narrowed_type, "Admin");
+
+    let bar_pos = source.find("x.bar()").unwrap() as u32;
+    assert!(
+        n.byte_end <= bar_pos,
+        "narrowing range [{}, {}) must not cover `x.bar()` at {bar_pos} (killed by reassignment)",
+        n.byte_start,
+        n.byte_end
+    );
+    // The use before the reassignment (`x.ban()`) stays narrowed.
+    let ban_pos = source.find("x.ban()").unwrap() as u32;
+    assert!(
+        n.byte_start <= ban_pos && ban_pos < n.byte_end,
+        "narrowing range [{}, {}) should still cover `x.ban()` at {ban_pos}",
+        n.byte_start,
+        n.byte_end
+    );
+}
