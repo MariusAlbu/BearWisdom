@@ -258,6 +258,7 @@ fn make_chain(segments: &[(&str, SegmentKind)]) -> MemberChain {
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 })
             .collect(),
@@ -618,8 +619,8 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
 
     let chain = MemberChain {
         segments: vec![
-            ChainSegment { name: "c".to_string(), node_kind: "identifier".to_string(), kind: SegmentKind::Identifier, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, is_call: false, type_arg_ids: Vec::new() },
-            ChainSegment { name: "say_hello".to_string(), node_kind: "field_expression".to_string(), kind: SegmentKind::Property, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, is_call: false, type_arg_ids: Vec::new() },
+            ChainSegment { name: "c".to_string(), node_kind: "identifier".to_string(), kind: SegmentKind::Identifier, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, is_call: false, type_arg_ids: Vec::new(), call_args: Vec::new() },
+            ChainSegment { name: "say_hello".to_string(), node_kind: "field_expression".to_string(), kind: SegmentKind::Property, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, is_call: false, type_arg_ids: Vec::new(), call_args: Vec::new() },
         ],
     };
     let extracted_ref = ExtractedRef { is_import_binding: false, is_reexport: false,

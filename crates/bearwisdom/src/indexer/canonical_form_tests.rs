@@ -86,6 +86,7 @@ fn seg_at(name: &str, kind: SegmentKind, byte_offset: u32) -> ChainSegment {
         byte_offset,
             declared_type_id: None,
         is_call: false,
+        call_args: Vec::new(),
         type_arg_ids: Vec::new(),
 }
 }

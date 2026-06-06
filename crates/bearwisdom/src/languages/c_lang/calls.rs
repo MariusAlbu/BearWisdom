@@ -416,6 +416,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -432,6 +433,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -458,6 +460,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -481,6 +484,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -506,6 +510,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())

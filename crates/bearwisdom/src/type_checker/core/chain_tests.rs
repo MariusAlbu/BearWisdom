@@ -30,6 +30,7 @@ fn seg(name: &str, kind: SegmentKind) -> ChainSegment {
         byte_offset: 0,
         declared_type_id: None,
         is_call: false,
+        call_args: Vec::new(),
         type_arg_ids: Vec::new(),
     }
 }
@@ -668,6 +669,7 @@ fn turbofish_binds_method_own_generic() {
             seg("repo", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 type_args: vec!["User".to_string()],
                 ..seg("find", SegmentKind::Property)
             },
@@ -762,6 +764,7 @@ fn arg_driven_generic_binds_terminal_yield() {
             seg("box", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("wrap", SegmentKind::Property)
             },
         ],
@@ -846,6 +849,7 @@ fn arg_driven_generic_inferred_through_array_arg() {
             seg("svc", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("firstOf", SegmentKind::Property)
             },
         ],
@@ -919,6 +923,7 @@ fn turbofish_overrides_arg_driven_inference() {
             seg("box", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 type_args: vec!["Admin".to_string()],
                 ..seg("wrap", SegmentKind::Property)
             },
@@ -992,6 +997,7 @@ fn arg_driven_no_inference_when_arg_untyped() {
             seg("box", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("wrap", SegmentKind::Property)
             },
         ],
@@ -1072,6 +1078,7 @@ fn arg_driven_infers_owner_param_when_receiver_unbound() {
             seg("repo", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("findOne", SegmentKind::Property)
             },
         ],
@@ -1154,6 +1161,7 @@ fn receiver_binding_wins_over_arg_driven_inference() {
             seg("repo", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("findOne", SegmentKind::Property)
             },
         ],
@@ -1176,6 +1184,191 @@ fn receiver_binding_wins_over_arg_driven_inference() {
     assert_eq!(result.target_symbol_id, 1);
     // Receiver pinned T → Account; the User argument must not override it.
     assert_eq!(result.resolved_yield_type, account_ty);
+}
+
+#[test]
+fn arg_driven_generic_binds_mid_chain_yield() {
+    // class Repo<T> { find(x: T): T }  — `repo.find(user).name` in one
+    // expression. `find` is INVOKED mid-chain (not the terminal segment), so
+    // its T must bind from the segment's own arg `user: User`. Then `find`
+    // yields User and the terminal `name` field resolves on User. The terminal
+    // segment is the field `name` (NOT a call), so the terminal G2 cannot fire;
+    // only the per-segment mid-chain bind can supply T.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let repo_ty = arena.class("Repo");
+    let user_ty = arena.class("User");
+    let string_ty = arena.class("String");
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![class_t],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        repo_ty,
+        sym_info(1, "find", "Repo.find", "method", Some("Repo")),
+    );
+    members.add_direct(
+        user_ty,
+        sym_info(2, "name", "User.name", "field", Some("User")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // T is declared on the OWNER (`Repo`); `name`'s field type is String.
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("Repo", vec![gen_t])
+        .with_field_type("User.name", "String")
+        .with_local("user", "User");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("repo", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                call_args: vec![CallArg::Ident("user".to_string())],
+                ..seg("find", SegmentKind::Property)
+            },
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    // Terminal ref targets the field `name` with no args — so terminal G2 stays
+    // off (it requires a non-empty `call_args`); only the mid-chain bind on
+    // `find` can supply T.
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: repo_ty })
+        .expect("name resolves through mid-chain find");
+    assert_eq!(result.target_symbol_id, 2);
+    assert_eq!(result.resolved_yield_type, string_ty);
+}
+
+#[test]
+fn mid_chain_receiver_binding_wins() {
+    // Same Repo<T> { find(x: T): T }, receiver is `Repo<Account>`. The receiver
+    // binds T → Account first, so a mid-chain arg of a DIFFERENT type does not
+    // clobber it: `repo.find(user).name` with `repo: Repo<Account>` and
+    // `user: User` resolves `name` on Account, not User.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let repo_ty = arena.class("Repo");
+    let account_ty = arena.class("Account");
+    let user_ty = arena.class("User");
+    let string_ty = arena.class("String");
+    let class_t = arena.class("T");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let gen_t = arena.intern(Type::Generic { param: t_param });
+    let repo_of_account = arena.intern(Type::Apply {
+        base: repo_ty,
+        args: vec![account_ty],
+    });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(class_t),
+            param_types: vec![class_t],
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        repo_ty,
+        sym_info(1, "find", "Repo.find", "method", Some("Repo")),
+    );
+    // `name` exists on BOTH Account and User; the receiver binding decides which
+    // one the chain lands on. Only the Account field carries id 3.
+    members.add_direct(
+        account_ty,
+        sym_info(3, "name", "Account.name", "field", Some("Account")),
+    );
+    members.add_direct(
+        user_ty,
+        sym_info(2, "name", "User.name", "field", Some("User")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new()
+        .with_generic_param_type_ids("Repo", vec![gen_t])
+        .with_field_type("Account.name", "String")
+        .with_field_type("User.name", "String")
+        .with_local("user", "User");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("repo", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                call_args: vec![CallArg::Ident("user".to_string())],
+                ..seg("find", SegmentKind::Property)
+            },
+            seg("name", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: repo_of_account })
+        .expect("name resolves on Account");
+    // Receiver pinned T → Account; the mid-chain User arg must not override it.
+    assert_eq!(result.target_symbol_id, 3);
+    assert_eq!(result.resolved_yield_type, string_ty);
 }
 
 #[test]
@@ -1366,6 +1559,7 @@ fn lambda_param_seeded_from_callback_signature() {
             seg("arr", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("map", SegmentKind::Property)
             },
         ],
@@ -1464,6 +1658,7 @@ fn lambda_param_unbound_receiver_seeds_nothing() {
             seg("arr", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("map", SegmentKind::Property)
             },
         ],
@@ -2233,6 +2428,7 @@ fn called_function_typed_field_yields_return_type() {
             seg("obj", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("handler", SegmentKind::Property)
             },
             seg("name", SegmentKind::Property),
@@ -2303,6 +2499,7 @@ fn called_function_typed_root_yields_return_type() {
         segments: vec![
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("f", SegmentKind::Identifier)
             },
             seg("name", SegmentKind::Property),
@@ -4357,6 +4554,7 @@ fn array_pop_types_through_element() {
             seg("arr", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("pop", SegmentKind::Property)
             },
             seg("name", SegmentKind::Property),
@@ -4417,6 +4615,7 @@ fn map_get_types_through_value() {
             seg("m", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("get", SegmentKind::Property)
             },
             seg("name", SegmentKind::Property),
@@ -4525,6 +4724,7 @@ fn empty_container_accessors_axis_leaves_chain_unchanged() {
             seg("arr", SegmentKind::Identifier),
             ChainSegment {
                 is_call: true,
+                call_args: Vec::new(),
                 ..seg("pop", SegmentKind::Property)
             },
             seg("name", SegmentKind::Property),

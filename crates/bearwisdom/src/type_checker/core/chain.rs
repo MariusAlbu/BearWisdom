@@ -666,6 +666,30 @@ impl<'a> ChainWalker<'a> {
                 );
             }
 
+            // G2 mid-chain: an INVOKED non-terminal segment carries its own
+            // arguments (`repo.find(user).name` — `find` owns `[user]`). Bind
+            // the called method's type params from those args so its return
+            // yields the concrete type and `current_ty` advances correctly for
+            // the next segment's member lookup. `is_call_seg` (terminal-only,
+            // reading `ExtractedRef.call_args`) already covers the leaf, so this
+            // fires only on mid-chain calls; `unify_into` binds only unbound
+            // slots, leaving a receiver-pinned param authoritative. Turbofish
+            // (G1) takes precedence when present.
+            if seg.is_call && !is_call_seg && seg.type_args.is_empty() && !seg.call_args.is_empty() {
+                let seg_arg_ids = resolve_arg_types(
+                    &seg.call_args,
+                    self.arena,
+                    self.lookup,
+                    self.profile,
+                );
+                self.bind_call_arg_generics(
+                    &member.qualified_name,
+                    member.id,
+                    &seg_arg_ids,
+                    &mut env,
+                );
+            }
+
             // Type un-annotated lambda parameters from the callee's
             // callback-parameter signature. `env` now carries both the
             // receiver-bound generics (`bind_apply_args`: `T→User` for

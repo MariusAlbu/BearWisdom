@@ -411,6 +411,7 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -433,6 +434,7 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())

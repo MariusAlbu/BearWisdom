@@ -53,38 +53,29 @@ fn make_dart_fixture(root: &Path, deps: &[&str]) {
     std::fs::write(dart_tool.join("package_config.json"), config.to_string()).unwrap();
 }
 
-fn cleanup_dart(name: &str) {
-    let tmp = std::env::temp_dir().join(name);
-    let cache = std::env::temp_dir().join("_dart_pub_cache");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let _ = std::fs::remove_dir_all(&cache);
-}
-
 #[test]
 fn dart_discovers_declared_deps() {
-    let tmp = std::env::temp_dir().join("bw-test-pub-discover");
-    cleanup_dart("bw-test-pub-discover");
-    make_dart_fixture(&tmp, &["http", "provider"]);
+    let container = tempfile::TempDir::new().unwrap();
+    let root = container.path().join("app");
+    make_dart_fixture(&root, &["http", "provider"]);
 
-    let roots = discover_dart_externals(&tmp);
+    let roots = discover_dart_externals(&root);
     let mut names: Vec<String> = roots.iter().map(|r| r.module_path.clone()).collect();
     names.sort();
     assert_eq!(names, vec!["http", "provider"]);
-    cleanup_dart("bw-test-pub-discover");
 }
 
 #[test]
 fn dart_walks_lib_skips_src() {
-    let tmp = std::env::temp_dir().join("bw-test-pub-walk");
-    cleanup_dart("bw-test-pub-walk");
-    make_dart_fixture(&tmp, &["provider"]);
+    let container = tempfile::TempDir::new().unwrap();
+    let root = container.path().join("app");
+    make_dart_fixture(&root, &["provider"]);
 
-    let roots = discover_dart_externals(&tmp);
+    let roots = discover_dart_externals(&root);
     assert_eq!(roots.len(), 1);
     let files = walk_dart_root(&roots[0]);
     let paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
     assert_eq!(paths, vec!["ext:dart:provider/provider.dart"]);
-    cleanup_dart("bw-test-pub-walk");
 }
 
 #[test]

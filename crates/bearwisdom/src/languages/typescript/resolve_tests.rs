@@ -2274,6 +2274,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -2286,6 +2287,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -2466,6 +2468,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -2478,6 +2481,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -2715,6 +2719,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -2727,6 +2732,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -2739,6 +2745,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -2963,6 +2970,7 @@ fn alias_expansion_handles_array_type_form() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -2975,6 +2983,7 @@ fn alias_expansion_handles_array_type_form() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -2987,6 +2996,7 @@ fn alias_expansion_handles_array_type_form() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -3136,6 +3146,7 @@ fn alias_expansion_refuses_union_aliases() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -3148,6 +3159,7 @@ fn alias_expansion_refuses_union_aliases() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -3160,6 +3172,7 @@ fn alias_expansion_refuses_union_aliases() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -3356,6 +3369,7 @@ fn typeof_alias_dereferences_to_value_type() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -3368,6 +3382,7 @@ fn typeof_alias_dereferences_to_value_type() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -3380,6 +3395,7 @@ fn typeof_alias_dereferences_to_value_type() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -3602,6 +3618,7 @@ fn transparent_mapped_partial_resolves_through_source() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -3614,6 +3631,7 @@ fn transparent_mapped_partial_resolves_through_source() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -3626,6 +3644,7 @@ fn transparent_mapped_partial_resolves_through_source() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -3807,6 +3826,7 @@ fn phase2_inheritance_resolves_inherited_field() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -3819,6 +3839,7 @@ fn phase2_inheritance_resolves_inherited_field() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -3831,6 +3852,7 @@ fn phase2_inheritance_resolves_inherited_field() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -4006,6 +4028,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -4018,6 +4041,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -4030,6 +4054,7 @@ fn phase2_inheritance_resolves_through_two_hops() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -4180,6 +4205,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -4192,6 +4218,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -4204,6 +4231,7 @@ fn this_return_keeps_receiver_through_fluent_chain() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],
@@ -4277,6 +4305,7 @@ fn make_chain_segs(segments: &[(&str, crate::types::SegmentKind)]) -> crate::typ
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 })
             .collect(),
@@ -5085,6 +5114,7 @@ fn make_chain_with_typed_root(
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 },
             ChainSegment {
@@ -5097,6 +5127,7 @@ fn make_chain_with_typed_root(
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 },
         ],

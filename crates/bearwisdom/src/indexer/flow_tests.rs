@@ -371,6 +371,7 @@ fn flow_type_args_populate_chain_segment() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
                 ChainSegment {
@@ -383,6 +384,7 @@ fn flow_type_args_populate_chain_segment() {
                                     byte_offset: 0,
     declared_type_id: None,
     is_call: false,
+    call_args: Vec::new(),
     type_arg_ids: Vec::new(),
 },
             ],

@@ -266,6 +266,7 @@ fn seg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
         declared_type_id: None,
         is_call,
         type_arg_ids: Vec::new(),
+        call_args: Vec::new(),
     }
 }
 

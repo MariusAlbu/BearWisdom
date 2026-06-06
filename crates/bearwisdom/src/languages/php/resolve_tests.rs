@@ -176,6 +176,7 @@ fn make_static_chain(segments: &[&str]) -> MemberChain {
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 })
             .collect(),
@@ -198,6 +199,7 @@ fn make_instance_chain(segments: &[&str]) -> MemberChain {
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 })
             .collect(),

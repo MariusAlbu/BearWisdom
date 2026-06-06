@@ -413,6 +413,14 @@ pub struct ChainSegment {
     /// the segment is the function of a `call_expression`. The walker yields a
     /// function-typed member's return type instead of the function value.
     pub is_call: bool,
+    /// Call arguments captured at the invoked segment (`obj.find(x).y` — the
+    /// `find` segment owns `[x]`). Drives mid-chain argument-driven generic
+    /// inference: when this segment is invoked the walker unifies its callee's
+    /// declared parameter types against these args to bind type parameters its
+    /// return resolves through. Empty unless the chain builder populates it on
+    /// an invoked mid-chain segment; the terminal call's args live on
+    /// `ExtractedRef.call_args`, never here.
+    pub call_args: Vec<CallArg>,
 }
 
 /// A structured member access chain built from tree-sitter AST nodes.

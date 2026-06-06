@@ -879,6 +879,7 @@ pub(super) fn self_member_chain(member: &str, byte_offset: u32) -> MemberChain {
                 byte_offset,
                 declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
             },
             ChainSegment {
@@ -891,6 +892,7 @@ pub(super) fn self_member_chain(member: &str, byte_offset: u32) -> MemberChain {
                 byte_offset,
                 declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
             },
         ],
@@ -925,6 +927,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -941,6 +944,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -960,6 +964,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 byte_offset: 0,
                             declared_type_id: None,
                 is_call: false,
+                call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
 });
             Some(())
@@ -979,6 +984,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                     byte_offset: 0,
                                     declared_type_id: None,
                     is_call: false,
+                    call_args: Vec::new(),
                     type_arg_ids: Vec::new(),
 });
             } else {
@@ -1007,6 +1013,7 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                         byte_offset: 0,
                                             declared_type_id: None,
                         is_call: false,
+                        call_args: Vec::new(),
                         type_arg_ids: Vec::new(),
 });
                 }
@@ -1302,6 +1309,7 @@ fn build_field_expression_chain(
                     byte_offset: field.start_byte() as u32,
                     declared_type_id: None,
                     is_call: false,
+                    call_args: Vec::new(),
                     type_arg_ids: Vec::new(),
                 });
                 match current.child_by_field_name("value") {
@@ -1324,6 +1332,7 @@ fn build_field_expression_chain(
                     byte_offset: current.start_byte() as u32,
                     declared_type_id: None,
                     is_call: false,
+                    call_args: Vec::new(),
                     type_arg_ids: Vec::new(),
                 });
                 break;
