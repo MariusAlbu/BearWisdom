@@ -911,3 +911,81 @@ fn observable_property_resolves_through_index() {
         "the synthesized Current property must carry field type User so `vm.Current.Id` types through"
     );
 }
+
+// ---------------------------------------------------------------------------
+// System.Text.Json source-gen — JsonSerializerContext
+//
+// `[JsonSerializable(typeof(User))] partial class AppJsonContext : JsonSerializerContext`
+// makes the STJ source generator emit, on the context class:
+//   public static AppJsonContext Default { get; }      — self-returning static
+//   public JsonTypeInfo<User> User { get; }            — one per [JsonSerializable]
+// ---------------------------------------------------------------------------
+
+#[test]
+fn json_serializer_context_synthesizes_default_and_per_type_props() {
+    let src = "namespace App { public class User { public int Id { get; set; } } [JsonSerializable(typeof(User))] public partial class AppJsonContext : JsonSerializerContext {} }";
+    let q = qnames(src);
+    assert!(
+        q.contains(&"App.AppJsonContext.Default".to_string()),
+        "JsonSerializerContext must synthesize the static Default accessor; got {q:?}"
+    );
+    assert!(
+        q.contains(&"App.AppJsonContext.User".to_string()),
+        "a [JsonSerializable(typeof(User))] must synthesize a per-type `User` property; got {q:?}"
+    );
+}
+
+#[test]
+fn json_serializer_context_default_is_self_returning() {
+    // `Default` returns the context type itself so `AppJsonContext.Default.User`
+    // chains; its signature names the context type and it carries a self-return ref.
+    let src = "namespace App { public class User { public int Id { get; set; } } [JsonSerializable(typeof(User))] public partial class AppJsonContext : JsonSerializerContext {} }";
+    assert_eq!(
+        signature_for(src, "App.AppJsonContext.Default").as_deref(),
+        Some("AppJsonContext Default"),
+        "Default must be typed as the context class"
+    );
+    assert_eq!(
+        return_ref_for(src, "App.AppJsonContext.Default"),
+        Some("AppJsonContext".to_string()),
+        "Default must carry a self-return ref to the context type"
+    );
+}
+
+#[test]
+fn json_serializer_context_per_type_prop_is_json_type_info() {
+    // The per-type property is `JsonTypeInfo<User> User` returning the external
+    // `JsonTypeInfo` head (resolves when System.Text.Json is hydrated).
+    let src = "namespace App { public class User { public int Id { get; set; } } [JsonSerializable(typeof(User))] public partial class AppJsonContext : JsonSerializerContext {} }";
+    assert_eq!(
+        signature_for(src, "App.AppJsonContext.User").as_deref(),
+        Some("JsonTypeInfo<User> User"),
+        "the per-type prop must be typed `JsonTypeInfo<User>`"
+    );
+    assert_eq!(
+        return_ref_for(src, "App.AppJsonContext.User"),
+        Some("JsonTypeInfo".to_string()),
+        "the per-type prop must carry a return ref to the external JsonTypeInfo head"
+    );
+}
+
+#[test]
+fn non_context_partial_class_synthesizes_no_json_members() {
+    // A partial class that does NOT inherit JsonSerializerContext synthesizes no
+    // STJ surface, even when it carries a [JsonSerializable] attribute by mistake.
+    let src = "namespace App { public class User { public int Id { get; set; } } [JsonSerializable(typeof(User))] public partial class Plain {} }";
+    let q = qnames(src);
+    assert!(
+        !q.iter().any(|n| n == "App.Plain.Default" || n == "App.Plain.User"),
+        "a non-JsonSerializerContext class must synthesize no STJ members; got {q:?}"
+    );
+}
+
+#[test]
+fn json_serializer_context_multiple_serializable_types() {
+    // Two [JsonSerializable] attributes → one property per type, deduped.
+    let src = "namespace App { public class User {} public class Order {} [JsonSerializable(typeof(User))] [JsonSerializable(typeof(Order))] public partial class AppJsonContext : JsonSerializerContext {} }";
+    let q = qnames(src);
+    assert!(q.contains(&"App.AppJsonContext.User".to_string()), "User prop missing; got {q:?}");
+    assert!(q.contains(&"App.AppJsonContext.Order".to_string()), "Order prop missing; got {q:?}");
+}

@@ -48,6 +48,7 @@ pub(super) fn synthesize_symbols(
     let mut out = synthesize_record_members(source, symbols, refs);
     merge(&mut out, synthesize_mvvm_members(source, symbols, refs));
     merge(&mut out, synthesize_observable_object_members(source, symbols, refs));
+    merge(&mut out, synthesize_json_serializer_context_members(symbols, refs));
     out
 }
 
@@ -491,6 +492,129 @@ fn observable_object_host(class_idx: usize, refs: &[ExtractedRef]) -> Option<Obs
         }
     }
     is_host.then_some(ObservableHost { validator, recipient })
+}
+
+// =============================================================================
+// System.Text.Json source-gen — JsonSerializerContext
+//
+// A partial class inheriting `JsonSerializerContext` carrying one or more
+// `[JsonSerializable(typeof(T))]` attributes drives the System.Text.Json source
+// generator, whose emitted surface is deterministic (no Roslyn run, no fluent
+// configuration — a fixed attribute→member shape):
+//
+//   [JsonSerializable(typeof(User))]
+//   partial class AppJsonContext : JsonSerializerContext
+//     → public static AppJsonContext Default { get; }   // self-returning static
+//       public JsonTypeInfo<User> User { get; }          // one per [JsonSerializable]
+//
+// `Default` returns the context type itself, so `AppJsonContext.Default.User`
+// chains; each per-type property returns `JsonTypeInfo<T>` (external head — it
+// resolves only when System.Text.Json is hydrated, else declines to an external
+// unresolved target, never a false bind).
+//
+// Discrimination is REF-based, mirroring the observable-object host classifier:
+// the class is a host when an `Inherits` ref at its symbol index names
+// `JsonSerializerContext` (final dotted segment). The per-type names come from the
+// `typeof(T)` arguments the extractor already emits as `TypeRef`s at the class
+// index — the candidate set is the class-index `TypeRef`s with the attribute heads
+// (`JsonSerializable`, `JsonSourceGenerationOptions`) and the base
+// (`JsonSerializerContext`) excluded. So the recognizer reads only already-extracted
+// refs (no re-parse), and the attribute→member map (`Default` + `JsonTypeInfo<T>`
+// per typeof) is a seam-level codegen fact, the same category as the record
+// Deconstruct / Lombok @Data→getX / MVVM [ObservableProperty]→prop maps.
+//
+// `[JsonSerializable]` with a `TypeInfoPropertyName = "Foo"` named arg overriding
+// the default property name is not modelled — the default-name form (property
+// named by T's simple name) is the dominant corpus shape; an override yields a
+// slightly-wrong property name (still a member, never a false bind on another
+// type). Arbitrary `ISourceGenerator`/`IIncrementalGenerator` output and EF Core
+// compiled models are the documented ceiling — they have no fixed attribute→member
+// shape and require running the actual generator.
+// =============================================================================
+
+/// The `JsonSerializerContext` base whose `Inherits` ref marks an STJ source-gen
+/// host class.
+const JSON_SERIALIZER_CONTEXT_BASE: &str = "JsonSerializerContext";
+
+/// Attribute heads emitted as class-index `TypeRef`s that are NOT serializable
+/// types — excluded before treating the remaining class-index `TypeRef`s as the
+/// `typeof(T)` serializable-type args.
+const JSON_CONTEXT_ATTR_HEADS: &[&str] =
+    &["JsonSerializable", "JsonSourceGenerationOptions", JSON_SERIALIZER_CONTEXT_BASE];
+
+/// The external head every per-type property returns: `JsonTypeInfo<T>`.
+const JSON_TYPE_INFO_HEAD: &str = "JsonTypeInfo";
+
+pub(super) fn synthesize_json_serializer_context_members(
+    symbols: &[ExtractedSymbol],
+    refs: &[ExtractedRef],
+) -> Synthesized {
+    let mut emit = MvvmEmit::new(symbols);
+
+    for (idx, sym) in symbols.iter().enumerate() {
+        if sym.kind != SymbolKind::Class || !is_json_serializer_context_host(idx, refs) {
+            continue;
+        }
+        let class_qname = sym.qualified_name.as_str();
+        let context_name = sym.name.as_str();
+
+        // `public static {Context} Default { get; }` — self-returning so the
+        // static chains (`AppJsonContext.Default.User`).
+        let default_prop = make_synth(
+            "Default",
+            SymbolKind::Property,
+            format!("{context_name} Default"),
+            class_qname,
+            sym.start_line,
+        );
+        emit.push(default_prop, Some(context_name));
+
+        // One `public JsonTypeInfo<{T}> {T} { get; }` per serializable type. The
+        // property is named by T's simple name; `MvvmEmit` dedups so two
+        // `[JsonSerializable(typeof(User))]` (or a clash with `Default`) emit once.
+        for ty in serializable_type_names(idx, refs) {
+            let prop = make_synth(
+                &ty,
+                SymbolKind::Property,
+                format!("{JSON_TYPE_INFO_HEAD}<{ty}> {ty}"),
+                class_qname,
+                sym.start_line,
+            );
+            emit.push(prop, Some(JSON_TYPE_INFO_HEAD));
+        }
+    }
+
+    Synthesized { symbols: emit.out, refs: emit.refs }
+}
+
+/// Whether the class at symbol index `class_idx` inherits `JsonSerializerContext`
+/// (an `Inherits` ref at its index whose target's final dotted segment, generics
+/// stripped, is `JsonSerializerContext`). The base edge is structural — the same
+/// discriminator shape `observable_object_host` uses, so no source-text scan.
+fn is_json_serializer_context_host(class_idx: usize, refs: &[ExtractedRef]) -> bool {
+    refs.iter().any(|r| {
+        r.source_symbol_index == class_idx
+            && r.kind == EdgeKind::Inherits
+            && last_segment(&r.target_name) == JSON_SERIALIZER_CONTEXT_BASE
+    })
+}
+
+/// The serializable-type simple names a JsonSerializerContext host declares via
+/// `[JsonSerializable(typeof(T))]`: the class-index `TypeRef`s minus the attribute
+/// heads and the base. The `typeof(T)` argument is extracted as a `TypeRef` at the
+/// class index (the simple name), so a wrong inclusion can only yield an extra
+/// harmless member, never a false bind.
+fn serializable_type_names(class_idx: usize, refs: &[ExtractedRef]) -> Vec<String> {
+    refs.iter()
+        .filter(|r| r.source_symbol_index == class_idx && r.kind == EdgeKind::TypeRef)
+        .map(|r| last_segment(type_head(&r.target_name)))
+        .filter(|name| !name.is_empty() && !JSON_CONTEXT_ATTR_HEADS.contains(&name.as_str()))
+        .collect()
+}
+
+/// The final dotted segment of a type name (`A.B.C` → `C`, `C` → `C`).
+fn last_segment(name: &str) -> String {
+    name.rsplit('.').next().unwrap_or(name).to_string()
 }
 
 /// The `SymbolKind` for a synthesized member from its signature: a parenthesized
