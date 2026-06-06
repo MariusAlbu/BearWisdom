@@ -29,7 +29,7 @@ use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution,
-    SymbolInfo, SymbolLookup,
+    SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
@@ -126,7 +126,7 @@ impl AdaResolver {
                         {
                             return Some(Resolution {
                                 target_symbol_id: member.id,
-                                confidence: 0.9,
+                                confidence: RESOLVED_CONFIDENCE,
                                 strategy: "ada_parent_pkg_visibility",
                                 resolved_yield_type: None,
                                 flow_emit: None,
@@ -144,7 +144,7 @@ impl AdaResolver {
                                         {
                                             return Some(Resolution {
                                                 target_symbol_id: sym.id,
-                                                confidence: 0.88,
+                                                confidence: RESOLVED_CONFIDENCE,
                                                 strategy: "ada_parent_pkg_rename",
                                                 resolved_yield_type: None,
                                                 flow_emit: None,
@@ -301,7 +301,7 @@ impl AdaResolver {
                     {
                         return Some(Resolution {
                             target_symbol_id: member.id,
-                            confidence: 0.9,
+                            confidence: RESOLVED_CONFIDENCE,
                             strategy: "ada_local_instantiation",
                             resolved_yield_type: None,
                             flow_emit: None,
@@ -351,7 +351,7 @@ impl AdaResolver {
                                 {
                                     return Some(Resolution {
                                         target_symbol_id: member.id,
-                                        confidence: 0.88,
+                                        confidence: RESOLVED_CONFIDENCE,
                                         strategy: "ada_local_instantiation",
                                         resolved_yield_type: None,
                                         flow_emit: None,
@@ -485,7 +485,7 @@ impl AdaResolver {
                         {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
-                                confidence: 0.82,
+                                confidence: RESOLVED_CONFIDENCE,
                                 strategy: "ada_var_pkg_method",
                                 resolved_yield_type: None,
                                 flow_emit: None,
@@ -514,7 +514,7 @@ impl AdaResolver {
                     {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
-                            confidence: 0.95,
+                            confidence: RESOLVED_CONFIDENCE,
                             strategy: "ada_qualified_ci",
                             resolved_yield_type: None,
                             flow_emit: None,

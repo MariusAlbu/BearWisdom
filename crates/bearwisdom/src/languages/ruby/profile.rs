@@ -86,11 +86,8 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     // Gem symbols (origin='external') bind by name, gated by the file's
-    // imported-gem set, at reduced confidence — the one strategy that binds
-    // to externals below 1.0.
-    external_by_import: Some(crate::type_checker::profile::language_profile::ExternalByImport {
-        confidence: 0.8,
-    }),
+    // imported-gem set — the one strategy that binds to externals.
+    external_by_import: Some(crate::type_checker::profile::language_profile::ExternalByImport),
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     package_by_directory: false,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,

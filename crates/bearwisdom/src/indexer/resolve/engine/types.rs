@@ -92,12 +92,22 @@ pub struct RefContext<'a> {
     pub file_package_id: Option<i64>,
 }
 
+/// The confidence every name resolution carries. Resolution is binary — a
+/// structural bind succeeds (the import root matched, the qname hit, the
+/// inheritance climb reached the member, the `this T` signature matched) or it
+/// declines to `None`. There is no graded middle: an ambiguous bind returns
+/// `None` rather than a fractional score. Distinct from the reachability
+/// trust-band (`DISPATCH_CANDIDATE_CONFIDENCE` = 0.6), which marks speculative
+/// fan-out edges the BFS may traverse-but-doubt.
+pub const RESOLVED_CONFIDENCE: f64 = 1.0;
+
 /// The result of a successful resolution.
 #[derive(Debug)]
 pub struct Resolution {
     /// The DB ID of the resolved target symbol.
     pub target_symbol_id: i64,
-    /// Confidence level (1.0 for deterministic, lower for heuristic).
+    /// Always `RESOLVED_CONFIDENCE`. A resolution either binds structurally or
+    /// returns `None`; there is no graded score.
     pub confidence: f64,
     /// Which strategy produced this resolution (for diagnostics).
     pub strategy: &'static str,

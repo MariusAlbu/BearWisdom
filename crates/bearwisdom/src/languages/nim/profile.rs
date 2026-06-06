@@ -64,9 +64,7 @@ pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    external_by_import: Some(crate::type_checker::profile::language_profile::ExternalByImport {
-        confidence: 0.85,
-    }),
+    external_by_import: Some(crate::type_checker::profile::language_profile::ExternalByImport),
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     package_by_directory: false,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,

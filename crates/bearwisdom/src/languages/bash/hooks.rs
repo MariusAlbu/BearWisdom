@@ -4,6 +4,7 @@ use super::predicates;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
+    RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
@@ -64,7 +65,7 @@ fn resolve_via_shell_source(
             if ends_with_path_suffix(&sym.file_path, suffix) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.90,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: "bash_shell_source",
                     resolved_yield_type: None,
                     flow_emit: None,

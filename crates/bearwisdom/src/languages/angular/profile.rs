@@ -55,8 +55,6 @@ pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
     associated_type_projection: false,
     blanket_impl_resolution: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
-        npm_confidence: 0.85,
-        lib_confidence: 0.85,
         instantiate_accepts_variable: true,
     },
     self_receiver_discovery:

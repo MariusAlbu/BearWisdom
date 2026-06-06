@@ -15,7 +15,7 @@
 
 use tracing::debug;
 
-use crate::indexer::resolve::engine::{Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{Resolution, SymbolLookup, RESOLVED_CONFIDENCE};
 use crate::types::EdgeKind;
 
 /// Follow re-export chains from `module_path` to the module that defines
@@ -135,7 +135,7 @@ pub(crate) fn follow_reexports(
                 );
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.95,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: "reexport_star",
                     resolved_yield_type: None,
                     flow_emit: None,

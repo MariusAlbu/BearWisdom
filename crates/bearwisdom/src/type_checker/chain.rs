@@ -18,7 +18,7 @@
 
 use crate::indexer::resolve::engine::{
     intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo,
-    SymbolLookup,
+    SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::alias::expand_alias;
 use crate::type_checker::type_env::TypeEnvironment;
@@ -575,21 +575,19 @@ pub fn resolve_via_chain(
         }
         _ => {
             // Ambiguous: multiple candidates share this (type_prefix, name,
-            // compatible_kind) triple. The previous behavior was to pick
-            // `matches[0]` at 0.95 confidence, but `matches[0]` is hash-
-            // seed-dependent — whichever symbol happened to land first in
-            // `by_name` wins. That's both non-deterministic AND wrong
-            // often enough to corrupt dead-code detection. Fall through to
-            // the heuristic tier, which applies a `0.50 / sqrt(n)` decay
-            // and is intentionally honest about ambiguity.
+            // compatible_kind) triple, and picking one would be hash-seed-
+            // dependent — whichever symbol landed first in `by_name` wins,
+            // which is non-deterministic and wrong often enough to corrupt
+            // dead-code detection. Decline rather than guess: resolution is
+            // binary, so an ambiguous bind stays unresolved.
         }
     }
 
     // Members-of final fallback: a direct child of `effective_type` whose
-    // simple name matches, emitted at 0.95. The by_name-prefix block above
-    // already covers the deterministic single-hit case; this catches the
-    // member declared directly under the type but not surfaced as a unique
-    // by_name match (e.g. an external type whose members share common names).
+    // simple name matches. The by_name-prefix block above already covers the
+    // deterministic single-hit case; this catches the member declared directly
+    // under the type but not surfaced as a unique by_name match (e.g. an
+    // external type whose members share common names).
     if config.extensions.walk_inheritance {
         for sym in lookup.members_of(&effective_type) {
             if sym.name == last.name && (config.kind_compatible)(edge_kind, &sym.kind) {
@@ -598,7 +596,7 @@ pub fn resolve_via_chain(
                 );
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.95,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: chain_strategy(strategy),
                     resolved_yield_type: intern_yield_type(yield_type, lookup),
                     flow_emit: None,
@@ -607,8 +605,8 @@ pub fn resolve_via_chain(
         }
 
         // Inheritance walk: climb `parent_class_qname` (depth-10) retrying the
-        // final member on each ancestor. by_qualified_name hits at 0.9,
-        // members_of hits at 0.85.
+        // final member on each ancestor — by_qualified_name first, then
+        // members_of.
         let mut ancestor = effective_type.as_str();
         for _ in 0..10 {
             let parent = match lookup.parent_class_qname(ancestor) {
@@ -623,7 +621,7 @@ pub fn resolve_via_chain(
                     );
                     return Some(Resolution {
                         target_symbol_id: sym.id,
-                        confidence: 0.9,
+                        confidence: RESOLVED_CONFIDENCE,
                         strategy: chain_strategy_inheritance(strategy),
                         resolved_yield_type: intern_yield_type(yield_type, lookup),
                         flow_emit: None,
@@ -637,7 +635,7 @@ pub fn resolve_via_chain(
                     );
                     return Some(Resolution {
                         target_symbol_id: sym.id,
-                        confidence: 0.85,
+                        confidence: RESOLVED_CONFIDENCE,
                         strategy: chain_strategy_inheritance(strategy),
                         resolved_yield_type: intern_yield_type(yield_type, lookup),
                         flow_emit: None,
@@ -663,7 +661,7 @@ pub fn resolve_via_chain(
                     compute_yield_type(sym, &last.type_args, config, lookup, env.as_mut());
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.85,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: chain_strategy_extension(strategy),
                     resolved_yield_type: intern_yield_type(yield_type, lookup),
                     flow_emit: None,
@@ -1210,7 +1208,7 @@ fn resolve_final_via_namespace(
             if (config.kind_compatible)(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.95,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: chain_strategy(config.strategy_prefix),
                     resolved_yield_type: None,
                     flow_emit: None,

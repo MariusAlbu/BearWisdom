@@ -64,6 +64,27 @@ impl FakeLookup {
         });
         self
     }
+    /// Register a symbol AND list it under `parent`'s `members_of` set, so the
+    /// chain walker's members-of fallback (direct + inherited) can reach it.
+    fn member(mut self, id: i64, parent: &str, name: &str, kind: &str) -> Self {
+        let sym = SymbolInfo {
+            id,
+            name: name.to_string(),
+            qualified_name: format!("{parent}.{name}"),
+            kind: kind.to_string(),
+            visibility: Some("public".to_string()),
+            file_path: Arc::from("ext:ts:fixture/__bw_synthetic__.d.ts"),
+            scope_path: None,
+            package_id: None,
+            signature: None,
+        };
+        self.by_qname.push(sym.clone());
+        match self.members_store.iter_mut().find(|(p, _)| p == parent) {
+            Some((_, v)) => v.push(sym),
+            None => self.members_store.push((parent.to_string(), vec![sym])),
+        }
+        self
+    }
     fn ret(mut self, qname: &str, ty: &str) -> Self {
         self.return_types.push((qname.to_string(), ty.to_string()));
         self
@@ -735,7 +756,7 @@ fn java_chain_wildcard_namespace_final() {
     // `Foo.staticMethod()` with `import java.util.*;`. `Foo` is a known type so
     // the root resolves, but `staticMethod` is keyed only under the wildcard
     // namespace (`java.util.Foo.staticMethod`). The namespace-qualified final
-    // hit lands at confidence 0.95.
+    // hit resolves at RESOLVED_CONFIDENCE.
     let lookup = FakeLookup::default()
         .sym(1, "Foo", "class")
         .sym(2, "java.util.Foo.staticMethod", "method");
@@ -750,8 +771,96 @@ fn java_chain_wildcard_namespace_final() {
     let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
         .expect("wildcard-import namespace final resolves");
     assert_eq!(res.target_symbol_id, 2);
-    assert_eq!(res.confidence, 0.95);
+    assert_eq!(res.confidence, 1.0);
     assert_eq!(res.strategy, "java_chain_resolution");
+}
+
+#[test]
+fn resolution_confidence_is_binary_resolved_or_absent() {
+    use crate::indexer::resolve::engine::RESOLVED_CONFIDENCE;
+    use crate::indexer::resolve::reachability::REACHABILITY_CONFIDENCE_THRESHOLD;
+    use crate::indexer::resolve::synthesize_dispatch::DISPATCH_CANDIDATE_CONFIDENCE;
+
+    // Each of the four structural chain rungs that historically emitted a
+    // sub-1.0 score now resolves at RESOLVED_CONFIDENCE — resolution is binary.
+
+    // Rung 1: members-of final fallback (direct child of the receiver type).
+    let lookup = FakeLookup::default()
+        .local("svc", "Svc")
+        .sym(1, "Svc", "class")
+        .member(2, "Svc", "run", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("svc", SegmentKind::Identifier, false),
+            seg("run", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc = file_ctx_with_imports(vec![]);
+    let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("members-of final fallback resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, RESOLVED_CONFIDENCE);
+
+    // Rung 2: inheritance climb, by_qualified_name hit on an ancestor.
+    let lookup = FakeLookup::default()
+        .local("repo", "UserRepo")
+        .sym(1, "UserRepo", "class")
+        .parent("UserRepo", "BaseRepo")
+        .sym(2, "BaseRepo.findOne", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("findOne", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("inheritance by_qname resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, RESOLVED_CONFIDENCE);
+
+    // Rung 3: inheritance climb, members-of hit on an ancestor (no qname key).
+    let lookup = FakeLookup::default()
+        .local("repo", "UserRepo")
+        .sym(1, "UserRepo", "class")
+        .parent("UserRepo", "BaseRepo")
+        .member(2, "BaseRepo", "save", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("repo", SegmentKind::Identifier, false),
+            seg("save", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let res = run_res(&java_config(), &r, &fc, vec!["caller".to_string()], &lookup)
+        .expect("inheritance members-of resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, RESOLVED_CONFIDENCE);
+
+    // Rung 4: namespace-qualified final segment under a wildcard import.
+    let lookup = FakeLookup::default()
+        .sym(1, "Foo", "class")
+        .sym(2, "java.util.Foo.staticMethod", "method");
+    let r = ref_with_chain(
+        vec![
+            seg("Foo", SegmentKind::Identifier, false),
+            seg("staticMethod", SegmentKind::Property, true),
+        ],
+        EdgeKind::Calls,
+    );
+    let fc_ns = file_ctx_with_imports(vec![wildcard_import("java.util")]);
+    let res = run_res(&java_config(), &r, &fc_ns, vec!["caller".to_string()], &lookup)
+        .expect("namespace-qualified final resolves");
+    assert_eq!(res.target_symbol_id, 2);
+    assert_eq!(res.confidence, RESOLVED_CONFIDENCE);
+
+    // Separation that must NOT collapse: the reachability trust-band is a
+    // distinct 3-state signal (decline < dispatch-maybe < resolved), not a
+    // resolution score. QUAL-4 collapses the resolution band only.
+    assert_eq!(DISPATCH_CANDIDATE_CONFIDENCE, 0.6);
+    assert!(DISPATCH_CANDIDATE_CONFIDENCE > REACHABILITY_CONFIDENCE_THRESHOLD);
+    assert!(DISPATCH_CANDIDATE_CONFIDENCE < RESOLVED_CONFIDENCE);
 }
 
 #[test]

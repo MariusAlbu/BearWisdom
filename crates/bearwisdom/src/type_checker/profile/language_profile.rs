@@ -159,9 +159,9 @@ pub struct LanguageProfile {
     /// else through the directory-containment probe (Python `.foo` vs
     /// `models.X`).
     pub relative_marker: RelativeMarker,
-    /// Import-scoped binding of a bare target to an EXTERNAL symbol at reduced
-    /// confidence. `None` (the default) keeps the engine off externals below
-    /// confidence 1.0; `Some` opts a language in (Ruby gems). See
+    /// Import-scoped binding of a bare target to an EXTERNAL symbol. `None`
+    /// (the default) keeps the engine off externals — the regular ladder binds
+    /// only project symbols; `Some` opts a language in (Ruby gems). See
     /// `ExternalByImport`.
     pub external_by_import: Option<ExternalByImport>,
     /// How a candidate symbol's name is normalized before it is compared
@@ -506,17 +506,15 @@ pub struct NamespaceDecline {
     pub is_reserved: fn(&str) -> bool,
 }
 
-/// Data for `resolve_via_external_by_import`: an import-scoped bind of a bare
+/// Marker for `resolve_via_external_by_import`: an import-scoped bind of a bare
 /// target to an EXTERNAL symbol. The external file's `ext:<lang>:<pkg>`
 /// package segment must equal a non-relative import root from the file's
 /// imports, or start with `{root}-` (Ruby gem families: `aws-sdk-s3` under
-/// gem `aws`).
+/// gem `aws`). The bind is structural — an import root names the package and
+/// the package owns a matching symbol — so it resolves at `RESOLVED_CONFIDENCE`
+/// like every other strategy; the unit field only opts a language in.
 #[derive(Debug, Clone, Copy)]
-pub struct ExternalByImport {
-    /// Confidence recorded on a hit. Below 1.0 by design — this is the only
-    /// strategy that intentionally binds to externals.
-    pub confidence: f64,
-}
+pub struct ExternalByImport;
 
 /// How `resolve_via_wildcard_import` tests whether a candidate sits under a
 /// wildcard import's module.
@@ -579,10 +577,6 @@ pub enum FileScopedImports {
         /// member-bearing file imports are marked wildcard (Robot resource /
         /// Python-library imports); `false` to scan every file-naming import.
         wildcard_only: bool,
-        /// Confidence recorded on a hit. The bind is structural — an import
-        /// names the file and the file owns a matching symbol — but a language
-        /// may rate it below 1.0 when the import-to-file mapping is heuristic.
-        confidence: f64,
         /// Alias-decoded entry binding. `None` (the default shape) matches a
         /// target only against a SYMBOL NAME in the imported file. `Some`
         /// additionally matches a target against an import entry's
@@ -590,22 +584,20 @@ pub enum FileScopedImports {
         /// entry's `alias` — the import table itself carries the
         /// target-name → owning-symbol mapping. The entry's `alias` decodes as
         /// `{type}{separator}{member}`: a non-empty member binds the symbol of
-        /// that name (at `member_confidence`); else a non-empty type binds that
-        /// type symbol (at `confidence`); else the entry names neither and the
-        /// first symbol of `fallback_kind` in the file binds (at
-        /// `fallback_confidence`). Robot dynamic-library keywords — a
-        /// `@keyword("alias")` decorator routes a Robot keyword to a specific
-        /// Python method, a `get_keyword_names` / `KEYWORDS` entry routes to the
-        /// owning class, a module-level `KEYWORDS` dict falls back to the
-        /// dispatch class.
+        /// that name; else a non-empty type binds that type symbol; else the
+        /// entry names neither and the first symbol of `fallback_kind` in the
+        /// file binds. Robot dynamic-library keywords — a `@keyword("alias")`
+        /// decorator routes a Robot keyword to a specific Python method, a
+        /// `get_keyword_names` / `KEYWORDS` entry routes to the owning class, a
+        /// module-level `KEYWORDS` dict falls back to the dispatch class.
         alias_decode: Option<AliasDecode>,
     },
 }
 
 /// Data for the alias-decoded file-scoped bind. See `FileScopedImports::On`.
-/// The three confidences track how specific the bind was: a named member is
-/// the strongest evidence, a named owning type weaker, the dispatch-class
-/// fallback weakest.
+/// The decode is ordered most-specific-first (named member, then named owning
+/// type, then dispatch-class fallback); whichever rung binds resolves at
+/// `RESOLVED_CONFIDENCE`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AliasDecode {
     /// Splits an entry's `alias` into `{type}{separator}{member}`.
@@ -613,12 +605,6 @@ pub struct AliasDecode {
     /// Symbol kind the no-type/no-member fallback binds to (the dispatch class
     /// for a module-level keyword table). `None` disables the fallback.
     pub fallback_kind: Option<&'static str>,
-    /// Confidence for a member-named (most specific) bind.
-    pub member_confidence: f64,
-    /// Confidence for a named-owning-type bind.
-    pub type_confidence: f64,
-    /// Confidence for a fallback bind.
-    pub fallback_confidence: f64,
 }
 
 /// Module-prefix-rewrite generator for the `ByNameUnderModuleDir` anchor's
@@ -658,12 +644,9 @@ pub enum AmbientGlobals {
     Off,
     /// Probe the synthetic `__npm_globals__.<name>` namespace and, on a miss,
     /// the bare qname when the candidate's defining file is an ambient-global
-    /// lib file.
+    /// lib file. Both probes are structural binds against the synthetic-globals
+    /// namespace / ambient-lib files, so a hit resolves at `RESOLVED_CONFIDENCE`.
     On {
-        /// Confidence recorded on an `__npm_globals__` hit.
-        npm_confidence: f64,
-        /// Confidence recorded on an ambient-lib-file bare-qname hit.
-        lib_confidence: f64,
         /// Accept an ambient-lib `variable` candidate for an `Instantiates`
         /// ref. The core lib encodes constructors as `declare var X: { new():
         /// Y }` — recorded as a `variable` but constructible via `new X()`.

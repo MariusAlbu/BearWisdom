@@ -32,7 +32,7 @@ pub use index::{LocalTypeCache, SymbolIndex};
 pub use lookup::SymbolLookup;
 pub use types::{
     intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution,
-    SymbolInfo, TypeInfo,
+    SymbolInfo, TypeInfo, RESOLVED_CONFIDENCE,
 };
 pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
 

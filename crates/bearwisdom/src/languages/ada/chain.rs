@@ -7,7 +7,7 @@
 // =============================================================================
 
 use super::predicates;
-use crate::indexer::resolve::engine::{Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{Resolution, SymbolLookup, RESOLVED_CONFIDENCE};
 use crate::types::EdgeKind;
 
 /// Walk a dotted qname looking for any prefix that corresponds to a
@@ -86,7 +86,7 @@ pub(super) fn probe_package_of_type(
         {
             return Some(Resolution {
                 target_symbol_id: sym.id,
-                confidence: 0.88,
+                confidence: RESOLVED_CONFIDENCE,
                 strategy: "ada_pkg_of_type",
                 resolved_yield_type: None,
                 flow_emit: None,
@@ -199,7 +199,7 @@ pub(super) fn walk_field_chain(
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
-                        confidence: 0.85,
+                        confidence: RESOLVED_CONFIDENCE,
                         strategy: "ada_field_chain",
                         resolved_yield_type: None,
                         flow_emit: None,
@@ -237,7 +237,7 @@ pub(super) fn probe_dotted_qname(
             {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.92,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: "ada_alias_substitution",
                     resolved_yield_type: None,
                     flow_emit: None,

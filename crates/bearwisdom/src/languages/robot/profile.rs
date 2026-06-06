@@ -64,13 +64,9 @@ pub const ROBOT_PROFILE: LanguageProfile = LanguageProfile {
     // class.
     file_scoped_imports: FileScopedImports::On {
         wildcard_only: true,
-        confidence: 1.0,
         alias_decode: Some(AliasDecode {
             separator: "::",
             fallback_kind: Some("class"),
-            member_confidence: 0.95,
-            type_confidence: 0.85,
-            fallback_confidence: 0.75,
         }),
     },
     alias_module_qname: false,

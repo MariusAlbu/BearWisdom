@@ -13,7 +13,9 @@ use tracing::debug;
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{Resolution, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{
+    Resolution, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
+};
 use crate::type_checker::core::reexport::follow_reexports;
 
 use super::predicates;
@@ -176,7 +178,7 @@ pub(super) fn resolve_via_alias(
             if sym.kind == "class" && predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.95,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: "ts_sfc_default_import",
                     resolved_yield_type: None,
                     flow_emit: None,

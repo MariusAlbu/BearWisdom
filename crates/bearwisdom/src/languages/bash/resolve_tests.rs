@@ -186,7 +186,7 @@ fn shell_source_resolves_relative_path() {
     assert!(res.is_some(), "run_backup called in main.sh should resolve via shell source");
     let res = res.unwrap();
     assert_eq!(res.target_symbol_id, 10, "should resolve to helpers.sh:run_backup (id=10)");
-    assert_eq!(res.confidence, 0.90);
+    assert_eq!(res.confidence, 1.0);
     assert_eq!(res.strategy, "bash_shell_source");
 }
 
@@ -249,7 +249,7 @@ fn shell_source_resolves_variable_prefixed_path() {
     );
     let res = res.unwrap();
     assert_eq!(res.target_symbol_id, 42);
-    assert_eq!(res.confidence, 0.90);
+    assert_eq!(res.confidence, 1.0);
 }
 
 // ---------------------------------------------------------------------------

@@ -165,7 +165,7 @@ fn wildcard_reexport_resolves() {
         .expect("wildcard re-export resolves");
     assert_eq!(res.target_symbol_id, 7);
     assert_eq!(res.strategy, "reexport_star");
-    assert_eq!(res.confidence, 0.95);
+    assert_eq!(res.confidence, 1.0);
 }
 
 #[test]

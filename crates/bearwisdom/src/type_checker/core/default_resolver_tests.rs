@@ -2781,13 +2781,13 @@ fn run_ladder_non_terminal_falls_through_on_anchor_miss() {
 }
 
 // ---------------------------------------------------------------------------
-// resolve_via_external_by_import — import-scoped external bind at <1.0
+// resolve_via_external_by_import — import-scoped external bind
 // ---------------------------------------------------------------------------
 
 #[test]
-fn external_by_import_binds_gem_family_at_reduced_confidence() {
+fn external_by_import_binds_gem_family() {
     // `aws-sdk-s3` external symbol resolves under gem `aws` (the import root)
-    // via the `{root}-` family rule, at confidence 0.8.
+    // via the `{root}-` family rule.
     let lookup = Lookup::new().with(sym(
         40,
         "Client",
@@ -2807,14 +2807,14 @@ fn external_by_import_binds_gem_family_at_reduced_confidence() {
     };
     let resolved = d
         .resolve_via_external_by_import(
-            &ExternalByImport { confidence: 0.8 },
+            &ExternalByImport,
             ExtMatch::PkgSegment,
             &accept_any,
         )
         .expect("gem-family external resolves");
     assert_eq!(resolved.target_symbol_id, 40);
     assert_eq!(resolved.strategy, "default_external_by_import");
-    assert_eq!(resolved.confidence, 0.8);
+    assert_eq!(resolved.confidence, 1.0);
 }
 
 #[test]
@@ -2839,7 +2839,7 @@ fn external_by_import_declines_unimported_gem() {
     };
     assert!(d
         .resolve_via_external_by_import(
-            &ExternalByImport { confidence: 0.8 },
+            &ExternalByImport,
             ExtMatch::PkgSegment,
             &accept_any,
         )
@@ -2868,7 +2868,7 @@ fn external_by_import_ignores_internal_symbols() {
     };
     assert!(d
         .resolve_via_external_by_import(
-            &ExternalByImport { confidence: 0.8 },
+            &ExternalByImport,
             ExtMatch::PkgSegment,
             &accept_any,
         )
@@ -3633,13 +3633,13 @@ fn ext_match_file_stem_binds_on_import_leaf() {
         kind_compatible: accept_any,
     })
     .resolve_via_external_by_import(
-        &ExternalByImport { confidence: 0.85 },
+        &ExternalByImport,
         ExtMatch::FileStemOrDir,
         &accept_any,
     )
     .expect("external binds via httpclient.nim file stem");
     assert_eq!(resolved.target_symbol_id, 50);
-    assert_eq!(resolved.confidence, 0.85);
+    assert_eq!(resolved.confidence, 1.0);
     assert_eq!(resolved.strategy, "default_external_by_import");
 }
 
@@ -3666,7 +3666,7 @@ fn ext_match_file_stem_declines_unimported_module() {
             kind_compatible: accept_any,
         })
         .resolve_via_external_by_import(
-            &ExternalByImport { confidence: 0.85 },
+            &ExternalByImport,
             ExtMatch::FileStemOrDir,
             &accept_any,
         )
@@ -3702,9 +3702,6 @@ fn wildcard_alias_import(name: &str, alias: Option<&str>, module: &str) -> Impor
 const ALIAS_DECODE: AliasDecode = AliasDecode {
     separator: "::",
     fallback_kind: Some("class"),
-    member_confidence: 0.95,
-    type_confidence: 0.85,
-    fallback_confidence: 0.75,
 };
 
 #[test]
@@ -3911,7 +3908,7 @@ fn file_scoped_import_binds_symbol_in_imported_file() {
     };
     let resolved = d
         .resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, confidence: 1.0, alias_decode: None },
+            FileScopedImports::On { wildcard_only: true, alias_decode: None },
             NameNormalization::None,
             &accept_any,
         )
@@ -3921,7 +3918,7 @@ fn file_scoped_import_binds_symbol_in_imported_file() {
 }
 
 #[test]
-fn file_scoped_import_records_profile_confidence() {
+fn file_scoped_import_resolves() {
     let lookup = Lookup::new().with_in_file(
         "lib.py",
         sym(72, "do_thing", "do_thing", "function", "lib.py"),
@@ -3938,12 +3935,12 @@ fn file_scoped_import_records_profile_confidence() {
     };
     let resolved = d
         .resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, confidence: 0.95, alias_decode: None },
+            FileScopedImports::On { wildcard_only: true, alias_decode: None },
             NameNormalization::None,
             &accept_any,
         )
         .expect("hit");
-    assert_eq!(resolved.confidence, 0.95);
+    assert_eq!(resolved.confidence, 1.0);
 }
 
 #[test]
@@ -3966,7 +3963,7 @@ fn file_scoped_import_wildcard_only_skips_non_wildcard() {
     };
     assert!(
         d.resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, confidence: 1.0, alias_decode: None },
+            FileScopedImports::On { wildcard_only: true, alias_decode: None },
             NameNormalization::None,
             &accept_any,
         )
@@ -3994,7 +3991,7 @@ fn file_scoped_import_scans_non_wildcard_when_not_restricted() {
     };
     let resolved = d
         .resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: false, confidence: 1.0, alias_decode: None },
+            FileScopedImports::On { wildcard_only: false, alias_decode: None },
             NameNormalization::None,
             &accept_any,
         )
@@ -4029,7 +4026,7 @@ fn file_scoped_import_matches_under_normalization() {
     };
     let resolved = d
         .resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, confidence: 1.0, alias_decode: None },
+            FileScopedImports::On { wildcard_only: true, alias_decode: None },
             NameNormalization::Spec(spec),
             &accept_any,
         )
@@ -4050,7 +4047,7 @@ const ROBOT_KW_SPEC: NormSpec = NormSpec {
 };
 
 #[test]
-fn alias_decode_binds_named_member_at_member_confidence() {
+fn alias_decode_binds_named_member() {
     // `alias = "Lib::add_to_cart"` decodes to the method `add_to_cart`. The
     // keyword's surface name (`Buy ${item}`) does NOT normalize to the method
     // name, so the plain symbol-name pass misses and the alias pass binds the
@@ -4078,7 +4075,6 @@ fn alias_decode_binds_named_member_at_member_confidence() {
         .resolve_via_file_scoped_import(
             FileScopedImports::On {
                 wildcard_only: true,
-                confidence: 1.0,
                 alias_decode: Some(ALIAS_DECODE),
             },
             NameNormalization::Spec(ROBOT_KW_SPEC),
@@ -4087,11 +4083,11 @@ fn alias_decode_binds_named_member_at_member_confidence() {
         .expect("alias member binds");
     assert_eq!(resolved.target_symbol_id, 81);
     assert_eq!(resolved.strategy, "default_alias_decoded_import");
-    assert_eq!(resolved.confidence, 0.95);
+    assert_eq!(resolved.confidence, 1.0);
 }
 
 #[test]
-fn alias_decode_binds_named_type_at_type_confidence() {
+fn alias_decode_binds_named_type() {
     // `alias = "AsyncLib"` (no member separator) decodes to the owning class.
     let lookup = Lookup::new().with_in_file(
         "lib/async.py",
@@ -4114,7 +4110,6 @@ fn alias_decode_binds_named_type_at_type_confidence() {
         .resolve_via_file_scoped_import(
             FileScopedImports::On {
                 wildcard_only: true,
-                confidence: 1.0,
                 alias_decode: Some(ALIAS_DECODE),
             },
             NameNormalization::Spec(ROBOT_KW_SPEC),
@@ -4122,14 +4117,13 @@ fn alias_decode_binds_named_type_at_type_confidence() {
         )
         .expect("alias type binds");
     assert_eq!(resolved.target_symbol_id, 82);
-    assert_eq!(resolved.confidence, 0.85);
+    assert_eq!(resolved.confidence, 1.0);
 }
 
 #[test]
 fn alias_decode_no_alias_falls_back_to_fallback_kind() {
     // A keyword entry with no `alias` (module-level KEYWORDS dict) binds the
-    // file's first `fallback_kind` symbol — the dispatch class — at fallback
-    // confidence.
+    // file's first `fallback_kind` symbol — the dispatch class.
     let lookup = Lookup::new().with_in_file(
         "lib/dyn.py",
         sym(83, "Dispatcher", "Dispatcher", "class", "lib/dyn.py"),
@@ -4151,7 +4145,6 @@ fn alias_decode_no_alias_falls_back_to_fallback_kind() {
         .resolve_via_file_scoped_import(
             FileScopedImports::On {
                 wildcard_only: true,
-                confidence: 1.0,
                 alias_decode: Some(ALIAS_DECODE),
             },
             NameNormalization::Spec(ROBOT_KW_SPEC),
@@ -4159,7 +4152,7 @@ fn alias_decode_no_alias_falls_back_to_fallback_kind() {
         )
         .expect("fallback binds the dispatch class");
     assert_eq!(resolved.target_symbol_id, 83);
-    assert_eq!(resolved.confidence, 0.75);
+    assert_eq!(resolved.confidence, 1.0);
 }
 
 #[test]
@@ -4186,7 +4179,7 @@ fn alias_decode_off_does_not_match_imported_name() {
     };
     assert!(
         d.resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, confidence: 1.0, alias_decode: None },
+            FileScopedImports::On { wildcard_only: true, alias_decode: None },
             NameNormalization::Spec(ROBOT_KW_SPEC),
             &accept_any,
         )
@@ -4220,7 +4213,6 @@ fn alias_decode_member_missing_falls_through_to_type_then_fallback() {
         .resolve_via_file_scoped_import(
             FileScopedImports::On {
                 wildcard_only: true,
-                confidence: 1.0,
                 alias_decode: Some(ALIAS_DECODE),
             },
             NameNormalization::Spec(ROBOT_KW_SPEC),
@@ -4228,7 +4220,7 @@ fn alias_decode_member_missing_falls_through_to_type_then_fallback() {
         )
         .expect("falls through to the named type");
     assert_eq!(resolved.target_symbol_id, 85);
-    assert_eq!(resolved.confidence, 0.85);
+    assert_eq!(resolved.confidence, 1.0);
 }
 
 // ---------------------------------------------------------------------------

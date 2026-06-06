@@ -15,7 +15,9 @@
 // only the strategy tag and visibility predicate differ.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{
+    FileContext, RefContext, Resolution, SymbolLookup, RESOLVED_CONFIDENCE,
+};
 use crate::types::EdgeKind;
 
 /// Maximum ancestor hops before we give up.
@@ -54,7 +56,7 @@ where
                     {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
-                            confidence: 0.85,
+                            confidence: RESOLVED_CONFIDENCE,
                             strategy,
                             resolved_yield_type: None,
                             flow_emit: None,

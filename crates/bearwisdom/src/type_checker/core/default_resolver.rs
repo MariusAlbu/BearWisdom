@@ -22,7 +22,7 @@ use std::str::FromStr;
 
 use super::reexport::follow_reexports;
 use crate::indexer::resolve::engine::{
-    FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::profile::language_profile::{
     AliasDecode, AmbientGlobals, CandidateDirs, ChainQualification, ExtMatch, ExternalByImport,
@@ -1309,12 +1309,12 @@ impl<'a> DefaultResolver<'a> {
 
     /// Strategy — import-scoped bind of a bare target to an EXTERNAL symbol.
     ///
-    /// The regular ladder deliberately excludes externals below confidence 1.0
+    /// The regular ladder deliberately excludes externals
     /// (`resolve_via_unique_internal_name` filters `is_external_file`;
     /// `resolve_via_ranked_candidates` admits externals but only on a score
     /// margin, ungated by the import set). This binds a bare `target` to an
     /// external symbol whose FILE is named by one of the resolving file's
-    /// non-relative imports, at the profile-supplied confidence.
+    /// non-relative imports.
     ///
     /// `ext_match` selects how the external file is matched:
     ///   - `PkgSegment` — the file's `ext:<lang>:<pkg>` package segment equals
@@ -1330,7 +1330,7 @@ impl<'a> DefaultResolver<'a> {
     /// externals here.
     pub fn resolve_via_external_by_import(
         &self,
-        cfg: &ExternalByImport,
+        _cfg: &ExternalByImport,
         ext_match: ExtMatch,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
     ) -> Option<Resolution> {
@@ -1409,7 +1409,7 @@ impl<'a> DefaultResolver<'a> {
             if matched {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: cfg.confidence,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: "default_external_by_import",
                     resolved_yield_type: None,
                     flow_emit: None,
@@ -1569,7 +1569,6 @@ impl<'a> DefaultResolver<'a> {
     ) -> Option<Resolution> {
         let FileScopedImports::On {
             wildcard_only,
-            confidence,
             alias_decode,
         } = cfg
         else {
@@ -1593,7 +1592,7 @@ impl<'a> DefaultResolver<'a> {
                 if normalize_name(norm, &sym.name) == target_norm && kind(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
-                        confidence,
+                        confidence: RESOLVED_CONFIDENCE,
                         strategy: "default_file_scoped_import",
                         resolved_yield_type: None,
                         flow_emit: None,
@@ -1659,7 +1658,7 @@ impl<'a> DefaultResolver<'a> {
                     if sym.name == member && kind(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
-                            confidence: decode.member_confidence,
+                            confidence: RESOLVED_CONFIDENCE,
                             strategy: "default_alias_decoded_import",
                             resolved_yield_type: None,
                             flow_emit: None,
@@ -1673,7 +1672,7 @@ impl<'a> DefaultResolver<'a> {
                     if sym.name == ty && kind(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
-                            confidence: decode.type_confidence,
+                            confidence: RESOLVED_CONFIDENCE,
                             strategy: "default_alias_decoded_import",
                             resolved_yield_type: None,
                             flow_emit: None,
@@ -1687,7 +1686,7 @@ impl<'a> DefaultResolver<'a> {
                     if sym.kind == fallback_kind && kind(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
-                            confidence: decode.fallback_confidence,
+                            confidence: RESOLVED_CONFIDENCE,
                             strategy: "default_alias_decoded_import",
                             resolved_yield_type: None,
                             flow_emit: None,
@@ -1775,8 +1774,6 @@ impl<'a> DefaultResolver<'a> {
         kind: &dyn Fn(EdgeKind, &str) -> bool,
     ) -> Option<Resolution> {
         let AmbientGlobals::On {
-            npm_confidence,
-            lib_confidence,
             instantiate_accepts_variable,
         } = cfg
         else {
@@ -1800,7 +1797,7 @@ impl<'a> DefaultResolver<'a> {
             if kind(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: npm_confidence,
+                    confidence: RESOLVED_CONFIDENCE,
                     strategy: "default_npm_globals",
                     resolved_yield_type: None,
                     flow_emit: None,
@@ -1821,7 +1818,7 @@ impl<'a> DefaultResolver<'a> {
             }
             return Some(Resolution {
                 target_symbol_id: candidate.id,
-                confidence: lib_confidence,
+                confidence: RESOLVED_CONFIDENCE,
                 strategy: "default_lib_globals",
                 resolved_yield_type: None,
                 flow_emit: None,
@@ -1940,7 +1937,7 @@ impl<'a> DefaultResolver<'a> {
     ///   15. imported namespace — candidate qname is prefixed by an import
     ///   16. ambient package — candidate lives in a declared ambient pkg
     ///   16b. external-by-import — bare target bound to an import-scoped
-    ///        external symbol at reduced confidence (gated on `external_by_import`)
+    ///        external symbol (gated on `external_by_import`)
     ///   16c. same dir — bare target in a sibling file of the same directory
     ///        (gated on `package_by_directory`; module-independent)
     ///   17. wildcard import — bare target under a wildcard import's namespace

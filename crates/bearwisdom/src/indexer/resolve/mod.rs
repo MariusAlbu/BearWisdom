@@ -98,10 +98,9 @@ impl ResolutionStats {
 /// point for callers that don't need iteration: runs `resolve_iteration`
 /// once and then `finalize_resolution`.
 ///
-/// Two-tier: language-specific resolvers first (1.0 confidence),
-/// then heuristic fallback (0.50-0.95 confidence).
-/// Unresolvable refs with a known external namespace go to `external_refs`;
-/// truly unknown refs go to `unresolved_refs`.
+/// Resolution is binary: a ref binds structurally at `RESOLVED_CONFIDENCE`
+/// or stays unresolved. Unresolvable refs with a known external namespace go
+/// to `external_refs`; truly unknown refs go to `unresolved_refs`.
 pub fn resolve_and_write(
     db: &mut Database,
     parsed: &[ParsedFile],

@@ -1264,8 +1264,7 @@ fn test_barrel_wildcard_reexport() {
     let result = run_resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_some(), "formatDate should resolve through export-star barrel");
     let res = result.unwrap();
-    // Wildcard resolution uses 0.95 confidence.
-    assert_eq!(res.confidence, 0.95);
+    assert_eq!(res.confidence, 1.0);
     assert_eq!(res.strategy, "reexport_star");
     assert_eq!(
         res.target_symbol_id,
