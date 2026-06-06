@@ -3,7 +3,7 @@
 //
 // MATLAB rides the generic ladder with no resolve_ref hook. Two pure-data
 // flags on MATLAB_PROFILE drive its bare-call binds:
-//   * package_by_directory — same-folder function sibling (MATLAB path
+//   * module_scope == SameDir — same-folder function sibling (MATLAB path
 //     precedence) binds via the same-dir rung, which runs first.
 //   * namespaceless_global_type_lookup — a cross-dir project function with no
 //     same-dir sibling first-match-binds via the dead-last rung; toolbox
@@ -24,10 +24,13 @@ fn matlab_profile_identity_and_shadow_mode() {
 }
 
 #[test]
-fn matlab_package_by_directory_is_on() {
+fn matlab_module_scope_is_same_dir() {
     // MATLAB path semantics: a same-folder function sibling is the canonical
-    // bind for a bare call. The same-dir rung is gated on this flag.
-    assert!(MATLAB_PROFILE.package_by_directory);
+    // bind for a bare call. The same-dir rung is selected by SameDir.
+    assert_eq!(
+        MATLAB_PROFILE.module_scope,
+        crate::type_checker::profile::language_profile::ModuleScope::SameDir
+    );
 }
 
 #[test]

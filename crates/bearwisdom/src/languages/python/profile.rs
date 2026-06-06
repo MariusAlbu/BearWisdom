@@ -119,7 +119,7 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotPrefix,
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    package_by_directory: false,
+    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,

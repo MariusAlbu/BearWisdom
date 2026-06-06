@@ -70,7 +70,7 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
             strip_sigils: &[],
         },
     ),
-    package_by_directory: false,
+    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
         underscore_prefix: true,
     },

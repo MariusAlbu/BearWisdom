@@ -2714,6 +2714,34 @@ fn odin_profile_resolves_same_package_directory_sibling() {
 }
 
 #[test]
+fn odin_module_scope_same_dir_unchanged() {
+    // Odin's ModuleScope::SameDir binds a same-parent-dir sibling through the
+    // module-scope rung with the same-dir strategy tag — the SameDir arm
+    // delegates to resolve_via_same_dir.
+    let lookup = Lookup::new().with(sym(84, "spawn", "spawn", "function", "src/game/enemy.odin"));
+    let r = extracted_call("spawn");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "src/game/world.odin".to_string(),
+        language: "odin".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::odin::ODIN_PROFILE)
+        .expect("odin SameDir module-scope still binds the same-dir sibling");
+    assert_eq!(resolved.target_symbol_id, 84);
+    assert_eq!(resolved.strategy, "default_same_dir");
+}
+
+#[test]
 fn run_ladder_terminal_declines_local_homonym_on_anchor_miss() {
     // Dart BindThenDecline: a prefixed (non-Imports) ref whose module misses
     // must NOT bind to a same-named local symbol — the ladder terminates.

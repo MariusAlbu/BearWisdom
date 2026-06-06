@@ -33,6 +33,147 @@ impl ByNameFixture {
     }
 }
 
+/// Build a `RefContext` for a bare ref with NO module and NO chain — the
+/// no-import same-module case the module-scope rung targets. The borrowed
+/// `extracted`/`source` outlive the returned context.
+fn module_scope_ctx<'a>(
+    extracted: &'a ExtractedRef,
+    source: &'a ExtractedSymbol,
+) -> RefContext<'a> {
+    RefContext {
+        extracted_ref: extracted,
+        source_symbol: source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    }
+}
+
+fn swift_file_ctx(path: &str) -> FileContext {
+    FileContext {
+        file_path: path.to_string(),
+        language: "swift".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    }
+}
+
+/// A bare `User` TypeRef from `Sources/App/Handlers/Sub/Use.swift` with NO
+/// import binds the unique internal struct `User` declared in a DIFFERENT
+/// nested dir of the same `Sources/App/` target subtree — the whole-module
+/// no-import case. `resolve_via_same_dir` cannot do this (different immediate
+/// parent dir); the `SourcesTargetSubtree` boundary spans the whole target.
+#[test]
+fn swift_same_module_subtree_binds_unique_internal_type() {
+    let user = make_resolve_sym(
+        91,
+        "User",
+        "User",
+        "struct",
+        "Sources/App/Models/User.swift",
+    );
+    let fix = ByNameFixture::with("User", vec![user]);
+    let file_ctx = swift_file_ctx("Sources/App/Handlers/Sub/Use.swift");
+    let source_sym = make_resolve_source("use", "use");
+    let extracted = make_typeref("User");
+    let ref_ctx = module_scope_ctx(&extracted, &source_sym);
+
+    let res = (DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &fix,
+        kind_compatible: super::predicates::kind_compatible,
+    })
+    .resolve_all_with_profile(&super::profile::SWIFT_PROFILE)
+    .expect("same-module subtree binds the unique internal struct");
+    assert_eq!(res.strategy, "default_module_scope");
+    assert_eq!(res.target_symbol_id, 91);
+}
+
+/// Soundness: the only `User` candidate lives under `Sources/Other/` — a
+/// DIFFERENT target subtree, a different module. No import brings it in, so
+/// the module-scope rung must DECLINE (distinct subtree prefixes).
+#[test]
+fn swift_same_module_declines_cross_target() {
+    let user = make_resolve_sym(
+        92,
+        "User",
+        "User",
+        "struct",
+        "Sources/Other/User.swift",
+    );
+    let fix = ByNameFixture::with("User", vec![user]);
+    let file_ctx = swift_file_ctx("Sources/App/Use.swift");
+    let source_sym = make_resolve_source("use", "use");
+    let extracted = make_typeref("User");
+    let ref_ctx = module_scope_ctx(&extracted, &source_sym);
+
+    let res = (DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &fix,
+        kind_compatible: super::predicates::kind_compatible,
+    })
+    .resolve_all_with_profile(&super::profile::SWIFT_PROFILE);
+    let strategy = res.map(|r| r.strategy).unwrap_or("");
+    assert_ne!(
+        strategy, "default_module_scope",
+        "a candidate in a different Sources/<Target>/ subtree is a different module"
+    );
+}
+
+/// Soundness: two internal `User` structs both under `Sources/App/**` →
+/// unique-internal-name dedup yields >1 → DECLINE (no coincidental guess).
+#[test]
+fn swift_same_module_declines_when_two_candidates() {
+    let a = make_resolve_sym(93, "User", "Models.User", "struct", "Sources/App/Models/User.swift");
+    let b = make_resolve_sym(94, "User", "Dto.User", "struct", "Sources/App/Dto/User.swift");
+    let fix = ByNameFixture::with("User", vec![a, b]);
+    let file_ctx = swift_file_ctx("Sources/App/Handlers/Use.swift");
+    let source_sym = make_resolve_source("use", "use");
+    let extracted = make_typeref("User");
+    let ref_ctx = module_scope_ctx(&extracted, &source_sym);
+
+    let res = (DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &fix,
+        kind_compatible: super::predicates::kind_compatible,
+    })
+    .resolve_all_with_profile(&super::profile::SWIFT_PROFILE);
+    let strategy = res.map(|r| r.strategy).unwrap_or("");
+    assert_ne!(
+        strategy, "default_module_scope",
+        "two in-module candidates are ambiguous — decline"
+    );
+}
+
+/// Soundness: files with no `Sources/<Target>/` prefix (a flat layout) leave
+/// the `SourcesTargetSubtree` boundary undefined → the rung is inert. It is
+/// NOT a same-dir fallback: a same-parent-dir candidate off-layout still does
+/// not bind through the module-scope rung.
+#[test]
+fn swift_same_module_declines_outside_sources_layout() {
+    let user = make_resolve_sym(95, "User", "User", "struct", "App/User.swift");
+    let fix = ByNameFixture::with("User", vec![user]);
+    let file_ctx = swift_file_ctx("App/Use.swift");
+    let source_sym = make_resolve_source("use", "use");
+    let extracted = make_typeref("User");
+    let ref_ctx = module_scope_ctx(&extracted, &source_sym);
+
+    let res = (DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &fix,
+        kind_compatible: super::predicates::kind_compatible,
+    })
+    .resolve_all_with_profile(&super::profile::SWIFT_PROFILE);
+    let strategy = res.map(|r| r.strategy).unwrap_or("");
+    assert_ne!(
+        strategy, "default_module_scope",
+        "SourcesTargetSubtree is inert off the Sources/<Target>/ layout"
+    );
+}
+
 impl SymbolLookup for ByNameFixture {
     fn by_name(&self, name: &str) -> &[SymbolInfo] {
         self.by_name_map.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)

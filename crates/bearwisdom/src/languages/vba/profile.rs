@@ -42,7 +42,7 @@ pub const VBA_PROFILE: LanguageProfile = LanguageProfile {
         strip_prefixes: &[],
         strip_sigils: &[],
     }),
-    package_by_directory: false,
+    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,

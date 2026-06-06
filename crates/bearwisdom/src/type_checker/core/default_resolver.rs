@@ -27,7 +27,7 @@ use crate::indexer::resolve::engine::{
 use crate::type_checker::profile::language_profile::{
     AliasDecode, AmbientGlobals, CandidateDirs, ChainQualification, ExtMatch, ExternalByImport,
     FileScopedImports, HeadAliasBind, ImportResolution, KindCompatibility, KindTable, ModuleAnchor,
-    ModuleAnchorBind, ModulePrefixRewrites, NameNormalization, NameTransform, NormSpec,
+    ModuleAnchorBind, ModulePrefixRewrites, ModuleScope, NameNormalization, NameTransform, NormSpec,
     RelativeMarker, SelectorResolution, StemMatch, StemSource, WildcardMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
@@ -68,7 +68,7 @@ struct LadderProfileData<'p> {
     self_keywords: &'p [&'p str],
     ambient_namespace_prefixes: &'p [&'p str],
     name_normalization: NameNormalization,
-    package_by_directory: bool,
+    module_scope: ModuleScope,
     wildcard_match: WildcardMatch,
     head_alias: HeadAliasBind,
     file_scoped_imports: FileScopedImports,
@@ -95,7 +95,7 @@ impl LadderProfileData<'static> {
         self_keywords: &[],
         ambient_namespace_prefixes: &[],
         name_normalization: NameNormalization::None,
-        package_by_directory: false,
+        module_scope: ModuleScope::Off,
         wildcard_match: WildcardMatch::QnameUnder,
         head_alias: HeadAliasBind::Off,
         file_scoped_imports: FileScopedImports::Off,
@@ -1429,7 +1429,8 @@ impl<'a> DefaultResolver<'a> {
     ///
     /// Module-independent: it does NOT consult `r.module`, so it runs even when
     /// the ref carries none (unlike `resolve_via_module_anchor`, which early-
-    /// returns on a missing module). Gated by `package_by_directory`.
+    /// returns on a missing module). Selected by `ModuleScope::SameDir` via
+    /// `resolve_via_module_scope`.
     pub fn resolve_via_same_dir(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() || target.contains('.') || target.contains("::") || target.contains('/')
@@ -1447,6 +1448,78 @@ impl<'a> DefaultResolver<'a> {
             }
         }
         None
+    }
+
+    /// Strategy — bare target declared elsewhere in the SAME module, with no
+    /// import and no chain to root it.
+    ///
+    /// The module boundary is parameterized by `ModuleScope`:
+    /// - `Off` — inert, the rung never fires.
+    /// - `SameDir` — delegates to `resolve_via_same_dir` (the parent dir IS the
+    ///   module: Odin/MATLAB same-package references), strategy `default_same_dir`.
+    /// - `SourcesTargetSubtree` — the SwiftPM whole-module case: every file under
+    ///   one `Sources/<Target>/` (or `Tests/<Target>/`) subtree compiles into one
+    ///   module and sees the others without import. A candidate is in-module iff
+    ///   it shares the source's `module_subtree_prefix`. Over the in-module +
+    ///   internal + kind-compatible candidates the unique-internal-name dedup
+    ///   convention applies: bind iff EXACTLY ONE survives, else decline. Off the
+    ///   `Sources/<Target>/` layout the prefix is `None` and the rung is inert —
+    ///   never a same-dir fallback.
+    ///
+    /// Declines on a dotted / `::` / `/`-bearing or empty target (mirrors
+    /// `resolve_via_same_dir` / `resolve_via_unique_internal_name`). Runs late in
+    /// the ladder, so any real import / structural rung wins first;
+    /// decline-over-guess is preserved.
+    pub fn resolve_via_module_scope(
+        &self,
+        scope: ModuleScope,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        match scope {
+            ModuleScope::Off => None,
+            ModuleScope::SameDir => self.resolve_via_same_dir(kind),
+            ModuleScope::SourcesTargetSubtree => self.resolve_via_sources_target_subtree(kind),
+        }
+    }
+
+    /// The `SourcesTargetSubtree` arm of `resolve_via_module_scope`.
+    fn resolve_via_sources_target_subtree(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty()
+            || target.contains('.')
+            || target.contains("::")
+            || target.contains('/')
+        {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let src_prefix = module_subtree_prefix(&self.file_ctx.file_path)?;
+        let mut compatible: Vec<&SymbolInfo> = self
+            .lookup
+            .by_name(target)
+            .iter()
+            .filter(|sym| !self.lookup.is_external_file(&sym.file_path))
+            .filter(|sym| kind(edge_kind, &sym.kind))
+            .filter(|sym| {
+                module_subtree_prefix(&sym.file_path).as_deref() == Some(src_prefix.as_str())
+            })
+            .collect();
+        // Dedup on (qualified_name, kind): one logical symbol indexed twice is
+        // a single candidate for ambiguity purposes (mirrors
+        // `resolve_via_unique_internal_name`).
+        compatible.sort_by(|a, b| {
+            a.qualified_name
+                .cmp(&b.qualified_name)
+                .then(a.kind.cmp(&b.kind))
+        });
+        compatible.dedup_by(|a, b| a.qualified_name == b.qualified_name && a.kind == b.kind);
+        if compatible.len() != 1 {
+            return None;
+        }
+        Some(self.resolution(compatible[0].id, "default_module_scope"))
     }
 
     /// Strategy — dotted target whose HEAD names an in-file alias declaration.
@@ -1938,8 +2011,10 @@ impl<'a> DefaultResolver<'a> {
     ///   16. ambient package — candidate lives in a declared ambient pkg
     ///   16b. external-by-import — bare target bound to an import-scoped
     ///        external symbol (gated on `external_by_import`)
-    ///   16c. same dir — bare target in a sibling file of the same directory
-    ///        (gated on `package_by_directory`; module-independent)
+    ///   16c. module scope — bare same-module target with no import: a sibling
+    ///        in the same dir (`SameDir`) or the same `Sources/<Target>/`
+    ///        subtree (`SourcesTargetSubtree`); gated on `module_scope`,
+    ///        module-independent
     ///   17. wildcard import — bare target under a wildcard import's namespace
     ///   18. generic param — bare target matches a declared generic parameter
     ///   19. namespaceless global — bare target first-match-bound to an internal
@@ -1996,7 +2071,7 @@ impl<'a> DefaultResolver<'a> {
                 self_keywords: profile.self_keywords,
                 ambient_namespace_prefixes: profile.ambient_namespace_prefixes,
                 name_normalization: profile.name_normalization,
-                package_by_directory: profile.package_by_directory,
+                module_scope: profile.module_scope,
                 wildcard_match: profile.wildcard_match,
                 head_alias: profile.head_alias,
                 file_scoped_imports: profile.file_scoped_imports,
@@ -2143,11 +2218,7 @@ impl<'a> DefaultResolver<'a> {
                 pd.external_by_import
                     .and_then(|cfg| self.resolve_via_external_by_import(cfg, pd.ext_match, kind))
             })
-            .or_else(|| {
-                pd.package_by_directory
-                    .then(|| self.resolve_via_same_dir(kind))
-                    .flatten()
-            })
+            .or_else(|| self.resolve_via_module_scope(pd.module_scope, kind))
             .or_else(|| {
                 self.resolve_via_wildcard_import(kind, pd.wildcard_match, pd.name_normalization)
             })
@@ -2609,6 +2680,27 @@ fn parent_dir_basename(file_path: &str) -> Option<String> {
     let normalized = file_path.replace('\\', "/");
     let (dir, _file) = normalized.rsplit_once('/')?;
     Some(dir.rsplit('/').next().unwrap_or(dir).to_string())
+}
+
+/// The SwiftPM module-subtree prefix of a file path: the substring up to and
+/// including `Sources/<seg>/` (or `Tests/<seg>/`). Every file under one such
+/// subtree compiles into module `<seg>`, so two files share a module iff their
+/// prefixes are equal. Path separators are normalized to `/`; the `Sources`/
+/// `Tests` segment names are matched case-sensitively (SwiftPM uses exactly
+/// those). Returns `None` when the path has no such prefix (a flat / Xcode
+/// layout), which leaves the `SourcesTargetSubtree` rung inert.
+fn module_subtree_prefix(file_path: &str) -> Option<String> {
+    let normalized = file_path.replace('\\', "/");
+    let segs: Vec<&str> = normalized.split('/').collect();
+    // Need a root segment ("Sources"/"Tests"), a target segment, and at least
+    // one more (the file) so the prefix is `<root>/<target>/`.
+    segs.iter().enumerate().find_map(|(i, seg)| {
+        if (*seg == "Sources" || *seg == "Tests") && i + 2 < segs.len() {
+            Some(segs[..=i + 1].join("/") + "/")
+        } else {
+            None
+        }
+    })
 }
 
 /// Handles relative TS specifiers (`./catalog` → `src/catalog.ts`),

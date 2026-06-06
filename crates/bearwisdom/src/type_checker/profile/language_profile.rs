@@ -173,13 +173,15 @@ pub struct LanguageProfile {
     /// language (Pascal, SQL, Fortran, VB) or a sigil-carrying one binds a
     /// reference written in a different surface form. See `NameNormalization`.
     pub name_normalization: NameNormalization,
-    /// The source file's parent directory is itself the package: a bare target
-    /// binds to any kind-compatible `by_name(target)` candidate whose immediate
-    /// parent-dir basename equals the source file's immediate parent-dir
-    /// basename. `false` (the default) leaves the strategy inert. `true` opts a
-    /// language in (Odin same-package references — no `module` to anchor on, so
-    /// this runs module-independently near the end of the ladder).
-    pub package_by_directory: bool,
+    /// The module boundary a bare same-module reference binds within when no
+    /// import and no chain root the target. `Off` (the default) leaves the
+    /// rung inert. `SameDir` makes the file's parent directory the module
+    /// (Odin/MATLAB same-package references — no `module` to anchor on).
+    /// `SourcesTargetSubtree` spans a whole `Sources/<Target>/` subtree (Swift
+    /// whole-module compilation). The rung runs module-independently near the
+    /// end of the ladder; a candidate binds only when EXACTLY ONE
+    /// kind-compatible internal declaration is in-module.
+    pub module_scope: ModuleScope,
     /// How `resolve_via_wildcard_import` decides a candidate sits under a
     /// wildcard import's module. `QnameUnder` (the default) keeps the current
     /// qname-prefix test (`{module}.{name}`, exactly one segment deeper).
@@ -776,6 +778,27 @@ pub enum AncestorOrder {
     C3,
 }
 
+/// The module boundary a bare same-module reference binds within when no
+/// import and no chain root the target. Selects the generic
+/// `resolve_via_module_scope` strategy's in-module candidate filter; the
+/// unique-internal-name dedup then binds iff exactly one candidate survives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleScope {
+    /// No module-scope rung — the bare same-module bind never fires.
+    Off,
+    /// The source file's immediate parent directory IS the module (Odin,
+    /// MATLAB): a candidate is in-module iff its immediate parent-dir
+    /// basename equals the source's.
+    SameDir,
+    /// SwiftPM whole-module compilation: every file under one
+    /// `Sources/<Target>/` (or `Tests/<Target>/`) subtree compiles into module
+    /// `<Target>` and sees every other top-level type in that subtree without
+    /// import. A candidate is in-module iff its path shares the source's
+    /// `Sources/<seg>/` (or `Tests/<seg>/`) prefix; off-layout paths (no such
+    /// prefix) leave the rung inert.
+    SourcesTargetSubtree,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchAxis {
     /// Single dispatch on the receiver.
@@ -1010,7 +1033,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     relative_marker: RelativeMarker::None,
     external_by_import: None,
     name_normalization: NameNormalization::None,
-    package_by_directory: false,
+    module_scope: ModuleScope::Off,
     wildcard_match: WildcardMatch::QnameUnder,
     ext_match: ExtMatch::PkgSegment,
     head_alias: HeadAliasBind::Off,
