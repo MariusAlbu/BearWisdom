@@ -4415,3 +4415,132 @@ fn namespaceless_global_gate_default_inert() {
     assert_eq!(bound.target_symbol_id, 1);
     assert_eq!(bound.strategy, "default_namespaceless_global");
 }
+
+// ---------------------------------------------------------------------------
+// Ladder-order invariant — a true scope/import hit must beat the coarse
+// fallbacks (ambient package, unique-internal-name) that sit below it. These
+// lock the ordering structurally: they fail only if a future edit reshuffles a
+// coarse rung above scope/import, or wires the unwired unique-name rung back
+// into the ladder.
+// ---------------------------------------------------------------------------
+
+/// The same bare name `Widget` is reachable BOTH via an imported namespace
+/// (`import Widgets from "pkg"` → qname `pkg.Widget`) AND via a declared
+/// ambient package (`ambient.Widget` on an `is_ambient_path` file). The
+/// import-scoped rung (`resolve_via_imported_namespace`, ladder position 15)
+/// runs ABOVE the ambient-package fallback (position 16), so the full ladder
+/// must bind the import candidate — never the coarse ambient one.
+#[test]
+fn scope_import_hit_beats_coarse_ambient_fallback() {
+    let lookup = Lookup::new()
+        .with(sym(
+            300,
+            "Widget",
+            "pkg.Widget",
+            "function",
+            "src/widgets.ts",
+        ))
+        .with(sym(
+            301,
+            "Widget",
+            "ambient.Widget",
+            "function",
+            "ext:node_modules/ambient/index.d.ts",
+        ))
+        .with_ambient("ext:node_modules/ambient/index.d.ts");
+    let r = extracted_call("Widget");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Widgets", Some("pkg"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    // The ambient fallback is genuinely LIVE for this fixture: probed alone it
+    // binds the ambient candidate. Without this the order test could pass
+    // vacuously (the fallback being inert rather than the import winning a race).
+    let ambient_alone = d
+        .resolve_via_ambient_package(&accept_any)
+        .expect("ambient fallback is live for this fixture");
+    assert_eq!(ambient_alone.target_symbol_id, 301);
+    assert_eq!(ambient_alone.strategy, "default_ambient_package");
+    // Through the full ladder the import rung above it wins.
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::java::JAVA_PROFILE)
+        .expect("the import-scoped candidate binds through the ladder");
+    assert_eq!(
+        resolved.target_symbol_id, 300,
+        "import candidate must win, not the ambient fallback"
+    );
+    assert_eq!(
+        resolved.strategy, "default_imported_namespace",
+        "the import rung above ambient_package must be the binder"
+    );
+}
+
+/// `resolve_via_unique_internal_name` is defined but deliberately UNWIRED from
+/// the ladder. With two same-named internal candidates the method declines on
+/// the ambiguity; with a single candidate it WOULD bind — but neither path is
+/// reachable through `resolve_all_with_profile`, so the full ladder never
+/// returns a `default_unique_internal_name` binding. Locks the rung out.
+#[test]
+fn unique_internal_name_stays_out_of_ladder() {
+    // Two same-named internal candidates: the by-name rung declines on ambiguity.
+    let ambiguous = Lookup::new()
+        .with(sym(310, "doIt", "Foo.doIt", "function", "src/a.rs"))
+        .with(sym(311, "doIt", "Bar.doIt", "function", "src/b.rs"));
+    let r = extracted_call("doIt");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &ambiguous,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_unique_internal_name(&accept_any).is_none(),
+        "ambiguity must not be guessed by the unwired rung"
+    );
+    assert!(
+        d.resolve_all_with_profile(&DEFAULT_PROFILE).is_none()
+            || d.resolve_all_with_profile(&DEFAULT_PROFILE)
+                .map(|res| res.strategy != "default_unique_internal_name")
+                .unwrap_or(true),
+        "the unique-internal-name rung is not part of the ladder"
+    );
+
+    // A SINGLE internal candidate: the method WOULD bind directly, proving the
+    // rung is functional — yet the ladder still must not route through it.
+    let unique = Lookup::new().with(sym(
+        312,
+        "onlyOne",
+        "Solo.onlyOne",
+        "function",
+        "src/solo.rs",
+    ));
+    let r2 = extracted_call("onlyOne");
+    let rc2 = ref_ctx(&r2, &s, vec![]);
+    let d2 = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc2,
+        lookup: &unique,
+        kind_compatible: accept_any,
+    };
+    assert_eq!(
+        d2.resolve_via_unique_internal_name(&accept_any)
+            .expect("single candidate binds when called directly")
+            .target_symbol_id,
+        312,
+        "the rung itself is functional",
+    );
+    assert!(
+        d2.resolve_all_with_profile(&DEFAULT_PROFILE)
+            .map(|res| res.strategy != "default_unique_internal_name")
+            .unwrap_or(true),
+        "even a single internal candidate must not bind via the unwired rung",
+    );
+}
