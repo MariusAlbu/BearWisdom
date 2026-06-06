@@ -178,6 +178,64 @@ fn flow_return_ignores_nested_callback_return() {
 }
 
 #[test]
+fn flow_return_captures_nested_if_return() {
+    // function makeUser(c: boolean) { if (c) { return build(); } }
+    // The `return build()` is nested in an if-block, not a direct child of the
+    // function body. The widened descendant query captures it, and the
+    // ancestor-walk attributes it to makeUser (its nearest enclosing function).
+    let source = "function makeUser(c: boolean) {\n  if (c) {\n    return build();\n  }\n}\n";
+    let build_off = source.find("build()").unwrap() as u32;
+    let symbols = vec![mk_sym("makeUser", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("build", 2, build_off)];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_return_lhs.get(&0),
+        Some(&0),
+        "a return nested in an if-block binds to the enclosing function makeUser"
+    );
+}
+
+#[test]
+fn flow_return_captures_arrow_const_body() {
+    // const makeUser = () => { return build(); };
+    // The arrow-const body's return must attribute to the `makeUser` symbol
+    // (emitted as a Function at the declarator row).
+    let source = "const makeUser = () => {\n  return build();\n};\n";
+    let build_off = source.find("build()").unwrap() as u32;
+    let symbols = vec![mk_sym("makeUser", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("build", 1, build_off)];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_return_lhs.get(&0),
+        Some(&0),
+        "an arrow-const body return binds to the const symbol makeUser"
+    );
+}
+
+#[test]
+fn flow_return_nested_callback_still_ignored() {
+    // function f() { if (true) { items.forEach(x => { return g(); }); } }
+    // The inner arrow's `return g()` is now reachable by descendant matching,
+    // but its nearest enclosing function is the arrow, not f — the ancestor-walk
+    // guard must still reject it.
+    let source = "function f() {\n  if (true) {\n    items.forEach(x => { return g(); });\n  }\n}\n";
+    let g_off = source.find("g()").unwrap() as u32;
+    let symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("g", 2, g_off)];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert!(
+        meta.flow_return_lhs.is_empty(),
+        "a callback return reachable by descendant matching must still be rejected by the ancestor-walk"
+    );
+}
+
+#[test]
 fn flow_narrowing_captures_instanceof_body() {
     let source = "function f(x: Base) {\n  if (x instanceof Derived) {\n    x.foo();\n  }\n}\n";
     let symbols: Vec<ExtractedSymbol> = Vec::new();
@@ -550,5 +608,521 @@ fn flow_early_return_guard_negates_and_scopes_after_block() {
         "range [{}, {}) should cover s.radius at {radius_pos}",
         d.byte_start,
         d.byte_end
+    );
+}
+
+/// Per-language nested-if return smoke. Builds a return-only FlowConfig with
+/// `strategy_prefix` so `run_return_query` picks the language's RETURN_QUERY,
+/// parses a snippet whose `return build()` is nested in an if-block, and asserts
+/// the `build` ref binds to the enclosing function symbol via the ancestor-walk.
+/// `fn_kind` is the symbol kind the extractor would emit for the enclosing
+/// function (Method inside a class, Function for a free function).
+fn assert_nested_if_return_binds(
+    prefix: &'static str,
+    grammar: &tree_sitter::Language,
+    src: &str,
+    fn_name: &str,
+    fn_line: u32,
+    fn_kind: SymbolKind,
+) {
+    let cfg = FlowConfig {
+        strategy_prefix: prefix,
+        assignment_query: "",
+        type_guard_query: "",
+        discriminant_guard_query: "",
+        type_args_query: "",
+    };
+    let build_off = src.find("build").unwrap() as u32;
+    let build_line = src[..build_off as usize].matches('\n').count() as u32;
+    let symbols = vec![mk_sym(fn_name, fn_kind, fn_line)];
+    let mut refs = vec![mk_call_ref("build", build_line, build_off)];
+
+    let meta = run_flow_queries(src, grammar, &cfg, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_return_lhs.get(&0),
+        Some(&0),
+        "{prefix}: nested-if `return build()` should bind to {fn_name} (symbol 0)"
+    );
+}
+
+#[test]
+fn flow_return_python_nested_if() {
+    use crate::languages::python::PythonPlugin;
+    let g = PythonPlugin.grammar("python").unwrap();
+    assert_nested_if_return_binds(
+        "python",
+        &g,
+        "def make_user(c):\n    if c:\n        return build()\n",
+        "make_user",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_go_nested_if() {
+    use crate::languages::go::GoPlugin;
+    let g = GoPlugin.grammar("go").unwrap();
+    assert_nested_if_return_binds(
+        "go",
+        &g,
+        "func makeUser(c bool) T {\n\tif c {\n\t\treturn build()\n\t}\n}\n",
+        "makeUser",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_java_nested_if() {
+    use crate::languages::java::JavaPlugin;
+    let g = JavaPlugin.grammar("java").unwrap();
+    assert_nested_if_return_binds(
+        "java",
+        &g,
+        "class C {\n  T makeUser(boolean c) {\n    if (c) {\n      return build();\n    }\n  }\n}\n",
+        "makeUser",
+        1,
+        SymbolKind::Method,
+    );
+}
+
+#[test]
+fn flow_return_rust_nested_if() {
+    use crate::languages::rust_lang::RustLangPlugin;
+    let g = RustLangPlugin.grammar("rust").unwrap();
+    assert_nested_if_return_binds(
+        "rust",
+        &g,
+        "fn make_user(c: bool) -> T {\n    if c {\n        return build();\n    }\n}\n",
+        "make_user",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_csharp_nested_if() {
+    use crate::languages::csharp::CSharpPlugin;
+    let g = CSharpPlugin.grammar("csharp").unwrap();
+    assert_nested_if_return_binds(
+        "csharp",
+        &g,
+        "class C {\n  T MakeUser(bool c) {\n    if (c) {\n      return build();\n    }\n  }\n}\n",
+        "MakeUser",
+        1,
+        SymbolKind::Method,
+    );
+}
+
+#[test]
+fn flow_return_kotlin_nested_if() {
+    use crate::languages::kotlin::KotlinPlugin;
+    let g = KotlinPlugin.grammar("kotlin").unwrap();
+    assert_nested_if_return_binds(
+        "kotlin",
+        &g,
+        "fun makeUser(c: Boolean): T {\n    if (c) {\n        return build()\n    }\n}\n",
+        "makeUser",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_php_nested_if() {
+    use crate::languages::php::PhpPlugin;
+    let g = PhpPlugin.grammar("php").unwrap();
+    assert_nested_if_return_binds(
+        "php",
+        &g,
+        "<?php\nfunction makeUser($c) {\n    if ($c) {\n        return build();\n    }\n}\n",
+        "makeUser",
+        1,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_scala_nested_if() {
+    use crate::languages::scala::ScalaPlugin;
+    let g = ScalaPlugin.grammar("scala").unwrap();
+    assert_nested_if_return_binds(
+        "scala",
+        &g,
+        "def makeUser(c: Boolean): T = {\n  if (c) {\n    return build()\n  }\n}\n",
+        "makeUser",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_ruby_nested_if() {
+    use crate::languages::ruby::RubyPlugin;
+    let g = RubyPlugin.grammar("ruby").unwrap();
+    assert_nested_if_return_binds(
+        "ruby",
+        &g,
+        "def make_user(c)\n  if c\n    return build()\n  end\nend\n",
+        "make_user",
+        0,
+        SymbolKind::Method,
+    );
+}
+
+/// Concise expression-body return: a function whose body is a single
+/// expression with no `return` keyword (TS `() => expr`, Scala/Kotlin `= expr`).
+/// The `@return.tail` query arm captures the body expression and the same
+/// ancestor-walk + name correlation attributes it to the owning function.
+fn assert_concise_body_return_binds(
+    prefix: &'static str,
+    grammar: &tree_sitter::Language,
+    src: &str,
+    fn_name: &str,
+    fn_line: u32,
+    fn_kind: SymbolKind,
+) {
+    let cfg = FlowConfig {
+        strategy_prefix: prefix,
+        assignment_query: "",
+        type_guard_query: "",
+        discriminant_guard_query: "",
+        type_args_query: "",
+    };
+    let build_off = src.find("build").unwrap() as u32;
+    let build_line = src[..build_off as usize].matches('\n').count() as u32;
+    let symbols = vec![mk_sym(fn_name, fn_kind, fn_line)];
+    let mut refs = vec![mk_call_ref("build", build_line, build_off)];
+
+    let meta = run_flow_queries(src, grammar, &cfg, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_return_lhs.get(&0),
+        Some(&0),
+        "{prefix}: concise-body `build()` should bind to {fn_name} (symbol 0)"
+    );
+}
+
+#[test]
+fn flow_return_ts_arrow_concise_body() {
+    // const makeUser = () => build();  — no `return`, body is a bare call.
+    assert_concise_body_return_binds(
+        "ts",
+        &ts_grammar(),
+        "const makeUser = () => build();\n",
+        "makeUser",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_scala_concise_body() {
+    // def makeUser = build()  — Scala `=`-body with no block, no `return`.
+    use crate::languages::scala::ScalaPlugin;
+    let g = ScalaPlugin.grammar("scala").unwrap();
+    assert_concise_body_return_binds(
+        "scala",
+        &g,
+        "object O {\n  def makeUser = build()\n}\n",
+        "makeUser",
+        1,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_kotlin_concise_body() {
+    // fun makeUser() = build()  — Kotlin expression body, no block, no `return`.
+    use crate::languages::kotlin::KotlinPlugin;
+    let g = KotlinPlugin.grammar("kotlin").unwrap();
+    assert_concise_body_return_binds(
+        "kotlin",
+        &g,
+        "fun makeUser() = build()\n",
+        "makeUser",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_ts_block_body_tail_is_not_captured() {
+    // const f = () => { return build(); };  — the arrow body is a statement_block,
+    // so the `@return.tail` arm must NOT fire on it (the block is excluded by
+    // `block_kinds`); the explicit `return` inside is still captured by
+    // `@return.expr`. Either way `build` binds to `f` exactly once — assert the
+    // bind exists without a spurious second attribution.
+    let cfg = FlowConfig {
+        strategy_prefix: "ts",
+        assignment_query: "",
+        type_guard_query: "",
+        discriminant_guard_query: "",
+        type_args_query: "",
+    };
+    let src = "const f = () => {\n  return build();\n};\n";
+    let build_off = src.find("build").unwrap() as u32;
+    let symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("build", 1, build_off)];
+    let meta = run_flow_queries(src, &ts_grammar(), &cfg, &symbols, &mut refs);
+    assert_eq!(
+        meta.flow_return_lhs.get(&0),
+        Some(&0),
+        "the explicit return inside the block binds to f; the block-as-tail must not double-fire"
+    );
+}
+
+/// Soundness across languages: a `return` inside a nested lambda must NOT bind
+/// to the enclosing named function (its nearest function ancestor is the
+/// lambda, which carries no symbol here). Mirrors the TS callback test for the
+/// languages whose grammar models an inline lambda with a `return`.
+#[test]
+fn flow_return_nested_lambda_not_attributed_cross_lang() {
+    fn assert_lambda_return_ignored(
+        prefix: &'static str,
+        grammar: &tree_sitter::Language,
+        src: &str,
+        fn_name: &str,
+    ) {
+        let cfg = FlowConfig {
+            strategy_prefix: prefix,
+            assignment_query: "",
+            type_guard_query: "",
+            discriminant_guard_query: "",
+            type_args_query: "",
+        };
+        let g_off = src.find("inner(").unwrap() as u32;
+        let g_line = src[..g_off as usize].matches('\n').count() as u32;
+        let symbols = vec![mk_sym(fn_name, SymbolKind::Method, 0)];
+        let mut refs = vec![mk_call_ref("inner", g_line, g_off)];
+        let meta = run_flow_queries(src, grammar, &cfg, &symbols, &mut refs);
+        assert!(
+            meta.flow_return_lhs.is_empty(),
+            "{prefix}: a return inside a nested lambda must not bind to {fn_name}; got {:?}",
+            meta.flow_return_lhs
+        );
+    }
+
+    use crate::languages::java::JavaPlugin;
+    // Java: the lambda body `() -> { return inner(); }` is a `lambda_expression`
+    // (a function_kind); its return resolves to the anonymous lambda, not `m`.
+    let jg = JavaPlugin.grammar("java").unwrap();
+    assert_lambda_return_ignored(
+        "java",
+        &jg,
+        "class C {\n  T m() {\n    run(() -> { return inner(); });\n  }\n}\n",
+        "m",
+    );
+
+    use crate::languages::php::PhpPlugin;
+    // PHP: the callback `function () { return inner(); }` is an
+    // `anonymous_function`; its return must resolve to the closure, not `m`.
+    let pg = PhpPlugin.grammar("php").unwrap();
+    assert_lambda_return_ignored(
+        "php",
+        &pg,
+        "<?php\nfunction m() {\n    array_map(function () { return inner(); }, $xs);\n}\n",
+        "m",
+    );
+
+    use crate::languages::kotlin::KotlinPlugin;
+    // Kotlin: the trailing `run { return inner() }` body is a `lambda_literal`;
+    // the return must resolve to the lambda, not `m`.
+    let kg = KotlinPlugin.grammar("kotlin").unwrap();
+    assert_lambda_return_ignored(
+        "kotlin",
+        &kg,
+        "fun m() {\n    run { return inner() }\n}\n",
+        "m",
+    );
+
+    use crate::languages::scala::ScalaPlugin;
+    // Scala: the `x => { return inner() }` argument is a `lambda_expression`;
+    // the return must resolve to the lambda, not `m`.
+    let sg = ScalaPlugin.grammar("scala").unwrap();
+    assert_lambda_return_ignored(
+        "scala",
+        &sg,
+        "object O {\n  def m() = {\n    xs.foreach(x => { return inner() })\n  }\n}\n",
+        "m",
+    );
+
+    use crate::languages::ruby::RubyPlugin;
+    // Ruby: the `do ... end` callback is a `do_block`; the explicit return
+    // inside it must resolve to the block, not `m`.
+    let rg = RubyPlugin.grammar("ruby").unwrap();
+    assert_lambda_return_ignored(
+        "ruby",
+        &rg,
+        "def m\n  xs.each do |x|\n    return inner()\n  end\nend\n",
+        "m",
+    );
+}
+
+/// Tail-of-block implicit return: the body-final expression of a *block* body
+/// with no `return` keyword, for grammars whose `CfgNodeKinds.block_tail_returns`
+/// is set (Rust / Scala / Ruby). The structural last-named-child pass attributes
+/// the tail expression to the owning function exactly like a `return` operand.
+fn assert_tail_block_return_binds(
+    prefix: &'static str,
+    grammar: &tree_sitter::Language,
+    src: &str,
+    fn_name: &str,
+    fn_line: u32,
+    fn_kind: SymbolKind,
+) {
+    let cfg = FlowConfig {
+        strategy_prefix: prefix,
+        assignment_query: "",
+        type_guard_query: "",
+        discriminant_guard_query: "",
+        type_args_query: "",
+    };
+    let build_off = src.find("build").unwrap() as u32;
+    let build_line = src[..build_off as usize].matches('\n').count() as u32;
+    let symbols = vec![mk_sym(fn_name, fn_kind, fn_line)];
+    let mut refs = vec![mk_call_ref("build", build_line, build_off)];
+
+    let meta = run_flow_queries(src, grammar, &cfg, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_return_lhs.get(&0),
+        Some(&0),
+        "{prefix}: tail-of-block `build()` should bind to {fn_name} (symbol 0)"
+    );
+}
+
+#[test]
+fn flow_return_rust_tail_of_block() {
+    // fn make_user() -> T { build() } — bare trailing call, no `return`, no `;`.
+    use crate::languages::rust_lang::RustLangPlugin;
+    let g = RustLangPlugin.grammar("rust").unwrap();
+    assert_tail_block_return_binds(
+        "rust",
+        &g,
+        "fn make_user() -> T {\n    build()\n}\n",
+        "make_user",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_rust_tail_after_statement() {
+    // fn make_user() -> T { let x = 1; build() } — tail follows a `let`.
+    use crate::languages::rust_lang::RustLangPlugin;
+    let g = RustLangPlugin.grammar("rust").unwrap();
+    assert_tail_block_return_binds(
+        "rust",
+        &g,
+        "fn make_user() -> T {\n    let x = 1;\n    build()\n}\n",
+        "make_user",
+        0,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_scala_tail_of_block() {
+    // def makeUser: T = { build() } — Scala block body, last expr is the return.
+    use crate::languages::scala::ScalaPlugin;
+    let g = ScalaPlugin.grammar("scala").unwrap();
+    assert_tail_block_return_binds(
+        "scala",
+        &g,
+        "object O {\n  def makeUser: T = {\n    val x = 1\n    build()\n  }\n}\n",
+        "makeUser",
+        1,
+        SymbolKind::Function,
+    );
+}
+
+#[test]
+fn flow_return_ruby_tail_of_block() {
+    // def make_user\n build()\nend — Ruby implicit last-expression return.
+    use crate::languages::ruby::RubyPlugin;
+    let g = RubyPlugin.grammar("ruby").unwrap();
+    assert_tail_block_return_binds(
+        "ruby",
+        &g,
+        "def make_user\n  x = 1\n  build()\nend\n",
+        "make_user",
+        0,
+        SymbolKind::Method,
+    );
+}
+
+#[test]
+fn flow_return_rust_trailing_semicolon_not_a_return() {
+    // fn make_user() -> T { build(); } — the `;` makes `build()` an
+    // expression_statement returning unit, NOT the function's return value.
+    // The tail-of-block pass must reject a statement last child.
+    use crate::languages::rust_lang::RustLangPlugin;
+    let g = RustLangPlugin.grammar("rust").unwrap();
+    let cfg = FlowConfig {
+        strategy_prefix: "rust",
+        assignment_query: "",
+        type_guard_query: "",
+        discriminant_guard_query: "",
+        type_args_query: "",
+    };
+    let src = "fn make_user() -> T {\n    build();\n}\n";
+    let build_off = src.find("build").unwrap() as u32;
+    let symbols = vec![mk_sym("make_user", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("build", 1, build_off)];
+    let meta = run_flow_queries(src, &g, &cfg, &symbols, &mut refs);
+    assert!(
+        meta.flow_return_lhs.is_empty(),
+        "a semicolon-terminated trailing expression returns unit, not the call type"
+    );
+}
+
+#[test]
+fn flow_return_rust_trailing_let_not_a_return() {
+    // fn make_user() -> T { let r = build(); } — the block ends in a binding,
+    // which returns unit; the tail-of-block pass must reject a `let_declaration`
+    // last child even though its RHS carries the `build` ref.
+    use crate::languages::rust_lang::RustLangPlugin;
+    let g = RustLangPlugin.grammar("rust").unwrap();
+    let cfg = FlowConfig {
+        strategy_prefix: "rust",
+        assignment_query: "",
+        type_guard_query: "",
+        discriminant_guard_query: "",
+        type_args_query: "",
+    };
+    let src = "fn make_user() -> T {\n    let r = build();\n}\n";
+    let build_off = src.find("build").unwrap() as u32;
+    let symbols = vec![mk_sym("make_user", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("build", 1, build_off)];
+    let meta = run_flow_queries(src, &g, &cfg, &symbols, &mut refs);
+    assert!(
+        meta.flow_return_lhs.is_empty(),
+        "a block ending in a `let` binding returns unit, not the bound call's type"
+    );
+}
+
+#[test]
+fn flow_return_ts_block_tail_not_a_return() {
+    // function f() { build(); } — TS does NOT set `block_tail_returns`; a bare
+    // trailing expression is a statement, not a return. The tail-of-block pass
+    // must not fire for a `false`-flagged language (only `@return.expr` does).
+    let cfg = FlowConfig {
+        strategy_prefix: "ts",
+        assignment_query: "",
+        type_guard_query: "",
+        discriminant_guard_query: "",
+        type_args_query: "",
+    };
+    let src = "function f() {\n  build();\n}\n";
+    let build_off = src.find("build").unwrap() as u32;
+    let symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
+    let mut refs = vec![mk_call_ref("build", 1, build_off)];
+    let meta = run_flow_queries(src, &ts_grammar(), &cfg, &symbols, &mut refs);
+    assert!(
+        meta.flow_return_lhs.is_empty(),
+        "TS is not block_tail_returns — a trailing statement must not bind as a return"
     );
 }

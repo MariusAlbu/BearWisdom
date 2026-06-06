@@ -15,21 +15,18 @@
 use crate::indexer::flow::FlowConfig;
 
 /// Return-expression query for body-based return-type inference (INFER-3).
-/// Matches a `return <expr>` that is a DIRECT statement of a named
-/// function's or method's body block — `@return.fn` names the function (for
-/// symbol correlation) and `@return.expr` is the returned expression (for
-/// ref correlation). Direct-child scoping is deliberate: a return nested in a
-/// callback/arrow is not a direct child of the outer block, so it is never
-/// misattributed to the enclosing named function. Returns inside `if`/`for`
-/// blocks are out of this first cut for the same soundness reason.
+/// Captures the returned expression of every `return <expr>`, plus an
+/// arrow-function concise body (`() => expr`) via `@return.tail`. The consumer
+/// (`flow::run_return_query`) resolves which function owns it by walking
+/// ancestors to the nearest function node. That ancestor-walk attributes a
+/// return nested in `if`/`for`/`switch` to its enclosing named function, and a
+/// return inside a nested arrow/callback to the lambda (dropped when anonymous)
+/// — so the widened capture never misattributes a callback return. The
+/// `@return.tail` body field is skipped by the consumer when it is a
+/// `statement_block` (its return value comes from the explicit `return` arm).
 pub const TS_RETURN_QUERY: &str = r#"
-    (function_declaration
-        name: (identifier) @return.fn
-        body: (statement_block (return_statement (_) @return.expr)))
-
-    (method_definition
-        name: (property_identifier) @return.fn
-        body: (statement_block (return_statement (_) @return.expr)))
+    (return_statement (_) @return.expr)
+    (arrow_function body: (_) @return.tail)
 "#;
 
 /// TypeScript flow-typing queries. Singleton — registered on the plugin via

@@ -2,7 +2,7 @@
 
 mod calls;
 pub(crate) mod decorators;
-mod flow;
+pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;

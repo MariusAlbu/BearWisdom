@@ -4,6 +4,20 @@
 
 use crate::indexer::flow::FlowConfig;
 
+/// Return-expression query for body-based return-type inference (INFER-3).
+/// Captures the returned expression of every explicit `return e`
+/// (`return_expression`), plus the concise expression body of `def f = e` via
+/// `@return.tail` (the `function_definition` body field). `flow::run_return_query`
+/// resolves the owning def by ancestor-walk (dropping a return whose nearest
+/// function is a nested lambda), and skips a `@return.tail` whose kind is a
+/// `block` — `def f = { … }` returns from its block's final expression, which
+/// the structural tail-of-block pass attributes (gated on
+/// `CfgNodeKinds.block_tail_returns`), not the block node itself.
+pub const SCALA_RETURN_QUERY: &str = r#"
+    (return_expression (_) @return.expr)
+    (function_definition body: (_) @return.tail)
+"#;
+
 pub static SCALA_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "scala",
 

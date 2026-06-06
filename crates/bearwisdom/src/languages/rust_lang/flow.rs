@@ -4,6 +4,17 @@
 
 use crate::indexer::flow::FlowConfig;
 
+/// Return-expression query for body-based return-type inference (INFER-3).
+/// Captures the returned expression of every explicit `return e`;
+/// `flow::run_return_query` resolves the owning function by ancestor-walk
+/// (dropping a return whose nearest function is a nested `closure_expression`).
+/// Rust's dominant tail-expression form (`fn f() -> T { e }`) has no
+/// `return_expression` node — it is handled by the structural tail-of-block
+/// pass, gated on `CfgNodeKinds.block_tail_returns`, not by this query.
+pub const RUST_RETURN_QUERY: &str = r#"
+    (return_expression (_) @return.expr)
+"#;
+
 pub static RUST_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "rust",
 

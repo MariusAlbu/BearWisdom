@@ -1,7 +1,7 @@
 //! ruby language plugin.
 
 mod calls;
-mod flow;
+pub(crate) mod flow;
 mod helpers;
 mod params;
 pub(crate) mod keywords;

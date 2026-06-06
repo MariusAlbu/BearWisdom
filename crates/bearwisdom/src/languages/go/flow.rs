@@ -4,6 +4,16 @@
 
 use crate::indexer::flow::FlowConfig;
 
+/// Return-expression query for body-based return-type inference (INFER-3).
+/// Captures the returned value of every `return`; `flow::run_return_query`
+/// resolves the owning function by ancestor-walk (dropping a return whose
+/// nearest function is a nested `func_literal`). Go wraps return values in an
+/// `expression_list`; the single-value form is captured (multi-value returns
+/// are a deeper sub-case).
+pub const GO_RETURN_QUERY: &str = r#"
+    (return_statement (expression_list (_) @return.expr))
+"#;
+
 pub static GO_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "go",
 

@@ -327,17 +327,54 @@ fn run_assignment_query(
 /// literal. An empty string opts out (no return capture).
 fn return_query_for(strategy_prefix: &str) -> &'static str {
     match strategy_prefix {
-        "ts" => crate::languages::typescript::flow::TS_RETURN_QUERY,
+        "ts" | "js" => crate::languages::typescript::flow::TS_RETURN_QUERY,
+        "python" => crate::languages::python::flow::PY_RETURN_QUERY,
+        "go" => crate::languages::go::flow::GO_RETURN_QUERY,
+        "java" => crate::languages::java::flow::JAVA_RETURN_QUERY,
+        "rust" => crate::languages::rust_lang::flow::RUST_RETURN_QUERY,
+        "csharp" => crate::languages::csharp::flow::CSHARP_RETURN_QUERY,
+        "kotlin" => crate::languages::kotlin::flow::KOTLIN_RETURN_QUERY,
+        "php" => crate::languages::php::flow::PHP_RETURN_QUERY,
+        "scala" => crate::languages::scala::flow::SCALA_RETURN_QUERY,
+        "ruby" => crate::languages::ruby::flow::RUBY_RETURN_QUERY,
         _ => "",
     }
 }
 
-/// Capture each `return <expr>` as a candidate for its function's inferred
-/// return type. For every match the query's `@return.fn` (the function/method
-/// name) correlates to the enclosing function symbol by name + nearest
-/// preceding declaration line, and `@return.expr` correlates to the ref it
-/// contains (furthest-right by byte offset) — the ref whose resolved yield
-/// becomes a return-type candidate. Populates `flow_return_lhs[ref_idx] =
+/// Capture each `return <expr>` (at arbitrary depth inside its function body)
+/// AND each concise expression-body (`() => expr`, `def f = expr`, `fun f() =
+/// expr`) as a candidate for its function's inferred return type.
+///
+/// The query captures the returned expression two ways:
+///   * `@return.expr` — the operand of an explicit `return` keyword, at
+///     arbitrary depth inside the body.
+///   * `@return.tail` — the body field of a function whose body is a single
+///     expression with no `return` keyword. A tail capture whose kind is a
+///     `CfgNodeKinds.block_kinds` node is SKIPPED: a block body's return value
+///     comes from its explicit `return` (caught by `@return.expr`) or its
+///     final statement (a deeper sub-case), never from the block node itself.
+///
+/// Function IDENTITY is resolved structurally by an ancestor-walk, because
+/// tree-sitter queries have no descendant/ancestor axis — a single pattern
+/// matching a `return` at arbitrary depth inside a function node is a structure
+/// error. Walking parents to the nearest `CfgNodeKinds.function_kinds` node
+/// both finds the owning function AND enforces soundness: a return inside a
+/// nested arrow/callback resolves to the lambda — not the outer named function
+/// — so a callback return is never misattributed even though descendant
+/// capture now reaches it. Returns nested in `if`/`for`/`switch` resolve to the
+/// enclosing named function and ARE attributed (the widening over the prior
+/// direct-body query).
+///
+/// The owning function's name is its `name` field; an unnamed function
+/// (arrow/lambda/closure) borrows the name of an immediately-wrapping
+/// declarator (`const f = () => …`), which the extractor emits as a Function
+/// symbol at the declarator row — so the same name + nearest-line correlation
+/// covers both forms. An unnamed function with no naming wrapper yields no
+/// candidate (Unknown over a guess).
+///
+/// Gated on `cfg_node_kinds_for(cfg.strategy_prefix)`: a language with no
+/// `CfgNodeKinds` table has no function-boundary set to walk, so no return
+/// query is honored for it. Populates `flow_return_lhs[ref_idx] =
 /// fn_symbol_idx`. No-op when the language supplies no return query.
 fn run_return_query(
     root: &Node,
@@ -351,67 +388,288 @@ fn run_return_query(
     if query_src.is_empty() {
         return;
     }
+    // The ancestor-walk that resolves function identity needs the
+    // function-boundary node-kind set. Without it no return query is honored.
+    let Some(kinds) = cfg_node_kinds_for(cfg.strategy_prefix) else {
+        return;
+    };
     let Ok(query) = Query::new(&root.language(), query_src) else {
         return;
     };
-    let Some(fn_cap) = query.capture_index_for_name("return.fn") else {
+    let expr_cap = query.capture_index_for_name("return.expr");
+    let tail_cap = query.capture_index_for_name("return.tail");
+    if expr_cap.is_none() && tail_cap.is_none() {
         return;
-    };
-    let Some(expr_cap) = query.capture_index_for_name("return.expr") else {
-        return;
-    };
+    }
 
     let mut cursor = QueryCursor::new();
     let mut it = cursor.matches(&query, *root, src);
     while let Some(m) = it.next() {
-        let mut fn_node: Option<Node> = None;
         let mut expr_node: Option<Node> = None;
         for cap in m.captures {
-            if cap.index == fn_cap {
-                fn_node = Some(cap.node);
-            } else if cap.index == expr_cap {
+            if Some(cap.index) == expr_cap {
                 expr_node = Some(cap.node);
+            } else if Some(cap.index) == tail_cap {
+                // A concise expression-body return. A block body is not a tail
+                // expression — its return value comes from an explicit `return`
+                // (the `@return.expr` arm) or its last statement (a deeper
+                // sub-case), so skip a tail capture that is itself a block.
+                if !kinds.block_kinds.contains(&cap.node.kind()) {
+                    expr_node = Some(cap.node);
+                }
             }
         }
-        let (Some(fn_name_node), Some(expr)) = (fn_node, expr_node) else {
-            continue;
-        };
-        let Ok(fn_name) = fn_name_node.utf8_text(src) else {
-            continue;
-        };
+        let Some(expr) = expr_node else { continue };
+        attribute_return_expr(&expr, kinds, src, symbols, refs, meta);
+    }
 
-        // Correlate the function name → its symbol_idx (function-like kinds
-        // only, nearest declaration at or above the name's row).
-        let fn_line = fn_name_node.start_position().row as u32;
-        let fn_idx = symbols
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| {
-                s.name == fn_name
-                    && s.start_line <= fn_line
-                    && matches!(
-                        s.kind,
-                        SymbolKind::Function | SymbolKind::Method | SymbolKind::Constructor
-                    )
-            })
-            .max_by_key(|(_, s)| s.start_line)
-            .map(|(i, _)| i);
-        let Some(fn_idx) = fn_idx else { continue };
+    run_tail_block_return(root, src, kinds, symbols, refs, meta);
+}
 
-        // Correlate the return expression's byte range → the ref it contains
-        // (furthest-right), mirroring the assignment RHS correlation.
-        let e_start = expr.start_byte() as u32;
-        let e_end = expr.end_byte() as u32;
-        let ref_idx = refs
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| r.byte_offset >= e_start && r.byte_offset < e_end)
-            .max_by_key(|(_, r)| r.byte_offset)
-            .map(|(i, _)| i);
-        if let Some(ref_idx) = ref_idx {
-            meta.flow_return_lhs.insert(ref_idx, fn_idx);
+/// Attribute one return expression to its owning function and record the bind.
+///
+/// Resolves the owning function structurally — the nearest enclosing
+/// `function_kinds` node — so a return inside a nested lambda resolves to the
+/// lambda (never the outer named function). The owner's name → symbol_idx is
+/// correlated by name + nearest function-like declaration at/above the name's
+/// row (the arrow-const form extracts as a Function at the declarator row, so
+/// the same correlation covers it). The return expression's byte range → the
+/// furthest-right ref it contains, mirroring the assignment-RHS correlation.
+/// A return whose owner is anonymous (no name node) or whose body carries no
+/// ref is a silent no-op.
+fn attribute_return_expr(
+    expr: &Node,
+    kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+    src: &[u8],
+    symbols: &[ExtractedSymbol],
+    refs: &[ExtractedRef],
+    meta: &mut FlowMeta,
+) {
+    let Some(enclosing_fn) = nearest_function_ancestor(expr, kinds) else {
+        return;
+    };
+    let Some(fn_name_node) = function_name_node(&enclosing_fn, kinds) else {
+        return;
+    };
+    let Ok(fn_name) = fn_name_node.utf8_text(src) else {
+        return;
+    };
+
+    let fn_line = fn_name_node.start_position().row as u32;
+    let fn_idx = symbols
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            s.name == fn_name
+                && s.start_line <= fn_line
+                && matches!(
+                    s.kind,
+                    SymbolKind::Function | SymbolKind::Method | SymbolKind::Constructor
+                )
+        })
+        .max_by_key(|(_, s)| s.start_line)
+        .map(|(i, _)| i);
+    let Some(fn_idx) = fn_idx else { return };
+
+    // A ref inside a NESTED function within the return expression belongs to
+    // that nested scope, not the owner — `return makeThing(x => x.foo())`
+    // returns `makeThing`'s type, not `x.foo`'s. Exclude any ref whose offset
+    // falls inside a `function_kinds` descendant of the expression so the
+    // furthest-right ref picked is the owner's own, never a nested callback's.
+    let nested_fn_ranges = nested_function_ranges(expr, kinds);
+    let e_start = expr.start_byte() as u32;
+    let e_end = expr.end_byte() as u32;
+    let ref_idx = refs
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| {
+            r.byte_offset >= e_start
+                && r.byte_offset < e_end
+                && !nested_fn_ranges
+                    .iter()
+                    .any(|(s, e)| r.byte_offset >= *s && r.byte_offset < *e)
+        })
+        .max_by_key(|(_, r)| r.byte_offset)
+        .map(|(i, _)| i);
+    if let Some(ref_idx) = ref_idx {
+        meta.flow_return_lhs.insert(ref_idx, fn_idx);
+    }
+}
+
+/// Byte ranges of every `function_kinds` node nested inside `expr` (lambdas /
+/// closures within a returned call). Refs inside these belong to the nested
+/// scope, not the function whose return `expr` is.
+fn nested_function_ranges(
+    expr: &Node,
+    kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+) -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    let mut c = expr.walk();
+    let mut stack: Vec<Node> = expr.named_children(&mut c).collect();
+    while let Some(n) = stack.pop() {
+        if kinds.function_kinds.contains(&n.kind()) {
+            out.push((n.start_byte() as u32, n.end_byte() as u32));
+            // Don't descend into a nested function's own nested functions —
+            // the outer range already covers every ref inside it.
+            continue;
+        }
+        let mut cc = n.walk();
+        for ch in n.named_children(&mut cc) {
+            stack.push(ch);
         }
     }
+    out
+}
+
+/// Tail-of-block implicit return for expression-oriented grammars
+/// (`block_tail_returns`): `fn f() -> T { …; e }` / `def f = { …; e }` /
+/// Ruby method bodies return their block's FINAL expression with no `return`
+/// keyword. A tree-sitter query has no "last named child of a block" axis, so
+/// this is a structural pass — the inverse of `nearest_function_ancestor`:
+/// for every function node, find its body block and take the block's last
+/// named child as a return expression.
+///
+/// Soundness (widening-only): the pass fires only when `block_tail_returns` is
+/// set — the languages where a bare trailing expression is genuinely the return
+/// value. The last named child is rejected when it is
+///   * a statement (`*_statement`) — a semicolon-terminated expression returns
+///     unit (Rust `build();`), not the call's type;
+///   * a binding (`*_declaration` / `*_definition`) — a block ending in a
+///     `let`/`val` binds and returns unit;
+///   * an explicit `return` node — already attributed by the `@return.expr` arm
+///     (avoids a double-fire);
+///   * a nested block (`block_kinds`) — its own tail is handled when the walk
+///     reaches its enclosing function, not here.
+/// Otherwise the child is the tail expression and is attributed exactly like a
+/// `return` operand. The ref correlation only binds when the tail expression
+/// actually contains a ref, so a tail that is a literal/identifier is a no-op.
+fn run_tail_block_return(
+    root: &Node,
+    src: &[u8],
+    kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+    symbols: &[ExtractedSymbol],
+    refs: &[ExtractedRef],
+    meta: &mut FlowMeta,
+) {
+    if !kinds.block_tail_returns {
+        return;
+    }
+    for fn_node in descendant_function_nodes(root, kinds) {
+        let Some(body) = crate::indexer::flow_cfg::find_function_body(&fn_node, kinds) else {
+            continue;
+        };
+        let mut c = body.walk();
+        let Some(last) = body.named_children(&mut c).last() else {
+            continue;
+        };
+        if is_non_return_tail(&last, kinds) {
+            continue;
+        }
+        attribute_return_expr(&last, kinds, src, symbols, refs, meta);
+    }
+}
+
+/// Whether `node` (a block's last named child) is NOT a tail-return expression:
+/// a statement, a binding declaration/definition, an explicit `return` already
+/// caught by the `@return.expr` arm, or a nested block whose own tail is handled
+/// by its enclosing function.
+fn is_non_return_tail(node: &Node, kinds: &crate::indexer::flow_cfg::CfgNodeKinds) -> bool {
+    let k = node.kind();
+    k.ends_with("_statement")
+        || k.ends_with("_declaration")
+        || k.ends_with("_definition")
+        || k.contains("return")
+        || kinds.block_kinds.contains(&k)
+}
+
+/// Every `function_kinds` node in the tree, in document order. The structural
+/// counterpart to `nearest_function_ancestor` for the tail-of-block pass, which
+/// must visit each function rather than walk up from a query capture.
+fn descendant_function_nodes<'a>(
+    root: &Node<'a>,
+    kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+) -> Vec<Node<'a>> {
+    let mut out = Vec::new();
+    let mut stack = vec![*root];
+    while let Some(n) = stack.pop() {
+        if kinds.function_kinds.contains(&n.kind()) {
+            out.push(n);
+        }
+        let mut c = n.walk();
+        for ch in n.named_children(&mut c) {
+            stack.push(ch);
+        }
+    }
+    out
+}
+
+/// Walk parents from `node` to the first ancestor whose kind is in
+/// `kinds.function_kinds`. `None` when the node has no enclosing function (a
+/// top-level return, structurally absent in the grammars that have function
+/// boundaries).
+/// Whether a node kind names a bound identifier: any `*identifier` kind
+/// (`identifier` / `field_identifier` / `property_identifier` / `simple_identifier`)
+/// or the bare `name` kind some grammars use for declaration names.
+fn is_identifier_kind(kind: &str) -> bool {
+    kind.contains("identifier") || kind == "name"
+}
+
+fn nearest_function_ancestor<'a>(
+    node: &Node<'a>,
+    kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+) -> Option<Node<'a>> {
+    let mut cur = node.parent();
+    while let Some(n) = cur {
+        if kinds.function_kinds.contains(&n.kind()) {
+            return Some(n);
+        }
+        cur = n.parent();
+    }
+    None
+}
+
+/// The identifier node naming `fn_node`. A named function (declaration /
+/// method / def) carries a `name` field. An unnamed function (arrow / lambda /
+/// closure / func_literal) has none — its name is borrowed from an
+/// immediately-wrapping declarator: the nearest ancestor between the function
+/// and the next function boundary whose `declarator_name_field` (or `name`
+/// field) yields an identifier. `None` when no name can be resolved (an
+/// anonymous callback passed inline), which drops the return candidate.
+fn function_name_node<'a>(
+    fn_node: &Node<'a>,
+    kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+) -> Option<Node<'a>> {
+    if let Some(name) = fn_node.child_by_field_name("name") {
+        return Some(name);
+    }
+    // Unnamed function: borrow the binding name from a wrapping declarator
+    // (`const f = () => …`, `val f = { … }`). Stop at the next function
+    // boundary — an arrow nested in another function is anonymous.
+    let mut cur = fn_node.parent();
+    while let Some(n) = cur {
+        if kinds.function_kinds.contains(&n.kind()) {
+            break;
+        }
+        for field in [kinds.declarator_name_field, "name"] {
+            let Some(name) = n.child_by_field_name(field) else {
+                continue;
+            };
+            if is_identifier_kind(name.kind()) {
+                return Some(name);
+            }
+            // The name field may wrap the identifier (Kotlin
+            // `variable_declaration > identifier`); descend one level.
+            let mut c = name.walk();
+            let inner = name
+                .named_children(&mut c)
+                .find(|ch| is_identifier_kind(ch.kind()));
+            if let Some(inner) = inner {
+                return Some(inner);
+            }
+        }
+        cur = n.parent();
+    }
+    None
 }
 
 fn run_type_guard_query(

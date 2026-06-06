@@ -4,6 +4,14 @@
 
 use crate::indexer::flow::FlowConfig;
 
+/// Return-expression query for body-based return-type inference (INFER-3).
+/// Captures the returned expression of every `return <expr>`;
+/// `flow::run_return_query` resolves the owning method by ancestor-walk
+/// (dropping a return whose nearest function is a nested `lambda_expression`).
+pub const JAVA_RETURN_QUERY: &str = r#"
+    (return_statement (_) @return.expr)
+"#;
+
 pub static JAVA_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "java",
 

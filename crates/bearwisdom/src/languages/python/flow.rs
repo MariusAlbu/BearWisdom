@@ -6,6 +6,14 @@
 
 use crate::indexer::flow::FlowConfig;
 
+/// Return-expression query for body-based return-type inference (INFER-3).
+/// Captures the returned expression of every `return <expr>`;
+/// `flow::run_return_query` resolves the owning function by ancestor-walk
+/// (dropping a return whose nearest function is a nested `lambda`).
+pub const PY_RETURN_QUERY: &str = r#"
+    (return_statement (_) @return.expr)
+"#;
+
 pub static PY_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "python",
 

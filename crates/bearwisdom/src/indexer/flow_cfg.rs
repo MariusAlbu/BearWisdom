@@ -317,6 +317,16 @@ pub struct CfgNodeKinds {
     /// of dispatching it as a single statement. Go wraps top-level stmts
     /// in `statement_list`; other grammars may have analogous wrappers.
     pub transparent_kinds: &'static [&'static str],
+    /// Whether the grammar treats a block body's final *expression* as the
+    /// block's (and thus the function's) implicit return value. True for the
+    /// expression-oriented languages where `fn f() -> T { e }` / `def f = { e }`
+    /// returns `e` with no `return` keyword (Rust, Scala, Ruby); false where a
+    /// bare trailing expression is a statement that returns no value (TS, Java,
+    /// C#, Go, …). Drives the tail-of-block return-inference pass: the last
+    /// named child of the body block is taken as a return expression, excluding
+    /// `*_statement` (semicolon-terminated, returns unit) and binding nodes
+    /// (`*_declaration` / `*_definition`).
+    pub block_tail_returns: bool,
 }
 
 /// TypeScript / JavaScript node-kind table. The first wire-up; other
@@ -351,6 +361,7 @@ pub const TS_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["switch_case"],
     switch_default_kinds: &["switch_default"],
     transparent_kinds: &[],
+    block_tail_returns: false,
 };
 
 /// Java node-kind table. Java's switch uses a `switch_block` body whose
@@ -386,6 +397,7 @@ pub const JAVA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["switch_block_statement_group"],
     switch_default_kinds: &["switch_label"],
     transparent_kinds: &[],
+    block_tail_returns: false,
 };
 
 /// Python node-kind table.
@@ -411,6 +423,7 @@ pub const PYTHON_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["case_clause"],
     switch_default_kinds: &[],
     transparent_kinds: &[],
+    block_tail_returns: false,
 };
 
 /// C# node-kind table. C#'s switch_section + switch_label split is enough
@@ -446,6 +459,7 @@ pub const CSHARP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["switch_section"],
     switch_default_kinds: &[],
     transparent_kinds: &[],
+    block_tail_returns: false,
 };
 
 /// Rust node-kind table. Control-flow constructs are *expressions* in Rust
@@ -475,6 +489,8 @@ pub const RUST_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["match_arm"],
     switch_default_kinds: &[],
     transparent_kinds: &[],
+    // `fn f() -> T { e }` returns its tail expression with no `return`.
+    block_tail_returns: true,
 };
 
 /// Go node-kind table. Go's `for` covers all loop forms (with optional
@@ -504,6 +520,7 @@ pub const GO_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_default_kinds: &["default_case"],
     // Go's block and case both wrap their statements in `statement_list`.
     transparent_kinds: &["statement_list"],
+    block_tail_returns: false,
 };
 
 /// C node-kind table. Switch shares a single `case_statement` kind for both
@@ -531,12 +548,19 @@ pub const C_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["case_statement"],
     switch_default_kinds: &[],
     transparent_kinds: &[],
+    block_tail_returns: false,
 };
 
 /// PHP node-kind table. PHP's switch wraps cases in a `switch_block` and
 /// distinguishes `case_statement` / `default_statement`.
 pub const PHP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_definition", "method_declaration"],
+    function_kinds: &[
+        "function_definition",
+        "method_declaration",
+        "anonymous_function",
+        "arrow_function",
+        "anonymous_function_creation_expression",
+    ],
     block_kinds: &["compound_statement"],
     if_kind: "if_statement",
     if_consequence_field: "body",
@@ -560,6 +584,7 @@ pub const PHP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["case_statement"],
     switch_default_kinds: &["default_statement"],
     transparent_kinds: &[],
+    block_tail_returns: false,
 };
 
 /// Lua node-kind table. Lua has no switch construct. `variable_declaration`
@@ -598,6 +623,7 @@ pub const LUA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     // for `local x = …`; recursing through it puts the assignment into the
     // current block where collect_defs_in sees it.
     transparent_kinds: &["variable_declaration"],
+    block_tail_returns: false,
 };
 
 /// Groovy node-kind table. Groovy's grammar is Java-flavored — `if_statement`,
@@ -623,13 +649,14 @@ pub const GROOVY_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["switch_block_statement_group"],
     switch_default_kinds: &[],
     transparent_kinds: &[],
+    block_tail_returns: false,
 };
 
 /// Scala node-kind table. Control-flow constructs are *expressions* in Scala
 /// (`if_expression` / `while_expression` / `match_expression`); the match
 /// expression wraps clauses in a `case_block`.
 pub const SCALA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_definition"],
+    function_kinds: &["function_definition", "lambda_expression"],
     block_kinds: &["block"],
     if_kind: "if_expression",
     if_consequence_field: "consequence",
@@ -648,6 +675,8 @@ pub const SCALA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["case_clause"],
     switch_default_kinds: &[],
     transparent_kinds: &[],
+    // `def f = { …; e }` returns its block's final expression with no `return`.
+    block_tail_returns: true,
 };
 
 /// Kotlin node-kind table (tree-sitter-kotlin-ng). Function bodies are
@@ -657,7 +686,7 @@ pub const SCALA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
 /// expressions (`if_expression`, `when_expression`); the latter uses
 /// `when_entry` for cases.
 pub const KOTLIN_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_declaration"],
+    function_kinds: &["function_declaration", "lambda_literal", "function_literal"],
     block_kinds: &["block"],
     if_kind: "if_expression",
     if_consequence_field: "consequence",
@@ -676,6 +705,10 @@ pub const KOTLIN_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["when_entry"],
     switch_default_kinds: &[],
     transparent_kinds: &["function_body"],
+    // A Kotlin block body returns only via an explicit `return`; a bare
+    // trailing expression is a statement. The concise `= expr` body (implicit
+    // return) is already covered by the `@return.tail` query arm.
+    block_tail_returns: false,
 };
 
 /// Ruby node-kind table. Ruby uses three different block-like containers
@@ -683,7 +716,7 @@ pub const KOTLIN_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
 /// are `then`, while/until bodies are `do`. All three count as block_kinds
 /// so the generic walker recurses into each.
 pub const RUBY_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["method", "singleton_method"],
+    function_kinds: &["method", "singleton_method", "block", "do_block"],
     block_kinds: &["body_statement", "then", "do"],
     if_kind: "if",
     if_consequence_field: "consequence",
@@ -702,6 +735,8 @@ pub const RUBY_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &["when"],
     switch_default_kinds: &["else"],
     transparent_kinds: &[],
+    // A Ruby method returns its body's final expression with no `return`.
+    block_tail_returns: true,
 };
 
 /// R node-kind table. R has no switch statement — `switch()` is a regular
@@ -730,6 +765,9 @@ pub const R_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
     switch_case_kinds: &[],
     switch_default_kinds: &[],
     transparent_kinds: &[],
+    // R is expression-oriented (a function's last expression is its value), but
+    // R has no return query wired, so the tail pass has nothing to attribute.
+    block_tail_returns: false,
 };
 
 /// Build CFGs for every function in `root`. The returned `FileCfg`'s functions
@@ -820,7 +858,7 @@ fn guards_for_range(
     out
 }
 
-fn find_function_body<'a>(fn_node: &Node<'a>, kinds: &CfgNodeKinds) -> Option<Node<'a>> {
+pub(crate) fn find_function_body<'a>(fn_node: &Node<'a>, kinds: &CfgNodeKinds) -> Option<Node<'a>> {
     // Direct match first — the common case (`function_declaration > block`).
     let mut c = fn_node.walk();
     for ch in fn_node.named_children(&mut c) {

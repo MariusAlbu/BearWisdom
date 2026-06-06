@@ -7,7 +7,7 @@ mod calls_symbols;
 pub mod connectors;
 pub(crate) mod decorators;
 mod embedded;
-mod flow;
+pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;

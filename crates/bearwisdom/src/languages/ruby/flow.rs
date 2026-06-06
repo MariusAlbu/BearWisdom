@@ -6,6 +6,17 @@
 
 use crate::indexer::flow::FlowConfig;
 
+/// Return-expression query for body-based return-type inference (INFER-3).
+/// Captures the returned expression of every explicit `return e` (the `return`
+/// node wraps its value in an `argument_list`); `flow::run_return_query`
+/// resolves the owning method by ancestor-walk (dropping a return whose nearest
+/// function is a nested block/lambda). Ruby's dominant implicit
+/// last-expression return has no return node — it is handled by the structural
+/// tail-of-block pass, gated on `CfgNodeKinds.block_tail_returns`.
+pub const RUBY_RETURN_QUERY: &str = r#"
+    (return (argument_list (_) @return.expr))
+"#;
+
 pub static RUBY_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "ruby",
 
