@@ -7,6 +7,37 @@
 // they never enter the cross-file resolution loop.
 // =============================================================================
 
+use std::sync::{Arc, Mutex, OnceLock};
+
+use crate::parser::local_resolver::LocalResolver;
+
+/// Process-wide cache of compiled `locals.scm` resolvers. `LocalResolver::new`
+/// compiles a tree-sitter query and classifies its capture indices — work
+/// repeated verbatim for every file of a language. Keyed by `(grammar,
+/// locals-source-pointer)`: the grammar because one locals source can serve
+/// several grammars (the TS source drives the `.ts` and `.tsx` grammars), the
+/// source pointer because each `locals_scm_for_language` result is a `&'static`
+/// literal. A `None` (empty / malformed / too few captures) is cached too, so a
+/// language without a usable locals.scm doesn't re-attempt the compile per file.
+/// Shared as `Arc`; `resolve` builds its own `QueryCursor`, so concurrent use
+/// across the parallel connectors is safe.
+fn cached_local_resolver(
+    grammar: &tree_sitter::Language,
+    locals_scm: &'static str,
+) -> Option<Arc<LocalResolver>> {
+    static CACHE: OnceLock<
+        Mutex<rustc_hash::FxHashMap<(tree_sitter::Language, usize), Option<Arc<LocalResolver>>>>,
+    > = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(rustc_hash::FxHashMap::default()));
+    let key = (grammar.clone(), locals_scm.as_ptr() as usize);
+    if let Some(entry) = cache.lock().unwrap().get(&key) {
+        return entry.clone();
+    }
+    let resolver = LocalResolver::new(locals_scm, grammar.clone()).map(Arc::new);
+    cache.lock().unwrap().insert(key, resolver.clone());
+    resolver
+}
+
 // ---------------------------------------------------------------------------
 // Local scope resolution — filters out intra-scope refs via locals.scm
 // ---------------------------------------------------------------------------
@@ -18,8 +49,6 @@ pub(super) fn filter_local_refs(
     symbols: &[crate::types::ExtractedSymbol],
     refs: &mut Vec<crate::types::ExtractedRef>,
 ) {
-    use crate::parser::local_resolver::LocalResolver;
-
     // Get the locals.scm query for this language.
     let Some(locals_scm) = crate::indexer::query_builtins::locals_scm_for_language(lang_id)
     else {
@@ -31,8 +60,8 @@ pub(super) fn filter_local_refs(
         return;
     };
 
-    // Compile the locals query (consumes a clone of grammar).
-    let Some(resolver) = LocalResolver::new(locals_scm, grammar.clone()) else {
+    // Compile the locals resolver once per grammar (cached process-wide).
+    let Some(resolver) = cached_local_resolver(&grammar, locals_scm) else {
         return;
     };
 
