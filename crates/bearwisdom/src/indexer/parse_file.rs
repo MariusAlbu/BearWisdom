@@ -216,10 +216,50 @@ fn parse_file_internal(
     // rewritten, so well-qualified symbols (any separator) stay byte-identical.
     crate::containment::normalize_qnames_from_parents(&mut r.symbols);
 
+    // Single tree-sitter parse shared by locals.scm filtering and flow typing.
+    // The extractor parses internally and doesn't expose its tree, so this
+    // collapses the two remaining per-file re-parses into one for any language
+    // that has both a locals.scm and a FlowConfig (TS/JS/Python/Java/C#/Go/Rust).
+    // Parsed only when a consumer needs it: locals.scm filtering parses at any
+    // size, but flow skips files over MAX_FLOW_SOURCE_BYTES without parsing — so
+    // a flow-only language over that size produces no shared tree (unchanged).
+    let shared_grammar = plugin.grammar(walked.language);
+    let shared_tree = {
+        let want_for_locals =
+            crate::indexer::query_builtins::locals_scm_for_language(walked.language).is_some();
+        let want_for_flow = plugin.flow_config().is_some()
+            && content.len() <= crate::indexer::flow::MAX_FLOW_SOURCE_BYTES;
+        if want_for_locals || want_for_flow {
+            shared_grammar.as_ref().and_then(|g| {
+                let mut parser = tree_sitter::Parser::new();
+                parser.set_language(g).ok()?;
+                parser.parse(content.as_bytes(), None)
+            })
+        } else {
+            None
+        }
+    };
+
     // Run locals.scm query to filter out locally-resolved references.
     // This removes local variables, parameters, and other intra-scope names
     // that don't need cross-file resolution.
-    super::local_refs::filter_local_refs(&content, walked.language, plugin, &r.symbols, &mut r.refs);
+    if let Some(tree) = shared_tree.as_ref() {
+        super::local_refs::filter_local_refs_with_tree(
+            &content,
+            walked.language,
+            plugin,
+            &mut r.refs,
+            tree,
+        );
+    } else {
+        super::local_refs::filter_local_refs(
+            &content,
+            walked.language,
+            plugin,
+            &r.symbols,
+            &mut r.refs,
+        );
+    }
     super::local_refs::filter_operator_refs(&mut r.refs);
 
     // Synthesize symbols a code generator / annotation processor would emit but
@@ -275,18 +315,29 @@ fn parse_file_internal(
     // Populates FlowMeta (forward-inference binding map, conditional narrowings,
     // call-site type_args on chain segments). Plugins without flow_config pay
     // zero cost here.
-    let flow_meta = if let (Some(flow_cfg), Some(grammar)) =
-        (plugin.flow_config(), plugin.grammar(walked.language))
-    {
-        crate::indexer::flow::run_flow_queries(
-            &content,
-            &grammar,
-            flow_cfg,
-            &r.symbols,
-            &mut r.refs,
-        )
-    } else {
-        crate::types::FlowMeta::default()
+    let flow_meta = match plugin.flow_config() {
+        Some(flow_cfg) => {
+            if let Some(tree) = shared_tree.as_ref() {
+                crate::indexer::flow::run_flow_queries_with_tree(
+                    &content,
+                    flow_cfg,
+                    &r.symbols,
+                    &mut r.refs,
+                    tree,
+                )
+            } else if let Some(grammar) = shared_grammar.as_ref() {
+                crate::indexer::flow::run_flow_queries(
+                    &content,
+                    grammar,
+                    flow_cfg,
+                    &r.symbols,
+                    &mut r.refs,
+                )
+            } else {
+                crate::types::FlowMeta::default()
+            }
+        }
+        None => crate::types::FlowMeta::default(),
     };
 
     // Extractor-time `FlowEmission`s for plugins whose flow detection is

@@ -49,19 +49,8 @@ pub(super) fn filter_local_refs(
     symbols: &[crate::types::ExtractedSymbol],
     refs: &mut Vec<crate::types::ExtractedRef>,
 ) {
-    // Get the locals.scm query for this language.
-    let Some(locals_scm) = crate::indexer::query_builtins::locals_scm_for_language(lang_id)
-    else {
-        return;
-    };
-
-    // Get the grammar to compile the query.
-    let Some(grammar) = plugin.grammar(lang_id) else {
-        return;
-    };
-
-    // Compile the locals resolver once per grammar (cached process-wide).
-    let Some(resolver) = cached_local_resolver(&grammar, locals_scm) else {
+    let _ = symbols;
+    let Some((resolver, grammar)) = local_resolver_for(lang_id, plugin) else {
         return;
     };
 
@@ -74,8 +63,47 @@ pub(super) fn filter_local_refs(
         return;
     };
 
-    // Run local resolution.
-    let resolution = resolver.resolve(&tree, source.as_bytes());
+    apply_local_resolution(&resolver, lang_id, source, &tree, refs);
+}
+
+/// Like `filter_local_refs`, but reuses a tree the caller already parsed for this
+/// source + grammar — the indexer shares one parse across locals.scm filtering
+/// and flow typing instead of re-parsing per stage.
+pub(super) fn filter_local_refs_with_tree(
+    source: &str,
+    lang_id: &str,
+    plugin: &dyn crate::languages::LanguagePlugin,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+    tree: &tree_sitter::Tree,
+) {
+    let Some((resolver, _grammar)) = local_resolver_for(lang_id, plugin) else {
+        return;
+    };
+    apply_local_resolution(&resolver, lang_id, source, tree, refs);
+}
+
+/// The locals.scm resolver + grammar for a language, or None when the language
+/// has no usable locals.scm (so the caller skips local filtering entirely).
+fn local_resolver_for(
+    lang_id: &str,
+    plugin: &dyn crate::languages::LanguagePlugin,
+) -> Option<(Arc<LocalResolver>, tree_sitter::Language)> {
+    let locals_scm = crate::indexer::query_builtins::locals_scm_for_language(lang_id)?;
+    let grammar = plugin.grammar(lang_id)?;
+    let resolver = cached_local_resolver(&grammar, locals_scm)?;
+    Some((resolver, grammar))
+}
+
+/// Run local resolution against `tree` and drop the refs it resolves to a
+/// same-file definition. Shared by the parsing and tree-reusing entry points.
+fn apply_local_resolution(
+    resolver: &LocalResolver,
+    lang_id: &str,
+    source: &str,
+    tree: &tree_sitter::Tree,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+) {
+    let resolution = resolver.resolve(tree, source.as_bytes());
 
     if resolution.resolved_count() == 0 {
         return;

@@ -73,7 +73,7 @@ pub struct FlowConfig {
 /// tree-sitter query matcher can spend unbounded memory on deeply nested
 /// captures. 512 KiB catches every real hand-written source file in the
 /// quality baseline.
-const MAX_FLOW_SOURCE_BYTES: usize = 512 * 1024;
+pub(crate) const MAX_FLOW_SOURCE_BYTES: usize = 512 * 1024;
 
 /// Process-wide cache of compiled tree-sitter flow queries. `Query::new`
 /// builds a matcher automaton — among the most expensive tree-sitter calls —
@@ -119,9 +119,7 @@ pub fn run_flow_queries(
     // Huge files (vendored .d.ts, generated code) bypass flow queries —
     // see `MAX_FLOW_SOURCE_BYTES` docstring for why.
     if source.len() > MAX_FLOW_SOURCE_BYTES {
-        let mut meta = FlowMeta::default();
-        meta.ref_byte_offsets = refs.iter().map(|r| r.byte_offset).collect();
-        return meta;
+        return flow_meta_offsets_only(refs);
     }
 
     let mut parser = Parser::new();
@@ -131,7 +129,43 @@ pub fn run_flow_queries(
     let Some(tree) = parser.parse(source, None) else {
         return FlowMeta::default();
     };
-    let root = tree.root_node();
+    run_flow_queries_on_root(source, cfg, symbols, refs, tree.root_node())
+}
+
+/// Like `run_flow_queries`, but reuses a tree the caller already parsed for this
+/// source + grammar. The indexer shares one parse across locals.scm filtering
+/// and flow typing rather than re-parsing per stage. Oversized files are still
+/// skipped — the query matcher, not the parse, is the cost the size guard avoids.
+pub fn run_flow_queries_with_tree(
+    source: &str,
+    cfg: &FlowConfig,
+    symbols: &[ExtractedSymbol],
+    refs: &mut [ExtractedRef],
+    tree: &tree_sitter::Tree,
+) -> FlowMeta {
+    if source.len() > MAX_FLOW_SOURCE_BYTES {
+        return flow_meta_offsets_only(refs);
+    }
+    run_flow_queries_on_root(source, cfg, symbols, refs, tree.root_node())
+}
+
+/// FlowMeta carrying only the ref byte offsets — the result for files skipped by
+/// the size guard (the flow cursor downstream still needs the offsets).
+fn flow_meta_offsets_only(refs: &[ExtractedRef]) -> FlowMeta {
+    let mut meta = FlowMeta::default();
+    meta.ref_byte_offsets = refs.iter().map(|r| r.byte_offset).collect();
+    meta
+}
+
+/// Run every flow query against an already-parsed root. Shared by the parsing
+/// (`run_flow_queries`) and tree-reusing (`run_flow_queries_with_tree`) entries.
+fn run_flow_queries_on_root(
+    source: &str,
+    cfg: &FlowConfig,
+    symbols: &[ExtractedSymbol],
+    refs: &mut [ExtractedRef],
+    root: Node,
+) -> FlowMeta {
     let src_bytes = source.as_bytes();
 
     let mut meta = FlowMeta::default();
