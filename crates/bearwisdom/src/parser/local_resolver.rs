@@ -244,21 +244,14 @@ fn resolve_in_scopes(
         return true;
     }
 
-    // Walk from innermost scope outward.
-    // Collect enclosing scopes sorted by size (smallest = innermost).
-    let mut enclosing: Vec<&ScopeSpan> = scopes
+    // A reference resolves locally if its name is defined in any scope that
+    // covers it. The result is a boolean OR over the covering scopes, so they
+    // need no ordering — check them directly instead of collecting and sorting
+    // a per-reference Vec by size (the sort never affected the result).
+    scopes
         .iter()
         .filter(|s| s.start <= byte_offset && byte_offset < s.end)
-        .collect();
-    enclosing.sort_by_key(|s| s.end - s.start);
-
-    for scope in enclosing {
-        if def_set.contains(&(scope.start, name)) {
-            return true;
-        }
-    }
-
-    false
+        .any(|s| def_set.contains(&(s.start, name)))
 }
 
 // ---------------------------------------------------------------------------
