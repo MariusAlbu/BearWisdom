@@ -945,6 +945,17 @@ pub fn full_index(
         warn!("ANALYZE failed (non-fatal): {e}");
     }
 
+    // Fold the WAL back into the main database and truncate it. A full index
+    // accumulates a large WAL under journal_mode=WAL; without a checkpoint it
+    // persists (multi-GB on large projects) until an automatic checkpoint
+    // happens to fire. TRUNCATE reclaims the space immediately.
+    if let Err(e) = db
+        .conn()
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+    {
+        warn!("WAL checkpoint failed (non-fatal): {e}");
+    }
+
     // --- Step 8: Store indexed commit for git-aware reindex ---
     if let Some(commit) = cs.commit {
         if let Err(e) = changeset::set_meta(db, "indexed_commit", &commit) {
