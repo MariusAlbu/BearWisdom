@@ -97,6 +97,18 @@ impl LanguageEngineHooks for CHooks {
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
+        // A C++ operator-call ref (`operator+`, `operator<<`, `operator[]`) that
+        // reached classification was NOT bound to a project operator overload by
+        // ADL upstream — it is a builtin-operator application (`int + int`).
+        // Brand it builtin so it leaves the unresolved count instead of flooding
+        // it; a real overload already bound via ADL before this point. The
+        // synthetic name is `operator` followed by a symbol token, so a normal
+        // identifier (`operatorNew`) is not matched.
+        if let Some(sym) = target.strip_prefix("operator") {
+            if sym.chars().next().is_some_and(|c| !c.is_alphanumeric() && c != '_') {
+                return Some("cpp.operator".to_string());
+            }
+        }
         if file_ctx.file_namespace.as_deref() == Some(R_PACKAGE_SENTINEL)
             && predicates::is_r_c_api_symbol(target)
         {
