@@ -1275,3 +1275,170 @@ fn adl_gated_off_declines_same_ref() {
         "ADL must not fire for a profile that hasn't opted in"
     );
 }
+
+// ---------------------------------------------------------------------------
+// EXT-2 Phase 0 — discover the true external-chain frontier.
+//
+// `repo.get().greet()` where `repo: Repository` (an ext: class), `get` returns
+// an ext: `User`, and `greet` is a `User` method. The question this answers:
+// does an external class-method chain resolve end to end through the by-qname
+// fallback + external return-type yield, or does it break — and where?
+// ---------------------------------------------------------------------------
+
+fn ext2_pf(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
+    ParsedFile {
+        path: path.to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+fn ext2_sym(name: &str, qname: &str, kind: SymbolKind, scope: Option<&str>, sig: Option<&str>) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: qname.to_string(),
+        kind,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: sig.map(str::to_string),
+        doc_comment: None,
+        scope_path: scope.map(str::to_string),
+        parent_index: None,
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+fn ext2_seg(name: &str, kind: SegmentKind, declared: Option<&str>, is_call: bool) -> ChainSegment {
+    ChainSegment {
+        name: name.to_string(),
+        node_kind: "x".to_string(),
+        kind,
+        declared_type: declared.map(str::to_string),
+        type_args: Vec::new(),
+        optional_chaining: false,
+        byte_offset: 0,
+        declared_type_id: None,
+        is_call,
+        call_args: Vec::new(),
+        type_arg_ids: Vec::new(),
+    }
+}
+
+#[test]
+fn ext2_external_class_method_chain_resolves_end_to_end() {
+    use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
+    use crate::type_checker::core::SymbolIdMap;
+    use std::collections::HashMap;
+
+    // ext: dep — Repository.get(): User and a User.greet() method.
+    let ext = ext2_pf(
+        "ext:ts:orm/index.d.ts",
+        vec![
+            ext2_sym("Repository", "Repository", SymbolKind::Class, None, Some("class Repository")),
+            ext2_sym("get", "Repository.get", SymbolKind::Method, Some("Repository"), Some("get(): User")),
+            ext2_sym("User", "User", SymbolKind::Class, None, Some("class User")),
+            ext2_sym("greet", "User.greet", SymbolKind::Method, Some("User"), Some("greet(): void")),
+        ],
+        vec![],
+    );
+
+    // app — useRepo() containing the chain `repo.get().greet()`; the root is
+    // typed Repository via a declared_type assertion so the test isolates the
+    // external member-walk + return-type yield from root-typing machinery.
+    let chain = MemberChain {
+        segments: vec![
+            ext2_seg("repo", SegmentKind::Identifier, Some("Repository"), false),
+            ext2_seg("get", SegmentKind::Property, None, true),
+            ext2_seg("greet", SegmentKind::Property, None, true),
+        ],
+    };
+    let chain_ref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "repo.get.greet".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        chain: Some(chain),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
+    let app = ext2_pf(
+        "app.ts",
+        vec![ext2_sym("useRepo", "useRepo", SymbolKind::Function, None, None)],
+        vec![chain_ref],
+    );
+
+    let files = vec![ext, app];
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next = 1i64;
+    for p in &files {
+        for s in &p.symbols {
+            id_map.insert((p.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
+        }
+    }
+    let index = SymbolIndex::build(&files, &id_map);
+    let mut eng = SymbolIdMap::default();
+    for p in &files {
+        for (i, s) in p.symbols.iter().enumerate() {
+            if let Some(&id) = id_map.get(&(p.path.clone(), s.qualified_name.clone())) {
+                eng.insert((p.path.clone(), i), id);
+            }
+        }
+    }
+    let engine = Engine::build_from_registry(&files, &eng, &index, index.type_arena_arc());
+
+    let app_file = &files[1];
+    let r = &app_file.refs[0];
+    let fc = FileContext {
+        file_path: "app.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let rc = RefContext {
+        extracted_ref: r,
+        source_symbol: &app_file.symbols[0],
+        scope_chain: build_scope_chain(app_file.symbols[0].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let resolution = engine.resolve(&rc, &fc, &index);
+    let greet_id = id_map[&("ext:ts:orm/index.d.ts".to_string(), "User.greet".to_string())];
+    let misses = index.take_chain_misses();
+    assert_eq!(
+        resolution.map(|r| r.target_symbol_id),
+        Some(greet_id),
+        "repo.get().greet() should bind greet on the external return type User; chain misses: {:?}",
+        misses.iter().map(|m| (&m.current_type, &m.target_name)).collect::<Vec<_>>()
+    );
+}
