@@ -519,10 +519,19 @@ fn resolve_iteration_body(
             // Embedded TS refs get effective_lang = "typescript" → we use the
             // TypeScript resolver and build a fresh file_ctx from the same
             // ParsedFile (which contains all embedded symbols/imports merged in).
-            let file_ctx: Option<engine::FileContext> = if is_cross_lang_embedded {
+            // Same-language refs (the common case) borrow the per-file context
+            // built once above instead of cloning it per ref; only cross-language
+            // embedded refs need a fresh, owned context for the embedded
+            // language's resolver.
+            let embedded_file_ctx: Option<engine::FileContext> = if is_cross_lang_embedded {
                 type_engine.build_file_context(effective_lang, pf, project_ctx)
             } else {
-                host_file_ctx.clone()
+                None
+            };
+            let file_ctx: Option<&engine::FileContext> = if is_cross_lang_embedded {
+                embedded_file_ctx.as_ref()
+            } else {
+                host_file_ctx.as_ref()
             };
 
             let source_id = match file_symbol_ids.get(r.source_symbol_index).and_then(|id| *id) {
@@ -565,7 +574,7 @@ fn resolve_iteration_body(
 
             // Tier 1: Try language-specific resolver (for the effective language).
             let mut resolved_by_engine = false;
-            if let Some(file_ctx) = &file_ctx {
+            if let Some(file_ctx) = file_ctx {
                 // Flow-emission detection runs regardless of whether resolution
                 // succeeds — HTTP client calls, IPC, WebSocket emits, etc. are
                 // identifiable from import context alone, even when the chain
@@ -752,7 +761,7 @@ fn resolve_iteration_body(
             let inferred_ns = classify_external_ns(
                 r,
                 &ref_ctx,
-                file_ctx.as_ref(),
+                file_ctx,
                 file_imports,
                 &module_to_files,
                 &type_engine,
