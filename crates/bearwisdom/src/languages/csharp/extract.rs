@@ -174,6 +174,15 @@ pub fn extract(source: &str) -> ExtractionResult {
             .is_some_and(|kinds| kinds.iter().any(|&k| ref_kind_matches_symbol(ref_kind, k)))
     };
 
+    // Byte offset of every newline, computed once. The per-ref scope lookup
+    // below maps a 1-based line to the (line-1)-th newline's offset; without
+    // this it rescanned the whole source per ref — O(refs × file_size).
+    let newline_offsets: Vec<usize> = src_bytes
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &b)| (b == b'\n').then_some(i))
+        .collect();
+
     // Second pass: qualify unresolved call/instantiates/type_ref targets using scope + usings.
     for r in &mut refs {
         if r.target_name.contains('.') {
@@ -191,10 +200,9 @@ pub fn extract(source: &str) -> ExtractionResult {
         // Try scope chain qualification
         let byte_offset = {
             let target_line = r.line as usize;
-            src_bytes.iter().enumerate()
-                .filter(|(_, &b)| b == b'\n')
-                .nth(target_line.saturating_sub(1))
-                .map(|(i, _)| i)
+            newline_offsets
+                .get(target_line.saturating_sub(1))
+                .copied()
                 .unwrap_or(0)
         };
 
