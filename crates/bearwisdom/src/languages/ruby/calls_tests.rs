@@ -45,6 +45,36 @@ end
 }
 
 #[test]
+fn call_args_brace_block_captures_lambda_params() {
+    let src = r#"
+def caller(arr)
+  arr.map { |x| x.foo }
+end
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter().any(|a| matches!(a, CallArg::Lambda { params } if params == &["x".to_string()])),
+        "expected Lambda {{ params: [x] }} from a brace block, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_do_block_captures_lambda_params() {
+    let src = r#"
+def caller(arr)
+  arr.each do |y|
+    y.bar
+  end
+end
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter().any(|a| matches!(a, CallArg::Lambda { params } if params == &["y".to_string()])),
+        "expected Lambda {{ params: [y] }} from a do block, got: {args:?}"
+    );
+}
+
+#[test]
 fn call_args_conditional_produces_ternary_variant() {
     let src = r#"
 def caller(a, b, c)

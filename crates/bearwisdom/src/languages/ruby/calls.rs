@@ -17,28 +17,62 @@ const MAX_ARG_DEPTH: u32 = 8;
 /// `array`, splat, `element_reference` subscript, `binary`). Anything else
 /// becomes `CallArg::Other`.
 pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
-    let args_node = match call_node.child_by_field_name("arguments") {
-        Some(n) => n,
-        None => {
-            // Some grammar variants emit `argument_list` as a named child
-            // rather than a field. Fall back to the first child of that
-            // kind.
-            let mut cursor = call_node.walk();
-            let found = call_node
-                .children(&mut cursor)
-                .find(|c| c.kind() == "argument_list");
-            match found {
-                Some(n) => n,
-                None => return Vec::new(),
-            }
-        }
-    };
     let mut out = Vec::new();
-    let mut cursor = args_node.walk();
-    for child in args_node.named_children(&mut cursor) {
-        out.push(extract_arg(&child, src, 0));
+    // Positional / keyword args from the argument list. Some grammar variants
+    // expose it as the `arguments` field, others as a named `argument_list`
+    // child; a block-only call (`arr.map { |x| ... }`) has neither.
+    let args_node = call_node.child_by_field_name("arguments").or_else(|| {
+        let mut cursor = call_node.walk();
+        let found = call_node
+            .children(&mut cursor)
+            .find(|c| c.kind() == "argument_list");
+        found
+    });
+    if let Some(args_node) = args_node {
+        let mut cursor = args_node.walk();
+        for child in args_node.named_children(&mut cursor) {
+            out.push(extract_arg(&child, src, 0));
+        }
+    }
+    // A trailing block (`{ |x| ... }` / `do |y| ... end`) is a child of the
+    // call node. Capture its positional parameter names as a `CallArg::Lambda`
+    // so the contextual callback-parameter typing seam types the block
+    // parameter from the callee's signature. A block with no parameters (or
+    // implicit numbered params) contributes nothing.
+    let mut cursor = call_node.walk();
+    for child in call_node.children(&mut cursor) {
+        if matches!(child.kind(), "block" | "do_block") {
+            let params = block_param_names(&child, src);
+            if !params.is_empty() {
+                out.push(CallArg::Lambda { params });
+            }
+            break;
+        }
     }
     out
+}
+
+/// Positional parameter names of a `block`/`do_block`'s `block_parameters`
+/// (`{ |x, y| ... }` -> `["x", "y"]`). Only bare identifier parameters are
+/// captured; destructuring / splat slots are skipped.
+fn block_param_names(block_node: &Node, src: &[u8]) -> Vec<String> {
+    let mut cursor = block_node.walk();
+    for child in block_node.children(&mut cursor) {
+        if child.kind() == "block_parameters" {
+            let mut names = Vec::new();
+            let mut pc = child.walk();
+            for p in child.children(&mut pc) {
+                if p.kind() == "identifier" {
+                    let name = node_text(&p, src);
+                    if !name.is_empty() {
+                        names.push(name);
+                    }
+                }
+            }
+            return names;
+        }
+    }
+    Vec::new()
 }
 
 /// Convert a single Ruby argument expression node to a `CallArg`, recursing for
