@@ -61,26 +61,27 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
 
     let mut results: Vec<ReferenceResult> = Vec::new();
 
-    for target_id in &target_ids {
-        // Find all edges pointing to this target.
-        let limit_clause = if limit > 0 {
-            format!("LIMIT {limit}")
-        } else {
-            String::new()
-        };
+    // One query over every target id instead of one per id. The per-target
+    // `LIMIT limit` the loop used was redundant: each target's rows beyond its
+    // own first `limit` (by path, line) sort after those `limit` rows, so they
+    // can never enter the global top-`limit` the truncate below keeps. Fetching
+    // unbounded here and truncating once yields the identical result set.
+    let placeholders = std::iter::repeat("?")
+        .take(target_ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT src.name, src.kind, f.path, e.source_line, e.kind, e.confidence
+         FROM edges e
+         JOIN symbols src ON e.source_id = src.id
+         JOIN files   f   ON src.file_id  = f.id
+         WHERE e.target_id IN ({placeholders})
+         ORDER BY f.path, e.source_line"
+    );
 
-        let sql = format!(
-            "SELECT src.name, src.kind, f.path, e.source_line, e.kind, e.confidence
-             FROM edges e
-             JOIN symbols src ON e.source_id = src.id
-             JOIN files   f   ON src.file_id  = f.id
-             WHERE e.target_id = ?1
-             ORDER BY f.path, e.source_line
-             {limit_clause}"
-        );
-
-        let mut stmt = conn.prepare(&sql).context("Failed to prepare references query")?;
-        let rows = stmt.query_map([target_id], |row| {
+    let mut stmt = conn.prepare(&sql).context("Failed to prepare references query")?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(target_ids.iter()), |row| {
             Ok(ReferenceResult {
                 referencing_symbol: row.get(0)?,
                 referencing_kind: row.get(1)?,
@@ -89,11 +90,11 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
                 edge_kind: row.get(4)?,
                 confidence: row.get(5)?,
             })
-        }).context("Failed to execute references query")?;
+        })
+        .context("Failed to execute references query")?;
 
-        for row in rows {
-            results.push(row?);
-        }
+    for row in rows {
+        results.push(row?);
     }
 
     // Sort by file path then line for stable output.
