@@ -42,6 +42,7 @@ use crate::types::{
     ChainSegment, DiscriminantNarrowing, ExtractedRef, ExtractedSymbol, FlowMeta, Narrowing,
     SymbolKind,
 };
+use std::sync::{Arc, Mutex, OnceLock};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
 
 /// Per-language flow-typing configuration. Language plugins expose a
@@ -73,6 +74,31 @@ pub struct FlowConfig {
 /// captures. 512 KiB catches every real hand-written source file in the
 /// quality baseline.
 const MAX_FLOW_SOURCE_BYTES: usize = 512 * 1024;
+
+/// Process-wide cache of compiled tree-sitter flow queries. `Query::new`
+/// builds a matcher automaton — among the most expensive tree-sitter calls —
+/// and the flow pass compiles the same per-language queries afresh for every
+/// file (six per file). Keyed by `(grammar, query-source-pointer)`: the
+/// grammar because one `FlowConfig` source string can serve several grammars
+/// (the TS config drives both the `.ts` and `.tsx` grammars, whose compiled
+/// queries differ), the source pointer because each query source is a distinct
+/// `&'static` literal. Both are stable for a run, so each `(grammar, query)`
+/// pair compiles once. The lock is released across `Query::new`, so distinct
+/// queries compile in parallel; a rare double-compile of the same key is
+/// harmless (idempotent insert). The returned `Arc` is shared; each caller's
+/// `QueryCursor` stays local.
+fn cached_query(language: &Language, source: &'static str) -> Option<Arc<Query>> {
+    static CACHE: OnceLock<Mutex<rustc_hash::FxHashMap<(Language, usize), Arc<Query>>>> =
+        OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(rustc_hash::FxHashMap::default()));
+    let key = (language.clone(), source.as_ptr() as usize);
+    if let Some(query) = cache.lock().unwrap().get(&key) {
+        return Some(Arc::clone(query));
+    }
+    let query = Arc::new(Query::new(language, source).ok()?);
+    cache.lock().unwrap().insert(key, Arc::clone(&query));
+    Some(query)
+}
 
 /// Run all three flow queries on `source` and return the populated `FlowMeta`.
 ///
@@ -165,7 +191,7 @@ fn cfg_node_kinds_for(
 /// any guard range, so it is filtered out by the strict-interior test in
 /// `kill_narrowings_at_reassignments` rather than by node kind.
 fn collect_reassignment_sites(root: &Node, src: &[u8], cfg: &FlowConfig) -> Vec<(String, u32)> {
-    let Ok(query) = Query::new(&root.language(), cfg.assignment_query) else {
+    let Some(query) = cached_query(&root.language(), cfg.assignment_query) else {
         return Vec::new();
     };
     let Some(lhs_cap) = query.capture_index_for_name("lhs") else {
@@ -174,7 +200,7 @@ fn collect_reassignment_sites(root: &Node, src: &[u8], cfg: &FlowConfig) -> Vec<
 
     let mut sites = Vec::new();
     let mut cursor = QueryCursor::new();
-    let mut it = cursor.matches(&query, *root, src);
+    let mut it = cursor.matches(&*query, *root, src);
     while let Some(m) = it.next() {
         for cap in m.captures {
             if cap.index != lhs_cap {
@@ -225,7 +251,7 @@ fn run_assignment_query(
     refs: &[ExtractedRef],
     meta: &mut FlowMeta,
 ) {
-    let Ok(query) = Query::new(&root.language(), cfg.assignment_query) else {
+    let Some(query) = cached_query(&root.language(), cfg.assignment_query) else {
         return;
     };
     let Some(lhs_cap) = query.capture_index_for_name("lhs") else {
@@ -244,7 +270,7 @@ fn run_assignment_query(
     let unwrap_cap = query.capture_index_for_name("rhs_unwrap");
 
     let mut cursor = QueryCursor::new();
-    let mut it = cursor.matches(&query, *root, src);
+    let mut it = cursor.matches(&*query, *root, src);
     while let Some(m) = it.next() {
         let mut lhs_node: Option<Node> = None;
         let mut rhs_node: Option<Node> = None;
@@ -396,7 +422,7 @@ fn run_return_query(
     let Some(kinds) = cfg_node_kinds_for(cfg.strategy_prefix) else {
         return;
     };
-    let Ok(query) = Query::new(&root.language(), query_src) else {
+    let Some(query) = cached_query(&root.language(), query_src) else {
         return;
     };
     let expr_cap = query.capture_index_for_name("return.expr");
@@ -406,7 +432,7 @@ fn run_return_query(
     }
 
     let mut cursor = QueryCursor::new();
-    let mut it = cursor.matches(&query, *root, src);
+    let mut it = cursor.matches(&*query, *root, src);
     while let Some(m) = it.next() {
         let mut expr_node: Option<Node> = None;
         for cap in m.captures {
@@ -684,7 +710,7 @@ fn run_type_guard_query(
     if cfg.type_guard_query.trim().is_empty() {
         return;
     }
-    let Ok(query) = Query::new(&root.language(), cfg.type_guard_query) else {
+    let Some(query) = cached_query(&root.language(), cfg.type_guard_query) else {
         return;
     };
     let local_cap = query.capture_index_for_name("guard.local");
@@ -695,7 +721,7 @@ fn run_type_guard_query(
     };
 
     let mut cursor = QueryCursor::new();
-    let mut it = cursor.matches(&query, *root, src);
+    let mut it = cursor.matches(&*query, *root, src);
     while let Some(m) = it.next() {
         let mut local: Option<Node> = None;
         let mut ty: Option<Node> = None;
@@ -741,7 +767,7 @@ fn run_discriminant_guard_query(
     if cfg.discriminant_guard_query.trim().is_empty() {
         return;
     }
-    let Ok(query) = Query::new(&root.language(), cfg.discriminant_guard_query) else {
+    let Some(query) = cached_query(&root.language(), cfg.discriminant_guard_query) else {
         return;
     };
     let local_cap = query.capture_index_for_name("guard.local");
@@ -758,7 +784,7 @@ fn run_discriminant_guard_query(
     let exit_cap = query.capture_index_for_name("guard.early_exit");
 
     let mut cursor = QueryCursor::new();
-    let mut it = cursor.matches(&query, *root, src);
+    let mut it = cursor.matches(&*query, *root, src);
     while let Some(m) = it.next() {
         let mut local: Option<Node> = None;
         let mut prop: Option<Node> = None;
@@ -859,7 +885,7 @@ fn run_type_args_query(
     if cfg.type_args_query.trim().is_empty() {
         return;
     }
-    let Ok(query) = Query::new(&root.language(), cfg.type_args_query) else {
+    let Some(query) = cached_query(&root.language(), cfg.type_args_query) else {
         return;
     };
     let method_cap = query.capture_index_for_name("call.method");
@@ -869,7 +895,7 @@ fn run_type_args_query(
     };
 
     let mut cursor = QueryCursor::new();
-    let mut it = cursor.matches(&query, *root, src);
+    let mut it = cursor.matches(&*query, *root, src);
     while let Some(m) = it.next() {
         let mut method_node: Option<Node> = None;
         let mut type_args: Vec<String> = Vec::new();
