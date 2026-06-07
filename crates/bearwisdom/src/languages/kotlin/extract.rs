@@ -389,7 +389,7 @@ pub(super) fn extract_node<'a>(
 
             // `typealias Foo = Bar` — field `type` holds the identifier name.
             "type_alias" => {
-                push_type_decl_alias(&child, src, scope_tree, symbols, parent_index);
+                push_type_decl_alias(&child, src, scope_tree, symbols, refs, parent_index);
             }
 
             "secondary_constructor" => {
@@ -477,14 +477,19 @@ fn extract_call_node_args<'a>(
 // TypeAlias symbol emission
 // ---------------------------------------------------------------------------
 
-/// Emit a TypeAlias symbol for `typealias Name = Type`.
-/// In tree-sitter-kotlin-ng, `type_alias` has a `type` field holding an
-/// `identifier` that IS the alias name (not the aliased type).
+/// Emit a TypeAlias symbol for `typealias Name = Type`, plus a TypeRef from the
+/// alias to the underlying type's base name. In tree-sitter-kotlin-ng,
+/// `type_alias` carries the alias name in the `type` field (an `identifier`),
+/// while the aliased type is an unnamed `type` child (`user_type` /
+/// `function_type` / `nullable_type` / …). The index builder reads the alias's
+/// first TypeRef as its aliased type to populate `field_type`, which the chain
+/// walker collapses through during alias expansion.
 fn push_type_decl_alias(
     node: &Node,
     src: &[u8],
     scope_tree: &scope_tree::ScopeTree,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
     // The `type` field in the Kotlin ng grammar holds the alias name identifier.
@@ -518,6 +523,7 @@ fn push_type_decl_alias(
     let qualified_name = st::qualify(&name, scope);
     let scope_path = st::scope_path(scope);
 
+    let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
         qualified_name,
@@ -537,6 +543,36 @@ fn push_type_decl_alias(
     param_types: Vec::new(),
     generic_params: Vec::new(),
 });
+
+    // The aliased type is the unnamed `type` child (the `type` field is the
+    // alias name). Its base name is the alias's underlying type.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if matches!(
+            child.kind(),
+            "type" | "user_type" | "nullable_type" | "non_nullable_type"
+                | "parenthesized_type" | "function_type"
+        ) {
+            let target = calls::kotlin_type_name(&child, src);
+            if !target.is_empty() {
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
+                    source_symbol_index: idx,
+                    target_name: target,
+                    kind: EdgeKind::TypeRef,
+                    line: child.start_position().row as u32,
+                    col: 0,
+                    module: None,
+                    chain: None,
+                    byte_offset: child.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
+            }
+            break;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

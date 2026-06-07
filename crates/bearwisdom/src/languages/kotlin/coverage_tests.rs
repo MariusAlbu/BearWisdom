@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::extract::extract;
-use crate::types::{EdgeKind, SymbolKind};
+use crate::types::{EdgeKind, ExtractionResult, SymbolKind};
 
 // ---------------------------------------------------------------------------
 // Symbol node kinds
@@ -106,6 +106,74 @@ fn symbol_type_alias() {
         r.symbols.iter().any(|s| s.name == "StringList"),
         "expected StringList; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// A typealias records its underlying type as a TypeRef keyed to the alias
+// symbol's own index. The index builder reads that first TypeRef to populate
+// field_type for the alias, which drives generic alias expansion in the chain
+// walker. The base name of the RHS is the target: a generic application
+// (`List<String>` → `List`), a plain class (`UserRepository`), and a function
+// type (`(Int) -> String` → the first inner type).
+fn alias_idx(r: &ExtractionResult, name: &str) -> usize {
+    r.symbols
+        .iter()
+        .position(|s| s.name == name && s.kind == SymbolKind::TypeAlias)
+        .unwrap_or_else(|| panic!("expected TypeAlias {name}; got {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()))
+}
+
+fn has_alias_type_ref(r: &ExtractionResult, alias: &str, target: &str) -> bool {
+    let idx = alias_idx(r, alias);
+    r.refs.iter().any(|rf| {
+        rf.kind == EdgeKind::TypeRef
+            && rf.source_symbol_index == idx
+            && rf.target_name == target
+    })
+}
+
+#[test]
+fn type_alias_emits_target_type_ref_generic() {
+    let r = extract("typealias StringList = List<String>");
+    assert!(
+        has_alias_type_ref(&r, "StringList", "List"),
+        "expected TypeRef StringList → List from the alias symbol; got {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| (rf.source_symbol_index, &rf.target_name))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn type_alias_emits_target_type_ref_class() {
+    let r = extract("typealias Repo = UserRepository");
+    assert!(
+        has_alias_type_ref(&r, "Repo", "UserRepository"),
+        "expected TypeRef Repo → UserRepository from the alias symbol; got {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| (rf.source_symbol_index, &rf.target_name))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn type_alias_emits_target_type_ref_function() {
+    let r = extract("typealias Handler = (Int) -> String");
+    let idx = alias_idx(&r, "Handler");
+    assert!(
+        r.refs.iter().any(|rf| {
+            rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == idx
+        }),
+        "expected a TypeRef from the Handler alias symbol; got {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| (rf.source_symbol_index, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
