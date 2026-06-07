@@ -319,6 +319,17 @@ pub fn full_index(
         let tx = conn
             .unchecked_transaction()
             .context("Failed to begin streaming write transaction")?;
+        // Full-index bulk load: drop the symbols_fts maintenance triggers so the
+        // 100k+ symbol INSERTs below (plus the external/script/vendored inserts
+        // and resolution's edge-count UPDATE) don't each do per-row FTS btree
+        // maintenance. symbols_fts is rebuilt in one pass and the triggers are
+        // recreated once resolution settles (see "FTS finalize" after Step 5).
+        tx.execute_batch(
+            "DROP TRIGGER IF EXISTS symbols_ai;
+             DROP TRIGGER IF EXISTS symbols_ad;
+             DROP TRIGGER IF EXISTS symbols_au;",
+        )
+        .context("Failed to drop FTS triggers for bulk load")?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -819,6 +830,18 @@ pub fn full_index(
         .context("Failed to finalize resolution")?;
     emit("resolving", 1.0, Some(&format!("{} edges resolved", rstats.resolved)));
     mem_probe::probe("11_resolve_finalized");
+
+    // FTS finalize: the bulk load + resolution ran with the symbols_fts triggers
+    // dropped, so the FTS index is empty. Rebuild it from the now-final symbols
+    // table in one pass, then recreate the triggers for the incremental path.
+    {
+        let conn = db.conn();
+        conn.execute_batch("INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild');")
+            .context("Failed to rebuild symbols_fts")?;
+        conn.execute_batch(crate::db::schema::FTS_TRIGGER_DDL)
+            .context("Failed to recreate FTS triggers")?;
+    }
+    mem_probe::probe("11b_fts_rebuilt");
 
     // --- Step 5b: Populate the RefCache while symbols + refs are still live. ---
     //

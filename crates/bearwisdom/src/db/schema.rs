@@ -60,11 +60,36 @@ pub fn apply_pragmas(conn: &Connection, is_new: bool) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// FTS5 maintenance triggers for `symbols_fts` (an external-content table over
+/// `symbols`). Kept separate from `SCHEMA_SQL` so the full-index bulk load can
+/// DROP them, insert all symbols trigger-free, then `'rebuild'` the FTS index in
+/// one pass — far cheaper than the per-row btree maintenance the INSERT trigger
+/// does 100k+ times. `symbols_au` fires only on the indexed text columns (not
+/// e.g. `incoming_edge_count`), so resolution's post-pass edge-count UPDATE
+/// doesn't re-tokenize unchanged rows on the incremental path.
+pub const FTS_TRIGGER_DDL: &str = r#"
+CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+    INSERT INTO symbols_fts(rowid, name, qualified_name, signature, doc_comment)
+    VALUES (new.id, new.name, new.qualified_name, new.signature, new.doc_comment);
+END;
+CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, qualified_name, signature, doc_comment)
+    VALUES ('delete', old.id, old.name, old.qualified_name, old.signature, old.doc_comment);
+END;
+CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE OF name, qualified_name, signature, doc_comment ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, qualified_name, signature, doc_comment)
+    VALUES ('delete', old.id, old.name, old.qualified_name, old.signature, old.doc_comment);
+    INSERT INTO symbols_fts(rowid, name, qualified_name, signature, doc_comment)
+    VALUES (new.id, new.name, new.qualified_name, new.signature, new.doc_comment);
+END;
+"#;
+
 /// Create all tables and indexes (idempotent — uses IF NOT EXISTS).
 ///
 /// Also runs lightweight migrations for columns added after initial release.
 pub fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(SCHEMA_SQL)?;
+    conn.execute_batch(FTS_TRIGGER_DDL)?;
     migrate(conn)?;
     Ok(())
 }
@@ -632,25 +657,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
     content_rowid='id'
 );
 
--- Triggered after INSERT into symbols: add a new FTS row.
-CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
-    INSERT INTO symbols_fts(rowid, name, qualified_name, signature, doc_comment)
-    VALUES (new.id, new.name, new.qualified_name, new.signature, new.doc_comment);
-END;
-
--- Triggered after DELETE from symbols: remove the FTS row.
-CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
-    INSERT INTO symbols_fts(symbols_fts, rowid, name, qualified_name, signature, doc_comment)
-    VALUES ('delete', old.id, old.name, old.qualified_name, old.signature, old.doc_comment);
-END;
-
--- Triggered after UPDATE on symbols: delete the old FTS row, insert new.
-CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
-    INSERT INTO symbols_fts(symbols_fts, rowid, name, qualified_name, signature, doc_comment)
-    VALUES ('delete', old.id, old.name, old.qualified_name, old.signature, old.doc_comment);
-    INSERT INTO symbols_fts(rowid, name, qualified_name, signature, doc_comment)
-    VALUES (new.id, new.name, new.qualified_name, new.signature, new.doc_comment);
-END;
+-- FTS5 maintenance triggers for symbols_fts are defined in FTS_TRIGGER_DDL and
+-- applied by create_schema right after this batch. They are kept out of the
+-- main schema so the full-index bulk load can drop them, insert every symbol
+-- trigger-free, and rebuild the FTS index in one pass (see indexer/full.rs).
 
 -- ============================================================
 -- KNOWLEDGE TREE: ANNOTATIONS
