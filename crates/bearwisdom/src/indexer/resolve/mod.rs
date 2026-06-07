@@ -276,12 +276,29 @@ pub fn finalize_resolution(db: &mut Database) -> Result<()> {
              INSERT INTO _edge_counts SELECT target_id, COUNT(*) FROM edges GROUP BY target_id;",
         )
         .context("Failed to build edge count temp table")?;
+        // Materialize incoming_edge_count touching only rows whose count
+        // actually changed, instead of rewriting every symbol row. The column is
+        // NOT NULL DEFAULT 0, so a symbol absent from _edge_counts is already 0 —
+        // the two targeted updates leave the table in the identical final state
+        // as the old blanket COALESCE update.
+        //   (1) symbols with edges whose stored count is stale;
         conn.execute(
-            "UPDATE symbols SET incoming_edge_count = COALESCE(
-                (SELECT cnt FROM _edge_counts WHERE _edge_counts.id = symbols.id), 0)",
+            "UPDATE symbols SET incoming_edge_count =
+                (SELECT cnt FROM _edge_counts WHERE _edge_counts.id = symbols.id)
+             WHERE id IN (SELECT id FROM _edge_counts)
+               AND incoming_edge_count <>
+                (SELECT cnt FROM _edge_counts WHERE _edge_counts.id = symbols.id)",
             [],
         )
-        .context("Failed to materialize incoming_edge_count")?;
+        .context("Failed to update changed incoming_edge_count rows")?;
+        //   (2) symbols that lost all incoming edges since the last finalize.
+        conn.execute(
+            "UPDATE symbols SET incoming_edge_count = 0
+             WHERE incoming_edge_count <> 0
+               AND id NOT IN (SELECT id FROM _edge_counts)",
+            [],
+        )
+        .context("Failed to reset cleared incoming_edge_count rows")?;
         conn.execute("DELETE FROM _edge_counts", [])
             .context("Failed to clean up edge count temp table")?;
     }
