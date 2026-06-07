@@ -927,6 +927,30 @@ fn build_structural(
     // over the languages that ask for it.
     let typed_ids: Vec<TypeId> = collect_typed_ids(arena, members);
 
+    // Precompute each participating type's member-name set — direct ∪ extension
+    // members, exactly the set `structurally_assignable` enumerates. A candidate
+    // can satisfy an interface only if it carries every member name the
+    // interface declares (the shape check matches each target member by name),
+    // so this cheap superset test prunes the expensive shape check for the
+    // quadratic majority of non-matching pairs while leaving the result
+    // identical. Names borrow from MembersIndex, which outlives the pass; only
+    // restrict-passing types participate.
+    let mut name_sets: FxHashMap<TypeId, FxHashSet<&str>> = FxHashMap::default();
+    for id in &typed_ids {
+        if restrict.is_some_and(|r| !r.contains(id)) {
+            continue;
+        }
+        let names: FxHashSet<&str> = members
+            .direct_of(*id)
+            .iter()
+            .chain(members.extensions_of(*id).iter())
+            .map(|s| s.name.as_str())
+            .collect();
+        if !names.is_empty() {
+            name_sets.insert(*id, names);
+        }
+    }
+
     for iface in &typed_ids {
         if restrict.is_some_and(|r| !r.contains(iface)) {
             continue;
@@ -938,6 +962,9 @@ fn build_structural(
         if !is_interface_like(iface_members) {
             continue;
         }
+        let Some(iface_names) = name_sets.get(iface) else {
+            continue;
+        };
 
         for candidate in &typed_ids {
             if candidate == iface {
@@ -946,7 +973,13 @@ fn build_structural(
             if restrict.is_some_and(|r| !r.contains(candidate)) {
                 continue;
             }
-            if members.direct_of(*candidate).is_empty() {
+            let Some(cand_names) = name_sets.get(candidate) else {
+                continue;
+            };
+            // Cheap prune: a candidate missing any interface member name cannot
+            // structurally satisfy it — the shape check would return Unknown,
+            // never Yes — so skip it before the expensive walk.
+            if !iface_names.iter().all(|n| cand_names.contains(n)) {
                 continue;
             }
             // candidate is the source, iface the target: candidate satisfies
