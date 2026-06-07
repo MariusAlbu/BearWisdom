@@ -675,6 +675,9 @@ pub fn full_index(
     // with each expand iteration's appended files, instead of rebuilt every
     // resolve pass — threaded the same way as `cached_index`.
     let mut cached_engine: Option<crate::type_checker::Engine<'static>> = None;
+    // P2: the resolve-loop side-tables are cached the same way and extended with
+    // each expand iteration's appended files.
+    let mut cached_side_tables: Option<resolve::ResolveSideTables> = None;
     let parsed_len_at_iter_start = parsed.len();
     let mut rstats = resolve::resolve_iteration_with_cached_index_and_arena(
         db,
@@ -683,6 +686,7 @@ pub fn full_index(
         Some(&project_ctx),
         &mut cached_index,
         &mut cached_engine,
+        &mut cached_side_tables,
         // Iteration 0: caches are None so the function builds full;
         // empty new_files_slice is moot (the build path doesn't read it).
         &[],
@@ -729,6 +733,7 @@ pub fn full_index(
             Some(&project_ctx),
             &mut cached_index,
             &mut cached_engine,
+            &mut cached_side_tables,
             new_slice,
             std::sync::Arc::clone(&workspace_arena),
         )
@@ -795,6 +800,7 @@ pub fn full_index(
             Some(&project_ctx),
             &mut cached_index,
             &mut cached_engine,
+            &mut cached_side_tables,
             &[],
             std::sync::Arc::clone(&workspace_arena),
         )

@@ -94,6 +94,20 @@ pub(super) fn join_inferred_returns(
     out
 }
 
+/// P2: the resolve-loop side-tables, cached across the fixpoint instead of
+/// rebuilt every pass. Built once on iteration 0; the expand loop appends only
+/// `ext:` files, so the four name/import/namespace tables (which skip `ext:`)
+/// stay stable and are reused, while `name_to_ids` (keeps a few `ext:` global
+/// carriers) and `engine_sym_id_map` (ext-inclusive) are extended.
+pub(crate) struct ResolveSideTables {
+    name_to_ids: rustc_hash::FxHashMap<String, Vec<(String, String, String, i64)>>,
+    qname_to_id: rustc_hash::FxHashMap<String, i64>,
+    module_to_files: rustc_hash::FxHashMap<String, Vec<String>>,
+    import_map: rustc_hash::FxHashMap<String, Vec<(String, Option<String>)>>,
+    file_namespace_map: rustc_hash::FxHashMap<String, String>,
+    engine_sym_id_map: crate::type_checker::core::SymbolIdMap,
+}
+
 pub(super) fn resolve_iteration_inner(
     db: &mut Database,
     parsed: &[ParsedFile],
@@ -148,8 +162,9 @@ pub(super) fn resolve_iteration_inner_with_arena(
         None
     };
 
-    // One-shot / incremental path: no cross-pass caching, build the Engine once.
+    // One-shot / incremental path: no cross-pass caching, build once.
     let mut local_engine: Option<crate::type_checker::Engine<'static>> = None;
+    let mut local_side_tables: Option<ResolveSideTables> = None;
     resolve_iteration_body(
         db,
         parsed,
@@ -158,6 +173,7 @@ pub(super) fn resolve_iteration_inner_with_arena(
         &mut index,
         augmented_id_map,
         &mut local_engine,
+        &mut local_side_tables,
         &[],
     )
 }
@@ -169,6 +185,7 @@ pub(super) fn resolve_iteration_inner_with_index(
     project_ctx: Option<&ProjectContext>,
     index: &mut SymbolIndex,
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
+    cached_side_tables: &mut Option<ResolveSideTables>,
     new_files: &[ParsedFile],
 ) -> Result<ResolutionStats> {
     resolve_iteration_body(
@@ -179,6 +196,7 @@ pub(super) fn resolve_iteration_inner_with_index(
         index,
         None,
         cached_engine,
+        cached_side_tables,
         new_files,
     )
 }
@@ -191,6 +209,7 @@ fn resolve_iteration_body(
     index: &mut SymbolIndex,
     augmented_id_map: Option<HashMap<(String, String), i64>>,
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
+    cached_side_tables: &mut Option<ResolveSideTables>,
     new_files: &[ParsedFile],
 ) -> Result<ResolutionStats> {
     // The closure passed to par_iter requires `&SymbolIndex` (for the
@@ -219,35 +238,52 @@ fn resolve_iteration_body(
         }
         None => symbol_id_map,
     };
-    let name_to_ids = indexes::build_name_index(merged_id_map_ref, parsed);
-    let qname_to_id = indexes::build_qname_index(merged_id_map_ref);
-    let module_to_files = indexes::build_module_to_files(parsed);
-    let import_map = indexes::build_import_map(parsed);
-    let file_namespace_map = indexes::build_file_namespace_map(parsed);
-
-    // Phase 5: build the type-checker Engine alongside the legacy lookup
-    // structures. Engine state is `Send + Sync` (TypeArena uses interior-
-    // mutable RwLock) so a single shared `&Engine` drives the parallel
-    // resolve closure below. We try engine.resolve as a fallback when the
-    // per-language resolver returns None — purely additive, can only
-    // improve resolution rates, never regress. Phase 6+ will swap the
-    // ordering once we have confidence in engine output across more
-    // languages.
-    //
-    // Convert the legacy `(path, qname) -> id` map into the engine's
-    // `(path, idx) -> id` shape so SymbolTypeMap + MembersIndex can key
-    // by canonical sym_id.
-    let engine_sym_id_map: crate::type_checker::core::SymbolIdMap = {
+    // P2: build the resolve-loop side-tables once on iteration 0 and reuse /
+    // extend them across the fixpoint instead of rebuilding O(symbols) maps
+    // every pass. The four name/import/namespace tables filter out `ext:` files
+    // and the expand loop only appends `ext:` files, so they are stable across
+    // expand passes and reused as-is; `name_to_ids` (keeps a few `ext:` global
+    // declaration carriers) and the engine's `(path,idx)->id` map (ext-inclusive,
+    // consumed by the engine build/augment below) are extended with the appended
+    // files. Byte-identical because `parsed` is append-only.
+    let build_engine_sym_ids = |files: &[ParsedFile]| {
         let mut map = crate::type_checker::core::SymbolIdMap::default();
-        for pf in parsed {
+        for pf in files {
             for (idx, sym) in pf.symbols.iter().enumerate() {
-                if let Some(&id) = merged_id_map_ref.get(&(pf.path.clone(), sym.qualified_name.clone())) {
+                if let Some(&id) =
+                    merged_id_map_ref.get(&(pf.path.clone(), sym.qualified_name.clone()))
+                {
                     map.insert((pf.path.clone(), idx), id);
                 }
             }
         }
         map
     };
+    if cached_side_tables.is_none() {
+        *cached_side_tables = Some(ResolveSideTables {
+            name_to_ids: indexes::build_name_index(merged_id_map_ref, parsed),
+            qname_to_id: indexes::build_qname_index(merged_id_map_ref),
+            module_to_files: indexes::build_module_to_files(parsed),
+            import_map: indexes::build_import_map(parsed),
+            file_namespace_map: indexes::build_file_namespace_map(parsed),
+            engine_sym_id_map: build_engine_sym_ids(parsed),
+        });
+    } else if !new_files.is_empty() {
+        let st = cached_side_tables.as_mut().expect("cached_side_tables is Some");
+        for (k, v) in indexes::build_name_index(merged_id_map_ref, new_files) {
+            st.name_to_ids.entry(k).or_default().extend(v);
+        }
+        st.engine_sym_id_map.extend(build_engine_sym_ids(new_files));
+    }
+    let st = cached_side_tables
+        .as_ref()
+        .expect("cached_side_tables is set above");
+    let name_to_ids = &st.name_to_ids;
+    let qname_to_id = &st.qname_to_id;
+    let module_to_files = &st.module_to_files;
+    let import_map = &st.import_map;
+    let file_namespace_map = &st.file_namespace_map;
+    let engine_sym_id_map = &st.engine_sym_id_map;
     // P1: build the Engine once and augment it with each expand iteration's
     // appended files, instead of rebuilding the whole Engine every resolve pass.
     // The return-inference loop appends no files and reuses the Engine untouched
@@ -257,7 +293,7 @@ fn resolve_iteration_body(
     if cached_engine.is_none() {
         *cached_engine = Some(crate::type_checker::Engine::build_from_registry(
             parsed,
-            &engine_sym_id_map,
+            engine_sym_id_map,
             index,
             index.type_arena_arc(),
         ));
@@ -265,7 +301,7 @@ fn resolve_iteration_body(
         cached_engine
             .as_mut()
             .expect("cached_engine is Some")
-            .augment(parsed, new_files, &engine_sym_id_map, index);
+            .augment(parsed, new_files, engine_sym_id_map, index);
     }
     let type_engine = cached_engine.as_ref().expect("cached_engine is set above");
 

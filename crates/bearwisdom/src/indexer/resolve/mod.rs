@@ -44,6 +44,7 @@ use engine::ChainMiss;
 
 pub use adapters::append_db_route_consumer_emissions;
 pub use flow_pair::flush_flow_emissions_public;
+pub(crate) use loop_body::ResolveSideTables;
 
 #[cfg(test)]
 pub(crate) use adapters::{
@@ -191,6 +192,7 @@ pub fn resolve_iteration_with_cached_index(
     project_ctx: Option<&ProjectContext>,
     cached_index: &mut Option<engine::SymbolIndex>,
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
+    cached_side_tables: &mut Option<loop_body::ResolveSideTables>,
     new_files_slice: &[ParsedFile],
 ) -> Result<ResolutionStats> {
     resolve_iteration_with_cached_index_and_arena(
@@ -200,6 +202,7 @@ pub fn resolve_iteration_with_cached_index(
         project_ctx,
         cached_index,
         cached_engine,
+        cached_side_tables,
         new_files_slice,
         std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()),
     )
@@ -217,6 +220,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
     project_ctx: Option<&ProjectContext>,
     cached_index: &mut Option<engine::SymbolIndex>,
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
+    cached_side_tables: &mut Option<loop_body::ResolveSideTables>,
     new_files_slice: &[ParsedFile],
     type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
 ) -> Result<ResolutionStats> {
@@ -244,6 +248,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
         project_ctx,
         cached_index.as_mut().expect("index is set above"),
         cached_engine,
+        cached_side_tables,
         new_files_slice,
     )
 }
