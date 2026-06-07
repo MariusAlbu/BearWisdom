@@ -24,6 +24,10 @@ mod coverage_tests;
 mod extract_tests;
 
 #[cfg(test)]
+#[path = "calls_tests.rs"]
+mod calls_tests;
+
+#[cfg(test)]
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
 

@@ -9,8 +9,8 @@
 
 use super::helpers::node_text;
 use super::imports::{extract_first_string_arg, extract_require_path};
-use crate::languages::common::build_member_chain;
-use crate::types::{EdgeKind, ExtractedRef as Ref};
+use crate::languages::common::{build_member_chain, extract_call_args};
+use crate::types::{CallArg, EdgeKind, ExtractedRef as Ref};
 use tree_sitter::Node;
 
 /// Recursively scan `node` for invocation forms and emit `Calls` / `Imports`
@@ -84,6 +84,7 @@ pub(super) fn extract_calls(
                         };
                         if !shadowed {
                             crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+                            let call_args = extract_call_args(&child, src);
                             refs.push(Ref { is_import_binding: false, is_reexport: false,
                                 source_symbol_index,
                                 target_name: callee,
@@ -93,7 +94,7 @@ pub(super) fn extract_calls(
                                 chain,
                                 byte_offset: func_node.start_byte() as u32,
                                 namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
+                                call_args,
                                     col: 0,
                                 });
                         }
@@ -107,6 +108,7 @@ pub(super) fn extract_calls(
                 if let Some(constructor) = child.child_by_field_name("constructor") {
                     let name = callee_name(constructor, src);
                     if !name.is_empty() {
+                        let call_args = extract_call_args(&child, src);
                         refs.push(Ref { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
@@ -116,7 +118,7 @@ pub(super) fn extract_calls(
                             chain: None,
                             byte_offset: constructor.start_byte() as u32,
                             namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
+                            call_args,
                                 col: 0,
                             });
                     }
@@ -129,6 +131,15 @@ pub(super) fn extract_calls(
                 if let Some(tag) = child.child_by_field_name("tag") {
                     let name = callee_name(tag, src);
                     if !name.is_empty() {
+                        // The template body is the tag's sole "argument".
+                        let call_args = child
+                            .child_by_field_name("template")
+                            .map(|tmpl| {
+                                let raw = node_text(tmpl, src);
+                                let body = raw.trim_matches('`').to_string();
+                                vec![CallArg::TaggedTemplate { tag: name.clone(), body }]
+                            })
+                            .unwrap_or_default();
                         refs.push(Ref { is_import_binding: false, is_reexport: false,
                             source_symbol_index,
                             target_name: name,
@@ -138,7 +149,7 @@ pub(super) fn extract_calls(
                             chain: None,
                             byte_offset: tag.start_byte() as u32,
                             namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
+                            call_args,
                                 col: 0,
                             });
                     }
@@ -329,6 +340,7 @@ pub(super) fn emit_call_ref_js(
         }
         // Emit a TypeRef for the chain receiver when it looks like a type name.
         crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+        let call_args = extract_call_args(call_node, src);
         refs.push(Ref { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: callee,
@@ -338,7 +350,7 @@ pub(super) fn emit_call_ref_js(
             chain,
             byte_offset: func_node.start_byte() as u32,
             namespace_segments: Vec::new(),
-            call_args: Vec::new(),
+            call_args,
                 col: 0,
             });
     }
@@ -486,6 +498,7 @@ pub(super) fn emit_new_ref_js(
     };
     let name = callee_name(constructor, src);
     if !name.is_empty() {
+        let call_args = extract_call_args(new_node, src);
         refs.push(Ref { is_import_binding: false, is_reexport: false,
             source_symbol_index,
             target_name: name,
@@ -495,7 +508,7 @@ pub(super) fn emit_new_ref_js(
             chain: None,
             byte_offset: constructor.start_byte() as u32,
             namespace_segments: Vec::new(),
-            call_args: Vec::new(),
+            call_args,
                 col: 0,
             });
     }

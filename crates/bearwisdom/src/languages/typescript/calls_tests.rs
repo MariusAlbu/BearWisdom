@@ -265,3 +265,53 @@ function caller(a, b) { f(a + b); }
         "expected Binary variant with op \"+\" for addition arg, got: {args:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Arrow expression-body member-ref emission
+// ---------------------------------------------------------------------------
+
+#[test]
+fn arrow_body_member_access_emits_chain_ref() {
+    // `arr.map(x => x.foo)` — the arrow's member-access body emits a chain
+    // TypeRef whose leaf is `foo` and whose root segment is the lambda
+    // parameter `x`. This is the second hop that lets the resolver type
+    // `foo` against the element type seeded onto `x`.
+    let src = r#"
+function caller(arr) { arr.map(x => x.foo); }
+"#;
+    let result = crate::languages::typescript::extract::extract(src, false);
+    let member_ref = result.refs.iter().find(|r| {
+        r.kind == crate::types::EdgeKind::TypeRef
+            && r.target_name == "foo"
+            && r.chain.as_ref().map_or(false, |c| {
+                c.segments.first().map(|s| s.name.as_str()) == Some("x")
+                    && c.segments.last().map(|s| s.name.as_str()) == Some("foo")
+            })
+    });
+    assert!(
+        member_ref.is_some(),
+        "expected a chain TypeRef [x, foo] for the arrow body, got refs: {:?}",
+        result
+            .refs
+            .iter()
+            .map(|r| (r.kind, r.target_name.as_str()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn arrow_block_body_does_not_emit_spurious_member_ref() {
+    // `arr.map(x => { return x; })` — a statement-block body carries no
+    // expression member access, so no chain TypeRef leaks from the arrow arm.
+    let src = r#"
+function caller(arr) { arr.map(x => { return x; }); }
+"#;
+    let result = crate::languages::typescript::extract::extract(src, false);
+    let leaked = result.refs.iter().any(|r| {
+        r.kind == crate::types::EdgeKind::TypeRef
+            && r.chain.as_ref().map_or(false, |c| {
+                c.segments.first().map(|s| s.name.as_str()) == Some("x")
+            })
+    });
+    assert!(!leaked, "block-body arrow should not emit a member chain ref");
+}

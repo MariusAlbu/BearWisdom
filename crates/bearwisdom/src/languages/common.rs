@@ -389,8 +389,10 @@ mod html;
 mod handlebars;
 mod amd;
 mod jquery;
+mod call_args;
 
 pub use html::{extract_script_refs, extract_html_script_style_regions, extract_astro_frontmatter, ScriptRef};
 pub use handlebars::{append_ember_helper_default_export, append_handlebars_register_helper_globals};
 pub use amd::append_amd_define_imports;
 pub use jquery::append_jquery_fn_plugin_globals;
+pub use call_args::{extract_call_args, replace_template_substitutions};
