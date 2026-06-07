@@ -16,7 +16,7 @@
 // =============================================================================
 
 use super::extract::extract;
-use crate::types::{EdgeKind, SymbolKind};
+use crate::types::{EdgeKind, SegmentKind, SymbolKind};
 
 // ---------------------------------------------------------------------------
 // symbol_node_kinds
@@ -486,4 +486,100 @@ fn multiline_call_target_has_no_embedded_whitespace() {
             rf.target_name,
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Receiver-chain emission (link_types_and_chains post-pass)
+// ---------------------------------------------------------------------------
+
+const RECEIVER_CHAIN_SRC: &str = concat!(
+    "package body Timers is\n",
+    "   type Port_Type is record\n",
+    "      CCER : Integer;\n",
+    "   end record;\n",
+    "   type Timer is record\n",
+    "      Port : Port_Type;\n",
+    "   end record;\n",
+    "   procedure Setup (This : Timer; Ch : Integer) is\n",
+    "   begin\n",
+    "      This.Port.CCER (Ch);\n",
+    "   end Setup;\n",
+    "end Timers;\n"
+);
+
+/// A dotted call rooted on an in-scope parameter (`This`) is re-emitted as a
+/// structured `MemberChain` so the generic chain walker can walk it: root
+/// Identifier + Property hops, the leaf marked as the invoked member.
+#[test]
+fn receiver_chain_call_emits_member_chain() {
+    let r = extract(RECEIVER_CHAIN_SRC);
+    let call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "This.Port.CCER")
+        .expect("expected Calls ref for This.Port.CCER");
+    let chain = call
+        .chain
+        .as_ref()
+        .expect("receiver-rooted dotted call must carry a MemberChain");
+    let names: Vec<&str> = chain.segments.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, vec!["This", "Port", "CCER"]);
+    assert_eq!(chain.segments[0].kind, SegmentKind::Identifier);
+    assert_eq!(chain.segments[1].kind, SegmentKind::Property);
+    assert!(chain.segments[2].is_call, "leaf segment is the invoked member");
+}
+
+/// A package-qualified call (`Ada.Text_IO.Put_Line`) whose root is NOT a value
+/// in scope keeps its flat `target_name` — the namespace-blind chain walker
+/// can't replace the qname/external-classification path that resolves it.
+#[test]
+fn package_qualified_call_stays_flat() {
+    let src = "with Ada.Text_IO;\nprocedure Hello is\nbegin\n  Ada.Text_IO.Put_Line (\"Hi\");\nend Hello;";
+    let r = extract(src);
+    let call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Ada.Text_IO.Put_Line")
+        .expect("expected Calls ref for Ada.Text_IO.Put_Line");
+    assert!(
+        call.chain.is_none(),
+        "package-qualified call must stay flat (chain: None)"
+    );
+}
+
+/// A record component of a project type is lifted from its `"type: X"` signature
+/// into a `TypeRef` edge so the index's `field_type` map populates and the chain
+/// walker can hop through it.
+#[test]
+fn record_field_type_emitted_as_typeref() {
+    let r = extract(RECEIVER_CHAIN_SRC);
+    let port = r
+        .symbols
+        .iter()
+        .position(|s| s.name == "Port" && s.kind == SymbolKind::Field)
+        .expect("expected Port field symbol");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef
+            && rf.source_symbol_index == port
+            && rf.target_name == "Port_Type"),
+        "expected TypeRef(Port_Type) from the Port field; got {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| (&rf.target_name, rf.source_symbol_index))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// A primitive-typed component (`CCER : Integer`) emits NO TypeRef — primitives
+/// have no members to walk, so an edge to them is pure unresolved noise.
+#[test]
+fn primitive_field_type_not_emitted() {
+    let r = extract(RECEIVER_CHAIN_SRC);
+    assert!(
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Integer"),
+        "no TypeRef should be emitted for a predefined type"
+    );
 }

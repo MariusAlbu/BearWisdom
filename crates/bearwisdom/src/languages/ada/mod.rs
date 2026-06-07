@@ -12,13 +12,11 @@
 pub mod keywords;
 pub mod extract;
 
-mod chain;
 mod predicates;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 
 pub use hooks::ADA_HOOKS;
-pub use hooks::AdaResolver;
 pub use profile::ADA_PROFILE;
 
 #[cfg(test)]

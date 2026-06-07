@@ -1,44 +1,56 @@
 // =============================================================================
-// ada/predicates.rs — Ada builtin and helper predicates
+// ada/predicates.rs — Ada builtin predicates
 // =============================================================================
 
-use crate::types::EdgeKind;
-
-/// Check that the edge kind is compatible with the symbol kind.
-///
-/// Ada-specific looseness on `Calls`: the language conflates many forms
-/// behind the parens-everywhere rule. `This.CCER (Channel)` looks like a
-/// procedure call but is array indexing into a record field. `Convert
-/// (Integer_32, X)` instantiates a generic with type arguments. The
-/// extractor emits all these as Calls — which strictly should reject
-/// matching against `variable`, `field`, `struct`, `enum`, `type_alias`.
-/// We allow them so the resolver can still attribute the ref to the
-/// actual symbol the user wrote, even if the EdgeKind classification
-/// from tree-sitter is overly broad.
-pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
-    match edge_kind {
-        EdgeKind::Calls => matches!(
-            sym_kind,
-            "method"
-                | "function"
-                | "constructor"
-                | "test"
-                | "class"
-                | "namespace"
-                | "variable"
-                | "field"
-                | "struct"
-                | "enum"
-                | "type_alias"
-        ),
-        EdgeKind::Inherits => matches!(sym_kind, "class"),
-        EdgeKind::Implements => matches!(sym_kind, "class" | "interface"),
-        EdgeKind::TypeRef => matches!(
-            sym_kind,
-            "class" | "interface" | "enum" | "type_alias" | "function" | "variable"
-        ),
-        EdgeKind::Instantiates => matches!(sym_kind, "class" | "function" | "namespace"),
-        _ => true,
-    }
+/// Names defined by the Ada language runtime that are implicitly visible bare
+/// and are never project symbols: the modular-type primitive operations from
+/// `Interfaces` (RM 13.7) and the predefined numeric/character/string scalar
+/// types from `Standard`. Declined before the resolution ladder (via the
+/// profile's `builtin_skip`) so they are classified builtin rather than counted
+/// as unresolved project refs. The common scalars (`Integer`, `Float`,
+/// `Boolean`, `Character`, `String`) are handled by `primitive_mapping`, not
+/// here.
+/// A predefined Ada scalar/string type (`Standard`) or a numeric variant the
+/// runtime supplies — never a project record the chain walker should index a
+/// field-type edge to. The common scalars are also in `primitive_mapping`; the
+/// rest fold in via [`is_ada_builtin`]. Used to suppress field/object TypeRef
+/// emission for primitive-typed declarations, which carry no members to walk.
+pub(super) fn is_ada_predefined_type(name: &str) -> bool {
+    matches!(
+        name,
+        "Integer" | "Natural" | "Positive" | "Float" | "Boolean" | "Character" | "String"
+    ) || is_ada_builtin(name)
 }
 
+pub(super) fn is_ada_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        // Interfaces — modular-type primitive operations (RM 13.7).
+        "Shift_Left"
+            | "Shift_Right"
+            | "Shift_Right_Arithmetic"
+            | "Rotate_Left"
+            | "Rotate_Right"
+            // Standard — predefined scalar / character / string types.
+            | "Long_Integer"
+            | "Long_Long_Integer"
+            | "Short_Integer"
+            | "Short_Short_Integer"
+            | "Integer_8"
+            | "Integer_16"
+            | "Integer_32"
+            | "Integer_64"
+            | "Unsigned_8"
+            | "Unsigned_16"
+            | "Unsigned_32"
+            | "Unsigned_64"
+            | "Long_Float"
+            | "Long_Long_Float"
+            | "Short_Float"
+            | "Duration"
+            | "Wide_Character"
+            | "Wide_Wide_Character"
+            | "Wide_String"
+            | "Wide_Wide_String"
+    )
+}

@@ -14,8 +14,10 @@
 // =============================================================================
 
 use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, MemberChain,
+    SegmentKind, SymbolKind, Visibility,
 };
+use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -37,8 +39,141 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
     walk_node(tree.root_node(), src, &mut symbols, &mut refs, None);
+    link_types_and_chains(&symbols, &mut refs);
 
     ExtractionResult::new(symbols, refs, tree.root_node().has_error())
+}
+
+/// Post-extract linking pass — turns the data the walk recorded as plain text
+/// into the structured edges the generic engine consumes:
+///
+///   A. Field/object/parameter declarations carry their type as a `"type: X"`
+///      signature. Lift each into a `TypeRef` edge so the index's `field_type`
+///      map populates — the generic chain walker types a receiver/field hop
+///      from it. Predefined scalar types (`Integer`, …) are skipped: they have
+///      no members to walk, so a TypeRef to them is pure unresolved noise.
+///   B. A dotted call (`This.Port.CCER`) is re-emitted as a structured
+///      `MemberChain` so `resolve_via_chain` walks it — but ONLY when its root
+///      is a value (parameter / local / field) visible from the call's scope,
+///      i.e. a genuine receiver chain. A package-qualified call (`Ada.Text_IO.
+///      Put_Line`) keeps its flat `target_name` and resolves via qname/external
+///      classification, which the namespace-blind chain walker can't replace.
+fn link_types_and_chains(symbols: &[ExtractedSymbol], refs: &mut Vec<ExtractedRef>) {
+    // A. Field/object/parameter type → TypeRef edge.
+    let mut type_refs: Vec<ExtractedRef> = Vec::new();
+    for (idx, sym) in symbols.iter().enumerate() {
+        if !matches!(sym.kind, SymbolKind::Field | SymbolKind::Variable) {
+            continue;
+        }
+        let Some(ty) = sym
+            .signature
+            .as_deref()
+            .and_then(|s| s.strip_prefix("type: "))
+            .map(str::trim)
+            .filter(|t| !t.is_empty() && !super::predicates::is_ada_predefined_type(t))
+        else {
+            continue;
+        };
+        type_refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: idx,
+            target_name: ty.to_string(),
+            kind: EdgeKind::TypeRef,
+            line: sym.start_line,
+            col: 0,
+            module: None,
+            chain: None,
+            byte_offset: sym.byte_offset,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
+    }
+    refs.extend(type_refs);
+
+    // B. Receiver-chain detection. A value name (parameter / local / field) is
+    // keyed by the symbol it is declared under, so a dotted call's root can be
+    // tested against the scopes enclosing the call site.
+    let mut value_names_by_owner: HashMap<usize, HashSet<&str>> = HashMap::new();
+    for sym in symbols {
+        if matches!(sym.kind, SymbolKind::Variable | SymbolKind::Field) {
+            if let Some(owner) = sym.parent_index {
+                value_names_by_owner
+                    .entry(owner)
+                    .or_default()
+                    .insert(sym.name.as_str());
+            }
+        }
+    }
+    for r in refs.iter_mut() {
+        if r.kind != EdgeKind::Calls || r.chain.is_some() || !r.target_name.contains('.') {
+            continue;
+        }
+        let root = r.target_name.split('.').next().unwrap_or("");
+        if root.is_empty() {
+            continue;
+        }
+        if root_is_value_in_scope(root, r.source_symbol_index, symbols, &value_names_by_owner) {
+            r.chain = Some(build_dotted_chain(&r.target_name, r.byte_offset));
+        }
+    }
+}
+
+/// True when `root` names a parameter / local / field declared in the call's own
+/// scope or any enclosing scope — the structural signal that a dotted call is a
+/// receiver chain rather than a package-qualified path.
+fn root_is_value_in_scope(
+    root: &str,
+    source_idx: usize,
+    symbols: &[ExtractedSymbol],
+    value_names_by_owner: &HashMap<usize, HashSet<&str>>,
+) -> bool {
+    let mut owner = Some(source_idx);
+    let mut guard = 0;
+    while let Some(o) = owner {
+        if value_names_by_owner
+            .get(&o)
+            .is_some_and(|names| names.contains(root))
+        {
+            return true;
+        }
+        owner = symbols.get(o).and_then(|s| s.parent_index);
+        guard += 1;
+        if guard > 64 {
+            break;
+        }
+    }
+    false
+}
+
+/// Build a `MemberChain` from a dotted target. The first segment roots the chain
+/// (an `Identifier` the root resolver types from `field_type`); the rest are
+/// `Property` hops; the final segment is the invoked member.
+fn build_dotted_chain(dotted: &str, byte_offset: u32) -> MemberChain {
+    let parts: Vec<&str> = dotted.split('.').collect();
+    let last = parts.len().saturating_sub(1);
+    let segments = parts
+        .iter()
+        .enumerate()
+        .map(|(i, name)| ChainSegment {
+            name: (*name).to_string(),
+            node_kind: "selected_component".to_string(),
+            kind: if i == 0 {
+                SegmentKind::Identifier
+            } else {
+                SegmentKind::Property
+            },
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset,
+            declared_type_id: None,
+            is_call: i == last,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
+        })
+        .collect();
+    MemberChain { segments }
 }
 
 fn walk_node(
@@ -665,11 +800,17 @@ fn push_sym(
     // be reachable via the qname `Trace.Debug` so cross-file callers like
     // `Trace.Debug(msg)` resolve via the engine's qualified_name lookup
     // (Step 5 in resolve_common).
-    let qualified_name = match parent_idx.and_then(|i| symbols.get(i)) {
-        Some(parent) if !parent.qualified_name.is_empty() => {
-            format!("{}.{}", parent.qualified_name, name)
-        }
-        _ => name.clone(),
+    // The enclosing scope's qname. Also the `scope_path` — the generic
+    // MembersIndex files a member under `arena.class(scope_path)`, so a record
+    // component / parameter must carry its owner's qname to be reachable as a
+    // member during chain walking (symbols with no scope_path are skipped).
+    let scope_path = parent_idx
+        .and_then(|i| symbols.get(i))
+        .map(|parent| parent.qualified_name.clone())
+        .filter(|q| !q.is_empty());
+    let qualified_name = match &scope_path {
+        Some(parent_qname) => format!("{parent_qname}.{name}"),
+        None => name.clone(),
     };
     symbols.push(ExtractedSymbol {
         qualified_name,
@@ -682,7 +823,7 @@ fn push_sym(
         end_col: 0,
         signature: None,
         doc_comment: None,
-        scope_path: None,
+        scope_path,
         parent_index: parent_idx,
         byte_offset: 0,
             declared_type: None,

@@ -1,94 +1,18 @@
-use super::hooks::{spec_for_body, AdaResolver, _test_probe_package_of_type, _test_walk_field_chain};
+// Ada resolution runs through the generic DefaultResolver (ADA_PROFILE data) and
+// — for receiver chains — the generic chain walker. The body→spec companion
+// helper is unit-tested below; the receiver-chain path is exercised end-to-end
+// through the real extractor + SymbolIndex + Engine.
+
+use super::extract::extract;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
+    build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
 };
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
+use crate::type_checker::core::SymbolIdMap;
+use crate::type_checker::Engine;
+use crate::types::*;
 use std::collections::HashMap;
-use std::sync::Arc;
 
-// ---------------------------------------------------------------------------
-// Minimal SymbolLookup fixture for Ada resolver unit tests
-// ---------------------------------------------------------------------------
-
-struct AdaFixture {
-    members: HashMap<String, Vec<SymbolInfo>>,
-    field_types: HashMap<String, String>,
-    types_by_name: HashMap<String, Vec<SymbolInfo>>,
-    empty: Vec<SymbolInfo>,
-    empty_reexports: Vec<(String, String)>,
-    next_id: std::cell::Cell<i64>,
-}
-
-impl AdaFixture {
-    fn new() -> Self {
-        Self {
-            members: HashMap::new(),
-            field_types: HashMap::new(),
-            types_by_name: HashMap::new(),
-            empty: Vec::new(),
-            empty_reexports: Vec::new(),
-            next_id: std::cell::Cell::new(1),
-        }
-    }
-
-    fn sym(&self, name: &str, qname: &str, kind: &str) -> SymbolInfo {
-        let id = self.next_id.get();
-        self.next_id.set(id + 1);
-        SymbolInfo {
-            id,
-            name: name.to_string(),
-            qualified_name: qname.to_string(),
-            kind: kind.to_string(),
-            visibility: Some("public".to_string()),
-            file_path: Arc::from("test.adb"),
-            scope_path: None,
-            package_id: None,
-            signature: None,
-        }
-    }
-
-    fn with_member(mut self, parent: &str, name: &str, qname: &str, kind: &str) -> Self {
-        let sym = self.sym(name, qname, kind);
-        self.members.entry(parent.to_string()).or_default().push(sym);
-        self
-    }
-
-    fn with_field_type(mut self, qname: &str, ty: &str) -> Self {
-        self.field_types.insert(qname.to_string(), ty.to_string());
-        self
-    }
-
-    fn with_member_sig(mut self, parent: &str, name: &str, qname: &str, kind: &str, sig: &str) -> Self {
-        let mut sym = self.sym(name, qname, kind);
-        sym.signature = Some(sig.to_string());
-        self.members.entry(parent.to_string()).or_default().push(sym);
-        self
-    }
-}
-
-impl SymbolLookup for AdaFixture {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
-    fn members_of(&self, parent: &str) -> &[SymbolInfo] {
-        self.members.get(parent).map(|v| v.as_slice()).unwrap_or(&self.empty)
-    }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
-    fn has_in_namespace(&self, _: &str) -> bool { false }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-    fn field_type_name(&self, qname: &str) -> Option<&str> {
-        self.field_types.get(qname).map(|s| s.as_str())
-    }
-    fn return_type_name(&self, _: &str) -> Option<&str> { None }
-    fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
-    fn generic_params(&self, _: &str) -> Option<&[String]> { None }
-    fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
-    fn is_external_name(&self, _: &str, _: &str) -> bool { false }
-}
-
-// ---------------------------------------------------------------------------
-// spec_for_body
-// ---------------------------------------------------------------------------
+use super::hooks::spec_for_body;
 
 #[test]
 fn spec_for_body_returns_ads_for_adb() {
@@ -131,721 +55,112 @@ fn spec_for_body_bare_filename() {
 }
 
 // ---------------------------------------------------------------------------
-// Ancestor-package rename for dotted targets (Path 3)
+// Receiver field-chain resolution, end-to-end through the generic engine.
 // ---------------------------------------------------------------------------
 
-fn make_extracted_sym(name: &str, qname: &str) -> ExtractedSymbol {
-    ExtractedSymbol {
-        name: name.to_string(),
-        qualified_name: qname.to_string(),
-        kind: SymbolKind::Function,
-        visibility: None,
-        start_line: 0,
-        end_line: 0,
-        start_col: 0,
-        end_col: 0,
-        signature: None,
-        doc_comment: None,
-        scope_path: None,
-        parent_index: None,
-        byte_offset: 0,
-            declared_type: None,
-        return_type: None,
-        param_types: Vec::new(),
-        generic_params: Vec::new(),
-}
-}
+const RECEIVER_CHAIN_SRC: &str = concat!(
+    "package body Timers is\n",
+    "   type Port_Type is record\n",
+    "      CCER : Integer;\n",
+    "   end record;\n",
+    "   type Timer is record\n",
+    "      Port : Port_Type;\n",
+    "   end record;\n",
+    "   procedure Setup (This : Timer; Ch : Integer) is\n",
+    "   begin\n",
+    "      This.Port.CCER (Ch);\n",
+    "   end Setup;\n",
+    "end Timers;\n"
+);
 
-fn make_extracted_ref(target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
-        source_symbol_index: 0,
-        target_name: target.to_string(),
-        kind: EdgeKind::Calls,
-        line: 1,
-        col: 0,
-        module: None,
-        namespace_segments: Vec::new(),
-        call_args: Vec::new(),
-        chain: None,
-        byte_offset: 1,
-    }
-}
-
-/// `Alr.Commands.Run.Execute` calls `Trace.Detail`. `Alr` has member
-/// `Trace` with `signature = "renames Simple_Logging"`. The resolver must
-/// chain through to `Simple_Logging.Detail`.
-#[test]
-fn ancestor_pkg_rename_resolves_dotted_target() {
-    let fix = AdaFixture::new()
-        // Ancestor `Alr` exposes `Trace renames Simple_Logging`.
-        .with_member_sig("Alr", "Trace", "Alr.Trace", "namespace", "renames Simple_Logging")
-        // Simple_Logging has `Detail` as a member.
-        .with_member("Simple_Logging", "Detail", "Simple_Logging.Detail", "function");
-
-    let file_ctx = FileContext {
-        file_path: "src/alr-commands-run.adb".to_string(),
+fn ada_parsed_file(path: &str, src: &str) -> ParsedFile {
+    let ex = extract(src);
+    ParsedFile {
+        path: path.to_string(),
         language: "ada".to_string(),
-        imports: Vec::new(),
-        file_namespace: Some("Alr.Commands.Run".to_string()),
-    };
-
-    let source_sym = make_extracted_sym("Execute", "Alr.Commands.Run.Execute");
-    let extracted = make_extracted_ref("Trace.Detail");
-    let ref_ctx = RefContext {
-        extracted_ref: &extracted,
-        source_symbol: &source_sym,
-        scope_chain: vec!["Alr.Commands.Run.Execute".to_string()],
-        file_package_id: None,
-    };
-
-    let resolver = AdaResolver;
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &fix);
-    assert!(
-        res.is_some(),
-        "expected ancestor-pkg rename to resolve Trace.Detail via Simple_Logging.Detail"
-    );
-    assert_eq!(res.unwrap().strategy, "ada_ancestor_pkg_rename");
-}
-
-/// Same pattern but the ancestor is two levels up (`Alr` for a file in
-/// `Alr.Commands.Run`). Verifies the depth loop walks past `Alr.Commands`.
-#[test]
-fn ancestor_pkg_rename_walks_multiple_levels() {
-    let fix = AdaFixture::new()
-        // Only `Alr` (two levels up) has the rename, not `Alr.Commands`.
-        .with_member_sig("Alr", "TTY", "Alr.TTY", "namespace", "renames CLIC.TTY")
-        .with_member("CLIC.TTY", "Warn", "CLIC.TTY.Warn", "function");
-
-    let file_ctx = FileContext {
-        file_path: "src/alr-commands-run.adb".to_string(),
-        language: "ada".to_string(),
-        imports: Vec::new(),
-        file_namespace: Some("Alr.Commands.Run".to_string()),
-    };
-
-    let source_sym = make_extracted_sym("Execute", "Alr.Commands.Run.Execute");
-    let extracted = make_extracted_ref("TTY.Warn");
-    let ref_ctx = RefContext {
-        extracted_ref: &extracted,
-        source_symbol: &source_sym,
-        scope_chain: Vec::new(),
-        file_package_id: None,
-    };
-
-    let resolver = AdaResolver;
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &fix);
-    assert!(
-        res.is_some(),
-        "expected multi-level ancestor walk to resolve TTY.Warn"
-    );
-    assert_eq!(res.unwrap().strategy, "ada_ancestor_pkg_rename");
-}
-
-/// `Sub_Cmd.Register(...)` where `Sub_Cmd` is a local namespace with
-/// `signature = "instantiates CLIC.Subcommand.Instance"`. The resolver must
-/// look up `Register` in the members of `CLIC.Subcommand.Instance`.
-#[test]
-fn local_instantiation_dispatch_resolves_dotted_call() {
-    let fix = AdaFixture::new()
-        .with_member("CLIC.Subcommand.Instance", "Register", "CLIC.Subcommand.Instance.Register", "function");
-
-    // In-file: Sub_Cmd is a namespace with instantiates signature.
-    // The fixture's `in_file` returns `empty`; we need to wire it up.
-    // Use a custom fixture that has in_file support.
-    struct WithInFile {
-        inner: AdaFixture,
-        file_syms: Vec<SymbolInfo>,
-        empty: Vec<SymbolInfo>,
-        empty_reexports: Vec<(String, String)>,
-    }
-    impl SymbolLookup for WithInFile {
-        fn by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
-        fn members_of(&self, p: &str) -> &[SymbolInfo] { self.inner.members_of(p) }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
-        fn has_in_namespace(&self, _: &str) -> bool { false }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.file_syms }
-        fn field_type_name(&self, _: &str) -> Option<&str> { None }
-        fn return_type_name(&self, _: &str) -> Option<&str> { None }
-        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
-        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
-        fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
-        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
-    }
-
-    let id = std::cell::Cell::new(10i64);
-    let next = || { let v = id.get(); id.set(v + 1); v };
-    let sub_cmd_sym = SymbolInfo {
-        id: next(),
-        name: "Sub_Cmd".to_string(),
-        qualified_name: "Alr.Commands.Sub_Cmd".to_string(),
-        kind: "namespace".to_string(),
-        visibility: Some("public".to_string()),
-        file_path: Arc::from("src/alr-commands.ads"),
-        scope_path: None,
+        content_hash: String::new(),
+        size: src.len() as u64,
+        line_count: src.lines().count() as u32,
+        mtime: None,
         package_id: None,
-        signature: Some("instantiates CLIC.Subcommand.Instance".to_string()),
-    };
-
-    let wif = WithInFile {
-        inner: fix,
-        file_syms: vec![sub_cmd_sym],
-        empty: Vec::new(),
-        empty_reexports: Vec::new(),
-    };
-
-    let file_ctx = FileContext {
-        file_path: "src/alr-commands.ads".to_string(),
-        language: "ada".to_string(),
-        imports: Vec::new(),
-        file_namespace: Some("Alr.Commands".to_string()),
-    };
-
-    let source_sym = make_extracted_sym("Alr_Main", "Alr.Commands.Alr_Main");
-    let extracted = make_extracted_ref("Sub_Cmd.Register");
-    let ref_ctx = RefContext {
-        extracted_ref: &extracted,
-        source_symbol: &source_sym,
-        scope_chain: Vec::new(),
-        file_package_id: None,
-    };
-
-    let resolver = AdaResolver;
-    let res = resolver.resolve(&file_ctx, &ref_ctx, &wif);
-    assert!(
-        res.is_some(),
-        "expected local instantiation to resolve Sub_Cmd.Register"
-    );
-    assert_eq!(res.unwrap().strategy, "ada_local_instantiation");
-}
-
-/// Partial qualification: `Alire.Index.Search` calls `Utils.TTY.Name` where
-/// the full path is `Alire.Utils.TTY.Name`. The resolver must expand the
-/// partial call by prepending the common ancestor prefix `Alire.`.
-#[test]
-fn partial_qualification_expands_ancestor_prefix() {
-    let fix = AdaFixture::new()
-        .with_member("Alire.Utils.TTY", "Name", "Alire.Utils.TTY.Name", "function");
-
-    let file_ctx = FileContext {
-        file_path: "src/alire-index-search.adb".to_string(),
-        language: "ada".to_string(),
-        imports: Vec::new(),
-        file_namespace: Some("Alire.Index.Search".to_string()),
-    };
-
-    let source_sym = make_extracted_sym("Print_Dependents", "Alire.Index.Search.Print_Dependents");
-    let extracted = make_extracted_ref("Utils.TTY.Name");
-    let ref_ctx = RefContext {
-        extracted_ref: &extracted,
-        source_symbol: &source_sym,
-        scope_chain: Vec::new(),
-        file_package_id: None,
-    };
-
-    let res = AdaResolver.resolve(&file_ctx, &ref_ctx, &fix);
-    assert!(
-        res.is_some(),
-        "expected partial-qualification expansion to resolve Utils.TTY.Name → Alire.Utils.TTY.Name"
-    );
-    assert_eq!(res.unwrap().strategy, "ada_partial_qualification");
-}
-
-// ---------------------------------------------------------------------------
-// probe_package_of_type (Fix #3)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn probe_package_of_type_finds_method_at_package_scope() {
-    // `Ada.Containers.Vectors.Vector.Append` — method lives at
-    // `Ada.Containers.Vectors.Append`, not nested under the type.
-    let fix = AdaFixture::new()
-        .with_member("Ada.Containers.Vectors", "Append", "Ada.Containers.Vectors.Append", "function");
-    let res = _test_probe_package_of_type(
-        "Ada.Containers.Vectors.Vector.Append",
-        EdgeKind::Calls,
-        &fix,
-    );
-    assert!(res.is_some(), "expected package-of-type hit");
-    assert_eq!(res.unwrap().strategy, "ada_pkg_of_type");
-}
-
-#[test]
-fn probe_package_of_type_returns_none_for_short_target() {
-    // Fewer than 3 segments — no package component to strip.
-    let fix = AdaFixture::new();
-    assert!(
-        _test_probe_package_of_type("Vector.Append", EdgeKind::Calls, &fix).is_none()
-    );
-}
-
-#[test]
-fn probe_package_of_type_returns_none_when_no_match() {
-    let fix = AdaFixture::new()
-        .with_member("Ada.Containers.Vectors", "Clear", "Ada.Containers.Vectors.Clear", "function");
-    // Searching for Append but only Clear exists.
-    assert!(
-        _test_probe_package_of_type(
-            "Ada.Containers.Vectors.Vector.Append",
-            EdgeKind::Calls,
-            &fix,
-        )
-        .is_none()
-    );
-}
-
-// ---------------------------------------------------------------------------
-// walk_field_chain (Fix #4)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn walk_field_chain_single_hop_finds_method() {
-    // `This.Port.Mem_Read`: Device.Port field has type Port_Type;
-    // Mem_Read lives as a member of Port_Type.
-    let fix = AdaFixture::new()
-        .with_field_type("Drivers.Device.Port", "Drivers.Port_Type")
-        .with_member("Drivers.Port_Type", "Mem_Read", "Drivers.Port_Type.Mem_Read", "function");
-    let res = _test_walk_field_chain(
-        "Drivers.Device",
-        &["Port", "Mem_Read"],
-        EdgeKind::Calls,
-        &fix,
-    );
-    assert!(res.is_some(), "expected field-chain hit");
-}
-
-#[test]
-fn walk_field_chain_returns_none_when_field_type_unknown() {
-    // No field_type registered — chain must give up at the first hop.
-    let fix = AdaFixture::new();
-    assert!(
-        _test_walk_field_chain("Device", &["Port", "Mem_Read"], EdgeKind::Calls, &fix).is_none()
-    );
-}
-
-/// Ada fields store their type in `signature = "type: T"` rather than via
-/// TypeRef edges, so `field_type_name` returns None. The walk_field_chain must
-/// fall back to reading the member's signature to obtain the intermediate type.
-#[test]
-fn walk_field_chain_reads_signature_when_field_type_name_empty() {
-    // Search.File_Cache has signature "type: SP.Cache.Async_File_Cache";
-    // SP.Cache has Clear as a member.
-    let fix = AdaFixture::new()
-        // field symbol with signature-based type (no TypeRef edge)
-        .with_member_sig(
-            "SP.Searches.Search",
-            "File_Cache",
-            "SP.Searches.Search.File_Cache",
-            "field",
-            "type: SP.Cache.Async_File_Cache",
-        )
-        .with_member("SP.Cache", "Clear", "SP.Cache.Clear", "function");
-
-    let res = _test_walk_field_chain(
-        "SP.Searches.Search",
-        &["File_Cache", "Clear"],
-        EdgeKind::Calls,
-        &fix,
-    );
-    assert!(
-        res.is_some(),
-        "expected field-chain via signature fallback to resolve File_Cache.Clear"
-    );
-}
-
-#[test]
-fn walk_field_chain_respects_depth_cap() {
-    // 7 segments exceeds the cap of 6 — must return None immediately.
-    let fix = AdaFixture::new();
-    let segs = ["A", "B", "C", "D", "E", "F", "G"];
-    assert!(
-        _test_walk_field_chain("Root", &segs, EdgeKind::Calls, &fix).is_none()
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Ancestor-package instantiation dispatch (Fix #6)
-// ---------------------------------------------------------------------------
-
-/// `Version_Outcomes.Outcome_Failure` called from a file in
-/// `Alire.Origins.Deployers.System.Apt`. The instantiation
-/// `Version_Outcomes` is declared in the parent package
-/// `Alire.Origins.Deployers.System` with a partial generic name
-/// (`Outcomes.Definite`, not the full `Alire.Outcomes.Definite`).
-/// The resolver must find it via ancestor walk and expand the partial name.
-#[test]
-fn ancestor_pkg_instantiation_dispatch_resolves_child_call() {
-    use std::sync::Arc as A;
-    // Custom fixture that supports both by_name and members_of.
-    struct WithByName {
-        members: HashMap<String, Vec<SymbolInfo>>,
-        by_name_map: HashMap<String, Vec<SymbolInfo>>,
-        empty: Vec<SymbolInfo>,
-        empty_reexports: Vec<(String, String)>,
+        content: Some(src.to_string()),
+        has_errors: ex.has_errors,
+        symbols: ex.symbols,
+        refs: ex.refs,
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
     }
-    impl SymbolLookup for WithByName {
-        fn by_name(&self, name: &str) -> &[SymbolInfo] {
-            self.by_name_map.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
+}
+
+/// Build a real `SymbolIndex` + `Engine` over the files and resolve the first
+/// chain-bearing call in `importer`. Returns the resolution alongside the
+/// `(path, qname) -> id` map so the test can name the expected target.
+fn resolve_first_chain_call(
+    files: &[ParsedFile],
+    importer: usize,
+) -> (Option<Resolution>, HashMap<(String, String), i64>) {
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next = 1i64;
+    for pf in files {
+        for s in &pf.symbols {
+            id_map.insert((pf.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
         }
-        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
-        fn members_of(&self, p: &str) -> &[SymbolInfo] {
-            self.members.get(p).map(|v| v.as_slice()).unwrap_or(&self.empty)
-        }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
-        fn has_in_namespace(&self, _: &str) -> bool { false }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn field_type_name(&self, _: &str) -> Option<&str> { None }
-        fn return_type_name(&self, _: &str) -> Option<&str> { None }
-        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
-        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
-        fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
-        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
     }
-
-    let mut members: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
-    let mut by_name_map: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
-    let mut id = 1i64;
-
-    // Parent package has Version_Outcomes as a namespace with PARTIAL generic name.
-    let vo = SymbolInfo {
-        id: { id += 1; id },
-        name: "Version_Outcomes".to_string(),
-        qualified_name: "Alire.Origins.Deployers.System.Version_Outcomes".to_string(),
-        kind: "namespace".to_string(),
-        visibility: Some("public".to_string()),
-        file_path: A::from("src/alire-origins-deployers-system.ads"),
-        scope_path: None,
-        package_id: None,
-        signature: Some("instantiates Outcomes.Definite".to_string()), // partial name, as in real DB
-    };
-    members.entry("Alire.Origins.Deployers.System".to_string()).or_default().push(vo);
-
-    // The fully-qualified generic namespace is indexable by name "Definite".
-    let definite_ns = SymbolInfo {
-        id: { id += 1; id },
-        name: "Definite".to_string(),
-        qualified_name: "Alire.Outcomes.Definite".to_string(),
-        kind: "namespace".to_string(),
-        visibility: Some("public".to_string()),
-        file_path: A::from("src/alire-outcomes-definite.ads"),
-        scope_path: None,
-        package_id: None,
-        signature: None,
-    };
-    by_name_map.entry("Definite".to_string()).or_default().push(definite_ns);
-
-    // Outcome_Failure lives as a member of Alire.Outcomes.Definite.
-    let outcome_failure = SymbolInfo {
-        id: { id += 1; id },
-        name: "Outcome_Failure".to_string(),
-        qualified_name: "Alire.Outcomes.Definite.Outcome_Failure".to_string(),
-        kind: "function".to_string(),
-        visibility: Some("public".to_string()),
-        file_path: A::from("src/alire-outcomes-definite.ads"),
-        scope_path: None,
-        package_id: None,
-        signature: None,
-    };
-    members.entry("Alire.Outcomes.Definite".to_string()).or_default().push(outcome_failure);
-
-    let fix = WithByName { members, by_name_map, empty: Vec::new(), empty_reexports: Vec::new() };
-
+    let index = SymbolIndex::build(files, &id_map);
+    // The engine keys its type/member maps by (path, idx); reuse the same ids.
+    let mut eng_ids = SymbolIdMap::default();
+    for pf in files {
+        for (i, s) in pf.symbols.iter().enumerate() {
+            if let Some(&id) = id_map.get(&(pf.path.clone(), s.qualified_name.clone())) {
+                eng_ids.insert((pf.path.clone(), i), id);
+            }
+        }
+    }
+    let engine = Engine::build_from_registry(files, &eng_ids, &index, index.type_arena_arc());
+    let pf = &files[importer];
+    let r = pf
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.chain.is_some())
+        .expect("a chain-bearing call ref");
+    let source = &pf.symbols[r.source_symbol_index];
     let file_ctx = FileContext {
-        file_path: "src/alire-origins-deployers-system-apt.adb".to_string(),
+        file_path: pf.path.clone(),
         language: "ada".to_string(),
-        imports: Vec::new(),
-        file_namespace: Some("Alire.Origins.Deployers.System.Apt".to_string()),
+        imports: vec![],
+        file_namespace: None,
     };
-
-    let source_sym = make_extracted_sym("Detect", "Alire.Origins.Deployers.System.Apt.Detect");
-    let extracted = make_extracted_ref("Version_Outcomes.Outcome_Failure");
     let ref_ctx = RefContext {
-        extracted_ref: &extracted,
-        source_symbol: &source_sym,
-        scope_chain: Vec::new(),
+        extracted_ref: r,
+        source_symbol: source,
+        scope_chain: build_scope_chain(source.scope_path.as_deref()),
         file_package_id: None,
     };
-
-    let res = AdaResolver.resolve(&file_ctx, &ref_ctx, &fix);
-    assert!(
-        res.is_some(),
-        "expected ancestor-package instantiation to resolve Version_Outcomes.Outcome_Failure"
-    );
-    assert_eq!(res.unwrap().strategy, "ada_local_instantiation");
+    (engine.resolve(&ref_ctx, &file_ctx, &index), id_map)
 }
 
-// ---------------------------------------------------------------------------
-// Use'd-package variable-type dispatch
-//
-// `use STM32.Board;` brings `Display` (typed Frame_Buffer) into scope.
-// `Display.Hidden_Buffer` should resolve via variable-type dispatch against
-// the imported package's variable, not just in_file variables.
-// ---------------------------------------------------------------------------
-
+/// `This.Port.CCER (Ch)` — root `This` types to `Timer` (param TypeRef), the
+/// `Port` hop types to `Port_Type` (field TypeRef), and the leaf binds the
+/// `CCER` component. Proves the three coordinated changes (field/param TypeRef
+/// emission, structured receiver-chain emission, the `Field` mid-chain kind)
+/// resolve a dotted field chain entirely through the generic walker.
 #[test]
-fn used_package_variable_type_dispatch_resolves_dotted_call() {
-    use std::sync::Arc as A;
-
-    struct WithInFile {
-        members: HashMap<String, Vec<SymbolInfo>>,
-        in_file_syms: Vec<SymbolInfo>,
-        empty: Vec<SymbolInfo>,
-        empty_reexports: Vec<(String, String)>,
-    }
-
-    impl SymbolLookup for WithInFile {
-        fn by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
-        fn members_of(&self, p: &str) -> &[SymbolInfo] {
-            self.members.get(p).map(|v| v.as_slice()).unwrap_or(&self.empty)
-        }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
-        fn has_in_namespace(&self, _: &str) -> bool { false }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.in_file_syms }
-        fn field_type_name(&self, _: &str) -> Option<&str> { None }
-        fn return_type_name(&self, _: &str) -> Option<&str> { None }
-        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
-        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
-        fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
-        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
-    }
-
-    let mut members: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
-    let mut id = 1i64;
-
-    // STM32.Board has `Display` as a package-level variable typed `Frame_Buffer`.
-    let display_var = SymbolInfo {
-        id: { id += 1; id },
-        name: "Display".to_string(),
-        qualified_name: "STM32.Board.Display".to_string(),
-        kind: "variable".to_string(),
-        visibility: Some("public".to_string()),
-        file_path: A::from("boards/stm32/src/stm32-board.ads"),
-        scope_path: None,
-        package_id: None,
-        signature: Some("type: Framebuffer_OTM8009A.Frame_Buffer".to_string()),
-    };
-    members.entry("STM32.Board".to_string()).or_default().push(display_var);
-
-    // Framebuffer_OTM8009A has `Hidden_Buffer` as a function.
-    let hidden_buf = SymbolInfo {
-        id: { id += 1; id },
-        name: "Hidden_Buffer".to_string(),
-        qualified_name: "Framebuffer_OTM8009A.Hidden_Buffer".to_string(),
-        kind: "function".to_string(),
-        visibility: Some("public".to_string()),
-        file_path: A::from("src/framebuffer_otm8009a.ads"),
-        scope_path: None,
-        package_id: None,
-        signature: None,
-    };
-    members.entry("Framebuffer_OTM8009A.Frame_Buffer".to_string()).or_default().push(hidden_buf);
-
-    let fix = WithInFile {
-        members,
-        in_file_syms: Vec::new(), // no local variables — must come from use'd package
-        empty: Vec::new(),
-        empty_reexports: Vec::new(),
-    };
-
-    let file_ctx = FileContext {
-        file_path: "examples/shared/common/gui/lcd_std_out.adb".to_string(),
-        language: "ada".to_string(),
-        imports: vec![
-            ImportEntry {
-                imported_name: "STM32.Board".to_string(),
-                module_path: Some("STM32.Board".to_string()),
-                alias: None,
-                is_wildcard: true, // `use STM32.Board;`
-            },
-        ],
-        file_namespace: Some("LCD_Std_Out".to_string()),
-    };
-
-    let source_sym = make_extracted_sym("Clear_Screen", "LCD_Std_Out.Clear_Screen");
-    let extracted = make_extracted_ref("Display.Hidden_Buffer");
-    let ref_ctx = RefContext {
-        extracted_ref: &extracted,
-        source_symbol: &source_sym,
-        scope_chain: Vec::new(),
-        file_package_id: None,
-    };
-
-    let res = AdaResolver.resolve(&file_ctx, &ref_ctx, &fix);
-    assert!(
-        res.is_some(),
-        "expected use'd-package variable type dispatch to resolve Display.Hidden_Buffer"
+fn receiver_field_chain_resolves_through_generic_walker() {
+    let files = vec![ada_parsed_file("hw/timers.adb", RECEIVER_CHAIN_SRC)];
+    let (res, id_map) = resolve_first_chain_call(&files, 0);
+    let res = res.expect("This.Port.CCER should resolve through the chain walker");
+    let ccer = id_map[&("hw/timers.adb".to_string(), "Timers.Port_Type.CCER".to_string())];
+    assert_eq!(
+        res.target_symbol_id, ccer,
+        "expected the chain to bind the CCER component"
     );
 }
-
-// ---------------------------------------------------------------------------
-// CI dotted resolution drains to the generic ladder, not the Ada hook
-//
-// Once ADA_PROFILE folds case, a mixed-case qualified Ada call binds through
-// the profiled `default_qname_exact` rung — the Ada hook no longer fires for
-// it. We drive `resolve_all_with_profile(&ADA_PROFILE)` directly to prove the
-// strategy is a `default_*`, not an `ada_*`.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn ada_dotted_ci_resolves_through_generic_ladder() {
-    use crate::type_checker::core::DefaultResolver;
-    use std::sync::Arc as A;
-
-    // Fixture supporting by_name + by_qualified_name (CI scan needs by_name).
-    struct WithByName {
-        by_name_map: HashMap<String, Vec<SymbolInfo>>,
-        by_qname_map: HashMap<String, SymbolInfo>,
-        empty: Vec<SymbolInfo>,
-        empty_reexports: Vec<(String, String)>,
-    }
-    impl SymbolLookup for WithByName {
-        fn by_name(&self, name: &str) -> &[SymbolInfo] {
-            self.by_name_map.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
-        }
-        fn by_qualified_name(&self, q: &str) -> Option<&SymbolInfo> {
-            self.by_qname_map.get(q)
-        }
-        fn members_of(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
-        fn has_in_namespace(&self, _: &str) -> bool { false }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-        fn field_type_name(&self, _: &str) -> Option<&str> { None }
-        fn return_type_name(&self, _: &str) -> Option<&str> { None }
-        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
-        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
-        fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
-        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
-    }
-
-    let do_thing = SymbolInfo {
-        id: 200,
-        name: "Do_Thing".to_string(),
-        qualified_name: "Pkg.Sub.Do_Thing".to_string(),
-        kind: "function".to_string(),
-        visibility: Some("public".to_string()),
-        file_path: A::from("src/pkg-sub.adb"),
-        scope_path: None,
-        package_id: None,
-        signature: None,
-    };
-    let mut by_name_map: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
-    by_name_map.insert("Do_Thing".to_string(), vec![do_thing.clone()]);
-    let mut by_qname_map: HashMap<String, SymbolInfo> = HashMap::new();
-    by_qname_map.insert("Pkg.Sub.Do_Thing".to_string(), do_thing);
-
-    let fix = WithByName {
-        by_name_map,
-        by_qname_map,
-        empty: Vec::new(),
-        empty_reexports: Vec::new(),
-    };
-
-    let file_ctx = FileContext {
-        file_path: "src/main.adb".to_string(),
-        language: "ada".to_string(),
-        imports: Vec::new(),
-        file_namespace: Some("Main".to_string()),
-    };
-    let source_sym = make_extracted_sym("Run", "Main.Run");
-    // Lowercased PREFIX (declared leaf case) — only a case-folding qname_exact
-    // rung binds it; the byte-exact `by_qualified_name` probe misses.
-    let extracted = make_extracted_ref("pkg.sub.Do_Thing");
-    let ref_ctx = RefContext {
-        extracted_ref: &extracted,
-        source_symbol: &source_sym,
-        scope_chain: Vec::new(),
-        file_package_id: None,
-    };
-
-    let res = (DefaultResolver {
-        file_ctx: &file_ctx,
-        ref_ctx: &ref_ctx,
-        lookup: &fix,
-        kind_compatible: super::predicates::kind_compatible,
-    })
-    .resolve_all_with_profile(&super::profile::ADA_PROFILE)
-    .expect("CI dotted call binds through the generic ladder");
-    assert!(
-        res.strategy.starts_with("default_"),
-        "expected a default_* strategy, got {}",
-        res.strategy
-    );
-    assert_eq!(res.target_symbol_id, 200);
-}
-
-// ---------------------------------------------------------------------------
-// Goal 40 — Ada flow emission (SQL via GNATCOLL.SQL / AdaSQL)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_ada_exec_select_emits_db_select() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    use crate::types::CallArg;
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
-        source_symbol_index: 0,
-        target_name: "Exec".to_string(),
-        kind: EdgeKind::Calls,
-        line: 1,
-        col: 0,
-        module: None,
-        chain: None,
-        byte_offset: 1,
-        namespace_segments: Vec::new(),
-        call_args: vec![CallArg::Other, CallArg::StringLit("SELECT id FROM users".to_string())],
-    };
-    let sym = ExtractedSymbol {
-        name: "main".to_string(), qualified_name: "main".to_string(),
-        kind: SymbolKind::Function, visibility: Some(crate::types::Visibility::Public),
-        start_line: 1, end_line: 1, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
-        byte_offset: 0,
-            declared_type: None,
-        return_type: None,
-        param_types: Vec::new(),
-        generic_params: Vec::new(),
-};
-    let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
-    let em = super::hooks::detect_flow_inner(&fc, &rc);
-    match em.first().unwrap() {
-        FlowEmission::DbQuery { operation, .. } => assert_eq!(*operation, DbQueryOp::Select),
-        _ => panic!("expected DbQuery"),
-    }
-}
-
-#[test]
-fn test_ada_no_emit_for_non_sql() {
-    use crate::types::CallArg;
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
-        source_symbol_index: 0,
-        target_name: "Put_Line".to_string(),
-        kind: EdgeKind::Calls,
-        line: 1,
-        col: 0,
-        module: None,
-        chain: None,
-        byte_offset: 1,
-        namespace_segments: Vec::new(),
-        call_args: vec![CallArg::StringLit("hello".to_string())],
-    };
-    let sym = ExtractedSymbol {
-        name: "main".to_string(), qualified_name: "main".to_string(),
-        kind: SymbolKind::Function, visibility: Some(crate::types::Visibility::Public),
-        start_line: 1, end_line: 1, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
-        byte_offset: 0,
-            declared_type: None,
-        return_type: None,
-        param_types: Vec::new(),
-        generic_params: Vec::new(),
-};
-    let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    let fc = FileContext { file_path: "x.ads".to_string(), language: "ada".to_string(), imports: vec![], file_namespace: None };
-    assert!(super::hooks::detect_flow_inner(&fc, &rc).is_empty());
-}
-
