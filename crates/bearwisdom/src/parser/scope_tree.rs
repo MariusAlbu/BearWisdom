@@ -88,9 +88,8 @@ pub fn find_scope_at(tree: &ScopeTree, byte_offset: usize) -> Option<&ScopeEntry
     // Entries are in DFS pre-order, so start_byte is non-decreasing. Scopes that
     // cover one offset nest, so within the `start_byte <= offset` prefix the
     // deepest (DFS-last) covering scope is the last one whose end_byte > offset.
-    // partition_point bounds the scan to that prefix and rev().find stops at the
-    // first cover — the same element the old filter(...).last() returned, without
-    // touching entries that start after the offset.
+    // partition_point bounds the scan to that prefix and rev().find returns that
+    // scope, without scanning entries that start after the offset.
     let prefix = tree.partition_point(|s| s.start_byte <= byte_offset);
     tree[..prefix].iter().rev().find(|s| byte_offset < s.end_byte)
 }

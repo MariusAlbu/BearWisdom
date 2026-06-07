@@ -61,11 +61,10 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
 
     let mut results: Vec<ReferenceResult> = Vec::new();
 
-    // One query over every target id instead of one per id. The per-target
-    // `LIMIT limit` the loop used was redundant: each target's rows beyond its
-    // own first `limit` (by path, line) sort after those `limit` rows, so they
-    // can never enter the global top-`limit` the truncate below keeps. Fetching
-    // unbounded here and truncating once yields the identical result set.
+    // One query over every target id. A per-target `LIMIT` would be redundant:
+    // each target's rows beyond its own first `limit` (by path, line) sort after
+    // those `limit` rows, so they can never enter the global top-`limit` the
+    // truncate below keeps. So fetch unbounded and truncate once.
     let placeholders = std::iter::repeat("?")
         .take(target_ids.len())
         .collect::<Vec<_>>()

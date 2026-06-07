@@ -68,7 +68,7 @@ pub(super) fn filter_local_refs(
 
 /// Like `filter_local_refs`, but reuses a tree the caller already parsed for this
 /// source + grammar — the indexer shares one parse across locals.scm filtering
-/// and flow typing instead of re-parsing per stage.
+/// and flow typing.
 pub(super) fn filter_local_refs_with_tree(
     source: &str,
     lang_id: &str,

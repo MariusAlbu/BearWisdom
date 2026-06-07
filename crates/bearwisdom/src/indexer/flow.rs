@@ -77,8 +77,8 @@ pub(crate) const MAX_FLOW_SOURCE_BYTES: usize = 512 * 1024;
 
 /// Process-wide cache of compiled tree-sitter flow queries. `Query::new`
 /// builds a matcher automaton — among the most expensive tree-sitter calls —
-/// and the flow pass compiles the same per-language queries afresh for every
-/// file (six per file). Keyed by `(grammar, query-source-pointer)`: the
+/// and the flow pass needs the same per-language queries for every file it
+/// processes. Keyed by `(grammar, query-source-pointer)`: the
 /// grammar because one `FlowConfig` source string can serve several grammars
 /// (the TS config drives both the `.ts` and `.tsx` grammars, whose compiled
 /// queries differ), the source pointer because each query source is a distinct
@@ -134,8 +134,8 @@ pub fn run_flow_queries(
 
 /// Like `run_flow_queries`, but reuses a tree the caller already parsed for this
 /// source + grammar. The indexer shares one parse across locals.scm filtering
-/// and flow typing rather than re-parsing per stage. Oversized files are still
-/// skipped — the query matcher, not the parse, is the cost the size guard avoids.
+/// and flow typing. Oversized files are still skipped — the query matcher, not
+/// the parse, is the cost the size guard avoids.
 pub fn run_flow_queries_with_tree(
     source: &str,
     cfg: &FlowConfig,

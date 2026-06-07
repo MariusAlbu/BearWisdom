@@ -140,10 +140,9 @@ impl<'a> Engine<'a> {
                 .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE),
         );
 
-        // Per-file-profile supertype build (P3b): a mixed-language workspace
-        // gets each file's discovery rule from its own language's profile, and
-        // the structural pass runs only over Structural/Both-profile types —
-        // not driven by an arbitrary "first profile".
+        // Per-file-profile supertype build: each file's discovery rule comes
+        // from its own language's profile, and the structural pass runs only
+        // over types declared in Structural/Both-profile files.
         let supertypes = SupertypeGraph::build_multi(
             parsed,
             &arena,
@@ -179,7 +178,7 @@ impl<'a> Engine<'a> {
     }
 
     /// Incrementally fold an expand iteration's appended `new_files` into the
-    /// engine instead of rebuilding it every resolve pass. `parsed` is the FULL
+    /// engine rather than rebuilding it from the full set. `parsed` is the FULL
     /// append-only set (`new_files` is its tail). The additive maps (members,
     /// symbol_types) ingest only `new_files` — byte-identical to a full rebuild
     /// because `parsed` is append-only, so per-parent member Vecs and

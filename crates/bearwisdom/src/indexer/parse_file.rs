@@ -217,12 +217,12 @@ fn parse_file_internal(
     crate::containment::normalize_qnames_from_parents(&mut r.symbols);
 
     // Single tree-sitter parse shared by locals.scm filtering and flow typing.
-    // The extractor parses internally and doesn't expose its tree, so this
-    // collapses the two remaining per-file re-parses into one for any language
-    // that has both a locals.scm and a FlowConfig (TS/JS/Python/Java/C#/Go/Rust).
+    // The extractor parses internally and doesn't expose its tree, so this is a
+    // separate parse, made once and handed to both stages, for any language that
+    // has both a locals.scm and a FlowConfig (TS/JS/Python/Java/C#/Go/Rust).
     // Parsed only when a consumer needs it: locals.scm filtering parses at any
     // size, but flow skips files over MAX_FLOW_SOURCE_BYTES without parsing — so
-    // a flow-only language over that size produces no shared tree (unchanged).
+    // a flow-only language over that size produces no shared tree.
     let shared_grammar = plugin.grammar(walked.language);
     let shared_tree = {
         let want_for_locals =

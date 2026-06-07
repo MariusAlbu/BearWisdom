@@ -157,8 +157,7 @@ impl LocalResolver {
             .collect();
 
         // Byte offsets of all definitions, so the "this reference IS a
-        // definition" guard below is O(1) instead of a linear scan over every
-        // definition per reference.
+        // definition" guard below is an O(1) set lookup.
         let def_offsets: FxHashSet<usize> =
             definitions.iter().map(|d| d.byte_offset).collect();
 
@@ -246,8 +245,7 @@ fn resolve_in_scopes(
 
     // A reference resolves locally if its name is defined in any scope that
     // covers it. The result is a boolean OR over the covering scopes, so they
-    // need no ordering — check them directly instead of collecting and sorting
-    // a per-reference Vec by size (the sort never affected the result).
+    // need no ordering — check them directly.
     scopes
         .iter()
         .filter(|s| s.start <= byte_offset && byte_offset < s.end)

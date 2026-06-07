@@ -174,9 +174,9 @@ pub fn extract(source: &str) -> ExtractionResult {
             .is_some_and(|kinds| kinds.iter().any(|&k| ref_kind_matches_symbol(ref_kind, k)))
     };
 
-    // Byte offset of every newline, computed once. The per-ref scope lookup
-    // below maps a 1-based line to the (line-1)-th newline's offset; without
-    // this it rescanned the whole source per ref — O(refs × file_size).
+    // Byte offset of every newline, computed once so the per-ref scope lookup
+    // below is O(1): it maps a 1-based line to the (line-1)-th newline's offset
+    // by indexing this table.
     let newline_offsets: Vec<usize> = src_bytes
         .iter()
         .enumerate()

@@ -63,10 +63,10 @@ pub fn apply_pragmas(conn: &Connection, is_new: bool) -> rusqlite::Result<()> {
 /// FTS5 maintenance triggers for `symbols_fts` (an external-content table over
 /// `symbols`). Kept separate from `SCHEMA_SQL` so the full-index bulk load can
 /// DROP them, insert all symbols trigger-free, then `'rebuild'` the FTS index in
-/// one pass — far cheaper than the per-row btree maintenance the INSERT trigger
-/// does 100k+ times. `symbols_au` fires only on the indexed text columns (not
-/// e.g. `incoming_edge_count`), so resolution's post-pass edge-count UPDATE
-/// doesn't re-tokenize unchanged rows on the incremental path.
+/// one pass — cheaper than the per-row btree maintenance the INSERT trigger does
+/// on every symbol. `symbols_au` fires only on the indexed text columns (not
+/// e.g. `incoming_edge_count`), so an edge-count UPDATE doesn't re-tokenize
+/// unchanged rows on the incremental path.
 pub const FTS_TRIGGER_DDL: &str = r#"
 CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
     INSERT INTO symbols_fts(rowid, name, qualified_name, signature, doc_comment)
