@@ -166,6 +166,12 @@ fn parsed_with_refs(
     }
 }
 
+fn parsed_lang(path: &str, lang: &str, symbols: Vec<ExtractedSymbol>) -> ParsedFile {
+    let mut pf = parsed_with_refs(path, symbols, Vec::new());
+    pf.language = lang.to_string();
+    pf
+}
+
 fn inherits_ref(source_idx: usize, target: &str) -> ExtractedRef {
     ExtractedRef { is_import_binding: false, is_reexport: false,
         source_symbol_index: source_idx,
@@ -1519,5 +1525,72 @@ func (r *Repo) Save(u *User) bool {
     assert!(
         graph.parents_of(repo).contains(&saver),
         "Repo.Save's param read past the receiver and `*User` normalized: Repo -> Saver edge must form"
+    );
+}
+
+#[test]
+fn build_multi_runs_structural_only_for_structural_profile_languages() {
+    // P3b: build_multi picks each file's discovery rule from its own language's
+    // profile. A Go (Structural) struct satisfies its interface structurally; an
+    // identically-shaped Java (Explicit) pair gets NO structural edge — the pass
+    // is scoped per-profile, not driven by an arbitrary "first profile".
+    use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
+    use rustc_hash::FxHashMap;
+
+    let mut arena = TypeArena::new();
+    let writer = arena.class("Writer");
+    let file = arena.class("File");
+    let jwriter = arena.class("JWriter");
+    let jfile = arena.class("JFile");
+    let byte_slice = arena.class("ByteSlice");
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(writer, method(1, "Write", "Writer"));
+    members.add_direct(file, method(2, "Write", "File"));
+    members.add_direct(jwriter, method(3, "Write", "JWriter"));
+    members.add_direct(jfile, method(4, "Write", "JFile"));
+
+    let mut symbol_types = SymbolTypeMap::new();
+    for id in [1, 2, 3, 4] {
+        record_method_types(&mut symbol_types, id, vec![byte_slice], int_ty);
+    }
+
+    let parsed = vec![
+        parsed_lang(
+            "svc.go",
+            "go",
+            vec![class_sym("Writer", "Writer"), class_sym("File", "File")],
+        ),
+        parsed_lang(
+            "Svc.java",
+            "java",
+            vec![class_sym("JWriter", "JWriter"), class_sym("JFile", "JFile")],
+        ),
+    ];
+
+    let go_profile = LanguageProfile {
+        supertype_discovery: SupertypeDiscovery::Structural,
+        ..DEFAULT_PROFILE
+    };
+    let java_profile = LanguageProfile {
+        supertype_discovery: SupertypeDiscovery::Explicit,
+        ..DEFAULT_PROFILE
+    };
+    let mut profiles: FxHashMap<&str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("go", &go_profile);
+    profiles.insert("java", &java_profile);
+
+    let lookup = TypeLookup::new();
+    let graph =
+        SupertypeGraph::build_multi(&parsed, &arena, &profiles, &members, &symbol_types, &lookup);
+
+    assert!(
+        graph.parents_of(file).contains(&writer),
+        "Go (Structural profile) struct must satisfy its interface structurally"
+    );
+    assert!(
+        !graph.parents_of(jfile).contains(&jwriter),
+        "Java (Explicit profile) types must NOT get structural edges"
     );
 }

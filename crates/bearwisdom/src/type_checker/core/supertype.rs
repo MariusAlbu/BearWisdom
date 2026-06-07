@@ -282,12 +282,79 @@ impl SupertypeGraph {
                 build_explicit(&mut graph, parsed, arena, lookup, profile.blanket_impl_resolution);
             }
             SupertypeDiscovery::Structural => {
-                build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping);
+                build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping, None);
             }
             SupertypeDiscovery::Both => {
                 build_explicit(&mut graph, parsed, arena, lookup, profile.blanket_impl_resolution);
-                build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping);
+                build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping, None);
             }
+        }
+        graph
+    }
+
+    /// Per-file-profile variant for the resolver: a workspace can mix languages
+    /// whose `supertype_discovery` differs. `build` drives the whole parse set
+    /// from one profile (used by single-language unit tests); `build_multi`
+    /// picks each file's behavior from its own language's profile.
+    ///
+    /// `build_explicit` runs unconditionally — nominal `Inherits`/`Implements`
+    /// edges are language-agnostic refs, and blanket-impl resolution fires if
+    /// any registered profile enables it. `build_structural` runs only over the
+    /// types declared in Structural/Both-profile files, so a nominal language's
+    /// types never get structural edges and the O(types²) pass is not spent on
+    /// them. This both fixes the prior nondeterministic "first profile drives
+    /// everything" behavior and removes wasted structural work.
+    pub fn build_multi(
+        parsed: &[ParsedFile],
+        arena: &TypeArena,
+        profiles: &FxHashMap<&str, &LanguageProfile>,
+        members: &MembersIndex,
+        symbol_types: &SymbolTypeMap,
+        lookup: &dyn SymbolLookup,
+    ) -> Self {
+        let mut graph = SupertypeGraph::new();
+        let blanket = profiles.values().any(|p| p.blanket_impl_resolution);
+        build_explicit(&mut graph, parsed, arena, lookup, blanket);
+
+        let is_structural = |lang: &str| {
+            profiles.get(lang).is_some_and(|p| {
+                matches!(
+                    p.supertype_discovery,
+                    SupertypeDiscovery::Structural | SupertypeDiscovery::Both
+                )
+            })
+        };
+        if parsed.iter().any(|pf| is_structural(&pf.language)) {
+            let mut restrict: FxHashSet<TypeId> = FxHashSet::default();
+            for pf in parsed {
+                if !is_structural(&pf.language) {
+                    continue;
+                }
+                for sym in &pf.symbols {
+                    if is_structural_type_kind(sym.kind) {
+                        restrict.insert(arena.class(&sym.qualified_name));
+                    }
+                }
+            }
+            let prims = profiles
+                .values()
+                .find(|p| {
+                    matches!(
+                        p.supertype_discovery,
+                        SupertypeDiscovery::Structural | SupertypeDiscovery::Both
+                    )
+                })
+                .map(|p| p.primitive_mapping)
+                .unwrap_or(&[]);
+            build_structural(
+                &mut graph,
+                arena,
+                members,
+                symbol_types,
+                lookup,
+                prims,
+                Some(&restrict),
+            );
         }
         graph
     }
@@ -829,6 +896,20 @@ fn child_param_map(
 /// project type satisfying it gains the edge. The candidate side is project
 /// types (external Class/Struct members stay skipped), so this links project
 /// type → external interface, not external → external.
+/// A symbol kind that can participate in structural satisfaction (it declares a
+/// type with a member set). Scopes `build_multi`'s structural pass to types
+/// from Structural/Both-profile files.
+fn is_structural_type_kind(kind: SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::Class
+            | SymbolKind::Struct
+            | SymbolKind::Interface
+            | SymbolKind::Trait
+            | SymbolKind::Enum
+    )
+}
+
 fn build_structural(
     graph: &mut SupertypeGraph,
     arena: &TypeArena,
@@ -836,12 +917,20 @@ fn build_structural(
     symbol_types: &SymbolTypeMap,
     lookup: &dyn SymbolLookup,
     prims: &[(&str, PrimKind)],
+    restrict: Option<&FxHashSet<TypeId>>,
 ) {
     // Collect every type that has direct members. We need O(types) work
     // here, and the loop is bounded by the workspace's type count.
+    // `restrict`, when set, scopes the pass to types declared in
+    // Structural/Both-profile files — so a nominal language's types never
+    // participate in structural satisfaction, and the O(types²) pass runs only
+    // over the languages that ask for it.
     let typed_ids: Vec<TypeId> = collect_typed_ids(arena, members);
 
     for iface in &typed_ids {
+        if restrict.is_some_and(|r| !r.contains(iface)) {
+            continue;
+        }
         let iface_members = members.direct_of(*iface);
         if iface_members.is_empty() {
             continue;
@@ -852,6 +941,9 @@ fn build_structural(
 
         for candidate in &typed_ids {
             if candidate == iface {
+                continue;
+            }
+            if restrict.is_some_and(|r| !r.contains(candidate)) {
                 continue;
             }
             if members.direct_of(*candidate).is_empty() {

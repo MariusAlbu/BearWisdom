@@ -140,18 +140,14 @@ impl<'a> Engine<'a> {
                 .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE),
         );
 
-        // Supertype graph build depends on per-language profile. Pick the
-        // first registered profile as a default; per-file resolves consult
-        // the right profile via `Engine::resolve`.
-        let default_profile = profiles
-            .values()
-            .next()
-            .copied()
-            .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
-        let supertypes = SupertypeGraph::build(
+        // Per-file-profile supertype build (P3b): a mixed-language workspace
+        // gets each file's discovery rule from its own language's profile, and
+        // the structural pass runs only over Structural/Both-profile types —
+        // not driven by an arbitrary "first profile".
+        let supertypes = SupertypeGraph::build_multi(
             parsed,
             &arena,
-            default_profile,
+            &profiles,
             &members,
             &symbol_types,
             lookup,
@@ -216,10 +212,10 @@ impl<'a> Engine<'a> {
         self.symbol_types
             .ingest_files(new_files, sym_id_map, &self.arena, default_profile);
 
-        self.supertypes = SupertypeGraph::build(
+        self.supertypes = SupertypeGraph::build_multi(
             parsed,
             &self.arena,
-            default_profile,
+            &self.profiles,
             &self.members,
             &self.symbol_types,
             lookup,
