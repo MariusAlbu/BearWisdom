@@ -428,3 +428,63 @@ func use(g: some Greet) {}
         );
     }
 
+    #[test]
+    fn opaque_return_emits_type_ref_and_plain_signature() {
+        // `-> some Greet` must (a) emit a TypeRef from the function to the
+        // peeled constraint `Greet`, and (b) record a plain return type in the
+        // signature (`-> Greet`, not `-> some Greet`) so the index reads it as
+        // the function's return type rather than falling back to a parameter.
+        let src = r#"
+protocol Greet { func hello() }
+func make() -> some Greet { fatalError() }
+"#;
+        let r = super::extract::extract(src);
+
+        let make = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "make")
+            .expect("make function");
+        let make_idx = r.symbols.iter().position(|s| std::ptr::eq(s, make)).unwrap();
+
+        assert!(
+            r.refs.iter().any(|rf| {
+                rf.source_symbol_index == make_idx
+                    && rf.kind == EdgeKind::TypeRef
+                    && rf.target_name == "Greet"
+            }),
+            "make must emit a TypeRef to Greet; refs from {make_idx}: {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == make_idx)
+                .map(|rf| (&rf.target_name, rf.kind))
+                .collect::<Vec<_>>()
+        );
+
+        assert_eq!(
+            make.signature.as_deref(),
+            Some("func make -> Greet"),
+            "the opaque keyword must be peeled from the signature return type"
+        );
+    }
+
+    #[test]
+    fn opaque_return_with_generic_keeps_base_in_signature() {
+        // `-> some Collection<Int>` peels the keyword but keeps the generic
+        // application so the index can split head `Collection` from args.
+        let src = r#"
+func nums() -> some Collection<Int> { fatalError() }
+"#;
+        let r = super::extract::extract(src);
+        let nums = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "nums")
+            .expect("nums function");
+        assert_eq!(
+            nums.signature.as_deref(),
+            Some("func nums -> Collection<Int>"),
+            "keyword peeled, generic application preserved"
+        );
+    }
+

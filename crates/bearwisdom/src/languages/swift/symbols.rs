@@ -231,6 +231,21 @@ pub(super) fn extension_base_name(text: &str) -> String {
     base.trim_end_matches('.').to_string()
 }
 
+/// Drop a leading opaque (`some`) or existential (`any`) keyword from a return
+/// type's text. `some Greet` → `Greet`, `any Collection<Int>` → `Collection<Int>`,
+/// `String` → `String`. This keeps the signature's return type a bare type name
+/// (or a plain generic application) so the index reads it as the function's
+/// return type. Only the leading keyword is peeled; a generic-argument list is
+/// preserved.
+fn peel_opaque_keyword(text: String) -> String {
+    for kw in ["some ", "any "] {
+        if let Some(rest) = text.strip_prefix(kw) {
+            return rest.trim_start().to_string();
+        }
+    }
+    text
+}
+
 pub(super) fn push_extension(
     node: &Node,
     src: &[u8],
@@ -295,7 +310,7 @@ pub(super) fn push_function_decl(
     let ret = node
         .child_by_field_name("return_type")
         .or_else(|| find_child_by_kind(node, "function_return_type"))
-        .map(|r| format!(" -> {}", node_text(r, src)))
+        .map(|r| format!(" -> {}", peel_opaque_keyword(node_text(r, src))))
         .unwrap_or_default();
     let signature = Some(format!("func {name}{params}{ret}"));
 
