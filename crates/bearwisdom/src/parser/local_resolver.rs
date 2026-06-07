@@ -156,12 +156,18 @@ impl LocalResolver {
             .map(|d| (d.scope_start, d.name.as_str()))
             .collect();
 
+        // Byte offsets of all definitions, so the "this reference IS a
+        // definition" guard below is O(1) instead of a linear scan over every
+        // definition per reference.
+        let def_offsets: FxHashSet<usize> =
+            definitions.iter().map(|d| d.byte_offset).collect();
+
         // Resolve references: walk up the scope chain looking for a definition.
         let mut locally_resolved = FxHashSet::default();
 
         for r in &references {
             // Skip if this reference IS a definition (same byte offset).
-            if definitions.iter().any(|d| d.byte_offset == r.byte_offset) {
+            if def_offsets.contains(&r.byte_offset) {
                 locally_resolved.insert(r.byte_offset);
                 continue;
             }
