@@ -320,8 +320,8 @@ pub fn full_index(
             .unchecked_transaction()
             .context("Failed to begin streaming write transaction")?;
         // Full-index bulk load: drop the symbols_fts maintenance triggers so the
-        // 100k+ symbol INSERTs below (plus the external/script/vendored inserts
-        // and resolution's edge-count UPDATE) don't each do per-row FTS btree
+        // symbol INSERTs below (plus the external/script/vendored inserts and
+        // resolution's edge-count UPDATE) don't each do per-row FTS btree
         // maintenance. symbols_fts is rebuilt in one pass and the triggers are
         // recreated once resolution settles (see "FTS finalize" after Step 5).
         tx.execute_batch(
@@ -682,13 +682,16 @@ pub fn full_index(
     // rebuild per iteration on a 280k-symbol index — saves 40-80s on
     // aspnetcore-sized projects across the 8-iteration cap.
     let mut cached_index: Option<resolve::engine::SymbolIndex> = None;
-    // P1: the type-checker Engine is built once on iteration 0 and augmented
-    // with each expand iteration's appended files, instead of rebuilt every
-    // resolve pass — threaded the same way as `cached_index`.
+    // The type-checker Engine, built once on iteration 0 and augmented with each
+    // expand iteration's appended files; threaded like `cached_index`.
     let mut cached_engine: Option<crate::type_checker::Engine<'static>> = None;
-    // P2: the resolve-loop side-tables are cached the same way and extended with
-    // each expand iteration's appended files.
+    // The resolve-loop side-tables, built once and extended with each expand
+    // iteration's appended files.
     let mut cached_side_tables: Option<resolve::ResolveSideTables> = None;
+    // Speculative unresolved/external rows accumulated across the demand loop and
+    // written once after it converges. Each pass overwrites this holder with its
+    // complete set; the final (converged) pass is authoritative.
+    let mut deferred_spec = resolve::DeferredSpeculative::default();
     let parsed_len_at_iter_start = parsed.len();
     let mut rstats = resolve::resolve_iteration_with_cached_index_and_arena(
         db,
@@ -702,6 +705,7 @@ pub fn full_index(
         // empty new_files_slice is moot (the build path doesn't read it).
         &[],
         std::sync::Arc::clone(&workspace_arena),
+        Some(&mut deferred_spec),
     )
     .context("Failed to resolve references")?;
     let _ = parsed_len_at_iter_start;
@@ -730,10 +734,8 @@ pub fn full_index(
             // unresolved/external; they're genuine resolution gaps.
             break;
         }
-        db.conn().execute("DELETE FROM unresolved_refs", [])
-            .context("Failed to clear unresolved_refs before re-resolve")?;
-        db.conn().execute("DELETE FROM external_refs", [])
-            .context("Failed to clear external_refs before re-resolve")?;
+        // unresolved_refs / external_refs are not cleared here: those rows are
+        // accumulated in `deferred_spec` and written once after the loop settles.
         // Augment the cached SymbolIndex with just the new files added
         // by expand instead of rebuilding from scratch.
         let new_slice = &parsed[parsed_len_before..];
@@ -747,6 +749,7 @@ pub fn full_index(
             &mut cached_side_tables,
             new_slice,
             std::sync::Arc::clone(&workspace_arena),
+            Some(&mut deferred_spec),
         )
         .context("Failed to re-resolve after chain reachability expansion")?;
         info!(
@@ -798,12 +801,7 @@ pub fn full_index(
         if applied == 0 {
             break;
         }
-        db.conn()
-            .execute("DELETE FROM unresolved_refs", [])
-            .context("Failed to clear unresolved_refs before return-inference re-resolve")?;
-        db.conn()
-            .execute("DELETE FROM external_refs", [])
-            .context("Failed to clear external_refs before return-inference re-resolve")?;
+        // Speculative rows stay in `deferred_spec`; not cleared/written here.
         rstats = resolve::resolve_iteration_with_cached_index_and_arena(
             db,
             &parsed,
@@ -814,6 +812,7 @@ pub fn full_index(
             &mut cached_side_tables,
             &[],
             std::sync::Arc::clone(&workspace_arena),
+            Some(&mut deferred_spec),
         )
         .context("Failed to re-resolve after return-type inference")?;
         info!(
@@ -824,6 +823,11 @@ pub fn full_index(
         );
         mem_probe::probe(&format!("10_return_infer_iter_{}", ret_iteration + 1));
     }
+
+    // Write the speculative unresolved/external rows once now that the fixpoint
+    // has settled, from the final pass's authoritative set.
+    resolve::flush_deferred_speculative(db, &deferred_spec)
+        .context("Failed to flush deferred speculative refs")?;
 
     // Materialize incoming_edge_count once, after the loop settles.
     resolve::finalize_resolution(db)

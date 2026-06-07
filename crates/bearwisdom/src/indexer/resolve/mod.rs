@@ -45,6 +45,7 @@ use engine::ChainMiss;
 pub use adapters::append_db_route_consumer_emissions;
 pub use flow_pair::flush_flow_emissions_public;
 pub(crate) use loop_body::ResolveSideTables;
+pub(crate) use write_buf::DeferredSpeculative;
 
 #[cfg(test)]
 pub(crate) use adapters::{
@@ -194,6 +195,7 @@ pub fn resolve_iteration_with_cached_index(
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
     cached_side_tables: &mut Option<loop_body::ResolveSideTables>,
     new_files_slice: &[ParsedFile],
+    defer_speculative: Option<&mut DeferredSpeculative>,
 ) -> Result<ResolutionStats> {
     resolve_iteration_with_cached_index_and_arena(
         db,
@@ -205,6 +207,7 @@ pub fn resolve_iteration_with_cached_index(
         cached_side_tables,
         new_files_slice,
         std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()),
+        defer_speculative,
     )
 }
 
@@ -223,6 +226,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
     cached_side_tables: &mut Option<loop_body::ResolveSideTables>,
     new_files_slice: &[ParsedFile],
     type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
+    defer_speculative: Option<&mut DeferredSpeculative>,
 ) -> Result<ResolutionStats> {
     if cached_index.is_none() {
         let mut index = engine::SymbolIndex::build_with_context_and_arena(
@@ -250,7 +254,32 @@ pub fn resolve_iteration_with_cached_index_and_arena(
         cached_engine,
         cached_side_tables,
         new_files_slice,
+        defer_speculative,
     )
+}
+
+/// Flush the speculative rows (unresolved + external refs) accumulated across
+/// the demand-loop passes, once after the fixpoint settles. Clears the two
+/// tables first so the result is exactly the final pass's set. Edges are already
+/// durable (each pass flushes them via INSERT OR IGNORE), so this writes only
+/// the speculative tables.
+pub(crate) fn flush_deferred_speculative(
+    db: &mut Database,
+    deferred: &DeferredSpeculative,
+) -> Result<()> {
+    let conn = db.conn();
+    let tx = conn
+        .unchecked_transaction()
+        .context("Failed to begin deferred speculative flush transaction")?;
+    tx.execute("DELETE FROM unresolved_refs", [])
+        .context("Failed to clear unresolved_refs before final flush")?;
+    tx.execute("DELETE FROM external_refs", [])
+        .context("Failed to clear external_refs before final flush")?;
+    write_buf::flush_resolve_buf(&tx, deferred.buf(), true)
+        .context("Failed to flush deferred speculative rows")?;
+    tx.commit()
+        .context("Failed to commit deferred speculative flush")?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -276,11 +305,10 @@ pub fn finalize_resolution(db: &mut Database) -> Result<()> {
              INSERT INTO _edge_counts SELECT target_id, COUNT(*) FROM edges GROUP BY target_id;",
         )
         .context("Failed to build edge count temp table")?;
-        // Materialize incoming_edge_count touching only rows whose count
-        // actually changed, instead of rewriting every symbol row. The column is
-        // NOT NULL DEFAULT 0, so a symbol absent from _edge_counts is already 0 —
-        // the two targeted updates leave the table in the identical final state
-        // as the old blanket COALESCE update.
+        // Materialize incoming_edge_count, touching only rows whose count
+        // actually changed. The column is NOT NULL DEFAULT 0, so a symbol absent
+        // from _edge_counts is already 0; the two targeted updates leave every
+        // row with its correct count:
         //   (1) symbols with edges whose stored count is stale;
         conn.execute(
             "UPDATE symbols SET incoming_edge_count =

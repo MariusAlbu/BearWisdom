@@ -47,6 +47,30 @@ impl FileWriteBuf {
     }
 }
 
+/// Speculative rows (unresolved + external refs) carried out of a resolve pass
+/// so the demand loop persists them once after it converges. Opaque to the
+/// orchestrator (full.rs); flushed via `flush_deferred_speculative`.
+#[derive(Default)]
+pub(crate) struct DeferredSpeculative {
+    buf: FileWriteBuf,
+}
+
+impl DeferredSpeculative {
+    /// Replace the held speculative rows with this pass's. The latest pass is
+    /// authoritative — earlier passes' unresolved/external sets are superseded
+    /// as refs resolve against newly-pulled external files — so this overwrites
+    /// rather than appends. Moves the vecs out of `src` (cheap, no copy).
+    pub(super) fn replace_from(&mut self, src: &mut FileWriteBuf) {
+        self.buf.externals = std::mem::take(&mut src.externals);
+        self.buf.unresolved = std::mem::take(&mut src.unresolved);
+    }
+
+    /// The held rows as a buffer ready for `flush_resolve_buf` (edges empty).
+    pub(super) fn buf(&self) -> &FileWriteBuf {
+        &self.buf
+    }
+}
+
 /// Counters accumulated per file; reduced into the global ResolutionStats
 /// after the parallel section. Excludes `chain_misses`, which are pushed
 /// directly into the SymbolIndex's Mutex-protected accumulator by the
@@ -75,6 +99,7 @@ impl FileStats {
 pub(super) fn flush_resolve_buf(
     tx: &rusqlite::Transaction<'_>,
     buf: &FileWriteBuf,
+    persist_speculative: bool,
 ) -> Result<()> {
     use rusqlite::types::Value;
 
@@ -128,7 +153,9 @@ pub(super) fn flush_resolve_buf(
     }
 
     // External refs: (source_id, target_name, kind, source_line, namespace, package_id)
-    if !buf.externals.is_empty() {
+    // Speculative — deferred to a single post-convergence flush on the demand
+    // loop (persist_speculative=false on intermediate passes; see full.rs).
+    if persist_speculative && !buf.externals.is_empty() {
         let mut start = 0;
         while start < buf.externals.len() {
             let end = (start + EXTERNAL_CHUNK).min(buf.externals.len());
@@ -160,7 +187,8 @@ pub(super) fn flush_resolve_buf(
     }
 
     // Unresolved refs: (source_id, target_name, kind, source_line, module, package_id, from_snippet)
-    if !buf.unresolved.is_empty() {
+    // Speculative — same deferral as external_refs above.
+    if persist_speculative && !buf.unresolved.is_empty() {
         let mut start = 0;
         while start < buf.unresolved.len() {
             let end = (start + UNRESOLVED_CHUNK).min(buf.unresolved.len());

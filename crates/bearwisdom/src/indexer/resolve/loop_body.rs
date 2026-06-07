@@ -38,7 +38,7 @@ use super::engine::{
 use super::flow_emit;
 use super::flow_pair::flush_flow_emissions;
 use super::indexes;
-use super::write_buf::{flush_resolve_buf, FileStats, FileWriteBuf};
+use super::write_buf::{flush_resolve_buf, DeferredSpeculative, FileStats, FileWriteBuf};
 use super::ResolutionStats;
 
 /// Join harvested return-type candidates into per-function inferred returns.
@@ -94,11 +94,11 @@ pub(super) fn join_inferred_returns(
     out
 }
 
-/// P2: the resolve-loop side-tables, cached across the fixpoint instead of
-/// rebuilt every pass. Built once on iteration 0; the expand loop appends only
-/// `ext:` files, so the four name/import/namespace tables (which skip `ext:`)
-/// stay stable and are reused, while `name_to_ids` (keeps a few `ext:` global
-/// carriers) and `engine_sym_id_map` (ext-inclusive) are extended.
+/// The resolve-loop side-tables, built once on iteration 0 and reused across the
+/// fixpoint. The expand loop appends only `ext:` files, so the four
+/// name/import/namespace tables (which skip `ext:`) stay stable and are reused,
+/// while `name_to_ids` (keeps a few `ext:` global carriers) and
+/// `engine_sym_id_map` (ext-inclusive) are extended with the appended files.
 pub(crate) struct ResolveSideTables {
     name_to_ids: rustc_hash::FxHashMap<String, Vec<(String, String, String, i64)>>,
     qname_to_id: rustc_hash::FxHashMap<String, i64>,
@@ -175,6 +175,8 @@ pub(super) fn resolve_iteration_inner_with_arena(
         &mut local_engine,
         &mut local_side_tables,
         &[],
+        // One-shot / incremental: persist speculative rows immediately.
+        None,
     )
 }
 
@@ -187,6 +189,7 @@ pub(super) fn resolve_iteration_inner_with_index(
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
     cached_side_tables: &mut Option<ResolveSideTables>,
     new_files: &[ParsedFile],
+    defer_speculative: Option<&mut DeferredSpeculative>,
 ) -> Result<ResolutionStats> {
     resolve_iteration_body(
         db,
@@ -198,6 +201,7 @@ pub(super) fn resolve_iteration_inner_with_index(
         cached_engine,
         cached_side_tables,
         new_files,
+        defer_speculative,
     )
 }
 
@@ -211,6 +215,11 @@ fn resolve_iteration_body(
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
     cached_side_tables: &mut Option<ResolveSideTables>,
     new_files: &[ParsedFile],
+    // When `Some`, edges are flushed (they accumulate via INSERT OR IGNORE) but
+    // the speculative unresolved / external rows are stashed here for the caller
+    // to flush once after the fixpoint settles. `None` flushes everything
+    // immediately (the one-shot / incremental path).
+    defer_speculative: Option<&mut DeferredSpeculative>,
 ) -> Result<ResolutionStats> {
     // The closure passed to par_iter requires `&SymbolIndex` (for the
     // SymbolLookup trait), not `&mut SymbolIndex`. Reborrow as
@@ -238,14 +247,13 @@ fn resolve_iteration_body(
         }
         None => symbol_id_map,
     };
-    // P2: build the resolve-loop side-tables once on iteration 0 and reuse /
-    // extend them across the fixpoint instead of rebuilding O(symbols) maps
-    // every pass. The four name/import/namespace tables filter out `ext:` files
-    // and the expand loop only appends `ext:` files, so they are stable across
-    // expand passes and reused as-is; `name_to_ids` (keeps a few `ext:` global
-    // declaration carriers) and the engine's `(path,idx)->id` map (ext-inclusive,
-    // consumed by the engine build/augment below) are extended with the appended
-    // files. Byte-identical because `parsed` is append-only.
+    // Build the resolve-loop side-tables once on iteration 0 and reuse / extend
+    // them across the fixpoint. The four name/import/namespace tables filter out
+    // `ext:` files and the expand loop only appends `ext:` files, so they are
+    // stable across expand passes and reused as-is; `name_to_ids` (keeps a few
+    // `ext:` global declaration carriers) and the engine's `(path,idx)->id` map
+    // (ext-inclusive, consumed by the engine build/augment below) are extended
+    // with the appended files. Byte-identical because `parsed` is append-only.
     let build_engine_sym_ids = |files: &[ParsedFile]| {
         let mut map = crate::type_checker::core::SymbolIdMap::default();
         for pf in files {
@@ -284,12 +292,11 @@ fn resolve_iteration_body(
     let import_map = &st.import_map;
     let file_namespace_map = &st.file_namespace_map;
     let engine_sym_id_map = &st.engine_sym_id_map;
-    // P1: build the Engine once and augment it with each expand iteration's
-    // appended files, instead of rebuilding the whole Engine every resolve pass.
-    // The return-inference loop appends no files and reuses the Engine untouched
-    // (inferred returns flow through the lookup's `return_type_name`, which the
-    // SymbolIndex patches). The one-shot / incremental callers pass a fresh
-    // `&mut None`, so they build once per call exactly as before.
+    // Build the Engine once and augment it with each expand iteration's appended
+    // files. The return-inference loop appends no files and reuses the Engine
+    // untouched (inferred returns flow through the lookup's `return_type_name`,
+    // which the SymbolIndex patches). The one-shot / incremental callers pass a
+    // fresh `&mut None`, so they build once per call.
     if cached_engine.is_none() {
         *cached_engine = Some(crate::type_checker::Engine::build_from_registry(
             parsed,
@@ -520,9 +527,8 @@ fn resolve_iteration_body(
             // TypeScript resolver and build a fresh file_ctx from the same
             // ParsedFile (which contains all embedded symbols/imports merged in).
             // Same-language refs (the common case) borrow the per-file context
-            // built once above instead of cloning it per ref; only cross-language
-            // embedded refs need a fresh, owned context for the embedded
-            // language's resolver.
+            // built once above; only cross-language embedded refs need a fresh,
+            // owned context for the embedded language's resolver.
             let embedded_file_ctx: Option<engine::FileContext> = if is_cross_lang_embedded {
                 type_engine.build_file_context(effective_lang, pf, project_ctx)
             } else {
@@ -969,10 +975,15 @@ fn resolve_iteration_body(
             },
         );
 
-    // Bulk-flush the per-file buffers in one transaction. Multi-row
-    // VALUES inserts cut driver round-trips ~Nx vs the previous per-ref
-    // path. Identical chunk sizes hit the rusqlite stmt cache.
-    flush_resolve_buf(&tx, &combined_buf)?;
+    // Bulk-flush the per-file buffers in one transaction. Multi-row VALUES
+    // inserts keep driver round-trips low; identical chunk sizes hit the rusqlite
+    // stmt cache. When deferring (`defer_speculative.is_some()`) only edges are
+    // persisted; the speculative rows are stashed below for one later flush.
+    let persist_speculative = defer_speculative.is_none();
+    flush_resolve_buf(&tx, &combined_buf, persist_speculative)?;
+    if let Some(out) = defer_speculative {
+        out.replace_from(&mut combined_buf);
+    }
     stats.resolved += local_stats_total.resolved;
     stats.engine_resolved += local_stats_total.engine_resolved;
     stats.unresolved += local_stats_total.unresolved;
