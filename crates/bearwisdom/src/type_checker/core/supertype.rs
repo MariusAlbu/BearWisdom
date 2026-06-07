@@ -824,9 +824,11 @@ fn child_param_map(
 /// would falsely link two structs whose same-named method has incompatible
 /// types, which this check exists to avoid.
 ///
-/// Internal-only falls out for free: `MembersIndex` skips `ext:` files, so an
-/// external interface enumerates to an empty member set → `Unknown` → no edge.
-/// External structural satisfaction stays gated on member hydration.
+/// An external interface participates as a target: `MembersIndex` admits the
+/// members of an `ext:` Trait/Interface, so its shape enumerates here and a
+/// project type satisfying it gains the edge. The candidate side is project
+/// types (external Class/Struct members stay skipped), so this links project
+/// type → external interface, not external → external.
 fn build_structural(
     graph: &mut SupertypeGraph,
     arena: &TypeArena,

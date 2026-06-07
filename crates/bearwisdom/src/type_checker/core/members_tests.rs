@@ -1304,3 +1304,73 @@ fn this_extension_target_only_first_param_counts() {
         None
     );
 }
+
+#[test]
+fn project_struct_structurally_satisfies_external_interface() {
+    // EXT-2 interface side, end to end: a project struct that carries an external
+    // interface's shape (Go `io.Reader`) gains the structural supertype edge. The
+    // external interface's members are admitted by the Trait/Interface admission
+    // gate, so `build_structural` enumerates the interface shape and INFER-5's
+    // sound check links the project struct. Distinct from the Implements-reroute
+    // path: here there is NO nominal edge, only structural satisfaction.
+    use crate::types::SymbolKind;
+
+    // ext: dep — Reader interface (idx 0) + its Read method (idx 1).
+    let ext_file = parsed(
+        "ext:go:io/io.go",
+        "go",
+        vec![
+            ex_sym("Reader", "io.Reader", SymbolKind::Interface, None),
+            ex_sym("Read", "io.Reader.Read", SymbolKind::Method, Some("io.Reader")),
+        ],
+        Vec::new(),
+    );
+    // internal — MyReader struct (idx 0) + a Read method (idx 1) with the same shape.
+    let app_file = parsed(
+        "app.go",
+        "go",
+        vec![
+            ex_sym("MyReader", "MyReader", SymbolKind::Struct, None),
+            ex_sym("Read", "MyReader.Read", SymbolKind::Method, Some("MyReader")),
+        ],
+        Vec::new(),
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:go:io/io.go".to_string(), 0), 100); // io.Reader
+    sym_ids.insert(("ext:go:io/io.go".to_string(), 1), 101); // io.Reader.Read
+    sym_ids.insert(("app.go".to_string(), 0), 200); // MyReader
+    sym_ids.insert(("app.go".to_string(), 1), 201); // MyReader.Read
+
+    let arena = TypeArena::new();
+    let slice = vec![ext_file, app_file];
+    let members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+
+    // Matching `(ByteSlice) -> Int` shapes so INFER-5's sound check accepts.
+    let byte_slice = arena.class("ByteSlice");
+    let int_ty = arena.primitive(PrimKind::Int);
+    let mut symbol_types = SymbolTypeMap::new();
+    let method_shape = || SymbolTypeData {
+        declared_type: None,
+        return_type: Some(int_ty),
+        param_types: vec![byte_slice],
+        generic_params: Vec::new(),
+    };
+    symbol_types.insert(101, method_shape());
+    symbol_types.insert(201, method_shape());
+
+    let lookup = NullLookup::new();
+    let profile = crate::type_checker::profile::language_profile::LanguageProfile {
+        supertype_discovery:
+            crate::type_checker::profile::language_profile::SupertypeDiscovery::Structural,
+        ..DEFAULT_PROFILE
+    };
+    let graph = SupertypeGraph::build(&slice, &arena, &profile, &members, &symbol_types, &lookup);
+
+    let my_reader = arena.class("MyReader");
+    let reader = arena.class("io.Reader");
+    assert!(
+        graph.parents_of(my_reader).contains(&reader),
+        "MyReader structurally satisfies the external io.Reader interface"
+    );
+}
