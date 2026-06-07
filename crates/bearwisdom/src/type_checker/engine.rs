@@ -182,6 +182,61 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// Incrementally fold an expand iteration's appended `new_files` into the
+    /// engine instead of rebuilding it every resolve pass. `parsed` is the FULL
+    /// append-only set (`new_files` is its tail). The additive maps (members,
+    /// symbol_types) ingest only `new_files` — byte-identical to a full rebuild
+    /// because `parsed` is append-only, so per-parent member Vecs and
+    /// sym_id-keyed type data land identically — while the cross-file structures
+    /// (supertype graph's structural/blanket passes, alias index) are rebuilt
+    /// over the full state, reading the now-complete members/symbol_types. The
+    /// arena and registered profiles/hooks are unchanged. The return-inference
+    /// loop appends no files and reuses the engine untouched: an inferred return
+    /// has no extractor `return_type`, so `yield_type_of`'s view is `None` and
+    /// it falls back to the lookup's `return_type_name`, which the SymbolIndex's
+    /// `set_inferred_return` patches — the engine needs no change for it.
+    pub fn augment(
+        &mut self,
+        parsed: &[ParsedFile],
+        new_files: &[ParsedFile],
+        sym_id_map: &SymbolIdMap,
+        lookup: &dyn SymbolLookup,
+    ) {
+        if new_files.is_empty() {
+            return;
+        }
+        let default_profile = self
+            .profiles
+            .values()
+            .next()
+            .copied()
+            .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
+
+        self.members.ingest_files(new_files, sym_id_map, &self.arena);
+        self.symbol_types
+            .ingest_files(new_files, sym_id_map, &self.arena, default_profile);
+
+        self.supertypes = SupertypeGraph::build(
+            parsed,
+            &self.arena,
+            default_profile,
+            &self.members,
+            &self.symbol_types,
+            lookup,
+        );
+
+        let mut alias_pairs: Vec<(String, crate::types::AliasTarget)> = Vec::new();
+        for pf in parsed {
+            if pf.path.starts_with("ext:") {
+                continue;
+            }
+            for (qname, target) in &pf.alias_targets {
+                alias_pairs.push((qname.clone(), target.clone()));
+            }
+        }
+        self.aliases = build_alias_index(&alias_pairs, &self.arena);
+    }
+
     /// Look up the engine hooks registered for `language`. Returns `None`
     /// when no hooks plugin opted in; engine then uses the no-op default
     /// for that language.

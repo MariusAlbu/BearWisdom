@@ -190,6 +190,7 @@ pub fn resolve_iteration_with_cached_index(
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
     cached_index: &mut Option<engine::SymbolIndex>,
+    cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
     new_files_slice: &[ParsedFile],
 ) -> Result<ResolutionStats> {
     resolve_iteration_with_cached_index_and_arena(
@@ -198,6 +199,7 @@ pub fn resolve_iteration_with_cached_index(
         symbol_id_map,
         project_ctx,
         cached_index,
+        cached_engine,
         new_files_slice,
         std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()),
     )
@@ -214,6 +216,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
     cached_index: &mut Option<engine::SymbolIndex>,
+    cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
     new_files_slice: &[ParsedFile],
     type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
 ) -> Result<ResolutionStats> {
@@ -240,6 +243,8 @@ pub fn resolve_iteration_with_cached_index_and_arena(
         symbol_id_map,
         project_ctx,
         cached_index.as_mut().expect("index is set above"),
+        cached_engine,
+        new_files_slice,
     )
 }
 

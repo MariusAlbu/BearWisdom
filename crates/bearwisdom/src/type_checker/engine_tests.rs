@@ -1350,6 +1350,132 @@ fn ext2_seg(name: &str, kind: SegmentKind, declared: Option<&str>, is_call: bool
 }
 
 #[test]
+fn augment_engine_resolves_identically_to_full_build() {
+    // P1 gate: an Engine built over [A] then augmented with [B] must resolve a
+    // B-dependent chain identically to an Engine built over [A, B] in one shot.
+    // `f.bar().qux()` needs Foo.bar(): Baz (file A) and Baz.qux() (file B).
+    use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
+    use crate::type_checker::core::SymbolIdMap;
+    use std::collections::HashMap;
+
+    let chain = MemberChain {
+        segments: vec![
+            ext2_seg("f", SegmentKind::Identifier, Some("Foo"), false),
+            ext2_seg("bar", SegmentKind::Property, None, true),
+            ext2_seg("qux", SegmentKind::Property, None, true),
+        ],
+    };
+    let chain_ref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 1,
+        target_name: "f.bar.qux".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        chain: Some(chain),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
+    let file_a = ext2_pf(
+        "a.ts",
+        vec![
+            ext2_sym("Foo", "Foo", SymbolKind::Class, None, Some("class Foo")),
+            ext2_sym("use", "use", SymbolKind::Function, None, None),
+            ext2_sym("bar", "Foo.bar", SymbolKind::Method, Some("Foo"), Some("bar(): Baz")),
+        ],
+        vec![chain_ref],
+    );
+    let file_b = ext2_pf(
+        "b.ts",
+        vec![
+            ext2_sym("Baz", "Baz", SymbolKind::Class, None, Some("class Baz")),
+            ext2_sym("qux", "Baz.qux", SymbolKind::Method, Some("Baz"), Some("qux(): void")),
+        ],
+        vec![],
+    );
+
+    let files = vec![file_a, file_b];
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next = 1i64;
+    for p in &files {
+        for s in &p.symbols {
+            id_map.insert((p.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
+        }
+    }
+    let index = SymbolIndex::build(&files, &id_map);
+    let mut eng = SymbolIdMap::default();
+    for p in &files {
+        for (i, s) in p.symbols.iter().enumerate() {
+            if let Some(&id) = id_map.get(&(p.path.clone(), s.qualified_name.clone())) {
+                eng.insert((p.path.clone(), i), id);
+            }
+        }
+    }
+
+    let fc = FileContext {
+        file_path: "a.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let resolve_with = |engine: &Engine| {
+        let r = &files[0].refs[0];
+        let rc = RefContext {
+            extracted_ref: r,
+            source_symbol: &files[0].symbols[1],
+            scope_chain: build_scope_chain(files[0].symbols[1].scope_path.as_deref()),
+            file_package_id: None,
+        };
+        engine.resolve(&rc, &fc, &index).map(|res| res.target_symbol_id)
+    };
+    // The Engine's own members are what `augment` mutates; resolution is masked
+    // by the SymbolIndex by-qname fallback (built over the full set), so compare
+    // the engine's internal member set directly to prove augment == rebuild.
+    let baz_members = |engine: &Engine| -> Vec<(String, i64)> {
+        let baz = engine.arena().class("Baz");
+        let mut v: Vec<(String, i64)> = engine
+            .members
+            .direct_of(baz)
+            .iter()
+            .map(|m| (m.name.clone(), m.id))
+            .collect();
+        v.sort();
+        v
+    };
+
+    // One-shot build over both files.
+    let full = Engine::build_from_registry(&files, &eng, &index, index.type_arena_arc());
+
+    // Build over A only, then augment with B.
+    let a_only = std::slice::from_ref(&files[0]);
+    let mut augmented = Engine::build_from_registry(a_only, &eng, &index, index.type_arena_arc());
+    let before = baz_members(&augmented);
+    augmented.augment(&files, std::slice::from_ref(&files[1]), &eng, &index);
+    let after = baz_members(&augmented);
+
+    let qux_id = id_map[&("b.ts".to_string(), "Baz.qux".to_string())];
+    assert!(
+        before.is_empty(),
+        "before augment, Baz's members are absent from the A-only engine: {before:?}"
+    );
+    assert_eq!(
+        after,
+        baz_members(&full),
+        "augment([B]) must produce Baz's member set identical to a full build over [A, B]"
+    );
+    assert_eq!(after, vec![("qux".to_string(), qux_id)], "Baz gains its qux member");
+    assert_eq!(
+        resolve_with(&augmented),
+        resolve_with(&full),
+        "end-to-end resolution is identical after augment"
+    );
+}
+
+#[test]
 fn ext2_external_class_method_chain_resolves_end_to_end() {
     use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
     use crate::type_checker::core::SymbolIdMap;

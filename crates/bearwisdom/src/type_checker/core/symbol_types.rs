@@ -159,9 +159,24 @@ impl SymbolTypeMap {
         parsed: &[ParsedFile],
         sym_id_map: &SymbolIdMap,
         arena: &TypeArena,
-        _profile: &LanguageProfile,
+        profile: &LanguageProfile,
     ) -> Self {
         let mut map = SymbolTypeMap::new();
+        map.ingest_files(parsed, sym_id_map, arena, profile);
+        map
+    }
+
+    /// Fold the symbol type-data of `parsed` into this map. Keyed by unique
+    /// sym_id, so incremental ingestion of an expand iteration's appended files
+    /// is byte-identical to a full rebuild.
+    pub fn ingest_files(
+        &mut self,
+        parsed: &[ParsedFile],
+        sym_id_map: &SymbolIdMap,
+        arena: &TypeArena,
+        _profile: &LanguageProfile,
+    ) {
+        let map = self;
         for pf in parsed {
             let is_external = pf.path.starts_with("ext:");
             for (idx, sym) in pf.symbols.iter().enumerate() {
@@ -220,7 +235,6 @@ impl SymbolTypeMap {
                 }
             }
         }
-        map
     }
 }
 

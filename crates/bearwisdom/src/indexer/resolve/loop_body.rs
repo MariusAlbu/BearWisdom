@@ -148,7 +148,18 @@ pub(super) fn resolve_iteration_inner_with_arena(
         None
     };
 
-    resolve_iteration_body(db, parsed, symbol_id_map, project_ctx, &mut index, augmented_id_map)
+    // One-shot / incremental path: no cross-pass caching, build the Engine once.
+    let mut local_engine: Option<crate::type_checker::Engine<'static>> = None;
+    resolve_iteration_body(
+        db,
+        parsed,
+        symbol_id_map,
+        project_ctx,
+        &mut index,
+        augmented_id_map,
+        &mut local_engine,
+        &[],
+    )
 }
 
 pub(super) fn resolve_iteration_inner_with_index(
@@ -157,8 +168,19 @@ pub(super) fn resolve_iteration_inner_with_index(
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
     index: &mut SymbolIndex,
+    cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
+    new_files: &[ParsedFile],
 ) -> Result<ResolutionStats> {
-    resolve_iteration_body(db, parsed, symbol_id_map, project_ctx, index, None)
+    resolve_iteration_body(
+        db,
+        parsed,
+        symbol_id_map,
+        project_ctx,
+        index,
+        None,
+        cached_engine,
+        new_files,
+    )
 }
 
 fn resolve_iteration_body(
@@ -168,6 +190,8 @@ fn resolve_iteration_body(
     project_ctx: Option<&ProjectContext>,
     index: &mut SymbolIndex,
     augmented_id_map: Option<HashMap<(String, String), i64>>,
+    cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
+    new_files: &[ParsedFile],
 ) -> Result<ResolutionStats> {
     // The closure passed to par_iter requires `&SymbolIndex` (for the
     // SymbolLookup trait), not `&mut SymbolIndex`. Reborrow as
@@ -224,12 +248,26 @@ fn resolve_iteration_body(
         }
         map
     };
-    let type_engine = crate::type_checker::Engine::build_from_registry(
-        parsed,
-        &engine_sym_id_map,
-        index,
-        index.type_arena_arc(),
-    );
+    // P1: build the Engine once and augment it with each expand iteration's
+    // appended files, instead of rebuilding the whole Engine every resolve pass.
+    // The return-inference loop appends no files and reuses the Engine untouched
+    // (inferred returns flow through the lookup's `return_type_name`, which the
+    // SymbolIndex patches). The one-shot / incremental callers pass a fresh
+    // `&mut None`, so they build once per call exactly as before.
+    if cached_engine.is_none() {
+        *cached_engine = Some(crate::type_checker::Engine::build_from_registry(
+            parsed,
+            &engine_sym_id_map,
+            index,
+            index.type_arena_arc(),
+        ));
+    } else if !new_files.is_empty() {
+        cached_engine
+            .as_mut()
+            .expect("cached_engine is Some")
+            .augment(parsed, new_files, &engine_sym_id_map, index);
+    }
+    let type_engine = cached_engine.as_ref().expect("cached_engine is set above");
 
     // Fast companion lookup: HashMap<path, &ParsedFile> replaces the
     // per-iteration O(N) `parsed.iter().find` scan that resolve used
@@ -992,6 +1030,18 @@ fn classify_external_ns(
             index
                 .classify_external_name(&r.target_name, effective_lang)
                 .map(|ns| ns.to_string())
+        })
+        // Profile-declared builtins: the `builtin_skip` predicate the resolver
+        // uses to decline a name before the ladder marks language-core names
+        // (Ada modular-type ops, proto well-known types) that the keyword-set
+        // classifier above may not enumerate. Brand them builtin so a declined
+        // name is an honest external, not a miscounted unresolved ref.
+        .or_else(|| {
+            type_engine
+                .profile_for(effective_lang)
+                .and_then(|p| p.builtin_skip)
+                .filter(|is_builtin| is_builtin(r.target_name.as_str()))
+                .map(|_| "builtin".to_string())
         })
         // Import-based: the ref's name (or its leading segment, for dotted
         // targets like `Stripe.Event`) matches an import whose module

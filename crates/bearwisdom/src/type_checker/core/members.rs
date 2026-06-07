@@ -73,6 +73,21 @@ impl MembersIndex {
         arena: &TypeArena,
     ) -> Self {
         let mut index = MembersIndex::new();
+        index.ingest_files(parsed, sym_id_map, arena);
+        index
+    }
+
+    /// Fold the members of `parsed` into this index. The full build runs it over
+    /// the whole parse set; the resolve loop's incremental path runs it over only
+    /// the files an expand iteration appended — byte-identical because `parsed`
+    /// is append-only, so the per-parent member Vecs land in the same order.
+    pub fn ingest_files(
+        &mut self,
+        parsed: &[ParsedFile],
+        sym_id_map: &SymbolIdMap,
+        arena: &TypeArena,
+    ) {
+        let index = self;
         for pf in parsed {
             // External files (ext: prefix) carry thousands of symbols per
             // dep — for ts-nextjs that's ~1M symbols. Engine chain walks
@@ -164,7 +179,6 @@ impl MembersIndex {
                 index.direct.entry(parent_ty).or_default().push(info);
             }
         }
-        index
     }
 
     /// Number of types with at least one direct member recorded.

@@ -671,6 +671,10 @@ pub fn full_index(
     // rebuild per iteration on a 280k-symbol index — saves 40-80s on
     // aspnetcore-sized projects across the 8-iteration cap.
     let mut cached_index: Option<resolve::engine::SymbolIndex> = None;
+    // P1: the type-checker Engine is built once on iteration 0 and augmented
+    // with each expand iteration's appended files, instead of rebuilt every
+    // resolve pass — threaded the same way as `cached_index`.
+    let mut cached_engine: Option<crate::type_checker::Engine<'static>> = None;
     let parsed_len_at_iter_start = parsed.len();
     let mut rstats = resolve::resolve_iteration_with_cached_index_and_arena(
         db,
@@ -678,7 +682,8 @@ pub fn full_index(
         &symbol_id_map,
         Some(&project_ctx),
         &mut cached_index,
-        // Iteration 0: cached_index is None so the function builds full;
+        &mut cached_engine,
+        // Iteration 0: caches are None so the function builds full;
         // empty new_files_slice is moot (the build path doesn't read it).
         &[],
         std::sync::Arc::clone(&workspace_arena),
@@ -723,6 +728,7 @@ pub fn full_index(
             &symbol_id_map,
             Some(&project_ctx),
             &mut cached_index,
+            &mut cached_engine,
             new_slice,
             std::sync::Arc::clone(&workspace_arena),
         )
@@ -788,6 +794,7 @@ pub fn full_index(
             &symbol_id_map,
             Some(&project_ctx),
             &mut cached_index,
+            &mut cached_engine,
             &[],
             std::sync::Arc::clone(&workspace_arena),
         )
