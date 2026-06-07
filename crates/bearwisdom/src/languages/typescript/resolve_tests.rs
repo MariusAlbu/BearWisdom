@@ -308,6 +308,37 @@ fn test_scope_chain_resolution() {
 }
 
 #[test]
+fn generic_applied_supertype_resolves_by_head() {
+    // `class A extends B<string>` — the extractor folds the type arguments into
+    // the heritage target ("B<string>") so the engine can substitute inherited
+    // generic methods, but the edge bind must strip to the bare head `B`.
+    let file = make_ts_file(
+        "src/a.ts",
+        vec![
+            make_symbol("B", "B", SymbolKind::Class, Visibility::Public, None),
+            make_symbol("A", "A", SymbolKind::Class, Visibility::Public, None),
+        ],
+        vec![make_ref(1, "B<string>", EdgeKind::Inherits, 1)],
+    );
+    let (index, id_map) = build_test_env(&[&file]);
+    let file_ctx = build_file_context(&file, None);
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[0],
+        source_symbol: &file.symbols[1],
+        scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
+        .expect("extends B<string> should resolve to B by head");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("src/a.ts".to_string(), "B".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
 fn test_import_resolution_relative_by_in_file_lookup() {
     // `import { formatDate } from './utils'` — the import binding ref carries
     // module="./utils". We look up by simple name in the target file.

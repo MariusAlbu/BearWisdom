@@ -2047,6 +2047,40 @@ impl<'a> DefaultResolver<'a> {
         &self,
         profile: &crate::type_checker::profile::language_profile::LanguageProfile,
     ) -> Option<Resolution> {
+        // Generic-applied supertype: `class X extends Base<T>` is extracted with
+        // the type arguments folded into `target_name` (the engine needs them to
+        // substitute an inherited generic method's return), but the by-name /
+        // qname rungs key on the bare head. Retry the ladder with the head — the
+        // same split `inherits_map` already applies on the climbing side. The
+        // stripped name carries no `<`, so the retry can't re-enter this arm.
+        let r = self.ref_ctx.extracted_ref;
+        if matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements)
+            && r.target_name.contains('<')
+        {
+            let head =
+                crate::indexer::resolve::engine::chain_walker::parse_type_head_and_args(
+                    &r.target_name,
+                )
+                .0;
+            if !head.is_empty() && head.len() != r.target_name.len() {
+                let mut bare_ref = r.clone();
+                bare_ref.target_name = head.to_string();
+                let bare_ctx = RefContext {
+                    extracted_ref: &bare_ref,
+                    source_symbol: self.ref_ctx.source_symbol,
+                    scope_chain: self.ref_ctx.scope_chain.clone(),
+                    file_package_id: self.ref_ctx.file_package_id,
+                };
+                return DefaultResolver {
+                    file_ctx: self.file_ctx,
+                    ref_ctx: &bare_ctx,
+                    lookup: self.lookup,
+                    kind_compatible: self.kind_compatible,
+                }
+                .resolve_all_with_profile(profile);
+            }
+        }
+
         let table = profile.kind_compatible_table;
         // The index join is always `.`; add the profile separator only when it
         // differs, so a `.`-separator language probes `.` exactly once.
