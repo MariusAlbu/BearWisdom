@@ -32,6 +32,14 @@ pub use profile::C_LANG_PROFILE;
 mod extract_tests;
 
 #[cfg(test)]
+#[path = "calls_tests.rs"]
+mod calls_tests;
+
+#[cfg(test)]
+#[path = "declarations_tests.rs"]
+mod declarations_tests;
+
+#[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 

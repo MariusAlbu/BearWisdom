@@ -26,6 +26,19 @@ pub(super) fn push_function_def(
     let (name, is_destructor) = extract_declarator_name(&decl_node, src);
     let name = name?;
 
+    // Tree-sitter-cpp misparses COM vtbl / calling-convention declarators
+    // (`HRESULT ( STDMETHODCALLTYPE *QueryInterface )( ... )`) and Win32
+    // macro shapes so the RETURN TYPE is extracted as the function name. A
+    // function whose name equals its own return-type token cannot exist in
+    // well-formed C/C++, so skip it — emitting it would drown the real
+    // typedef (e.g. `HRESULT`) under a phantom function symbol. Exact-token
+    // comparison only: a normal `int foo()` has name "foo" != type "int".
+    if let Some(type_node) = node.child_by_field_name("type") {
+        if node_text(type_node, src) == name {
+            return None;
+        }
+    }
+
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
     let qualified_name = scope_tree::qualify(&name, scope);
     let scope_path = scope_tree::scope_path(scope);
@@ -487,6 +500,15 @@ pub(super) fn push_declaration(
             _ => None,
         };
         if let Some(name) = name_opt {
+            // COM vtbl / calling-convention misparse: tree-sitter-cpp can pull
+            // the RETURN TYPE out as the function name (`HRESULT (...)( ... )`).
+            // A function whose name equals its own return-type token cannot
+            // exist in well-formed code, so skip it to keep the real typedef
+            // visible. Restricted to function-shaped declarators with an
+            // exact name == return-type-token match.
+            if name == type_str && has_function_declarator(&child) {
+                continue;
+            }
             let qualified_name = scope_tree::qualify(&name, scope);
             // Forward declarations whose declarator is (or contains) a
             // function_declarator represent function/method signatures, not variables.

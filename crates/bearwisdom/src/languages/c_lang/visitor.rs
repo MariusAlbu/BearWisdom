@@ -62,7 +62,7 @@ pub(super) fn extract_node<'a>(
                         match inner.kind() {
                             "function_definition" => {
                                 let sym_idx = idx.unwrap_or_else(|| symbols.len().saturating_sub(1));
-                                extract_calls_from_body(&body, src, sym_idx, refs);
+                                extract_calls_from_body(&body, src, language, sym_idx, refs);
                                 // Also extract nested symbols inside the function body.
                                 extract_node(body, src, scope_tree, language, symbols, refs, idx);
                             }
@@ -136,7 +136,7 @@ pub(super) fn extract_node<'a>(
                 emit_param_type_refs(&child, src, sym_idx, refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     // Ref extraction (calls, type refs, new, etc.)
-                    extract_calls_from_body(&body, src, sym_idx, refs);
+                    extract_calls_from_body(&body, src, language, sym_idx, refs);
                     // Symbol extraction for nested declarations, local classes, etc.
                     extract_node(body, src, scope_tree, language, symbols, refs, idx);
                 }
@@ -319,7 +319,7 @@ pub(super) fn extract_node<'a>(
                 }
                 // Emit Calls refs for call_expressions in declaration initialisers
                 // (e.g. `static int x = compute_len("abc");`).
-                extract_calls_from_body(&child, src, call_source_idx, refs);
+                extract_calls_from_body(&child, src, language, call_source_idx, refs);
                 // Also recurse fully into the declaration so that nested
                 // struct/enum/union specifiers in initializers and complex
                 // declarators are extracted as symbols.
@@ -331,7 +331,7 @@ pub(super) fn extract_node<'a>(
             // `expression_statement` → `call_expression` at the top level.
             "expression_statement" => {
                 let source_idx = parent_index.unwrap_or(symbols.len().saturating_sub(1));
-                extract_calls_from_body(&child, src, source_idx, refs);
+                extract_calls_from_body(&child, src, language, source_idx, refs);
                 // Recurse for symbol extraction (e.g. compound literals with inline struct defs)
                 extract_node(child, src, scope_tree, language, symbols, refs, parent_index);
             }

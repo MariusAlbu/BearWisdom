@@ -46,9 +46,29 @@ fn unwrap_template<'a>(node: Node<'a>) -> (Node<'a>, Option<Node<'a>>) {
     }
 }
 
+/// True for binary operator tokens that may be overloaded as a free or member
+/// function in C++. Covers arithmetic, bitwise, shift, relational, equality,
+/// logical, and compound-assignment forms — the operators reachable through a
+/// `binary_expression` node. Plain `=`, member-access `->`/`.`, and the comma
+/// operator are excluded: their overloads (where legal) don't participate in
+/// the `a OP b` ADL pattern this drives.
+fn is_overloadable_binary_operator(tok: &str) -> bool {
+    matches!(
+        tok,
+        "+" | "-" | "*" | "/" | "%"
+            | "&" | "|" | "^"
+            | "<<" | ">>"
+            | "<" | ">" | "<=" | ">=" | "==" | "!="
+            | "&&" | "||"
+            | "+=" | "-=" | "*=" | "/=" | "%="
+            | "&=" | "|=" | "^=" | "<<=" | ">>="
+    )
+}
+
 pub(super) fn extract_calls_from_body(
     node: &Node,
     src: &[u8],
+    language: &str,
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
@@ -96,7 +116,58 @@ pub(super) fn extract_calls_from_body(
 });
                     }
                 }
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
+            }
+
+            // -----------------------------------------------------------------
+            // C++ overloadable operators as Calls refs (enables ADL).
+            // A `binary_expression` / `subscript_expression` whose operator is
+            // a free/member-overloadable token emits a Calls ref named
+            // `operator<tok>` (e.g. `a + b` → "operator+", `os << x` →
+            // "operator<<", `a == b` → "operator==", `c[i]` → "operator[]").
+            // The operator set covers the arithmetic, bitwise, shift,
+            // relational, equality, and logical binary operators plus
+            // subscript — every operator that may be overloaded as a binary
+            // free function or member. Pointer-member (`->`), unary, and
+            // assignment-only forms are out of scope. Emission is widening
+            // only: the resolver binds the ref solely when a matching
+            // `operator…` symbol exists, so the ref resolves to nothing when
+            // it doesn't. Restricted to C++ — C has no operator overloading.
+            "binary_expression" if language != "c" => {
+                if let Some(op) = child.child_by_field_name("operator") {
+                    let tok = node_text(op, src);
+                    if is_overloadable_binary_operator(&tok) {
+                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            source_symbol_index,
+                            target_name: format!("operator{tok}"),
+                            kind: EdgeKind::Calls,
+                            line: child.start_position().row as u32,
+                            col: 0,
+                            module: None,
+                            chain: None,
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
+                    }
+                }
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
+            }
+
+            "subscript_expression" if language != "c" => {
+                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    source_symbol_index,
+                    target_name: "operator[]".to_string(),
+                    kind: EdgeKind::Calls,
+                    line: child.start_position().row as u32,
+                    col: 0,
+                    module: None,
+                    chain: None,
+                    byte_offset: child.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
             }
 
             // -----------------------------------------------------------------
@@ -109,7 +180,7 @@ pub(super) fn extract_calls_from_body(
                         emit_typerefs_for_type_descriptor(inner, src, source_symbol_index, refs);
                     }
                 }
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
             }
 
             // -----------------------------------------------------------------
@@ -151,7 +222,7 @@ pub(super) fn extract_calls_from_body(
                         _ => {}
                     }
                 }
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
             }
 
             // -----------------------------------------------------------------
@@ -231,7 +302,7 @@ pub(super) fn extract_calls_from_body(
                     }
                 }
                 // recurse for calls in argument list
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
             }
 
             // -----------------------------------------------------------------
@@ -247,9 +318,9 @@ pub(super) fn extract_calls_from_body(
                 }
                 // Recurse into body for calls.
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_calls_from_body(&body, src, source_symbol_index, refs);
+                    extract_calls_from_body(&body, src, language, source_symbol_index, refs);
                 } else {
-                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                    extract_calls_from_body(&child, src, language, source_symbol_index, refs);
                 }
             }
 
@@ -257,13 +328,13 @@ pub(super) fn extract_calls_from_body(
             // try/catch — catch_clause: TypeRef for exception type + Variable
             // -----------------------------------------------------------------
             "try_statement" => {
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
             }
             "catch_clause" => {
                 if let Some(params) = child.child_by_field_name("parameters") {
                     extract_catch_typerefs(&params, src, source_symbol_index, refs);
                 }
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
             }
 
             // -----------------------------------------------------------------
@@ -271,11 +342,11 @@ pub(super) fn extract_calls_from_body(
             // -----------------------------------------------------------------
             "template_type" => {
                 emit_typerefs_for_type_descriptor(child, src, source_symbol_index, refs);
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
             }
 
             _ => {
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, language, source_symbol_index, refs);
             }
         }
     }
