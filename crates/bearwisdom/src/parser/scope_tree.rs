@@ -85,11 +85,14 @@ pub fn build(root: Node, source: &[u8], config: &[ScopeKind]) -> ScopeTree {
 /// Returns `None` if no scope covers the offset (e.g. top-level code before
 /// any namespace declaration).
 pub fn find_scope_at(tree: &ScopeTree, byte_offset: usize) -> Option<&ScopeEntry> {
-    // Scopes are in DFS order — deeper scopes appear after their parents.
-    // We want the deepest (last matching) scope.
-    tree.iter()
-        .filter(|s| s.start_byte <= byte_offset && byte_offset < s.end_byte)
-        .last()
+    // Entries are in DFS pre-order, so start_byte is non-decreasing. Scopes that
+    // cover one offset nest, so within the `start_byte <= offset` prefix the
+    // deepest (DFS-last) covering scope is the last one whose end_byte > offset.
+    // partition_point bounds the scan to that prefix and rev().find stops at the
+    // first cover — the same element the old filter(...).last() returned, without
+    // touching entries that start after the offset.
+    let prefix = tree.partition_point(|s| s.start_byte <= byte_offset);
+    tree[..prefix].iter().rev().find(|s| byte_offset < s.end_byte)
 }
 
 /// Find the deepest scope that ENCLOSES `[node_start, node_end)` — i.e. the
@@ -106,15 +109,12 @@ pub fn find_enclosing_scope(
     node_start: usize,
     node_end: usize,
 ) -> Option<&ScopeEntry> {
-    tree.iter()
-        .filter(|s| {
-            // Scope covers the node's start byte (node is inside the scope).
-            s.start_byte <= node_start
-                && node_start < s.end_byte
-                // Exclude the scope entry that corresponds to the node itself.
-                && !(s.start_byte == node_start && s.end_byte == node_end)
-        })
-        .last()
+    // Same DFS-pre-order bound as find_scope_at; additionally exclude the scope
+    // entry the node itself opened (an exact [node_start, node_end) match).
+    let prefix = tree.partition_point(|s| s.start_byte <= node_start);
+    tree[..prefix].iter().rev().find(|s| {
+        node_start < s.end_byte && !(s.start_byte == node_start && s.end_byte == node_end)
+    })
 }
 
 /// Build the qualified name for a symbol given the innermost enclosing scope.
