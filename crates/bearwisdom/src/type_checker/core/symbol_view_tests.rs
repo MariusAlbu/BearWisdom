@@ -3,11 +3,9 @@
 // =============================================================================
 
 use super::*;
-use crate::containment::{ContainingScope, FrameKind, ScopeFrame};
 use crate::indexer::resolve::engine::SymbolInfo;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::{PrimKind, TypeArena};
-use crate::types::SymbolKind;
 use std::sync::Arc;
 
 fn sym(id: i64, name: &str, qname: &str, kind: &str) -> SymbolInfo {
@@ -22,10 +20,6 @@ fn sym(id: i64, name: &str, qname: &str, kind: &str) -> SymbolInfo {
         package_id: None,
         signature: None,
     }
-}
-
-fn frame(kind: FrameKind, name: &str) -> ScopeFrame {
-    ScopeFrame::new(kind, name, name, None)
 }
 
 #[test]
@@ -148,37 +142,3 @@ fn type_data_some_when_recorded_none_when_absent() {
     );
 }
 
-#[test]
-fn containing_type_and_namespace_when_scope_supplied() {
-    let types = SymbolTypeMap::new();
-    // run() inside class App inside namespace app.
-    let scope = ContainingScope::new(vec![
-        frame(FrameKind::Sym(SymbolKind::Method), "run"),
-        frame(FrameKind::Sym(SymbolKind::Class), "App"),
-        frame(FrameKind::Sym(SymbolKind::Namespace), "app"),
-        frame(FrameKind::Project, "<root>"),
-    ]);
-
-    let s = sym(1, "run", "app.App.run", "method");
-    let v = SymbolView::with_scope(&s, &types, &scope);
-
-    assert_eq!(
-        v.containing_type().map(|f| f.name.as_str()),
-        Some("App"),
-        "containing_type selects the enclosing class by kind"
-    );
-    assert_eq!(
-        v.containing_namespace().map(|f| f.name.as_str()),
-        Some("app"),
-        "containing_namespace selects the enclosing namespace by kind"
-    );
-}
-
-#[test]
-fn containment_accessors_none_without_scope() {
-    let types = SymbolTypeMap::new();
-    let s = sym(1, "run", "app.App.run", "method");
-    let v = SymbolView::new(&s, &types);
-    assert!(v.containing_type().is_none());
-    assert!(v.containing_namespace().is_none());
-}

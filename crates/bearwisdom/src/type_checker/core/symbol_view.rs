@@ -1,11 +1,10 @@
 // =============================================================================
 // type_checker/core/symbol_view.rs — unified per-symbol read facade
 //
-// One borrow over a symbol's identity (`SymbolInfo`), its type bundle
-// (`SymbolTypeMap`, keyed by symbol id), and its containment chain
-// (`ContainingScope`). Consumers ask `view.param_types()` /
-// `view.containing_type()` instead of threading three structures and keying
-// each by hand.
+// One borrow over a symbol's identity (`SymbolInfo`) and its type bundle
+// (`SymbolTypeMap`, keyed by symbol id). Consumers ask `view.param_types()`
+// instead of threading both structures and keying each by hand. Structural
+// containment is an id edge consulted through `SymbolLookup`, not carried here.
 //
 // The type accessors are an honest tri-state: `None` means "no
 // SymbolTypeData record for this id" (the symbol's types were never recorded
@@ -14,7 +13,6 @@
 // args" must branch on the `Option`, never collapse it.
 // =============================================================================
 
-use crate::containment::{ContainingScope, FrameKind, ScopeFrame};
 use crate::indexer::resolve::engine::SymbolInfo;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::{GenericParamId, TypeId};
@@ -24,24 +22,12 @@ use crate::type_checker::core::types::{GenericParamId, TypeId};
 pub struct SymbolView<'a> {
     pub info: &'a SymbolInfo,
     types: &'a SymbolTypeMap,
-    scope: Option<&'a ContainingScope>,
 }
 
 impl<'a> SymbolView<'a> {
-    /// View with no containment chain. Type accessors work; the containment
-    /// accessors return `None`.
+    /// Construct a view over a symbol's identity and type bundle.
     pub fn new(info: &'a SymbolInfo, types: &'a SymbolTypeMap) -> Self {
-        Self { info, types, scope: None }
-    }
-
-    /// View backed by a containment chain, enabling `containing_type` /
-    /// `containing_namespace`.
-    pub fn with_scope(
-        info: &'a SymbolInfo,
-        types: &'a SymbolTypeMap,
-        scope: &'a ContainingScope,
-    ) -> Self {
-        Self { info, types, scope: Some(scope) }
+        Self { info, types }
     }
 
     /// Positional parameter types. `None` when no `SymbolTypeData` record
@@ -82,20 +68,6 @@ impl<'a> SymbolView<'a> {
     /// per-field accessors otherwise.
     pub fn type_data(&self) -> Option<&'a SymbolTypeData> {
         self.types.get(self.info.id)
-    }
-
-    /// The nearest enclosing type frame, excluding the symbol itself —
-    /// Roslyn's `ContainingType`. `None` when no containment chain was
-    /// supplied or no enclosing type exists.
-    pub fn containing_type(&self) -> Option<&'a ScopeFrame> {
-        self.scope?.containing_of_kind(FrameKind::is_type)
-    }
-
-    /// The nearest enclosing namespace/module frame, excluding the symbol
-    /// itself — Roslyn's `ContainingNamespace`. `None` when no containment
-    /// chain was supplied or no enclosing namespace exists.
-    pub fn containing_namespace(&self) -> Option<&'a ScopeFrame> {
-        self.scope?.containing_of_kind(FrameKind::is_namespace)
     }
 }
 

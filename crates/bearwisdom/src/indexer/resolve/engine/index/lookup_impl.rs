@@ -10,7 +10,7 @@
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
-use super::{strip_generic_args, SymbolIndex};
+use super::{is_type_like_kind, strip_generic_args, SymbolIndex};
 use super::LOCAL_TYPE_CACHE;
 use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup};
 
@@ -320,22 +320,40 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
-        self.containing_scope
-            .get(source_qname)
-            .and_then(|s| s.containing_type_qname())
+        let start = self.by_qname.get(source_qname)?;
+        // Walk the containment edge upward (excluding self), returning the
+        // first ancestor whose kind is a type. The bounded hop count guards a
+        // malformed (cyclic) containing_id chain.
+        let mut cur = self.containing_id.get(&start.id).copied();
+        for _ in 0..256 {
+            let pid = cur?;
+            let info = self.by_id.get(&pid)?;
+            if is_type_like_kind(&info.kind) {
+                return Some(info.qualified_name.as_str());
+            }
+            cur = self.containing_id.get(&pid).copied();
+        }
+        None
     }
 
     fn enclosing_namespace_qname(&self, source_qname: &str) -> Option<&str> {
-        self.containing_scope
-            .get(source_qname)
-            .and_then(|s| s.containing_namespace_qname())
-    }
-
-    fn containing_scope(
-        &self,
-        source_qname: &str,
-    ) -> Option<&crate::containment::ContainingScope> {
-        self.containing_scope.get(source_qname)
+        let start = self.by_qname.get(source_qname)?;
+        // Nearest namespace/module ancestor via the containment edge. When the
+        // chain tops out without one, the package is hoisted into scope_path
+        // (Java-style) rather than modeled as a parent symbol — fall back to
+        // the topmost reached symbol's scope_path, which is that package.
+        let mut topmost = start;
+        let mut cur = self.containing_id.get(&start.id).copied();
+        for _ in 0..256 {
+            let Some(pid) = cur else { break };
+            let Some(info) = self.by_id.get(&pid) else { break };
+            if matches!(info.kind.as_str(), "namespace" | "module") {
+                return Some(info.qualified_name.as_str());
+            }
+            topmost = info;
+            cur = self.containing_id.get(&pid).copied();
+        }
+        topmost.scope_path.as_deref()
     }
 
     fn selector_qname(&self, raw_selector: &str) -> Option<&str> {

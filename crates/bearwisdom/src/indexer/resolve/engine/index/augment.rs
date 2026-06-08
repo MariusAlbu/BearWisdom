@@ -99,6 +99,19 @@ impl SymbolIndex {
                     .or_default()
                     .push(info.clone());
 
+                // Id spine + structural containment edge (child id → parent id),
+                // mirrors the build path.
+                self.by_id.insert(id, info.clone());
+                if let Some(p) = sym.parent_index {
+                    if let Some(parent) = pf.symbols.get(p) {
+                        if let Some(&pid) =
+                            symbol_id_map.get(&(pf.path.clone(), parent.qualified_name.clone()))
+                        {
+                            self.containing_id.insert(id, pid);
+                        }
+                    }
+                }
+
                 // Direct-children index keyed on the PARENT symbol's qualified
                 // name, resolved structurally via `parent_index` so a child whose
                 // own qname dropped a prefix still files under its real parent.
@@ -540,7 +553,7 @@ impl SymbolIndex {
 
         let mut stmt = match conn.prepare(
             "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
-                    s.scope_path, s.visibility, f.package_id, s.signature
+                    s.scope_path, s.visibility, f.package_id, s.signature, s.containing_id
              FROM symbols s
              JOIN files f ON f.id = s.file_id",
         ) {
@@ -559,6 +572,7 @@ impl SymbolIndex {
                 row.get::<_, Option<String>>(6)?,
                 row.get::<_, Option<i64>>(7)?,
                 row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<i64>>(9)?,
             ))
         }) {
             Ok(r) => r,
@@ -566,7 +580,7 @@ impl SymbolIndex {
         };
 
         for row in rows {
-            let Ok((id, name, qname, kind, file_path, scope_path, visibility, package_id, signature)) = row
+            let Ok((id, name, qname, kind, file_path, scope_path, visibility, package_id, signature, containing_id_col)) = row
             else {
                 continue;
             };
@@ -599,6 +613,13 @@ impl SymbolIndex {
 
             self.by_name.entry(name.clone()).or_default().push(info.clone());
             self.by_qname.insert(qname.clone(), info.clone());
+            // Id spine + persisted containment edge for this unchanged-file
+            // symbol — finally consuming the `containing_id` column for symbols
+            // the current pass didn't reparse.
+            self.by_id.insert(id, info.clone());
+            if let Some(pid) = containing_id_col {
+                self.containing_id.insert(id, pid);
+            }
             if let Some(pkg_id) = info.package_id {
                 self.by_package.entry(pkg_id).or_default().push(info.clone());
             }

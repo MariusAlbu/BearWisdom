@@ -85,6 +85,8 @@ impl SymbolIndex {
         let mut members_by_parent: FxHashMap<String, Vec<SymbolInfo>> =
             FxHashMap::default();
         let mut types_by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        let mut by_id: FxHashMap<i64, SymbolInfo> = FxHashMap::default();
+        let mut containing_id: FxHashMap<i64, i64> = FxHashMap::default();
 
         for pf in parsed {
             // One Arc<str> per file — all symbols in this file share the same
@@ -140,6 +142,20 @@ impl SymbolIndex {
                     .entry(pf.path.clone())
                     .or_default()
                     .push(info.clone());
+
+                // Id spine: id → record, plus the structural containment edge
+                // from the in-file parent pointer (child id → parent id), the
+                // in-memory mirror of the persisted `containing_id` column.
+                by_id.insert(id, info.clone());
+                if let Some(p) = sym.parent_index {
+                    if let Some(parent) = pf.symbols.get(p) {
+                        if let Some(&pid) =
+                            symbol_id_map.get(&(pf.path.clone(), parent.qualified_name.clone()))
+                        {
+                            containing_id.insert(id, pid);
+                        }
+                    }
+                }
 
                 // Direct-children index keyed on the PARENT symbol's qualified
                 // name, resolved structurally via `parent_index`. Using the
@@ -656,8 +672,10 @@ impl SymbolIndex {
                 if inherits_map.contains_key(child_qname) {
                     continue;
                 }
-                // Resolve parent simple name → qname via by_name.
-                let parent_simple = r.target_name.trim_start_matches('\\');
+                // Resolve parent simple name → qname via by_name. Strip generic
+                // type arguments so `extends Foo<Bar>` keys on the head `Foo`.
+                let parent_raw = r.target_name.trim_start_matches('\\');
+                let parent_simple = parse_type_head_and_args(parent_raw).0;
                 let candidates = by_name.get(parent_simple).map(|v| v.as_slice()).unwrap_or(&[]);
                 if candidates.is_empty() {
                     continue;
@@ -677,26 +695,6 @@ impl SymbolIndex {
                         .unwrap_or(&candidates[0])
                 };
                 inherits_map.insert(child_qname.clone(), best.qualified_name.clone());
-            }
-        }
-
-        // Build the structured containment chain for every symbol — the single
-        // source of truth behind the enclosing-type / enclosing-namespace
-        // queries. `build_containing_scope` walks each symbol's `parent_index`
-        // chain (kind-tagged frames, innermost first), immune to the
-        // qname-construction bug that drops a parameter's package. Consumers
-        // select the enclosing type/namespace by *kind* off the chain rather
-        // than re-splitting a dotted string. Keyed by the source symbol's qname,
-        // first write wins.
-        let mut containing_scope: FxHashMap<String, crate::containment::ContainingScope> =
-            FxHashMap::default();
-        for pf in parsed {
-            for (i, sym) in pf.symbols.iter().enumerate() {
-                containing_scope
-                    .entry(sym.qualified_name.clone())
-                    .or_insert_with(|| {
-                        crate::containment::build_containing_scope(&pf.symbols, i, None)
-                    });
             }
         }
 
@@ -1157,7 +1155,8 @@ impl SymbolIndex {
             path_aliases_union,
             tsconfig_types_union,
             inherits_map,
-            containing_scope,
+            by_id,
+            containing_id,
             alias_target: alias_target_map,
             qname_duplicates,
             ambient_global_method_names,

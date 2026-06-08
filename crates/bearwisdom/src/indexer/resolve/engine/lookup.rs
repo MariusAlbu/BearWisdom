@@ -377,19 +377,6 @@ pub trait SymbolLookup {
         None
     }
 
-    /// The structured containment chain of the symbol named `source_qname` — the
-    /// kind-tagged frame stack from the symbol out to the project root, the
-    /// source behind `enclosing_type_qname` / `enclosing_namespace_qname`.
-    /// Consult it directly when a caller needs the chain itself (the containing
-    /// type AND namespace, or an ancestor walk) rather than one projection.
-    /// Default `None` for synthetic lookups that don't opt in.
-    fn containing_scope(
-        &self,
-        _source_qname: &str,
-    ) -> Option<&crate::containment::ContainingScope> {
-        None
-    }
-
     /// Record a chain walker bail-out for the R3 second-pass reload.
     ///
     /// Called by `crate::type_checker::chain::resolve_via_chain` when it resolved

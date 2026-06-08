@@ -124,15 +124,18 @@ pub struct SymbolIndex {
     /// Keyed by child qname (dotted form), value is the direct parent qname.
     /// Transitive ancestors are reached by chaining lookups.
     inherits_map: FxHashMap<String, String>,
-    /// Structured containment chain per symbol, keyed by the symbol's qualified
-    /// name — the single source of truth for "what type/namespace encloses X."
-    /// Built from each symbol's `parent_index` chain via
-    /// `crate::containment::build_containing_scope`; the kind-tagged frame stack
-    /// selects the enclosing type/namespace by *kind* — what positional
-    /// scope-chain indexing (`get(1)`, `len - 2`) cannot express. The
-    /// `enclosing_type_qname` / `enclosing_namespace_qname` accessors and
-    /// `containing_scope` are projections over it.
-    containing_scope: FxHashMap<String, crate::containment::ContainingScope>,
+    /// Per-symbol identity record keyed by the stable symbol id — the id spine.
+    /// Lets a containment walk (or any consumer holding an id rather than a
+    /// qname) recover a symbol's kind / qname / scope_path. Populated alongside
+    /// the qname/name maps for parsed files and for DB-augmented symbols.
+    by_id: FxHashMap<i64, SymbolInfo>,
+    /// Structural containment edge: child symbol id → parent symbol id — the
+    /// in-memory mirror of the persisted `symbols.containing_id`. Built from
+    /// `parent_index` for parsed files and loaded from the column for
+    /// DB-augmented (unchanged-file) symbols. `enclosing_type_qname` /
+    /// `enclosing_namespace_qname` walk it, selecting the enclosing
+    /// type/namespace by the ancestor's kind.
+    containing_id: FxHashMap<i64, i64>,
     /// Structural shape of every TypeAlias symbol in the project.
     /// Indexed by both qualified name AND simple name so chain walkers can
     /// look up an alias whether or not the encountered name carries its
