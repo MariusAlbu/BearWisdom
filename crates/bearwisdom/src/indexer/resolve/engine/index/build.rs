@@ -146,13 +146,17 @@ impl SymbolIndex {
                 // Id spine: id → record, plus the structural containment edge
                 // from the in-file parent pointer (child id → parent id), the
                 // in-memory mirror of the persisted `containing_id` column.
-                by_id.insert(id, info.clone());
+                // First-wins to match `by_qname`: a duplicated qname (declaration
+                // merging, overloads) collapses to one id, and the containment
+                // walk starts from `by_qname`'s first-wins record — so its
+                // chain must be the first occurrence's too, not the last.
+                by_id.entry(id).or_insert_with(|| info.clone());
                 if let Some(p) = sym.parent_index {
                     if let Some(parent) = pf.symbols.get(p) {
                         if let Some(&pid) =
                             symbol_id_map.get(&(pf.path.clone(), parent.qualified_name.clone()))
                         {
-                            containing_id.insert(id, pid);
+                            containing_id.entry(id).or_insert(pid);
                         }
                     }
                 }

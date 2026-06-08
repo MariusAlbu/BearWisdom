@@ -100,14 +100,14 @@ impl SymbolIndex {
                     .push(info.clone());
 
                 // Id spine + structural containment edge (child id → parent id),
-                // mirrors the build path.
-                self.by_id.insert(id, info.clone());
+                // mirrors the build path (first-wins to match `by_qname`).
+                self.by_id.entry(id).or_insert_with(|| info.clone());
                 if let Some(p) = sym.parent_index {
                     if let Some(parent) = pf.symbols.get(p) {
                         if let Some(&pid) =
                             symbol_id_map.get(&(pf.path.clone(), parent.qualified_name.clone()))
                         {
-                            self.containing_id.insert(id, pid);
+                            self.containing_id.entry(id).or_insert(pid);
                         }
                     }
                 }

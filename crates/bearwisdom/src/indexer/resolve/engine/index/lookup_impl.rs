@@ -10,7 +10,7 @@
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
-use super::{is_type_like_kind, strip_generic_args, SymbolIndex};
+use super::{strip_generic_args, SymbolIndex};
 use super::LOCAL_TYPE_CACHE;
 use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup};
 
@@ -328,7 +328,13 @@ impl SymbolLookup for SymbolIndex {
         for _ in 0..256 {
             let pid = cur?;
             let info = self.by_id.get(&pid)?;
-            if is_type_like_kind(&info.kind) {
+            // A type-defining ancestor only (Roslyn's ContainingType): namespaces,
+            // type aliases, etc. are NOT enclosing types. This is the kind set the
+            // resolver's enclosing-type lookup has always used.
+            if matches!(
+                info.kind.as_str(),
+                "class" | "struct" | "interface" | "trait" | "enum"
+            ) {
                 return Some(info.qualified_name.as_str());
             }
             cur = self.containing_id.get(&pid).copied();
