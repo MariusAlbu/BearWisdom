@@ -308,6 +308,70 @@ fn blast_radius_reresolved_on_modify() {
     );
 }
 
+/// The Stage 2 win: a body-only edit changes no symbol's key, so every id
+/// survives, the inbound edge from the consumer stays valid, and the consumer
+/// is NOT re-resolved. Under the old churn-all path B re-resolved on every
+/// keystroke; this caps re-resolution to actual contract changes.
+#[test]
+fn body_only_change_does_not_reresolve_dependents() {
+    let dir = TempDir::new().unwrap();
+
+    fs::write(
+        dir.path().join("a.cs"),
+        "namespace App { class Svc { public static void DoWork() {} } }",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("b.cs"),
+        "namespace App { class Consumer { void Run() { Svc.DoWork(); } } }",
+    )
+    .unwrap();
+
+    let mut db = Database::open_in_memory().unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
+
+    let dowork_before: i64 = db
+        .conn()
+        .query_row("SELECT id FROM symbols WHERE name = 'DoWork'", [], |r| r.get(0))
+        .unwrap();
+
+    // Edit only DoWork's body — same name, params, return type ⇒ same key.
+    fs::write(
+        dir.path().join("a.cs"),
+        "namespace App { class Svc { public static void DoWork() { int x = 1; } } }",
+    )
+    .unwrap();
+
+    let changes = vec![FileChangeEvent {
+        relative_path: "a.cs".to_string(),
+        change_kind: ChangeKind::Modified,
+    }];
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
+
+    assert_eq!(stats.files_modified, 1);
+    assert_eq!(
+        stats.files_reresolved, 0,
+        "a body-only change must re-resolve no dependents, got {}",
+        stats.files_reresolved
+    );
+
+    // DoWork kept its id, and B's edge into it survived untouched.
+    let dowork_after: i64 = db
+        .conn()
+        .query_row("SELECT id FROM symbols WHERE name = 'DoWork'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(dowork_after, dowork_before, "survivor kept its id");
+    let inbound: u32 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE target_id = ?1",
+            [dowork_after],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(inbound >= 1, "inbound edge from the consumer is preserved");
+}
+
 /// When a deleted file's symbols are referenced by other files, those
 /// dependents should be re-resolved.
 #[test]

@@ -199,3 +199,36 @@ Two changes forced by implementation reality (full lib suite green, 6732 tests):
   queries, resolve this** — most likely by dropping the FK and keeping `containing_id` a plain
   indexed integer, with integrity maintained by survivor-matching. **This also gates nothing in
   Stage 2** (survivor-matching keys on `symbol_key`, whose indexes are safe).
+
+## Stage 2 landed — survivor-matching write path
+
+The incremental path matches each symbol to its existing row by `symbol_key` instead of
+deleting and reinserting (`write_parsed_files_incremental`; the old churn entry
+`write_parsed_files` is gone). Survivors keep their id, so a body-only edit re-resolves the
+edited file alone and **zero** dependents — proven end-to-end by
+`body_only_change_does_not_reresolve_dependents`. Full lib suite green (6738 passed).
+
+Implementation notes beyond the §4 sketch:
+
+- **Survivors need explicit outgoing-ref clearing.** The churn cascade used to drop a changed
+  file's outgoing edges for free; a survivor keeps its id, so its stale `edges` /
+  `unresolved_refs` / `external_refs` (where `source_id` is one of F's symbols) are deleted
+  explicitly before re-resolution. Inbound edges to survivors are never touched — the win.
+- **Blast radius is two precise sets, not "all dependents".** Deleted files keep the old
+  `find_dependent_files` path (their symbols vanish wholesale via CASCADE; computed pre-delete).
+  Modified/added files contribute, through the returned `SurvivorReport`, only the dependents of
+  symbols whose key actually vanished, plus a `newly_resolvable` scan keyed off genuinely-new
+  keys. `find_dependent_files` was split into `(target_paths, exclude_paths)` to serve the
+  deleted-file case without re-introducing the full radius for modified files.
+- **Mergeable re-homing is implemented.** When the primary file drops a mergeable symbol that
+  still lives elsewhere, the primary is promoted to a surviving location (id stable) rather than
+  deleted; a drop from a non-primary file just removes that `symbol_locations` row. The mergeable
+  global lookup (`symbol_key`, `mergeable = 1`) lets a declaration in a new file reuse the
+  existing logical id within the same write transaction.
+- **Overload key collisions degrade safely** (§8). A `used_ids` guard makes the first new symbol
+  claim a survivor id and any same-key sibling fall back to a fresh insert — never a
+  double-assignment, never a crash.
+- **NULL-key legacy rows migrate by churning once.** Rows written before Stage 1 (or by the
+  no-arena path) carry a NULL key, can't match a keyed new symbol, and so vanish + reinsert
+  keyed on the first reparse — a one-time id churn per such file.
+- `containing_id` is still un-indexed (Stage 3 self-FK item, unchanged).

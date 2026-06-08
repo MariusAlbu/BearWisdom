@@ -239,14 +239,14 @@ fn run_incremental_pipeline(
         }
     };
 
-    // --- Step 2: Blast radius (find dependents before CASCADE deletes edges) ---
-    let dependent_paths = find_dependent_files(db, &changed_paths)?;
-    if !dependent_paths.is_empty() {
-        debug!(
-            "Blast radius: {} files depend on changed files",
-            dependent_paths.len()
-        );
-    }
+    // --- Step 2: Blast radius for DELETED files only ---
+    // A deleted file's symbols vanish wholesale through delete_files's CASCADE,
+    // so their dependents must re-resolve. Modified/added files no longer churn
+    // every id — the survivor-matching write (Step 7) reports the dependents of
+    // only the symbols whose key actually vanished. Computed before Step 3's
+    // CASCADE so the inbound edges are still readable.
+    let deleted_set: HashSet<String> = cs.deleted.iter().cloned().collect();
+    let mut dependent_paths = find_dependent_files(db, &deleted_set, &changed_paths)?;
 
     // --- Step 3: Delete removed files ---
     if !cs.deleted.is_empty() {
@@ -298,12 +298,16 @@ fn run_incremental_pipeline(
         return Ok(stats);
     }
 
-    // --- Step 7: Write files + symbols (shared pipeline) ---
-    let (file_id_map, symbol_id_map) = if !parsed.is_empty() {
-        let (fmap, smap) =
-            write::write_parsed_files(db, &parsed, Some(workspace_arena.as_ref())).context("Failed to write index")?;
+    // --- Step 7: Write files + symbols (survivor-matching, stable ids) ---
+    // Matches each symbol to its existing row by symbol_key: survivors keep
+    // their id (inbound edges stay valid), only vanished keys are deleted and
+    // only new keys inserted. The report carries the narrowed blast radius.
+    let (file_id_map, symbol_id_map, survivor_report) = if !parsed.is_empty() {
+        let (fmap, smap, report) =
+            write::write_parsed_files_incremental(db, &parsed, Some(workspace_arena.as_ref()))
+                .context("Failed to write index")?;
         stats.symbols_written = smap.len() as u32;
-        (fmap, smap)
+        (fmap, smap, report)
     } else {
         Default::default()
     };
@@ -329,13 +333,18 @@ fn run_incremental_pipeline(
     // by merging this with `augmented_id_map` inside resolve.
 
     // --- Step 10: Blast radius re-resolution ---
-    // Find files with unresolved refs matching symbols from changed files.
-    let new_symbol_names: HashSet<String> = parsed
-        .iter()
-        .flat_map(|pf| pf.symbols.iter().map(|s| s.name.clone()))
-        .collect();
+    // Two precise sets from the survivor report: dependents of symbols whose key
+    // vanished (their consumers must re-bind), and files whose unresolved refs
+    // name a brand-new key (they may now bind). Surviving-key symbols trigger
+    // neither. Exclude the rewritten files — they re-resolve regardless.
+    dependent_paths.extend(
+        survivor_report
+            .vanished_dependent_paths
+            .into_iter()
+            .filter(|p| !changed_paths.contains(p)),
+    );
     let newly_resolvable =
-        find_newly_resolvable_files(db, &new_symbol_names, &changed_paths)?;
+        find_newly_resolvable_files(db, &survivor_report.new_symbol_names, &changed_paths)?;
 
     let all_affected: HashSet<String> = dependent_paths
         .into_iter()
@@ -545,33 +554,45 @@ fn run_incremental_pipeline(
 // Blast-radius helpers
 // ---------------------------------------------------------------------------
 
-/// Find files that depend on the given source files via the edges table.
+/// Find files whose symbols have an outgoing edge pointing TO a symbol in any
+/// `target_paths` file, excluding files in `exclude_paths`.
 ///
-/// Returns file paths (not in `source_paths`) whose symbols have outgoing
-/// edges pointing TO symbols in the source files.  These dependents need
-/// re-resolution when source files are modified or deleted, because CASCADE
-/// will delete the edges when the target symbols are replaced.
+/// Used for deleted files, whose symbols vanish wholesale via CASCADE — their
+/// dependents must re-resolve. `exclude_paths` is the full changed set so a
+/// modified file that depends on a deleted one is not double-parsed (it is
+/// already re-resolved as a changed file).
 ///
-/// Uses a temp table to batch all paths into a single 6-way JOIN, avoiding
-/// an N-query loop.
+/// Uses temp tables to batch all paths into a single 6-way JOIN, avoiding an
+/// N-query loop.
 fn find_dependent_files(
     db: &Database,
-    source_paths: &HashSet<String>,
+    target_paths: &HashSet<String>,
+    exclude_paths: &HashSet<String>,
 ) -> Result<HashSet<String>> {
-    if source_paths.is_empty() {
+    if target_paths.is_empty() {
         return Ok(HashSet::new());
     }
 
     db.conn().execute(
-        "CREATE TEMP TABLE IF NOT EXISTS _changed_paths (path TEXT PRIMARY KEY)",
+        "CREATE TEMP TABLE IF NOT EXISTS _target_paths (path TEXT PRIMARY KEY)",
         [],
     )?;
-    db.conn().execute("DELETE FROM _changed_paths", [])?;
+    db.conn().execute("DELETE FROM _target_paths", [])?;
+    db.conn().execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _dep_exclude_paths (path TEXT PRIMARY KEY)",
+        [],
+    )?;
+    db.conn().execute("DELETE FROM _dep_exclude_paths", [])?;
 
     {
-        let mut ins = db
-            .prepare("INSERT OR IGNORE INTO _changed_paths (path) VALUES (?1)")?;
-        for path in source_paths {
+        let mut ins = db.prepare("INSERT OR IGNORE INTO _target_paths (path) VALUES (?1)")?;
+        for path in target_paths {
+            ins.execute([path.as_str()])?;
+        }
+    }
+    {
+        let mut ins = db.prepare("INSERT OR IGNORE INTO _dep_exclude_paths (path) VALUES (?1)")?;
+        for path in exclude_paths {
             ins.execute([path.as_str()])?;
         }
     }
@@ -583,8 +604,8 @@ fn find_dependent_files(
          JOIN files   f_target ON s_target.file_id = f_target.id
          JOIN symbols s_dep    ON e.source_id = s_dep.id
          JOIN files   f_dep    ON s_dep.file_id = f_dep.id
-         JOIN _changed_paths cp ON cp.path = f_target.path
-         WHERE f_dep.path NOT IN (SELECT path FROM _changed_paths)",
+         JOIN _target_paths tp ON tp.path = f_target.path
+         WHERE f_dep.path NOT IN (SELECT path FROM _dep_exclude_paths)",
     )?;
 
     let mut dependents = HashSet::new();
@@ -593,7 +614,8 @@ fn find_dependent_files(
         dependents.insert(row?);
     }
 
-    db.conn().execute("DELETE FROM _changed_paths", [])?;
+    db.conn().execute("DELETE FROM _target_paths", [])?;
+    db.conn().execute("DELETE FROM _dep_exclude_paths", [])?;
     Ok(dependents)
 }
 
