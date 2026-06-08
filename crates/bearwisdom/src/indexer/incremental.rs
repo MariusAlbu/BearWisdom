@@ -301,7 +301,7 @@ fn run_incremental_pipeline(
     // --- Step 7: Write files + symbols (shared pipeline) ---
     let (file_id_map, symbol_id_map) = if !parsed.is_empty() {
         let (fmap, smap) =
-            write::write_parsed_files(db, &parsed).context("Failed to write index")?;
+            write::write_parsed_files(db, &parsed, Some(workspace_arena.as_ref())).context("Failed to write index")?;
         stats.symbols_written = smap.len() as u32;
         (fmap, smap)
     } else {

@@ -375,7 +375,7 @@ pub fn full_index(
 
             let origin = if is_vendored_c { "external" } else { "internal" };
             let file_id =
-                write::write_one_parsed_file(&tx, &pf, origin, now, &mut symbol_id_map, /*is_full*/ true)
+                write::write_one_parsed_file(&tx, &pf, origin, now, &mut symbol_id_map, /*is_full*/ true, Some(workspace_arena.as_ref()))
                     .with_context(|| format!("streaming write failed for {}", pf.path))?;
             file_id_map.insert(pf.path.clone(), file_id);
 
@@ -585,7 +585,7 @@ pub fn full_index(
             external_parsed.len()
         );
         let (_ext_file_map, ext_symbol_map) =
-            write::write_parsed_files_with_origin(db, &external_parsed, "external")
+            write::write_parsed_files_with_origin(db, &external_parsed, "external", Some(workspace_arena.as_ref()))
                 .context("Failed to write external index")?;
         info!(
             "Wrote {} external symbols",
@@ -620,7 +620,7 @@ pub fn full_index(
             script_tag_parsed.len()
         );
         let (_st_file_map, st_symbol_map) =
-            write::write_parsed_files_with_origin(db, &script_tag_parsed, "external")
+            write::write_parsed_files_with_origin(db, &script_tag_parsed, "external", Some(workspace_arena.as_ref()))
                 .context("Failed to write script-tag external index")?;
         info!(
             "Wrote {} script-tag vendor symbols",

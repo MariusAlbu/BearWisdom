@@ -245,7 +245,7 @@ fn expand_chain_reachability_inner(
     // accidental duplicate of a pass-1 file is harmless.
     let mut new_parsed = new_parsed;
     let (_file_map, new_id_map) =
-        write::write_parsed_files_with_origin(db, &new_parsed, "external")
+        write::write_parsed_files_with_origin(db, &new_parsed, "external", type_arena)
             .context("expand: failed to write expanded external symbols")?;
     stats.new_files = new_parsed.len();
     stats.new_symbols = new_id_map.len();

@@ -7,6 +7,8 @@
 // =============================================================================
 
 use crate::db::Database;
+use crate::symbol_key::{is_mergeable, symbol_key};
+use crate::type_checker::core::types::TypeArena;
 use crate::types::ParsedFile;
 use anyhow::{Context, Result};
 use rusqlite::types::Value;
@@ -19,7 +21,7 @@ use tracing::{debug, warn};
 // fits in one batch (median C# file has < 128 symbols) — a bigger batch
 // would only save us on outlier files and risk hitting the variable
 // cap on pathological generated code.
-const SYMBOL_COLS: usize = 14;
+const SYMBOL_COLS: usize = 16;
 const SYMBOL_BATCH_ROWS: usize = 128;
 const IMPORT_COLS: usize = 5;
 const IMPORT_BATCH_ROWS: usize = 256;
@@ -37,12 +39,13 @@ fn symbol_insert_sql(rows: usize) -> String {
     sql.push_str(
         "INSERT INTO symbols \
          (file_id, name, qualified_name, kind, line, col, end_line, end_col, \
-          scope_path, signature, doc_comment, visibility, origin, origin_language) \
+          scope_path, signature, doc_comment, visibility, origin, origin_language, \
+          symbol_key, mergeable) \
          VALUES ",
     );
     for i in 0..rows {
         if i > 0 { sql.push(','); }
-        sql.push_str("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        sql.push_str("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
     }
     sql.push_str(" RETURNING id");
     sql
@@ -66,12 +69,16 @@ fn push_symbol_params(
     pf: &ParsedFile,
     global_idx: usize,
     origin: &str,
+    arena: Option<&TypeArena>,
 ) {
     let sym = &pf.symbols[global_idx];
     let origin_language: Option<&str> = pf
         .symbol_origin_languages
         .get(global_idx)
         .and_then(|o| o.as_deref());
+    // The effective language drives the mergeable/key dialect: a spliced
+    // sub-symbol (TS in a .vue) keys under its own language, not the host's.
+    let language = origin_language.unwrap_or(pf.language.as_str());
     params.push(Value::Integer(file_id));
     params.push(Value::Text(sym.name.clone()));
     params.push(Value::Text(sym.qualified_name.clone()));
@@ -101,6 +108,18 @@ fn push_symbol_params(
         Some(s) => Value::Text(s.to_string()),
         None => Value::Null,
     });
+    // Stable identity (SYMBOL-IDENTITY.md): contract-derived key + the merge
+    // flag that decides whether multiple files collapse to one logical symbol.
+    // The key needs the arena that interned this symbol's param TypeIds — the
+    // legacy no-arena parse path can't format them, so the key stays NULL there
+    // (those rows fall back to the churn identity until re-indexed with an arena).
+    params.push(match arena {
+        Some(a) => Value::Text(symbol_key(language, sym, file_id, a)),
+        None => Value::Null,
+    });
+    params.push(Value::Integer(
+        is_mergeable(language, sym.kind, sym.signature.as_deref()) as i64,
+    ));
 }
 
 /// Batched symbol insert. Replaces the per-row loop: for a file with 400
@@ -115,10 +134,14 @@ fn insert_symbols_batched(
     pf: &ParsedFile,
     origin: &str,
     symbol_id_map: &mut SymbolIdMap,
+    arena: Option<&TypeArena>,
 ) -> Result<()> {
     if pf.symbols.is_empty() { return Ok(()); }
 
     let total = pf.symbols.len();
+    // Positional id capture (RETURNING is in VALUES order) so containment and
+    // location writes key on the exact row, not a qname that overloads share.
+    let mut id_by_idx: Vec<i64> = vec![0; total];
     let mut start = 0;
     while start < total {
         let end = (start + SYMBOL_BATCH_ROWS).min(total);
@@ -126,7 +149,7 @@ fn insert_symbols_batched(
         let sql = symbol_insert_sql(rows);
         let mut params: Vec<Value> = Vec::with_capacity(rows * SYMBOL_COLS);
         for i in start..end {
-            push_symbol_params(&mut params, file_id, pf, i, origin);
+            push_symbol_params(&mut params, file_id, pf, i, origin, arena);
         }
 
         // prepare_cached hits when the chunk is exactly SYMBOL_BATCH_ROWS
@@ -150,8 +173,70 @@ fn insert_symbols_batched(
         for (i, sym_id) in (start..end).zip(ids.iter()) {
             let sym = &pf.symbols[i];
             symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), *sym_id);
+            id_by_idx[i] = *sym_id;
         }
         start = end;
+    }
+    write_containment_and_locations(tx, file_id, pf, &id_by_idx)?;
+    Ok(())
+}
+
+/// Write the structural containment edge (`containing_id`) and a declaration
+/// location per symbol. `id_by_idx[k]` is the row id of `pf.symbols[k]`.
+///
+/// Containment is intra-file here: a symbol's `parent_index` points within the
+/// same file's symbol vec, so the parent's id is already known. A member whose
+/// parent lives in another file (a Rust `impl` method, a C# partial member
+/// declared apart from its class) keeps `containing_id` NULL until the
+/// survivor-matching pass can resolve it through the global key→id map.
+fn write_containment_and_locations(
+    tx: &rusqlite::Transaction<'_>,
+    file_id: i64,
+    pf: &ParsedFile,
+    id_by_idx: &[i64],
+) -> Result<()> {
+    // One declaration location per symbol (mergeable multi-location merging is
+    // a survivor-matching concern; on the churn path each file owns its row).
+    {
+        const LOC_COLS: usize = 4;
+        const LOC_BATCH_ROWS: usize = 256;
+        let total = id_by_idx.len();
+        let mut start = 0;
+        while start < total {
+            let end = (start + LOC_BATCH_ROWS).min(total);
+            let rows = end - start;
+            let mut sql = String::with_capacity(96 + rows * 12);
+            sql.push_str("INSERT OR IGNORE INTO symbol_locations (symbol_id, file_id, line, col) VALUES ");
+            for i in 0..rows {
+                if i > 0 { sql.push(','); }
+                sql.push_str("(?,?,?,?)");
+            }
+            let mut params: Vec<Value> = Vec::with_capacity(rows * LOC_COLS);
+            for i in start..end {
+                let sym = &pf.symbols[i];
+                params.push(Value::Integer(id_by_idx[i]));
+                params.push(Value::Integer(file_id));
+                params.push(Value::Integer(sym.start_line as i64));
+                params.push(Value::Integer(sym.start_col as i64));
+            }
+            tx.prepare_cached(&sql)
+                .context("Failed to prepare symbol_locations insert")?
+                .execute(rusqlite::params_from_iter(params.iter()))
+                .context("Failed to insert symbol_locations")?;
+            start = end;
+        }
+    }
+
+    // Containment edge for the symbols that have an in-file parent.
+    let mut upd = tx
+        .prepare_cached("UPDATE symbols SET containing_id = ?1 WHERE id = ?2")
+        .context("Failed to prepare containing_id update")?;
+    for (i, sym) in pf.symbols.iter().enumerate() {
+        if let Some(p) = sym.parent_index {
+            if p < id_by_idx.len() {
+                upd.execute(rusqlite::params![id_by_idx[p], id_by_idx[i]])?;
+            }
+        }
     }
     Ok(())
 }
@@ -209,10 +294,11 @@ fn insert_imports_batched(
 pub fn write_parsed_files(
     db: &Database,
     parsed: &[ParsedFile],
+    arena: Option<&TypeArena>,
 ) -> Result<(FileIdMap, SymbolIdMap)> {
     // Incremental entry point: symbols/imports for these files may exist
     // from a prior index, so the per-file DELETE step is load-bearing.
-    write_parsed_files_with_origin_impl(db, parsed, "internal", /*is_full*/ false)
+    write_parsed_files_with_origin_impl(db, parsed, "internal", /*is_full*/ false, arena)
 }
 
 /// Write a single `ParsedFile` inside an existing transaction and return its
@@ -231,6 +317,7 @@ pub fn write_one_parsed_file(
     now: i64,
     symbol_id_map: &mut SymbolIdMap,
     is_full: bool,
+    arena: Option<&TypeArena>,
 ) -> Result<i64> {
     // Upsert file row and capture the assigned id via RETURNING.
     let file_id: i64 = tx
@@ -268,7 +355,7 @@ pub fn write_one_parsed_file(
             .execute([file_id])?;
     }
 
-    insert_symbols_batched(tx, file_id, pf, origin, symbol_id_map)?;
+    insert_symbols_batched(tx, file_id, pf, origin, symbol_id_map, arena)?;
 
     for route in &pf.routes {
         let sym_id = symbol_id_map
@@ -309,11 +396,12 @@ pub fn write_parsed_files_with_origin(
     db: &Database,
     parsed: &[ParsedFile],
     origin: &str,
+    arena: Option<&TypeArena>,
 ) -> Result<(FileIdMap, SymbolIdMap)> {
     // Default to the full-index fast path (tables are fresh after
     // DROP+CREATE). Call sites that re-write over existing rows use the
     // `_incremental` variant, which keeps the per-file DELETE cleanup.
-    write_parsed_files_with_origin_impl(db, parsed, origin, /*is_full*/ true)
+    write_parsed_files_with_origin_impl(db, parsed, origin, /*is_full*/ true, arena)
 }
 
 /// Incremental-safe variant: keeps per-file DELETE from symbols/imports so
@@ -322,8 +410,9 @@ pub fn write_parsed_files_with_origin_incremental(
     db: &Database,
     parsed: &[ParsedFile],
     origin: &str,
+    arena: Option<&TypeArena>,
 ) -> Result<(FileIdMap, SymbolIdMap)> {
-    write_parsed_files_with_origin_impl(db, parsed, origin, /*is_full*/ false)
+    write_parsed_files_with_origin_impl(db, parsed, origin, /*is_full*/ false, arena)
 }
 
 fn write_parsed_files_with_origin_impl(
@@ -331,6 +420,7 @@ fn write_parsed_files_with_origin_impl(
     parsed: &[ParsedFile],
     origin: &str,
     is_full: bool,
+    arena: Option<&TypeArena>,
 ) -> Result<(FileIdMap, SymbolIdMap)> {
     let conn = db.conn();
     let now = std::time::SystemTime::now()
@@ -390,7 +480,7 @@ fn write_parsed_files_with_origin_impl(
         // language — represented as NULL in the column for storage
         // efficiency and queryability ("WHERE origin_language IS NOT NULL"
         // yields only spliced multi-language symbols).
-        insert_symbols_batched(&tx, file_id, pf, origin, &mut symbol_id_map)?;
+        insert_symbols_batched(&tx, file_id, pf, origin, &mut symbol_id_map, arena)?;
 
         // Insert route records (ASP.NET [HttpGet], [Route], etc.).
         for route in &pf.routes {

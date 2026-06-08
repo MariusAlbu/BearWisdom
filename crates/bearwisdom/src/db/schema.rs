@@ -338,6 +338,38 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                 ON routes(file_id, http_method, route_template, COALESCE(line, -1));"
         )?;
     }
+    // Symbol-identity refactor (SYMBOL-IDENTITY.md): stable key, multi-location
+    // containment. Columns are added empty here; the indexer populates them.
+    if !column_exists(conn, "symbols", "symbol_key") {
+        conn.execute_batch("ALTER TABLE symbols ADD COLUMN symbol_key TEXT")?;
+    }
+    if !column_exists(conn, "symbols", "mergeable") {
+        conn.execute_batch("ALTER TABLE symbols ADD COLUMN mergeable INTEGER NOT NULL DEFAULT 0")?;
+    }
+    if !column_exists(conn, "symbols", "containing_id") {
+        conn.execute_batch(
+            "ALTER TABLE symbols ADD COLUMN containing_id INTEGER REFERENCES symbols(id) ON DELETE SET NULL"
+        )?;
+    }
+    // Survivor-matching keys (Stage 2) — partial indexes on the NON-FK
+    // symbol_key column are safe. The members index on `containing_id` is
+    // deferred: an index on that self-referential FK column deadlocks the
+    // full-index pipeline (SQLite self-FK + indexed-FK-column interaction).
+    // It belongs to Stage 3 (member lookup) and will be added once the self-FK
+    // is resolved (most likely by dropping the FK and keeping containing_id a
+    // plain indexed integer, with integrity maintained by survivor-matching).
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_symbols_key_global ON symbols(symbol_key) WHERE mergeable = 1;
+         CREATE INDEX IF NOT EXISTS idx_symbols_key_local  ON symbols(file_id, symbol_key) WHERE mergeable = 0;
+         CREATE TABLE IF NOT EXISTS symbol_locations (
+             symbol_id INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+             file_id   INTEGER NOT NULL REFERENCES files(id)   ON DELETE CASCADE,
+             line      INTEGER NOT NULL,
+             col       INTEGER NOT NULL,
+             PRIMARY KEY (symbol_id, file_id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_symloc_file ON symbol_locations(file_id);"
+    )?;
     Ok(())
 }
 
@@ -484,7 +516,10 @@ CREATE TABLE IF NOT EXISTS symbols (
     visibility     TEXT,
     incoming_edge_count INTEGER NOT NULL DEFAULT 0,  -- materialized centrality signal
     origin         TEXT    NOT NULL DEFAULT 'internal',  -- 'internal' | 'external'; mirrors files.origin for fast filtering
-    origin_language TEXT   -- sub-language id when different from files.language (NULL = same); set for symbols spliced in from embedded regions (e.g. a script block inside a Vue SFC)
+    origin_language TEXT,  -- sub-language id when different from files.language (NULL = same); set for symbols spliced in from embedded regions (e.g. a script block inside a Vue SFC)
+    symbol_key     TEXT,   -- stable identity key (SYMBOL-IDENTITY.md); contract-derived, survives reparse
+    mergeable      INTEGER NOT NULL DEFAULT 0,  -- 1 = one logical symbol spanning files (namespace/partial/reopened); see symbol_locations
+    containing_id  INTEGER REFERENCES symbols(id) ON DELETE SET NULL  -- structural parent (the containment edge); members = inverse. SET NULL not CASCADE: a deleted parent orphans its children (to be re-resolved), never deletes them.
 );
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name      ON symbols(name);
@@ -498,6 +533,22 @@ CREATE INDEX IF NOT EXISTS idx_symbols_name_cov
 -- Replaces the old idx_symbols_file single-column index.
 CREATE INDEX IF NOT EXISTS idx_symbols_file_cov
     ON symbols(file_id, name, qualified_name, kind, line, col);
+-- Indexes on the symbol_key column are created in migrate() (so they cover both
+-- fresh DBs and DBs where the column arrives via ALTER). An index on
+-- containing_id is deferred to Stage 3 — it deadlocks the full-index pipeline
+-- via SQLite's self-FK / indexed-FK-column interaction.
+
+-- Declaration sites of each symbol. A non-mergeable symbol has exactly one;
+-- a mergeable symbol (namespace, partial type, reopened class) has one per
+-- declaring file, and its `symbols` row carries the PRIMARY site in file_id.
+CREATE TABLE IF NOT EXISTS symbol_locations (
+    symbol_id INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    file_id   INTEGER NOT NULL REFERENCES files(id)   ON DELETE CASCADE,
+    line      INTEGER NOT NULL,
+    col       INTEGER NOT NULL,
+    PRIMARY KEY (symbol_id, file_id)
+);
+CREATE INDEX IF NOT EXISTS idx_symloc_file ON symbol_locations(file_id);
 
 -- ============================================================
 -- CODE GRAPH: EDGES
