@@ -78,6 +78,33 @@ fn matches_rust_stdlib_prelude_sources() {
 }
 
 #[test]
+fn matches_dart_core_and_rejects_other_dart_libs() {
+    for p in [
+        "ext:idx:C:/x/flutter/cache/dart-sdk/lib/core/errors.dart",
+        "ext:idx:C:/x/flutter/cache/pkg/sky_engine/lib/core/list.dart",
+    ] {
+        assert!(is_framework_ambient_path(&norm(p)), "dart:core should be ambient: {p}");
+    }
+    // Other dart: libraries need an explicit import — not ambient.
+    for p in [
+        "ext:idx:C:/x/flutter/cache/dart-sdk/lib/async/stream.dart",
+        "ext:idx:C:/x/Pub/Cache/hosted/pub.dev/googleapis-16.0.0/lib/docs/v1.dart",
+    ] {
+        assert!(!is_framework_ambient_path(&norm(p)), "non-core dart lib must NOT be ambient: {p}");
+    }
+}
+
+#[test]
+fn matches_haskell_ghc_internal_prelude() {
+    for p in [
+        "ext:haskell:ghc-internal/src/GHC/Internal/Maybe.hs",
+        "ext:idx:C:/Users/x/cabal/store/ghc-9.12.1/ghc-internal-9.1401.0/src/GHC/Internal/Base.hs",
+    ] {
+        assert!(is_framework_ambient_path(&norm(p)), "GHC.Internal prelude should be ambient: {p}");
+    }
+}
+
+#[test]
 fn rejects_cargo_registry_crates() {
     // Third-party cargo deps are `ext:rust:` too but live under `/registry/src/`
     // (or a bare `<crate>/…` reachability path) — they require an explicit `use`

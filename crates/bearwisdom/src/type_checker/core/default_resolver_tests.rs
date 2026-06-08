@@ -4634,3 +4634,90 @@ fn unique_internal_name_stays_out_of_ladder() {
         "even a single internal candidate must not bind via the unwired rung",
     );
 }
+
+// ---------------------------------------------------------------------------
+// resolve_via_implicit_prelude — language implicit-import binding
+// ---------------------------------------------------------------------------
+
+fn run_implicit_prelude(
+    lookup: &Lookup,
+    target: &str,
+    namespaces: &[&str],
+    separator: &str,
+) -> Option<Resolution> {
+    let r = extracted_call(target);
+    let s = source_symbol("Host");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup,
+        kind_compatible: accept_any,
+    };
+    d.resolve_via_implicit_prelude(namespaces, separator, &accept_any)
+}
+
+#[test]
+fn implicit_prelude_binds_direct_member() {
+    // Bare `String` binds to the direct member `java.lang.String`.
+    let lookup = Lookup::new().with(sym(7, "String", "java.lang.String", "class", "ext:/java.lang/String.java"));
+    let res = run_implicit_prelude(&lookup, "String", &["java.lang"], ".").expect("direct member binds");
+    assert_eq!(res.target_symbol_id, 7);
+    assert_eq!(res.strategy, "implicit_prelude");
+}
+
+#[test]
+fn implicit_prelude_rejects_nested_method_and_subnamespace() {
+    // Nested type, method, and sub-namespace all carry a further `.` segment
+    // after `java.lang.` and must NOT bind to a bare name.
+    let lookup = Lookup::new()
+        .with(sym(1, "Controller", "java.lang.ModuleLayer.Controller", "class", "x"))
+        .with(sym(2, "get", "java.lang.ClassValue.get", "method", "x"))
+        .with(sym(3, "Configuration", "java.lang.module.Configuration", "class", "x"));
+    assert!(run_implicit_prelude(&lookup, "Controller", &["java.lang"], ".").is_none());
+    assert!(run_implicit_prelude(&lookup, "get", &["java.lang"], ".").is_none());
+    assert!(run_implicit_prelude(&lookup, "Configuration", &["java.lang"], ".").is_none());
+}
+
+#[test]
+fn implicit_prelude_honours_non_dot_separator() {
+    // R qnames use `::`. `base::c` binds under namespace `base`; the sibling
+    // `boot::c` is excluded, so the single hit is unambiguous.
+    let lookup = Lookup::new()
+        .with(sym(10, "c", "base::c", "function", "ext:/r/base.R"))
+        .with_overload(sym(11, "c", "boot::c", "function", "ext:/r/boot.R"));
+    let res = run_implicit_prelude(&lookup, "c", &["base"], "::").expect("base::c binds");
+    assert_eq!(res.target_symbol_id, 10);
+}
+
+#[test]
+fn implicit_prelude_declines_without_namespaces() {
+    let lookup = Lookup::new().with(sym(7, "String", "java.lang.String", "class", "x"));
+    assert!(run_implicit_prelude(&lookup, "String", &[], ".").is_none());
+}
+
+#[test]
+fn implicit_prelude_dedups_duplicate_qname_rows() {
+    // A hydrated stdlib often ships several rows for one symbol (declaration
+    // merging / multiple jars). Same qname → same symbol, not ambiguity.
+    let lookup = Lookup::new()
+        .with(sym(20, "Map", "kotlin.collections.Map", "interface", "ext:/k/Map.kt"))
+        .with_overload(sym(21, "Map", "kotlin.collections.Map", "interface", "ext:/k/Map2.kt"));
+    let res = run_implicit_prelude(&lookup, "Map", &["kotlin.collections"], ".")
+        .expect("duplicate-qname rows are one symbol, must bind");
+    assert_eq!(res.target_symbol_id, 20);
+}
+
+#[test]
+fn implicit_prelude_declines_two_distinct_member_qnames() {
+    // Two DISTINCT direct members of declared namespaces share the bare name —
+    // a genuine ambiguity, decline.
+    let lookup = Lookup::new()
+        .with(sym(30, "Map", "kotlin.collections.Map", "interface", "x"))
+        .with_overload(sym(31, "Map", "kotlin.io.Map", "class", "x"));
+    assert!(
+        run_implicit_prelude(&lookup, "Map", &["kotlin.collections", "kotlin.io"], ".").is_none(),
+        "two distinct implicit-member qnames must decline"
+    );
+}

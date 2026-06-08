@@ -61,6 +61,21 @@ pub const FRAMEWORK_AMBIENT_MARKERS: &[AmbientPathMarker] = &[
     // Scoped to that subtree so cargo-registry crates (also `ext:rust:`, but
     // under `/registry/src/`) stay non-ambient — they need an explicit `use`.
     AmbientPathMarker { contains: "/rustlib/src/rust/library/", ends_with: ".rs" },
+    // Dart implicit import: every library gets `dart:core` (`String`, `List`,
+    // `Map`, `Exception`, `ArgumentError`, …) without an `import`. The dart-sdk
+    // and Flutter's bundled sky_engine ship it under `…/lib/core/`. Scoped to
+    // that directory so the other `dart:` libraries (`dart:async`,
+    // `dart:collection`, under `…/lib/async|collection/`) stay non-ambient —
+    // they require an explicit import. dart:core types are stored with a bare
+    // qualified name, so the path is the only namespace signal.
+    AmbientPathMarker { contains: "/dart-sdk/lib/core/", ends_with: ".dart" },
+    AmbientPathMarker { contains: "/sky_engine/lib/core/", ends_with: ".dart" },
+    // Haskell Prelude: every module implicitly imports `Prelude` (`Just`,
+    // `maybe`, `mapM`, `fromMaybe`, `fmap`, …) without an `import`. GHC ships
+    // these under the `ghc-internal` package's `GHC/Internal/` source tree.
+    // Prelude symbols are stored with a bare qualified name; the path scopes the
+    // bind to GHC's base and keeps same-named third-party symbols out.
+    AmbientPathMarker { contains: "/ghc/internal/", ends_with: ".hs" },
 ];
 
 /// True when `normalized_lower_path` (pre-lowercased, `/`-normalised) matches

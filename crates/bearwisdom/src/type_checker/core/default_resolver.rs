@@ -80,6 +80,8 @@ struct LadderProfileData<'p> {
     namespaceless_global_type_lookup: bool,
     explicit_member_import: bool,
     selector_resolution: Option<&'p SelectorResolution>,
+    qname_separator: &'p str,
+    implicit_prelude_namespaces: &'static [&'static str],
 }
 
 impl LadderProfileData<'static> {
@@ -107,6 +109,8 @@ impl LadderProfileData<'static> {
         namespaceless_global_type_lookup: false,
         explicit_member_import: false,
         selector_resolution: None,
+        qname_separator: ".",
+        implicit_prelude_namespaces: &[],
     };
 }
 
@@ -2117,6 +2121,8 @@ impl<'a> DefaultResolver<'a> {
                 namespaceless_global_type_lookup: profile.namespaceless_global_type_lookup,
                 explicit_member_import: profile.explicit_member_import,
                 selector_resolution: profile.selector_resolution.as_ref(),
+                qname_separator: profile.qname_separator,
+                implicit_prelude_namespaces: implicit_prelude_namespaces(profile.id),
             },
         )
     }
@@ -2256,6 +2262,13 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| {
                 self.resolve_via_wildcard_import(kind, pd.wildcard_match, pd.name_normalization)
             })
+            .or_else(|| {
+                self.resolve_via_implicit_prelude(
+                    pd.implicit_prelude_namespaces,
+                    pd.qname_separator,
+                    kind,
+                )
+            })
             .or_else(|| self.resolve_via_generic_param())
             // Last resort: an unimported ambient global (jest/jQuery/DOM/core
             // lib). Below the structural strategies so a project symbol always
@@ -2387,6 +2400,64 @@ impl<'a> DefaultResolver<'a> {
             return Some(self.resolution(hits[0].id, "default_wildcard_import"));
         }
         None
+    }
+
+    /// Strategy — a bare name brought into scope by the language's implicit
+    /// imports. The compiler makes a fixed set of namespaces available without
+    /// an explicit `import`: Java `java.lang.*`, Kotlin's default-import set,
+    /// Elixir `Kernel`, R `base`. The set is profile-declared data
+    /// (`implicit_prelude_namespaces`), not a per-language hook.
+    ///
+    /// Binds only to a DIRECT member of one of those namespaces
+    /// (`qname_is_direct_member`), so nested types (`java.lang.ModuleLayer.
+    /// Controller`), methods (`java.lang.ClassValue.get`), and sub-namespaces
+    /// (`java.lang.reflect.*`) stay unresolved — they require an explicit
+    /// import, exactly as the compiler demands. Sits below the import/scope
+    /// strategies so a project symbol or explicit import always wins, and
+    /// declines on ambiguity (a bare name claiming two implicit members).
+    pub fn resolve_via_implicit_prelude(
+        &self,
+        namespaces: &[&str],
+        separator: &str,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        if namespaces.is_empty() {
+            return None;
+        }
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty() || target.contains(separator) {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        // A candidate is a direct member of namespace `ns` when its qualified
+        // name is exactly `<ns><sep><target>` — the same identity test
+        // `resolve_via_same_namespace` uses, built once per namespace and
+        // compared for equality (not split out of the candidate's qname).
+        // Nested types, methods, and sub-namespaces carry an extra separator,
+        // so their qname never equals one of these and they are excluded.
+        let expected: Vec<String> = namespaces
+            .iter()
+            .map(|ns| format!("{ns}{separator}{target}"))
+            .collect();
+        // Dedup candidates by qualified name: a hydrated stdlib often carries
+        // several rows for one symbol (declaration merging, or the same source
+        // shipped in more than one jar). Those are the SAME symbol, not an
+        // ambiguity — only two DISTINCT member qnames decline.
+        let mut chosen: Option<&SymbolInfo> = None;
+        for sym in self.lookup.by_name(target) {
+            if !kind(edge_kind, &sym.kind) {
+                continue;
+            }
+            if !expected.iter().any(|e| *e == sym.qualified_name) {
+                continue;
+            }
+            match chosen {
+                None => chosen = Some(sym),
+                Some(c) if c.qualified_name == sym.qualified_name => {}
+                Some(_) => return None,
+            }
+        }
+        chosen.map(|s| self.resolution(s.id, "implicit_prelude"))
     }
 
     /// Strategy — multi-candidate disambiguation by ranking.
@@ -2583,6 +2654,33 @@ fn qname_directly_under(qualified_name: &str, module_path: &str) -> bool {
     let needle = format!("{dotted}.");
     let Some(rest) = qualified_name.strip_prefix(needle.as_str()) else { return false };
     !rest.contains('.')
+}
+
+/// Namespaces a language's compiler implicitly imports — every compilation unit
+/// sees their direct members by bare name without an explicit import (Java
+/// `java.lang`, Kotlin's default-import set, Elixir `Kernel`, R `base`).
+/// Consulted by `resolve_via_implicit_prelude`. Empty for languages with no
+/// implicit-import rule (the bare name must come from scope, an explicit
+/// import, or stay unresolved). The symbols themselves are hydrated by the
+/// stdlib ecosystem locators; this only declares which namespaces are in scope.
+pub fn implicit_prelude_namespaces(language_id: &str) -> &'static [&'static str] {
+    match language_id {
+        "java" => &["java.lang"],
+        "kotlin" => &[
+            "kotlin",
+            "kotlin.collections",
+            "kotlin.text",
+            "kotlin.io",
+            "kotlin.ranges",
+            "kotlin.sequences",
+            "kotlin.annotation",
+            "kotlin.comparisons",
+            "kotlin.jvm",
+        ],
+        "elixir" => &["Kernel"],
+        "r" => &["base"],
+        _ => &[],
+    }
 }
 
 /// Shared-directory-prefix score between two file paths. Returns 10 ×
