@@ -116,14 +116,12 @@ pub struct SymbolIndex {
     /// whether a candidate's external file path falls under any
     /// listed package.
     tsconfig_types_union: Vec<String>,
-    /// Class inheritance map: child class qualified_name → parent class qualified_name.
-    /// Built from `Inherits` refs at index construction time.  Used by language
-    /// resolvers to walk the ancestor chain when `$this->method()` calls cannot
-    /// be resolved within the immediate class scope.
-    ///
-    /// Keyed by child qname (dotted form), value is the direct parent qname.
-    /// Transitive ancestors are reached by chaining lookups.
-    inherits_map: FxHashMap<String, String>,
+    /// Class inheritance edge: child symbol id → direct parent symbol id.
+    /// Built from `Inherits` refs at construction (parent name resolved to a
+    /// symbol via by_name). Backs `parent_class_qname`, which the resolvers walk
+    /// to climb the ancestor chain when a member isn't found on the immediate
+    /// class. Transitive ancestors are reached by chaining lookups.
+    inherits_by_id: FxHashMap<i64, i64>,
     /// Per-symbol identity record keyed by the stable symbol id — the id spine.
     /// Lets a containment walk (or any consumer holding an id rather than a
     /// qname) recover a symbol's kind / qname / scope_path. Populated alongside

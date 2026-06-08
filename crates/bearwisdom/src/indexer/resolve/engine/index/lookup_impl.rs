@@ -316,7 +316,9 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
-        self.inherits_map.get(class_qname).map(|s| s.as_str())
+        let child = self.by_qname.get(class_qname)?;
+        let parent_id = self.inherits_by_id.get(&child.id)?;
+        Some(self.by_id.get(parent_id)?.qualified_name.as_str())
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {

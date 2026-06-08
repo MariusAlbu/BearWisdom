@@ -642,19 +642,19 @@ impl SymbolIndex {
             }
         }
 
-        // Build class inheritance map: child_qname → parent_qname.
+        // Build the class inheritance edge: child symbol id → parent symbol id.
         //
         // Source: `Inherits` refs emitted by language extractors.  The
         // `source_symbol_index` identifies the child class symbol in its own
-        // file; `target_name` is the parent's short/simple name.  We resolve
-        // it to a qualified name via the by_name index (already built above).
+        // file; `target_name` is the parent's short/simple name, resolved to a
+        // symbol via the by_name index (already built above).
         //
         // When multiple symbols share the same short name, we prefer the one
         // whose namespace matches the child class's namespace most closely
         // (longest common prefix).  This is a best-effort approximation —
         // the common case (one class per simple name in a project) will always
         // resolve correctly.
-        let mut inherits_map: FxHashMap<String, String> = FxHashMap::default();
+        let mut inherits_by_id: FxHashMap<i64, i64> = FxHashMap::default();
         for pf in parsed {
             for r in &pf.refs {
                 if r.kind != EdgeKind::Inherits {
@@ -672,11 +672,16 @@ impl SymbolIndex {
                     continue;
                 }
                 let child_qname = &child_sym.qualified_name;
+                let Some(&child_id) =
+                    symbol_id_map.get(&(pf.path.clone(), child_qname.clone()))
+                else {
+                    continue;
+                };
                 // Avoid overwriting an existing entry (first Inherits edge wins).
-                if inherits_map.contains_key(child_qname) {
+                if inherits_by_id.contains_key(&child_id) {
                     continue;
                 }
-                // Resolve parent simple name → qname via by_name. Strip generic
+                // Resolve parent simple name → its symbol via by_name. Strip generic
                 // type arguments so `extends Foo<Bar>` keys on the head `Foo`.
                 let parent_raw = r.target_name.trim_start_matches('\\');
                 let parent_simple = parse_type_head_and_args(parent_raw).0;
@@ -698,7 +703,7 @@ impl SymbolIndex {
                         })
                         .unwrap_or(&candidates[0])
                 };
-                inherits_map.insert(child_qname.clone(), best.qualified_name.clone());
+                inherits_by_id.insert(child_id, best.id);
             }
         }
 
@@ -1158,7 +1163,7 @@ impl SymbolIndex {
             path_aliases_by_pkg,
             path_aliases_union,
             tsconfig_types_union,
-            inherits_map,
+            inherits_by_id,
             by_id,
             containing_id,
             alias_target: alias_target_map,

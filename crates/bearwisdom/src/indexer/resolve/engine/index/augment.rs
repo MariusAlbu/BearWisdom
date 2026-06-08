@@ -341,7 +341,7 @@ impl SymbolIndex {
             }
         }
 
-        // Pass 5: inherits_map for new class/interface/trait/struct symbols.
+        // Pass 5: inheritance edge (child id → parent id) for new symbols.
         for pf in new_files {
             for r in &pf.refs {
                 if r.kind != EdgeKind::Inherits {
@@ -357,7 +357,12 @@ impl SymbolIndex {
                     continue;
                 }
                 let child_qname = &child_sym.qualified_name;
-                if self.inherits_map.contains_key(child_qname) {
+                let Some(&child_id) =
+                    symbol_id_map.get(&(pf.path.clone(), child_qname.clone()))
+                else {
+                    continue;
+                };
+                if self.inherits_by_id.contains_key(&child_id) {
                     continue;
                 }
                 let parent_simple = r.target_name.trim_start_matches('\\');
@@ -377,7 +382,7 @@ impl SymbolIndex {
                         })
                         .unwrap_or(&candidates[0])
                 };
-                self.inherits_map.insert(child_qname.clone(), best.qualified_name.clone());
+                self.inherits_by_id.insert(child_id, best.id);
             }
         }
 
