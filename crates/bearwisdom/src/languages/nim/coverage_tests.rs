@@ -323,15 +323,18 @@ fn cov_import_multiple_modules_produces_multiple_imports() {
     );
 }
 
-/// import_from_statement (`from module import symbol`) → Imports with module as target
+/// import_from_statement (`from module import symbol`) → a module-scoped wildcard
+/// Imports ref (target `"*"`, module = the module name), the same shape as a plain
+/// `import`. In compilable Nim a module symbol can only be used unqualified once it
+/// is imported, so the wildcard never over-binds on valid code.
 #[test]
 fn cov_import_from_statement_produces_imports() {
     let r = extract::extract("from strutils import parseInt\n");
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports
-            && rf.target_name == "strutils"
+            && rf.target_name == "*"
             && rf.module.as_deref() == Some("strutils")),
-        "from-import should produce module-scoped Imports ref with module name; got: {:?}",
+        "from-import should produce a module-scoped wildcard Imports ref; got: {:?}",
         r.refs
             .iter()
             .map(|rf| (rf.kind, &rf.target_name, rf.module.as_deref()))
@@ -533,12 +536,12 @@ fn cov_multiline_import_produces_all_modules() {
         .refs
         .iter()
         .filter(|rf| rf.kind == EdgeKind::Imports)
-        .map(|rf| rf.target_name.as_str())
+        .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
         .collect();
     assert!(
-        imports.contains(&"blscurve")
-            && imports.contains(&"stew/byteutils")
-            && imports.contains(&"results"),
+        imports.contains(&("*", Some("blscurve")))
+            && imports.contains(&("*", Some("stew/byteutils")))
+            && imports.contains(&("*", Some("results"))),
         "multi-line import should produce one Imports ref per module; got: {:?}",
         imports
     );
@@ -553,12 +556,12 @@ fn cov_multiline_bracketed_import_produces_all_modules() {
         .refs
         .iter()
         .filter(|rf| rf.kind == EdgeKind::Imports)
-        .map(|rf| rf.target_name.as_str())
+        .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
         .collect();
     assert!(
-        imports.contains(&"std/sequtils")
-            && imports.contains(&"std/strutils")
-            && imports.contains(&"std/options"),
+        imports.contains(&("*", Some("std/sequtils")))
+            && imports.contains(&("*", Some("std/strutils")))
+            && imports.contains(&("*", Some("std/options"))),
         "multi-line bracketed import should expand into prefixed modules; got: {:?}",
         imports
     );
