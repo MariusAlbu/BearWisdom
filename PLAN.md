@@ -191,23 +191,49 @@ RESEARCH-DIRECTION.md optimizes one verb (search → evidence). Agents spend mos
 | Command surface visibility | MCP: `bw_research` + `bw_read` + `bw_reindex` + 4–6 navigation tools (defs/refs/hierarchy/file_symbols) promoted; rest demoted to CLI-only | Navigation tools serve the IDE/debugging path and precise lookups where the question is already structural; everything exploratory routes through `bw_research`, everything file-comprehension through `bw_read`. |
 | TurboVec | Deferred, criteria unchanged | sqlite-vec is not a measured bottleneck. |
 
-## Sequencing (sessions = architect attention + AI execution)
+## Execution model — two parallel tracks
 
-| Phase | Work | Sessions | Bottleneck |
-|---|---|---|---|
-| 0 | A: finish resolution branch (in flight) | already budgeted | yours: review + closeout recapture |
-| 1 | B1–B3 harness v2 + D1 prefix bug (parallel) | 2–3 | yours: authoring/approving ground truth (the one truly human-gated task) |
-| 2 | C1 thin `bw_research` + B4 fourth condition | 2 | mine |
-| 3 | C2 cursors + C3 router; D2–D6 parallel | 2–3 | mine; yours: router taxonomy review |
-| 4 | C4 confidence + compression tuning vs benchmark | 1–2 | mine |
-| 5 | E IDE frontend (parallel from phase 2 onward) | 3–4 | yours: AlphaT integration decisions |
-| 6 | F hardening, then full benchmark publication | 2 | yours: methodology sign-off (per-language transparent claims) |
-| — | G5 telemetry + G6 map (cheap, any time from phase 1) | 1 | mine |
-| 7 | G1 `bw_read` (with C1/C2 — shares cursor infra) | 1–2 | mine |
-| 8 | G2 edit verification + G4 affected-tests (after A; G4 builds on G2) | 2–3 | mine; yours: delta-packet shape review |
-| 9 | G3 symbol temporality (after symbol-identity Stage 3 proves stable) | 2 | mine |
+Two tracks run concurrently on **isolated git worktrees** (separate `target/` dirs → no cargo-lock collision; the hard no-parallel-cargo rule is satisfied by isolation, not serialization). Each track is driven by workflows; the architect reviews at join points.
 
-Phases 2–5 each end with a B-suite run; a composite regression blocks the phase from landing.
+- **Track R — Resolution** (RESOLUTION-FIX-PLAN.md) on `feat/resolution-engine` (main checkout). Drains unresolved refs through the generic engine. Owns the corpus recapture.
+- **Track P — Product** (this plan, Workstreams B–G) on a `feat/research-tool` worktree. Builds eval harness, `bw_research`, semantic, IDE frontend, agent verbs against the live graph.
+
+There is no line-ending precondition: the worktree noise was investigated and is **not** CRLF (0 pure-CRLF files; the churn was real content + a workspace `cargo fmt`, now committed in `cadbd7ae`). Nothing to normalize.
+
+### Track R (resolution) — order per RESOLUTION-FIX-PLAN.md
+
+| Step | Work | Risk |
+|---|---|---|
+| R0 ✅ | checkpoint `cadbd7ae` + nim test fix `6e63ce51`, workspace green (6748/0) | done |
+| R1 | 4b corpus-scope accounting + B2 namespaceless flips (~14k) | near-zero |
+| R2 | C profile-data sweep (~55k), one-agent-per-family | near-zero |
+| R3 | B1 import/alias rebind + B3 implicit-prelude qualify (~200k) | regression-bearing — the big levers |
+| R4 | 4a vendoring manifests; B4 receiver projection; B5 + A extractor wave; E externals install | mixed |
+| R★ | **symbol-identity Stage 3** (survivor-matching bulk write) | **= J1** |
+| Rc | corpus recapture (the one recapture) | closeout |
+
+### Track P (product) — Workstreams B–G against the live graph
+
+| Step | Work | Gate |
+|---|---|---|
+| P1 | B harness Tier-1 (model-free) + ground-truth authoring; D0/D1 backend eval + prefix bug | none — start now |
+| P2 | C1 thin `bw_research` + B Tier-2 fourth condition | none |
+| P3 | C2 cursors + C3 router; D2–D6 semantic reliability; G1 `bw_read`; G5 telemetry; G6 `bw map` | none |
+| PE | IDE frontend: hover · document-symbols · signature-help · LSP facade · Tauri↔CodeMirror wiring | none for these |
+| P4 | C4 confidence calibration | **J2** |
+| PE★ | E rename · G2 edit-verification · G4 affected-tests · G3 git temporality | **J1** |
+| Pc | Tier-2 publication numbers | **J2 + Rc** |
+
+### Join points (R → P dependencies)
+
+- **J1 = R symbol-identity Stage 3** → unblocks P: rename, edit-verification, affected-tests, git temporality (all need stable ids surviving reindex).
+- **J2 = R near-final graph** (post B1/B3) → unblocks P: confidence calibration + the published benchmark number (calibrate/publish against a stable graph, not a moving one).
+
+### Cadence
+
+- Track P rebases onto Track R at each R milestone (R1, R2, R3…). Pin the engine commit when measuring a pure-retrieval delta so graph-drift isn't misattributed to a retrieval change.
+- Tier-1 eval (free, model-free) runs continuously on P as the dev signal. Tier-2 publication is frozen until J2 + Rc.
+- Bottleneck split — yours: ground-truth authoring (P1), router taxonomy review (P3), AlphaT integration (PE), methodology sign-off (Pc). Mine: everything else, driven by workflows.
 
 ## Risks
 
